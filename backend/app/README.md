@@ -67,7 +67,7 @@ curl -X POST http://127.0.0.1:8003/api/auth/token \
 - ✅ **Core** (Config, Security, Constants, Exceptions, Dependencies)
 - ✅ **Infrastructure** (MongoDB connection manager, Redis client)
 
-### API Endpoints (18 endpoints total)
+### API Endpoints (23 endpoints total)
 
 #### 1. Authentication (5 endpoints)
 - ✅ POST `/api/auth/register` - User registration
@@ -97,13 +97,27 @@ curl -X POST http://127.0.0.1:8003/api/auth/token \
 - ✅ PUT    `/api/customers/{id}` - Update
 - ✅ DELETE `/api/customers/{id}` - Delete
 
-## 🔄 In Progress
+#### 5. Plans & Subscriptions (2 endpoints)
+- ✅ GET `/api/plans` - List all plans (public, no auth)
+- ✅ GET `/api/plan/current` - Current org plan with quota info
 
-- ⏳ Plans & Subscription API
-- ⏳ Stripe Payment Integration
+#### 6. Payments (2 endpoints)
+- ✅ POST `/api/payments/stripe/checkout` - Create Stripe checkout session
+- ✅ POST `/api/payments/webhook/stripe` - Stripe webhook handler
+
+**Stripe Integration:**
+- Dynamic TRY pricing
+- First-month 25% discount (coupon-based)
+- Automatic subscription activation
+- Secure webhook verification
+
+## 🔄 Optional Extensions
+
 - ⏳ Staff Management API
-- ⏳ Socket.IO Workers
-- ⏳ Background Schedulers
+- ⏳ Stats & Analytics API
+- ⏳ Public Booking API
+- ⏳ Socket.IO real-time updates
+- ⏳ Background job schedulers
 
 ## 🎯 Benefits
 
