@@ -63,17 +63,45 @@ curl -X POST http://127.0.0.1:8003/api/auth/token \
 
 ## ✅ Completed Modules
 
-- ✅ Core (Config, Security, Constants, Dependencies)
-- ✅ Infrastructure (MongoDB, Redis)
-- ✅ Auth API (Register, Login, Me, Password Reset)
+### Core & Infrastructure
+- ✅ **Core** (Config, Security, Constants, Exceptions, Dependencies)
+- ✅ **Infrastructure** (MongoDB connection manager, Redis client)
+
+### API Endpoints (18 endpoints total)
+
+#### 1. Authentication (5 endpoints)
+- ✅ POST `/api/auth/register` - User registration
+- ✅ POST `/api/auth/token` - Login (OAuth2)
+- ✅ GET  `/api/auth/me` - Current user info
+- ✅ POST `/api/auth/forgot-password` - Request reset
+- ✅ POST `/api/auth/reset-password` - Reset with token
+
+#### 2. Appointments (5 endpoints)
+- ✅ GET    `/api/appointments` - List with filters (status, date range, pagination)
+- ✅ POST   `/api/appointments` - Create (with quota check)
+- ✅ GET    `/api/appointments/{id}` - Get by ID
+- ✅ PUT    `/api/appointments/{id}` - Update
+- ✅ DELETE `/api/appointments/{id}` - Delete (admin only)
+
+#### 3. Services (5 endpoints)
+- ✅ GET    `/api/services` - List all
+- ✅ POST   `/api/services` - Create (admin only)
+- ✅ GET    `/api/services/{id}` - Get by ID
+- ✅ PUT    `/api/services/{id}` - Update (admin only)
+- ✅ DELETE `/api/services/{id}` - Delete (admin only)
+
+#### 4. Customers (5 endpoints)
+- ✅ GET    `/api/customers` - List with search & pagination
+- ✅ POST   `/api/customers` - Create
+- ✅ GET    `/api/customers/{id}` - Get with appointment count
+- ✅ PUT    `/api/customers/{id}` - Update
+- ✅ DELETE `/api/customers/{id}` - Delete
 
 ## 🔄 In Progress
 
-- ⏳ Appointments API
-- ⏳ Customers API
-- ⏳ Services API
-- ⏳ Staff API
-- ⏳ Payments API
+- ⏳ Plans & Subscription API
+- ⏳ Stripe Payment Integration
+- ⏳ Staff Management API
 - ⏳ Socket.IO Workers
 - ⏳ Background Schedulers
 
