@@ -26,7 +26,8 @@ PLANS = [
     {
         "id": "tier_1_standard",
         "name": "Standart",
-        "price_monthly": 520,
+        "price_monthly": 710,
+        "price_yearly": 7100,
         "quota_monthly_appointments": 100,
         "ai_message_limit": 500,
         "features": [
@@ -43,7 +44,8 @@ PLANS = [
     {
         "id": "tier_2_profesyonel",
         "name": "Profesyonel",
-        "price_monthly": 780,
+        "price_monthly": 1020,
+        "price_yearly": 10200,
         "quota_monthly_appointments": 300,
         "ai_message_limit": 3000,
         "features": [
@@ -60,7 +62,8 @@ PLANS = [
     {
         "id": "tier_3_premium",
         "name": "Premium",
-        "price_monthly": 1100,
+        "price_monthly": 1530,
+        "price_yearly": 15300,
         "quota_monthly_appointments": 600,
         "ai_message_limit": 10000,
         "features": [
@@ -77,7 +80,8 @@ PLANS = [
     {
         "id": "tier_4_business",
         "name": "Business",
-        "price_monthly": 1300,
+        "price_monthly": 1940,
+        "price_yearly": 19400,
         "quota_monthly_appointments": 900,
         "ai_message_limit": -1,
         "features": [
@@ -94,7 +98,8 @@ PLANS = [
     {
         "id": "tier_5_enterprise",
         "name": "Enterprise",
-        "price_monthly": 1500,
+        "price_monthly": 2350,
+        "price_yearly": 23500,
         "quota_monthly_appointments": 1200,
         "ai_message_limit": -1,
         "features": [
@@ -111,7 +116,8 @@ PLANS = [
     {
         "id": "tier_6_kurumsal",
         "name": "Kurumsal",
-        "price_monthly": 1990,
+        "price_monthly": 3580,
+        "price_yearly": 35800,
         "quota_monthly_appointments": 2000,
         "ai_message_limit": -1,
         "features": [

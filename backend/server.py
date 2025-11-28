@@ -1333,7 +1333,7 @@ class Token(BaseModel): access_token: str; token_type: str
 class ForgotPasswordRequest(BaseModel): username: str
 class ResetPasswordRequest(BaseModel): token: str; new_password: str
 class SetupPasswordRequest(BaseModel): token: str; new_password: str
-class PlanUpdateRequest(BaseModel): plan_id: str
+class PlanUpdateRequest(BaseModel): plan_id: str; billing_cycle: str = "monthly"  # 'monthly' or 'yearly'
 class ContactRequest(BaseModel): name: str = Field(..., min_length=1); phone: str = Field(..., min_length=10); email: Optional[str] = None; message: Optional[str] = None
 class ContactStatusUpdate(BaseModel): status: Literal["pending", "contacted", "resolved"]
 class Service(BaseModel):
@@ -1392,7 +1392,8 @@ PLANS = [
     {
         "id": "tier_1_standard",
         "name": "Standart",
-        "price_monthly": 520,
+        "price_monthly": 710,
+        "price_yearly": 7100,
         "quota_monthly_appointments": 100,
         "ai_message_limit": 500,
         "features": [
@@ -1409,7 +1410,8 @@ PLANS = [
     {
         "id": "tier_2_profesyonel",
         "name": "Profesyonel",
-        "price_monthly": 780,
+        "price_monthly": 1020,
+        "price_yearly": 10200,
         "quota_monthly_appointments": 300,
         "ai_message_limit": 3000,
         "features": [
@@ -1426,7 +1428,8 @@ PLANS = [
     {
         "id": "tier_3_premium",
         "name": "Premium",
-        "price_monthly": 1100,
+        "price_monthly": 1530,
+        "price_yearly": 15300,
         "quota_monthly_appointments": 600,
         "ai_message_limit": 10000,
         "features": [
@@ -1443,7 +1446,8 @@ PLANS = [
     {
         "id": "tier_4_business",
         "name": "Business",
-        "price_monthly": 1300,
+        "price_monthly": 1940,
+        "price_yearly": 19400,
         "quota_monthly_appointments": 900,
         "ai_message_limit": -1,
         "features": [
@@ -1460,7 +1464,8 @@ PLANS = [
     {
         "id": "tier_5_enterprise",
         "name": "Enterprise",
-        "price_monthly": 1500,
+        "price_monthly": 2350,
+        "price_yearly": 23500,
         "quota_monthly_appointments": 1200,
         "ai_message_limit": -1,
         "features": [
@@ -1477,7 +1482,8 @@ PLANS = [
     {
         "id": "tier_6_kurumsal",
         "name": "Kurumsal",
-        "price_monthly": 1990,
+        "price_monthly": 3580,
+        "price_yearly": 35800,
         "quota_monthly_appointments": 2000,
         "ai_message_limit": -1,
         "features": [
@@ -3069,7 +3075,8 @@ async def create_checkout_session(
     """PayTR ödeme oturumu oluştur"""
     try:
         # Log mesajını hem console'a hem de file'a yaz
-        log_msg = f"Payment checkout session başlatılıyor: user={current_user.username}, plan_id={plan_request.plan_id}"
+        billing_cycle = plan_request.billing_cycle or "monthly"
+        log_msg = f"Payment checkout session başlatılıyor: user={current_user.username}, plan_id={plan_request.plan_id}, billing_cycle={billing_cycle}"
         logger.info(log_msg)
         print(f"[PAYMENT] {log_msg}")  # Console'a da yaz
         
@@ -3092,6 +3099,10 @@ async def create_checkout_session(
         if 'price_monthly' not in plan or 'name' not in plan:
             logger.error(f"Plan eksik alanlar içeriyor: plan={plan}, plan_id={plan_request.plan_id}")
             raise HTTPException(status_code=500, detail="Plan verisi eksik veya geçersiz")
+        
+        # Yıllık/Aylık fiyat belirleme
+        is_yearly = billing_cycle == "yearly"
+        price_yearly = plan.get('price_yearly', plan.get('price_monthly', 0) * 10)
         
         # Trial paketini satın alınamaz
         if plan_request.plan_id == 'tier_trial':
@@ -3117,26 +3128,40 @@ async def create_checkout_session(
         
         # Stripe Checkout Session oluştur
         try:
-            # Price'ı NORMAL fiyattan oluştur (indirim Stripe Coupon ile yapılacak)
-            price_kurus = int(price_monthly * 100)
+            # Yıllık veya aylık fiyat belirleme
+            if is_yearly:
+                # Yıllık abonelik - tek seferlik yıllık ödeme
+                price_amount = price_yearly
+                recurring_interval = 'year'
+                plan_suffix = "(Yıllık)"
+                # Yıllık ödemede ilk ay indirimi yok
+                is_first_month = False
+            else:
+                # Aylık abonelik
+                price_amount = price_monthly
+                recurring_interval = 'month'
+                plan_suffix = "(Aylık)"
+            
+            price_kurus = int(price_amount * 100)
             
             logger.info(f"💰 Fiyat Hesaplama - Plan: {plan_request.plan_id}")
-            logger.info(f"💰 Normal Fiyat: {price_monthly} TL")
+            logger.info(f"💰 Billing Cycle: {billing_cycle}")
+            logger.info(f"💰 Fiyat: {price_amount} TL ({recurring_interval})")
             logger.info(f"💰 is_first_month: {is_first_month}")
             
-            # Stripe Price objesi oluştur (NORMAL FİYATTAN)
+            # Stripe Price objesi oluştur
             price = stripe.Price.create(
                 currency='try',
                 unit_amount=price_kurus,
-                recurring={'interval': 'month'},
+                recurring={'interval': recurring_interval},
                 product_data={
-                    'name': f'PLANN {plan.get("name", "Plan")} Plan'
+                    'name': f'PLANN {plan.get("name", "Plan")} {plan_suffix}'
                 }
             )
             
-            # İlk ay indirimi için Coupon oluştur (sadece ilk ödemeye uygulanır)
+            # İlk ay indirimi için Coupon oluştur (sadece aylık ve ilk ödemeye uygulanır)
             coupon_id = None
-            if is_first_month:
+            if is_first_month and not is_yearly:
                 try:
                     coupon = stripe.Coupon.create(
                         percent_off=25,
@@ -3163,7 +3188,8 @@ async def create_checkout_session(
                     'user_id': current_user.organization_id,
                     'plan_id': plan_request.plan_id,
                     'organization_id': current_user.organization_id,
-                    'is_first_month': str(is_first_month)
+                    'is_first_month': str(is_first_month),
+                    'billing_cycle': billing_cycle
                 },
                 'success_url': PAYMENT_SUCCESS_URL + f'?session_id={{CHECKOUT_SESSION_ID}}',
                 'cancel_url': PAYMENT_CANCEL_URL,
@@ -3181,7 +3207,13 @@ async def create_checkout_session(
             session = stripe.checkout.Session.create(**session_params)
             
             # Payment log oluştur
-            actual_amount = price_monthly * 0.75 if is_first_month else price_monthly
+            if is_yearly:
+                actual_amount = price_yearly
+                original_amount = price_yearly
+            else:
+                actual_amount = price_monthly * 0.75 if is_first_month else price_monthly
+                original_amount = price_monthly
+            
             await db.payment_logs.insert_one({
                 "session_id": session.id,
                 "organization_id": current_user.organization_id,
@@ -3189,10 +3221,11 @@ async def create_checkout_session(
                 "plan_id": plan_request.plan_id,
                 "status": "pending",
                 "amount": actual_amount,
-                "original_amount": price_monthly,
+                "original_amount": original_amount,
                 "currency": "TRY",
                 "is_first_month": is_first_month,
-                "discount_applied": is_first_month,
+                "discount_applied": is_first_month and not is_yearly,
+                "billing_cycle": billing_cycle,
                 "payment_provider": "stripe",
                 "created_at": datetime.now(timezone.utc).isoformat()
             })

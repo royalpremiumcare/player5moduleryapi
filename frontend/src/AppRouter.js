@@ -8,6 +8,9 @@ import ResetPasswordPage from "./components/ResetPasswordPage";
 import SetupPassword from "./components/SetupPassword";
 import PublicBookingPage from "./components/PublicBookingPage";
 import SuperAdmin from "./components/SuperAdmin";
+import PrivacyPolicy from "./components/PrivacyPolicy";
+import TermsOfService from "./components/TermsOfService";
+import RefundPolicy from "./components/RefundPolicy";
 import App from "./App";
 
 const AppRouter = () => {
@@ -76,6 +79,11 @@ const AppRouter = () => {
           )
         } 
       />
+      
+      {/* Legal Pages - Stripe Requirements */}
+      <Route path="/privacy" element={<PrivacyPolicy />} />
+      <Route path="/terms" element={<TermsOfService />} />
+      <Route path="/refund" element={<RefundPolicy />} />
       
       {/* Public Booking - Catch dynamic business slugs (domain.com/isletmeadi) */}
       {/* This must be last to avoid catching login/register/dashboard/superadmin/subscribe */}

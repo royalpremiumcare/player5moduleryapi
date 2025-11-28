@@ -212,6 +212,7 @@ const LandingPage = () => {
 
   const [plans, setPlans] = useState([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
+  const [billingCycle, setBillingCycle] = useState('monthly'); // 'monthly' or 'yearly'
 
   useEffect(() => {
     // Backend'den planları çek
@@ -280,7 +281,7 @@ const LandingPage = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f5f1e8] landing-page-container">
+    <div className="min-h-screen bg-[#fafafa] landing-page-container">
       {/* Banner - Full Width Top (Mobilde header üstünde, Desktop'ta header altında) */}
       <div className="w-full bg-gray-900 text-white py-2 md:hidden">
         <div className="container mx-auto px-4 text-center">
@@ -291,7 +292,7 @@ const LandingPage = () => {
       </div>
 
       {/* Navigation */}
-      <header className="sticky top-0 z-50 bg-[#f5f1e8] border-b border-gray-200 shadow-sm">
+      <header className="sticky top-0 z-50 bg-[#fafafa] border-b border-gray-200 shadow-sm">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
@@ -351,7 +352,7 @@ const LandingPage = () => {
       </header>
 
       {/* Hero Section - Exact JetPlan Style */}
-      <section className="relative pt-0 pb-8 md:pt-4 md:pb-20 bg-[#f5f1e8] overflow-hidden">
+      <section className="relative pt-0 pb-8 md:pt-4 md:pb-20 bg-[#fafafa] overflow-hidden">
         {/* Banner - Desktop'ta Hero Section içinde */}
         <div className="hidden md:block w-full bg-gray-900 text-white py-2.5 mb-6">
           <div className="container mx-auto px-4 text-center">
@@ -424,7 +425,7 @@ const LandingPage = () => {
       </section>
 
       {/* Social Proof Section */}
-      <section className="py-16 bg-[#f5f1e8] border-t border-gray-200">
+      <section className="py-16 bg-[#fafafa] border-t border-gray-200">
         <div className="container mx-auto px-4">
           <div className="max-w-6xl mx-auto">
             {/* İstatistikler */}
@@ -498,7 +499,7 @@ const LandingPage = () => {
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-20 bg-[#f5f1e8] border-t border-gray-200 scroll-mt-24">
+      <section id="features" className="py-20 bg-[#fafafa] border-t border-gray-200 scroll-mt-24">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">PLANN Neler Sunar?</h2>
@@ -522,14 +523,42 @@ const LandingPage = () => {
       </section>
 
       {/* Pricing Section */}
-      <section id="pricing" className="py-20 bg-[#f5f1e8] scroll-mt-24">
+      <section id="pricing" className="py-20 bg-[#fafafa] scroll-mt-24">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">Fiyatlandırma</h2>
-            {/* Yeni Üye İndirimi Banner */}
-            <div className="inline-block mb-6 px-6 py-2 bg-gray-900 text-white text-sm font-medium rounded">
-              Yeni üye işyerlerine özel ilk ay %25 indirim !
+            
+            {/* Aylık / Yıllık Toggle */}
+            <div className="flex items-center justify-center gap-3 mb-6">
+              <span className={`text-lg font-medium ${billingCycle === 'monthly' ? 'text-gray-900' : 'text-gray-400'}`}>
+                Aylık
+              </span>
+              <button
+                onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'yearly' : 'monthly')}
+                className={`relative w-14 h-7 rounded-full transition-colors duration-300 flex-shrink-0 ${billingCycle === 'yearly' ? 'bg-green-500' : 'bg-gray-300'}`}
+              >
+                <span 
+                  className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ${billingCycle === 'yearly' ? 'translate-x-7' : 'translate-x-0'}`}
+                />
+              </button>
+              <div className="flex items-center gap-2">
+                <span className={`text-lg font-medium ${billingCycle === 'yearly' ? 'text-gray-900' : 'text-gray-400'}`}>
+                  Yıllık
+                </span>
+                {billingCycle === 'yearly' && (
+                  <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap">
+                    2 Ay Ücretsiz
+                  </span>
+                )}
+              </div>
             </div>
+            
+            {/* Yeni Üye İndirimi Banner - Sadece Aylık için */}
+            {billingCycle === 'monthly' && (
+              <div className="inline-block mb-6 px-6 py-2 bg-gray-900 text-white text-sm font-medium rounded">
+                Yeni üye işyerlerine özel ilk ay %25 indirim !
+              </div>
+            )}
           </div>
 
           {loadingPlans ? (
@@ -541,9 +570,20 @@ const LandingPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-5 lg:gap-6 max-w-6xl mx-auto">
               {plans.map((plan, index) => {
                 const isPopular = plan.id === 'tier_4_business'; // Business paketi popüler
+                const isYearly = billingCycle === 'yearly';
+                
+                // Yıllık fiyat
+                const yearlyPrice = plan.price_yearly || (plan.price_monthly * 10);
+                const monthlyEquivalent = Math.round(yearlyPrice / 12);
+                
+                // Aylık fiyat (ilk ay indirimi)
                 const discountedPrice = plan.price_monthly_discounted || plan.price_monthly;
                 const originalPrice = plan.price_monthly_original || plan.price_monthly;
-                const hasDiscount = plan.price_monthly_discounted && plan.price_monthly_discounted < plan.price_monthly_original;
+                const hasDiscount = !isYearly && plan.price_monthly_discounted && plan.price_monthly_discounted < plan.price_monthly_original;
+                
+                // Gösterilecek fiyat
+                const displayPrice = isYearly ? monthlyEquivalent : (hasDiscount ? discountedPrice : plan.price_monthly);
+                const displayOriginalPrice = isYearly ? plan.price_monthly : originalPrice;
                 
                 return (
                   <Card 
@@ -565,22 +605,37 @@ const LandingPage = () => {
                     
                     {/* Fiyat Bölümü */}
                     <div className="mb-2 md:mb-3 pb-2 md:pb-3 border-b border-gray-200">
-                      <div className="flex items-baseline gap-1 md:gap-2">
-                        {hasDiscount && (
-                          <>
-                            <span className="text-4xl md:text-3xl lg:text-4xl font-bold text-gray-900">{discountedPrice.toLocaleString('tr-TR')}</span>
+                      {isYearly ? (
+                        <>
+                          <div className="flex items-baseline gap-1 md:gap-2">
+                            <span className="text-4xl md:text-3xl lg:text-4xl font-bold text-gray-900">
+                              {yearlyPrice.toLocaleString('tr-TR')}
+                            </span>
                             <span className="text-xl md:text-lg lg:text-xl text-gray-600">₺</span>
-                            <span className="text-base md:text-sm lg:text-base line-through text-gray-400 ml-2">{originalPrice.toLocaleString('tr-TR')}₺</span>
-                          </>
-                        )}
-                        {!hasDiscount && (
-                          <>
-                            <span className="text-4xl md:text-3xl lg:text-4xl font-bold text-gray-900">{plan.price_monthly.toLocaleString('tr-TR')}</span>
-                            <span className="text-xl md:text-lg lg:text-xl text-gray-600 ml-1">₺</span>
-                          </>
-                        )}
-                      </div>
-                      <div className="text-gray-500 text-base md:text-sm lg:text-base mt-0.5">Aylık</div>
+                            <span className="text-base md:text-sm lg:text-base line-through text-gray-400 ml-2">
+                              {(plan.price_monthly * 12).toLocaleString('tr-TR')}₺
+                            </span>
+                          </div>
+                          <div className="text-gray-500 text-base md:text-sm lg:text-base mt-0.5">
+                            Yıllık <span className="text-green-600 font-medium">(aylık ~{monthlyEquivalent.toLocaleString('tr-TR')}₺)</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline gap-1 md:gap-2">
+                            <span className="text-4xl md:text-3xl lg:text-4xl font-bold text-gray-900">
+                              {displayPrice.toLocaleString('tr-TR')}
+                            </span>
+                            <span className="text-xl md:text-lg lg:text-xl text-gray-600">₺</span>
+                            {hasDiscount && (
+                              <span className="text-base md:text-sm lg:text-base line-through text-gray-400 ml-2">
+                                {displayOriginalPrice.toLocaleString('tr-TR')}₺
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-gray-500 text-base md:text-sm lg:text-base mt-0.5">Aylık</div>
+                        </>
+                      )}
                     </div>
                     
                     {/* Hedef Kitle Açıklaması - Çerçeveli ve Animasyonlu */}
@@ -635,7 +690,7 @@ const LandingPage = () => {
       </section>
 
       {/* Testimonials Section */}
-      <section id="testimonials" className="py-20 bg-[#f5f1e8] scroll-mt-24">
+      <section id="testimonials" className="py-20 bg-[#fafafa] scroll-mt-24">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">Kullanıcı Yorumları</h2>
@@ -661,7 +716,7 @@ const LandingPage = () => {
       </section>
 
       {/* FAQ Section */}
-      <section id="faq" className="py-20 bg-[#f5f1e8] border-t border-gray-200 scroll-mt-24">
+      <section id="faq" className="py-20 bg-[#fafafa] border-t border-gray-200 scroll-mt-24">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">Sık Sorulan Sorular</h2>
@@ -693,7 +748,7 @@ const LandingPage = () => {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 bg-[#f5f1e8]">
+      <section className="py-20 bg-[#fafafa]">
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
             Hemen Başlayın!
@@ -856,7 +911,7 @@ const LandingPage = () => {
       </Dialog>
 
       {/* Footer */}
-      <footer className="bg-[#f5f1e8] text-gray-700 py-12 pb-0 md:pb-12 landing-footer">
+      <footer className="bg-[#fafafa] text-gray-700 py-12 pb-0 md:pb-12 landing-footer">
         <div className="container mx-auto px-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
@@ -874,11 +929,12 @@ const LandingPage = () => {
               </ul>
             </div>
             <div>
-              <h4 className="font-bold text-gray-900 mb-4">Destek</h4>
+              <h4 className="font-bold text-gray-900 mb-4">Yasal</h4>
               <ul className="space-y-2 text-sm">
+                <li><a href="/privacy" className="hover:text-gray-900 text-gray-600">Gizlilik Politikası</a></li>
+                <li><a href="/terms" className="hover:text-gray-900 text-gray-600">Kullanım Koşulları</a></li>
+                <li><a href="/refund" className="hover:text-gray-900 text-gray-600">İade Politikası</a></li>
                 <li><a href="#faq" className="hover:text-gray-900 text-gray-600">SSS</a></li>
-                <li><a href="#" className="hover:text-gray-900 text-gray-600">İletişim</a></li>
-                <li><a href="#" className="hover:text-gray-900 text-gray-600">Yardım</a></li>
               </ul>
             </div>
             <div>
