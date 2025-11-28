@@ -772,22 +772,20 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
             {/* View Mode & Filters */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
               {/* Staff Filter (Admin only) */}
-              {userRole === 'admin' && (
-                <Select value={selectedStaffFilter} onValueChange={setSelectedStaffFilter}>
-                  <SelectTrigger className="w-full sm:w-[160px] text-xs sm:text-sm">
-                    <Filter className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                    <SelectValue placeholder="Tüm Personeller" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tüm Personeller</SelectItem>
-                    <SelectItem value="unassigned">Atanmamış</SelectItem>
-                    {staffMembers.map((staff) => (
-                      <SelectItem key={staff.username} value={staff.username}>
-                        {staff.full_name || staff.username}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {userRole === 'admin' && staffMembers.length > 0 && (
+                <select
+                  value={selectedStaffFilter}
+                  onChange={(e) => setSelectedStaffFilter(e.target.value)}
+                  className="text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-500 min-w-[120px]"
+                >
+                  <option value="all">Tüm Personel</option>
+                  <option value="unassigned">Atanmamış</option>
+                  {staffMembers.map((staff) => (
+                    <option key={staff.username} value={staff.username}>
+                      {staff.full_name || staff.username}
+                    </option>
+                  ))}
+                </select>
               )}
 
               {/* View Mode Toggle */}

@@ -2,11 +2,13 @@ import { useState, useEffect } from "react";
 import { Package, AlertTriangle, ArrowLeft } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import api from "../api/api";
 
 const SettingsSubscription = ({ onNavigate }) => {
   const [planInfo, setPlanInfo] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingPortal, setLoadingPortal] = useState(false);
 
   useEffect(() => {
     loadPlanInfo();
@@ -20,6 +22,20 @@ const SettingsSubscription = ({ onNavigate }) => {
       console.error("Plan bilgisi yüklenemedi:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleManageSubscription = async () => {
+    setLoadingPortal(true);
+    try {
+      const response = await api.post("/subscription/portal");
+      // Stripe Customer Portal'a yönlendir
+      window.location.href = response.data.portal_url;
+    } catch (error) {
+      console.error("Portal oluşturma hatası:", error);
+      const errorMessage = error.response?.data?.detail || "Stripe portal açılamadı";
+      toast.error(errorMessage);
+      setLoadingPortal(false);
     }
   };
 
@@ -65,7 +81,19 @@ const SettingsSubscription = ({ onNavigate }) => {
 
             <div className="space-y-4">
               <div>
-                <p className="text-base font-semibold text-gray-900">{planInfo.plan_name} Paket</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-base font-semibold text-gray-900">{planInfo.plan_name} Paket</p>
+                  {planInfo.is_yearly && (
+                    <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                      Yıllık Plan
+                    </span>
+                  )}
+                  {!planInfo.is_trial && !planInfo.is_yearly && planInfo.billing_cycle === 'monthly' && (
+                    <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                      Aylık
+                    </span>
+                  )}
+                </div>
                 {planInfo.is_trial && planInfo.trial_days_remaining !== undefined && (
                   <p className="text-sm text-gray-600 mt-1">
                     Kalan {planInfo.trial_days_remaining} gün
@@ -75,7 +103,9 @@ const SettingsSubscription = ({ onNavigate }) => {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Randevu Kotası</span>
+                  <span className="text-gray-600">
+                    Randevu Kotası
+                  </span>
                   <span className={`font-semibold ${
                     isLowQuota ? 'text-red-600' : 'text-gray-900'
                   }`}>
@@ -93,7 +123,8 @@ const SettingsSubscription = ({ onNavigate }) => {
                   ></div>
                 </div>
                 <p className="text-xs text-gray-600">
-                  Kalan: <span className="font-semibold">{quotaRemaining.toLocaleString('tr-TR')}</span> randevu
+                  Kalan: <span className="font-semibold">{quotaRemaining.toLocaleString('tr-TR')}</span> randevu 
+                  {planInfo.is_yearly ? ' (Bu yıl)' : planInfo.is_trial ? '' : ' (Bu ay)'}
                 </p>
               </div>
 
@@ -117,6 +148,27 @@ const SettingsSubscription = ({ onNavigate }) => {
               >
                 Paketi Değiştir
               </Button>
+
+              {!planInfo.is_trial && (
+                <button
+                  onClick={handleManageSubscription}
+                  disabled={loadingPortal}
+                  className="w-full h-12 rounded-full text-base font-semibold transition-all duration-200 
+                    bg-gradient-to-r from-gray-800 to-gray-900 text-white 
+                    hover:from-gray-700 hover:to-gray-800 hover:shadow-lg
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                    flex items-center justify-center gap-2"
+                >
+                  {loadingPortal ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Yönlendiriliyor...
+                    </>
+                  ) : (
+                    "Aboneliği Yönet"
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </Card>

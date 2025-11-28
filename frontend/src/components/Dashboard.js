@@ -47,6 +47,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const [staffMembers, setStaffMembers] = useState([]);
   const [currentStaffUsername, setCurrentStaffUsername] = useState(null);
   const [personnelStats, setPersonnelStats] = useState(null);
+  const [staffFilter, setStaffFilter] = useState("all");
   const socketRef = useRef(null);
 
   const today = format(new Date(), "yyyy-MM-dd");
@@ -304,9 +305,17 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     })
     .sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
   
-  // Randevuları saat sırasına göre sırala
-  const sortedTodayAppointments = [...todayAppointments].sort((a, b) => 
+  // Randevuları personele göre filtrele ve saat sırasına göre sırala
+  const filteredTodayAppointments = todayAppointments.filter(apt => 
+    staffFilter === "all" || apt.staff_member_id === staffFilter
+  );
+  const sortedTodayAppointments = [...filteredTodayAppointments].sort((a, b) => 
     a.appointment_time.localeCompare(b.appointment_time)
+  );
+  
+  // Yarınki randevuları da filtrele
+  const filteredTomorrowAppointments = tomorrowAppointments.filter(apt =>
+    staffFilter === "all" || apt.staff_member_id === staffFilter
   );
 
   const handleStatusChange = async (appointmentId, newStatus) => {
@@ -389,20 +398,34 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             <div className="space-y-4">
               {/* Başlık */}
               <div>
-                <h2 className="text-lg font-bold text-gray-900">
-                  {stats.quota.is_trial ? "Ücretsiz Deneme" : stats.quota.plan_name}
-                </h2>
-                  {stats.quota.is_trial && stats.quota.trial_days_remaining !== undefined && (
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-gray-900">
+                    {stats.quota.is_trial ? "Ücretsiz Deneme" : stats.quota.plan_name}
+                  </h2>
+                  {stats.quota.is_yearly && (
+                    <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                      Yıllık Plan
+                    </span>
+                  )}
+                  {!stats.quota.is_trial && !stats.quota.is_yearly && stats.quota.billing_cycle === 'monthly' && (
+                    <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                      Aylık
+                    </span>
+                  )}
+                </div>
+                {stats.quota.is_trial && stats.quota.trial_days_remaining !== undefined && (
                   <p className="text-sm text-gray-600 mt-1">
                     Kalan {stats.quota.trial_days_remaining} gün
-                    </p>
-                  )}
+                  </p>
+                )}
               </div>
 
               {/* Kota Bilgisi */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Randevu Kotası</span>
+                  <span className="text-gray-600">
+                    Randevu Kotası
+                  </span>
                   <span className={`font-semibold ${
                     stats.quota.is_low_quota ? 'text-red-600' : 'text-gray-900'
                   }`}>
@@ -415,9 +438,17 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                     style={{ width: `${Math.min(stats.quota.quota_percentage, 100)}%` }}
                   ></div>
               </div>
-              <p className="text-xs text-gray-600">
-                Kalan: <span className="font-semibold">{stats.quota.quota_remaining}</span> randevu
-              </p>
+              <div className="flex items-center justify-between text-xs text-gray-600">
+                <p>
+                  Kalan: <span className="font-semibold">{stats.quota.quota_remaining}</span> randevu
+                  {stats.quota.is_yearly ? ' (Bu yıl)' : stats.quota.is_trial ? '' : ' (Bu ay)'}
+                </p>
+                {stats.quota.days_remaining !== undefined && (
+                  <p className={`font-semibold ${stats.quota.days_remaining <= 3 ? 'text-red-600' : stats.quota.days_remaining <= 7 ? 'text-yellow-600' : 'text-gray-700'}`}>
+                    {stats.quota.days_remaining} gün kaldı
+                  </p>
+                )}
+              </div>
               </div>
 
               {/* Uyarı Mesajları */}
@@ -500,13 +531,29 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       <div className="px-4 py-4">
         <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
           <div className="space-y-4">
-            {/* Başlık */}
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Bugünün Randevuları</h2>
-              <p className="text-sm text-gray-600 mt-1">
-                {format(new Date(), "d MMMM yyyy, EEEE", { locale: tr })}
-              </p>
-      </div>
+            {/* Başlık + Personel Filtresi */}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Bugünün Randevuları</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  {format(new Date(), "d MMMM yyyy, EEEE", { locale: tr })}
+                </p>
+              </div>
+              {userRole === 'admin' && staffMembers.length > 0 && (
+                <select
+                  value={staffFilter}
+                  onChange={(e) => setStaffFilter(e.target.value)}
+                  className="text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="all">Tüm Personel</option>
+                  {staffMembers.map((staff) => (
+                    <option key={staff.username} value={staff.username}>
+                      {staff.full_name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
 
             {/* Timeline Görünümü */}
             <div className="space-y-3">
@@ -639,7 +686,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900">Yarının Özeti</h2>
               <div className="space-y-3">
-                {tomorrowAppointments.map((appointment) => (
+                {filteredTomorrowAppointments.map((appointment) => (
                   <div
                     key={appointment.id}
                     className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${

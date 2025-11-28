@@ -40,10 +40,13 @@ const CashRegister = () => {
   const [editAmount, setEditAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [dateFilter, setDateFilter] = useState("today");
+  const [staffMembers, setStaffMembers] = useState([]);
+  const [staffFilter, setStaffFilter] = useState("all");
 
   useEffect(() => {
     loadTransactions();
     loadStats();
+    loadStaffMembers();
     
     // === OTOMATİK YENİLEME (POLLING) ===
     // Her 3 saniyede bir işlemleri ve istatistikleri otomatik olarak yenile
@@ -119,6 +122,30 @@ const CashRegister = () => {
     }
   };
 
+  const loadStaffMembers = async () => {
+    try {
+      const response = await api.get("/users");
+      // Tüm personel ve admin'leri al
+      const allStaff = (response.data || []).filter(u => u.role === 'staff' || u.role === 'admin');
+      setStaffMembers(allStaff);
+    } catch (error) {
+      console.error("Personel listesi yüklenemedi:", error);
+    }
+  };
+
+  // İşlemleri personele göre filtrele (staff_member_id = username)
+  const filteredTransactions = transactions.filter(t => 
+    staffFilter === "all" || t.staff_member_id === staffFilter
+  );
+  
+  // Personel bazlı kazanç hesapla (staff_member_id = username olarak eşleşir)
+  const staffEarnings = staffMembers.map(staff => ({
+    ...staff,
+    total: transactions
+      .filter(t => t.staff_member_id === staff.username)
+      .reduce((sum, t) => sum + t.amount, 0)
+  })).filter(s => s.total > 0).sort((a, b) => b.total - a.total);
+
   const handleEdit = (transaction) => {
     setEditDialog(transaction);
     setEditAmount(transaction.amount.toString());
@@ -160,16 +187,51 @@ const CashRegister = () => {
     }
   };
 
-  const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
+  const totalAmount = filteredTransactions.reduce((sum, t) => sum + t.amount, 0);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-          Kasa & Gelir Takibi
-        </h2>
-        <p className="text-sm text-gray-600 mt-1">Gelir raporlarınızı görüntüleyin ve yönetin</p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+            Kasa & Gelir Takibi
+          </h2>
+          <p className="text-sm text-gray-600 mt-1">Gelir raporlarınızı görüntüleyin ve yönetin</p>
+        </div>
+        {staffMembers.length > 0 && (
+          <select
+            value={staffFilter}
+            onChange={(e) => setStaffFilter(e.target.value)}
+            className="text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="all">Tüm Personel</option>
+            {staffMembers.map((staff) => (
+              <option key={staff.username} value={staff.username}>
+                {staff.full_name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
+
+      {/* Personel Bazlı Kazanç Özeti */}
+      {staffEarnings.length > 0 && staffFilter === "all" && (
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Personel Kazançları</h3>
+          <div className="flex flex-wrap gap-2">
+            {staffEarnings.map((staff) => (
+              <button
+                key={staff.username}
+                onClick={() => setStaffFilter(staff.username)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-blue-50 border border-gray-200 rounded-lg text-sm transition-colors"
+              >
+                <span className="font-medium text-gray-900">{staff.full_name}</span>
+                <span className="font-bold text-green-600">{Math.round(staff.total)}₺</span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Stats Cards */}
       {stats && (
@@ -222,20 +284,20 @@ const CashRegister = () => {
                 <div>
                   <p className="text-blue-100 text-sm">Toplam Gelir</p>
                   <p className="text-4xl font-bold mt-2">{Math.round(totalAmount)}₺</p>
-                  <p className="text-blue-100 text-sm mt-1">{transactions.length} işlem</p>
+                  <p className="text-blue-100 text-sm mt-1">{filteredTransactions.length} işlem</p>
                 </div>
                 <DollarSign className="w-16 h-16 text-blue-200" />
               </div>
-            </Card> {/* === BURASI DÜZELTİLDİ (</DCard> DEĞİL </Card>) === */}
+            </Card>
 
             {/* Transactions List */}
-            {transactions.length === 0 ? (
+            {filteredTransactions.length === 0 ? (
               <Card className="p-8 text-center">
                 <DollarSign className="w-16 h-16 mx-auto text-gray-300 mb-4" />
                 <p className="text-gray-500">Henüz işlem bulunmuyor</p>
               </Card>
             ) : (
-              transactions.map((transaction) => (
+              filteredTransactions.map((transaction) => (
                 <Card
                   key={transaction.id}
                   data-testid={`transaction-${transaction.id}`}

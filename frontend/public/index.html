@@ -60,8 +60,17 @@
       });
     </script>
     
-    <!-- Favicon - Backend'den gelen logo -->
-    <link rel="icon" type="image/png" href="/api/static/logo.png?v=4" />
+    <!-- Favicon ve PWA -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PLANN" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="msapplication-TileColor" content="#2563eb" />
+    <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
     <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     <script src="https://unpkg.com/rrweb@latest/dist/rrweb.min.js"></script>
     <script src="https://d2adkz2s9zrlge.cloudfront.net/rrweb-recorder-20250919-1.js"></script>
@@ -164,6 +173,20 @@
         api_host: "https://us.i.posthog.com",
         person_profiles: "identified_only", // or 'always' to create profiles for anonymous users as well
       });
+    </script>
+<!-- Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(function(registration) {
+              console.log('ServiceWorker registered:', registration.scope);
+            })
+            .catch(function(error) {
+              console.log('ServiceWorker registration failed:', error);
+            });
+        });
+      }
     </script>
 </body>
 </html>

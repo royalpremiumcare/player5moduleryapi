@@ -14,12 +14,24 @@ const LoginPage = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [isAppMode, setIsAppMode] = useState(false);
 
   const { login } = useAuth();
 
-  // Sayfa yüklendiğinde en üste scroll et ve animasyon için state
+  // Sayfa yüklendiğinde en üste scroll et ve app mode kontrolü
   useEffect(() => {
     window.scrollTo(0, 0);
+    
+    // App mode detection
+    const urlParams = new URLSearchParams(window.location.search);
+    const modeParam = urlParams.get('mode');
+    
+    if (modeParam === 'app') {
+      localStorage.setItem('is_app_mode', 'true');
+      setIsAppMode(true);
+    } else if (localStorage.getItem('is_app_mode') === 'true') {
+      setIsAppMode(true);
+    }
   }, []);
 
   const handleSubmit = async (e) => {
@@ -152,15 +164,17 @@ const LoginPage = () => {
           </CardContent>
         </Card>
 
-        <div className="text-center mt-4 md:mt-6 mb-4 md:mb-0">
-          <Button
-            variant="outline"
-            onClick={() => navigate('/')}
-            className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
-          >
-            ← Ana Sayfaya Dön
-          </Button>
-        </div>
+        {!isAppMode && (
+          <div className="text-center mt-4 md:mt-6 mb-4 md:mb-0">
+            <Button
+              variant="outline"
+              onClick={() => navigate('/')}
+              className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
+            >
+              ← Ana Sayfaya Dön
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

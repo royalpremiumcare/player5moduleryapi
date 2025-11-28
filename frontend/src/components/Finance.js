@@ -203,7 +203,7 @@ const Finance = ({ onNavigate }) => {
         {/* SEKME 1: Özet */}
         <TabsContent value="summary" className="space-y-4">
           {/* Tarih Filtresi */}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant={period === "today" ? "default" : "outline"}
               size="sm"
@@ -224,6 +224,13 @@ const Finance = ({ onNavigate }) => {
               onClick={() => setPeriod("last_month")}
             >
               Geçen Ay
+            </Button>
+            <Button
+              variant={period === "this_year" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setPeriod("this_year")}
+            >
+              Bu Yıl
             </Button>
           </div>
 
@@ -274,6 +281,29 @@ const Finance = ({ onNavigate }) => {
               </Card>
             </div>
           ) : null}
+          
+          {/* Personel Kazançları */}
+          {summary?.staff_earnings?.length > 0 && (
+            <Card className="p-4 mt-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                {period === "today" && "Bugünkü Personel Kazançları"}
+                {period === "this_month" && "Bu Ayki Personel Kazançları"}
+                {period === "last_month" && "Geçen Ayki Personel Kazançları"}
+                {period === "this_year" && "Bu Yılki Personel Kazançları"}
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {summary.staff_earnings.map((staff) => (
+                  <div
+                    key={staff.username}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm"
+                  >
+                    <span className="font-medium text-gray-900">{staff.full_name}</span>
+                    <span className="font-bold text-green-600">{Math.round(staff.total).toLocaleString('tr-TR')}₺</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
         </TabsContent>
 
         {/* SEKME 2: Giderler */}

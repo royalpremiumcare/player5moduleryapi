@@ -119,6 +119,15 @@ const RegisterPage = () => {
         sector: ''
     });
     const [loading, setLoading] = useState(false);
+    const [isAppMode, setIsAppMode] = useState(() => {
+        // Initial check for app mode
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('mode') === 'app') {
+            localStorage.setItem('is_app_mode', 'true');
+            return true;
+        }
+        return localStorage.getItem('is_app_mode') === 'true';
+    });
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -356,15 +365,17 @@ const RegisterPage = () => {
                     </CardContent>
                 </Card>
 
-                <div className="text-center mt-4 md:mt-6">
-                    <Button
-                        variant="outline"
-                        onClick={() => navigate('/')}
-                        className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
-                    >
-                        ← Ana Sayfaya Dön
-                    </Button>
-                </div>
+                {!isAppMode && (
+                    <div className="text-center mt-4 md:mt-6">
+                        <Button
+                            variant="outline"
+                            onClick={() => navigate('/')}
+                            className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
+                        >
+                            ← Ana Sayfaya Dön
+                        </Button>
+                    </div>
+                )}
                 </div>
             </div>
         </div>

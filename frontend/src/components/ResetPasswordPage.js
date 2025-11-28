@@ -17,15 +17,25 @@ const ResetPasswordPage = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isAppMode, setIsAppMode] = useState(false);
   
   // Personel daveti mi yoksa şifre sıfırlama mı?
   const isStaffInvite = window.location.pathname === '/setup-password';
 
-  // Sayfa yüklendiğinde en üste scroll et
+  // Sayfa yüklendiğinde en üste scroll et ve app mode kontrolü
   useEffect(() => {
     window.scrollTo(0, 0);
     if (!token) {
       setError('Geçersiz veya eksik token. Lütfen e-postanızdaki linki kullanın.');
+    }
+    
+    // App mode detection
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('mode') === 'app') {
+      localStorage.setItem('is_app_mode', 'true');
+      setIsAppMode(true);
+    } else if (localStorage.getItem('is_app_mode') === 'true') {
+      setIsAppMode(true);
     }
   }, [token]);
 
@@ -172,15 +182,17 @@ const ResetPasswordPage = () => {
           </CardContent>
         </Card>
 
-        <div className="text-center mt-4 md:mt-6 mb-4 md:mb-0">
-          <Button
-            variant="outline"
-            onClick={() => navigate('/')}
-            className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
-          >
-            ← Ana Sayfaya Dön
-          </Button>
-        </div>
+        {!isAppMode && (
+          <div className="text-center mt-4 md:mt-6 mb-4 md:mb-0">
+            <Button
+              variant="outline"
+              onClick={() => navigate('/')}
+              className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
+            >
+              ← Ana Sayfaya Dön
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

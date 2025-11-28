@@ -91,8 +91,8 @@ else:
     logger.warning("⚠️ STRIPE_SECRET_KEY not configured. Payment features will not work.")
 
 # Success ve Cancel URL'leri
-PAYMENT_SUCCESS_URL = "https://plannapp.co/#/"
-PAYMENT_CANCEL_URL = "https://plannapp.co/#/subscribe"
+PAYMENT_SUCCESS_URL = "https://plannapp.co/"
+PAYMENT_CANCEL_URL = "https://plannapp.co/"
 
 # --- BREVO EMAIL AYARLARI ---
 BREVO_API_KEY = os.environ.get('BREVO_API_KEY')
@@ -1326,7 +1326,8 @@ async def create_audit_log(
 
 # === VERİ MODELLERİ (Aynı kaldı) ===
 class User(BaseModel):
-    username: str; full_name: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=lambda: ["sunday"]); onboarding_completed: bool = False
+    model_config = ConfigDict(extra="ignore")
+    id: Optional[str] = None; username: str; full_name: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=lambda: ["sunday"]); onboarding_completed: bool = False
 class UserInDB(User): hashed_password: Optional[str] = None
 class UserCreate(BaseModel): username: str; password: str; full_name: Optional[str] = None; organization_name: Optional[str] = None; support_phone: Optional[str] = None; sector: Optional[str] = None
 class Token(BaseModel): access_token: str; token_type: str
@@ -1347,7 +1348,7 @@ class AppointmentCreate(BaseModel):
 class AppointmentUpdate(BaseModel):
     customer_name: Optional[str] = None; phone: Optional[str] = None; address: Optional[str] = None; service_id: Optional[str] = None; appointment_date: Optional[str] = None; appointment_time: Optional[str] = None; notes: Optional[str] = None; status: Optional[str] = None; staff_member_id: Optional[str] = None
 class Transaction(BaseModel):
-    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); appointment_id: str; customer_name: str; service_name: str; amount: float; date: str; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); appointment_id: str; customer_name: str; service_name: str; amount: float; date: str; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 class TransactionUpdate(BaseModel): amount: float
 class BusinessHoursDay(BaseModel):
     is_open: bool = True
@@ -2355,7 +2356,7 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
         except Exception as e: logging.error(f"İptal SMS'i gönderilirken hata oluştu: {e}")
     if update_data: await db.appointments.update_one(query, {"$set": update_data})
     updated_appointment = await db.appointments.find_one(query, {"_id": 0})
-    if isinstance(updated_appointment['created_at'], str): updated_appointment['created_at'] = datetime.fromisoformat(updated_appointment['created_at'])
+    if isinstance(updated_appointment['created_at'], str): updated_appointment['created_at'] = datetime.fromisoformat(updated_appointment['created_at'].replace('Z', '+00:00'))
     
     # Audit log
     await create_audit_log(
@@ -2395,7 +2396,7 @@ async def get_appointment(request: Request, appointment_id: str, current_user: U
     query = {"id": appointment_id, "organization_id": current_user.organization_id}
     appointment = await db.appointments.find_one(query, {"_id": 0})
     if not appointment: raise HTTPException(status_code=404, detail="Randevu bulunamadı")
-    if isinstance(appointment['created_at'], str): appointment['created_at'] = datetime.fromisoformat(appointment['created_at'])
+    if isinstance(appointment['created_at'], str): appointment['created_at'] = datetime.fromisoformat(appointment['created_at'].replace('Z', '+00:00'))
     return appointment
 
 @api_router.post("/appointments", response_model=Appointment)
@@ -2805,7 +2806,7 @@ async def get_appointments(
     
     ids_to_update = []; transactions_to_create = [] 
     for appt in appointments_from_db:
-        if isinstance(appt.get('created_at'), str): appt['created_at'] = datetime.fromisoformat(appt['created_at'])
+        if isinstance(appt.get('created_at'), str): appt['created_at'] = datetime.fromisoformat(appt['created_at'].replace('Z', '+00:00'))
         
         # Service duration ekle (bitiş saati hesaplamak için)
         appt_service_id = appt.get('service_id')
@@ -2833,7 +2834,7 @@ async def get_appointments(
                     appt['status'] = 'Tamamlandı'; completed_at_iso = datetime.now(timezone.utc).isoformat()
                     appt['completed_at'] = completed_at_iso; ids_to_update.append(appt['id'])
                     logging.info(f"✅ Randevu {appt.get('id', 'unknown')} otomatik tamamlandı: {appt['appointment_time']} + {service_duration_minutes}dk = {completion_threshold.strftime('%H:%M')}, şimdi: {now.strftime('%H:%M')}")
-                    transaction = Transaction(organization_id=current_user.organization_id, appointment_id=appt['id'], customer_name=appt['customer_name'], service_name=appt['service_name'], amount=appt['service_price'], date=appt['appointment_date'])
+                    transaction = Transaction(organization_id=current_user.organization_id, appointment_id=appt['id'], customer_name=appt['customer_name'], service_name=appt['service_name'], amount=appt['service_price'], date=appt['appointment_date'], staff_member_id=appt.get('staff_member_id'))
                     trans_doc = transaction.model_dump(); trans_doc['created_at'] = trans_doc['created_at'].isoformat()
                     transactions_to_create.append(trans_doc)
             except (ValueError, TypeError) as e: logging.warning(f"Randevu {appt['id']} için tarih ayrıştırılamadı: {e}")
@@ -2867,7 +2868,7 @@ async def update_service(request: Request, service_id: str, service_update: Serv
     update_data = {k: v for k, v in service_update.model_dump().items() if v is not None}
     if update_data: await db.services.update_one(query, {"$set": update_data})
     updated_service = await db.services.find_one(query, {"_id": 0})
-    if isinstance(updated_service['created_at'], str): updated_service['created_at'] = datetime.fromisoformat(updated_service['created_at'])
+    if isinstance(updated_service['created_at'], str): updated_service['created_at'] = datetime.fromisoformat(updated_service['created_at'].replace('Z', '+00:00'))
     return updated_service
 
 @api_router.get("/services/{service_id}", response_model=Service)
@@ -2875,7 +2876,7 @@ async def get_service(request: Request, service_id: str, current_user: UserInDB 
     db = await get_db_from_request(request); query = {"id": service_id, "organization_id": current_user.organization_id}
     service = await db.services.find_one(query, {"_id": 0})
     if not service: raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
-    if isinstance(service['created_at'], str): service['created_at'] = datetime.fromisoformat(service['created_at'])
+    if isinstance(service['created_at'], str): service['created_at'] = datetime.fromisoformat(service['created_at'].replace('Z', '+00:00'))
     return service
 
 @api_router.post("/services", response_model=Service)
@@ -2893,7 +2894,7 @@ async def get_services(request: Request, current_user: UserInDB = Depends(get_cu
     db = await get_db_from_request(request); query = {"organization_id": current_user.organization_id}
     services = await db.services.find(query, {"_id": 0}).to_list(1000)
     for service in services:
-        if isinstance(service['created_at'], str): service['created_at'] = datetime.fromisoformat(service['created_at'])
+        if isinstance(service['created_at'], str): service['created_at'] = datetime.fromisoformat(service['created_at'].replace('Z', '+00:00'))
     return services
 
 # === TRANSACTIONS ROUTES ===
@@ -2909,7 +2910,7 @@ async def get_transactions(request: Request, start_date: Optional[str] = None, e
     elif end_date: query['date'] = {'$lte': end_date}
     transactions = await db.transactions.find(query, {"_id": 0}).to_list(1000)
     for transaction in transactions:
-        if isinstance(transaction['created_at'], str): transaction['created_at'] = datetime.fromisoformat(transaction['created_at'])
+        if isinstance(transaction['created_at'], str): transaction['created_at'] = datetime.fromisoformat(transaction['created_at'].replace('Z', '+00:00'))
     return transactions
 
 @api_router.put("/transactions/{transaction_id}", response_model=Transaction)
@@ -2923,7 +2924,7 @@ async def update_transaction(request: Request, transaction_id: str, transaction_
     if not transaction: raise HTTPException(status_code=404, detail="İşlem bulunamadı")
     await db.transactions.update_one(query, {"$set": {"amount": transaction_update.amount}})
     updated_transaction = await db.transactions.find_one(query, {"_id": 0})
-    if isinstance(updated_transaction['created_at'], str): updated_transaction['created_at'] = datetime.fromisoformat(updated_transaction['created_at'])
+    if isinstance(updated_transaction['created_at'], str): updated_transaction['created_at'] = datetime.fromisoformat(updated_transaction['created_at'].replace('Z', '+00:00'))
     
     # Emit WebSocket event for real-time update
     logger.info(f"About to emit transaction_updated for org: {current_user.organization_id}")
@@ -2995,16 +2996,27 @@ async def get_current_plan(request: Request, current_user: UserInDB = Depends(ge
         raise HTTPException(status_code=404, detail="Plan bilgisi geçersiz")
     
     # Datetime'ları string'e çevir
+    billing_cycle = plan_doc.get('billing_cycle', 'monthly')
+    
+    # Yıllık pakette kota 12 katı olmalı
+    base_quota = plan_info.get('quota_monthly_appointments', 50)
+    if billing_cycle == 'yearly':
+        quota_limit = base_quota * 12
+    else:
+        quota_limit = base_quota
+    
     result = {
         "plan_id": plan_id,
         "plan_name": plan_info.get('name'),
         "quota_usage": plan_doc.get('quota_usage', 0),
-        "quota_limit": plan_info.get('quota_monthly_appointments', 50),
+        "quota_limit": quota_limit,
         "quota_reset_date": plan_doc.get('quota_reset_date').isoformat() if isinstance(plan_doc.get('quota_reset_date'), datetime) else plan_doc.get('quota_reset_date'),
         "is_first_month": plan_doc.get('is_first_month', False),
         "trial_start_date": plan_doc.get('trial_start_date').isoformat() if plan_doc.get('trial_start_date') and isinstance(plan_doc.get('trial_start_date'), datetime) else plan_doc.get('trial_start_date'),
         "trial_end_date": plan_doc.get('trial_end_date').isoformat() if plan_doc.get('trial_end_date') and isinstance(plan_doc.get('trial_end_date'), datetime) else plan_doc.get('trial_end_date'),
-        "is_trial": plan_id == 'tier_trial'
+        "is_trial": plan_id == 'tier_trial',
+        "billing_cycle": billing_cycle,
+        "is_yearly": billing_cycle == 'yearly'
     }
     
     # Trial kontrolü
@@ -3065,6 +3077,78 @@ async def update_plan(request: Request, plan_update: dict, current_user: UserInD
     )
     
     return {"message": "Plan güncellendi", "plan_id": new_plan_id}
+
+@api_router.post("/subscription/portal")
+async def create_customer_portal_session(
+    request: Request,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """Stripe Customer Portal session oluştur (iptal, fatura görüntüleme vb.)"""
+    try:
+        if current_user.role != "admin":
+            raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+        
+        db = await get_db_from_request(request)
+        
+        # Mevcut plan bilgisini al
+        plan_doc = await get_organization_plan(db, current_user.organization_id)
+        if not plan_doc:
+            raise HTTPException(status_code=404, detail="Plan bilgisi bulunamadı")
+        
+        current_plan_id = plan_doc.get('plan_id', 'tier_trial')
+        
+        # Trial'daysa portal'a gerek yok
+        if current_plan_id == 'tier_trial':
+            raise HTTPException(status_code=400, detail="Trial paketinde Stripe portal kullanılamaz")
+        
+        # Stripe customer_id'yi bul
+        customer_id = None
+        
+        # Önce organization_plans'dan stripe_customer_id'yi kontrol et
+        stripe_customer_id = plan_doc.get('stripe_customer_id')
+        if stripe_customer_id:
+            customer_id = stripe_customer_id
+            logger.info(f"Customer ID organization_plans'dan alındı: {customer_id}")
+        else:
+            # Payment logs'dan bul
+            try:
+                payment_log = await db.payment_logs.find_one(
+                    {
+                        "organization_id": current_user.organization_id,
+                        "status": {"$in": ["active", "completed"]}
+                    },
+                    sort=[("created_at", -1)]
+                )
+                
+                if payment_log and payment_log.get('session_id'):
+                    # Stripe session'dan customer_id'yi al
+                    session = stripe.checkout.Session.retrieve(payment_log['session_id'])
+                    customer_id = session.customer
+                    logger.info(f"Customer ID payment_logs'dan alındı: {customer_id}")
+            except Exception as e:
+                logger.error(f"Customer ID bulunamadı: {e}")
+        
+        if not customer_id:
+            logger.warning(f"Customer ID bulunamadı - org: {current_user.organization_id}, plan: {current_plan_id}")
+            raise HTTPException(status_code=404, detail="Stripe müşteri bilgisi bulunamadı. Henüz bir ödeme yapmamış olabilirsiniz.")
+        
+        # Customer Portal Session oluştur
+        portal_session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=PAYMENT_SUCCESS_URL  # Portal'dan döndükten sonra gidilecek sayfa
+        )
+        
+        logger.info(f"Stripe Customer Portal oluşturuldu: customer={customer_id}, org={current_user.organization_id}")
+        
+        return {
+            "portal_url": portal_session.url
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Customer Portal oluşturma hatası: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Portal oluşturulamadı: {str(e)}")
 
 @api_router.post("/payments/create-checkout-session")
 async def create_checkout_session(
@@ -3521,14 +3605,22 @@ async def handle_stripe_webhook(request: Request):
             # Mevcut plan bilgisini al
             plan_doc = await get_organization_plan(db, organization_id)
             
-            # Yeni plana geç
-            quota_reset = datetime.now(timezone.utc) + timedelta(days=30)
+            # Billing cycle'ı metadata'dan al
+            metadata = session.get('metadata', {})
+            billing_cycle = metadata.get('billing_cycle', 'monthly')
+            
+            # Yeni plana geç - yıllık ise 365 gün, aylık ise 30 gün
+            if billing_cycle == 'yearly':
+                quota_reset = datetime.now(timezone.utc) + timedelta(days=365)
+            else:
+                quota_reset = datetime.now(timezone.utc) + timedelta(days=30)
             
             update_data = {
                 "plan_id": plan_id,
                 "quota_usage": 0,  # Yeni plana geçince sıfırla
                 "quota_reset_date": quota_reset.isoformat(),
                 "is_first_month": False,  # Artık indirim kullanamaz
+                "billing_cycle": billing_cycle,  # Yıllık/Aylık bilgisi
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
             
@@ -3544,7 +3636,7 @@ async def handle_stripe_webhook(request: Request):
                 update_data['stripe_subscription_id'] = subscription_id
                 update_data['stripe_customer_id'] = customer_id
                 update_data['next_billing_date'] = quota_reset.isoformat()
-                logger.info(f"Stripe subscription kaydedildi: organization_id={organization_id}, subscription_id={subscription_id}")
+                logger.info(f"Stripe subscription kaydedildi: organization_id={organization_id}, subscription_id={subscription_id}, billing_cycle={billing_cycle}")
             
             await db.organization_plans.update_one(
                 {"organization_id": organization_id},
@@ -3563,6 +3655,63 @@ async def handle_stripe_webhook(request: Request):
             )
             
             logger.info(f"✅ STRIPE BAŞARILI: {session_id} - Plan güncellendi. Organization: {organization_id}, Plan: {plan_id}")
+        
+        # customer.subscription.updated - Abonelik güncellendi (iptal planlandı)
+        elif event['type'] == 'customer.subscription.updated':
+            subscription = event['data']['object']
+            subscription_id = subscription['id']
+            cancel_at_period_end = subscription.get('cancel_at_period_end', False)
+            
+            if cancel_at_period_end:
+                logger.info(f"⚠️ Abonelik iptal planlandı (dönem sonunda): subscription_id={subscription_id}")
+                
+                # Subscription ID ile organization'ı bul
+                plan_doc = await db.organization_plans.find_one({"stripe_subscription_id": subscription_id})
+                
+                if plan_doc:
+                    organization_id = plan_doc.get('organization_id')
+                    # İsteğe bağlı: Organization'a bildirim gönderebilirsiniz
+                    logger.info(f"ℹ️ Organization {organization_id} aboneliğini dönem sonunda iptal edecek")
+        
+        # customer.subscription.deleted - Abonelik iptal edildi
+        elif event['type'] == 'customer.subscription.deleted':
+            subscription = event['data']['object']
+            subscription_id = subscription['id']
+            customer_id = subscription['customer']
+            
+            logger.info(f"🚫 Abonelik iptal edildi: subscription_id={subscription_id}, customer_id={customer_id}")
+            
+            # Subscription ID ile organization'ı bul
+            plan_doc = await db.organization_plans.find_one({"stripe_subscription_id": subscription_id})
+            
+            if not plan_doc:
+                logger.warning(f"Webhook: subscription_id={subscription_id} için organization bulunamadı")
+                return Response(content="OK", status_code=200)
+            
+            organization_id = plan_doc.get('organization_id')
+            
+            # Trial'a döndür
+            trial_start = datetime.now(timezone.utc)
+            trial_end = trial_start + timedelta(days=7)
+            
+            update_data = {
+                "plan_id": "tier_trial",
+                "quota_usage": 0,
+                "quota_reset_date": trial_end.isoformat(),
+                "trial_start_date": trial_start.isoformat(),
+                "trial_end_date": trial_end.isoformat(),
+                "is_first_month": False,
+                "stripe_subscription_id": None,
+                "stripe_customer_id": None,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            
+            await db.organization_plans.update_one(
+                {"organization_id": organization_id},
+                {"$set": update_data}
+            )
+            
+            logger.info(f"✅ Abonelik iptal edildi ve trial'a döndürüldü: organization_id={organization_id}")
         
         # Diğer event'ler için
         logger.info(f"ℹ️ Stripe webhook event işlendi: {event['type']}")
@@ -3774,7 +3923,8 @@ async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends
                     customer_name=appt['customer_name'],
                     service_name=appt['service_name'],
                     amount=appt.get('service_price', 0),
-                    date=appt['appointment_date']
+                    date=appt['appointment_date'],
+                    staff_member_id=appt.get('staff_member_id')
                 )
                 trans_doc = transaction.model_dump()
                 trans_doc['created_at'] = trans_doc['created_at'].isoformat()
@@ -3828,8 +3978,14 @@ async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends
         plan_id = plan_doc.get('plan_id', 'tier_trial')
         plan_info = await get_plan_info(plan_id)
         if plan_info:
+            # Billing cycle bilgisi
+            billing_cycle = plan_doc.get('billing_cycle', 'monthly')
+            is_yearly = billing_cycle == 'yearly'
+            
             quota_usage = plan_doc.get('quota_usage', 0)
-            quota_limit = plan_info.get('quota_monthly_appointments', 50)
+            # Yıllık pakette kota 12 katı
+            base_quota = plan_info.get('quota_monthly_appointments', 50)
+            quota_limit = base_quota * 12 if is_yearly else base_quota
             quota_remaining = max(0, quota_limit - quota_usage)
             quota_percentage = (quota_usage / quota_limit * 100) if quota_limit > 0 else 0
             
@@ -3841,16 +3997,27 @@ async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends
                 "quota_remaining": quota_remaining,
                 "quota_percentage": round(quota_percentage, 2),
                 "is_trial": plan_id == 'tier_trial',
-                "is_low_quota": quota_percentage >= 90  # %90'dan fazla kullanıldıysa uyarı
+                "is_low_quota": quota_percentage >= 90,  # %90'dan fazla kullanıldıysa uyarı
+                "billing_cycle": billing_cycle,
+                "is_yearly": is_yearly
             }
             
-            # Trial bilgisi
+            # Kalan gün hesapla
             if plan_id == 'tier_trial':
                 trial_end = plan_doc.get('trial_end_date')
                 if isinstance(trial_end, str):
                     trial_end = datetime.fromisoformat(trial_end.replace('Z', '+00:00'))
                 if trial_end:
-                    quota_info['trial_days_remaining'] = max(0, (trial_end - datetime.now(timezone.utc)).days)
+                    days_remaining = max(0, (trial_end - datetime.now(timezone.utc)).days)
+                    quota_info['trial_days_remaining'] = days_remaining
+                    quota_info['days_remaining'] = days_remaining
+            else:
+                # Ücretli paketler için quota_reset_date'den hesapla
+                quota_reset = plan_doc.get('quota_reset_date')
+                if quota_reset:
+                    if isinstance(quota_reset, str):
+                        quota_reset = datetime.fromisoformat(quota_reset.replace('Z', '+00:00'))
+                    quota_info['days_remaining'] = max(0, (quota_reset - datetime.now(timezone.utc)).days)
     
     return {
         "today_appointments": today_appointments, "today_completed": today_completed, "today_income": today_income, "bugunku_toplam_hizmet_tutari": bugunku_toplam_hizmet_tutari, "month_income": month_income,
@@ -3904,7 +4071,8 @@ async def get_personnel_stats(request: Request, current_user: UserInDB = Depends
                     customer_name=appt['customer_name'],
                     service_name=appt['service_name'],
                     amount=appt.get('service_price', 0),
-                    date=appt['appointment_date']
+                    date=appt['appointment_date'],
+                    staff_member_id=appt.get('staff_member_id')
                 )
                 trans_doc = transaction.model_dump()
                 trans_doc['created_at'] = trans_doc['created_at'].isoformat()
@@ -4979,7 +5147,7 @@ async def get_customer_history(request: Request, phone: str, current_user: UserI
     db = await get_db_from_request(request); query = {"phone": phone, "organization_id": current_user.organization_id}
     appointments = await db.appointments.find(query, {"_id": 0}).sort("appointment_date", -1).to_list(1000)
     for appointment in appointments:
-        if isinstance(appointment['created_at'], str): appointment['created_at'] = datetime.fromisoformat(appointment['created_at'])
+        if isinstance(appointment['created_at'], str): appointment['created_at'] = datetime.fromisoformat(appointment['created_at'].replace('Z', '+00:00'))
     total_completed = len([a for a in appointments if a['status'] == 'Tamamlandı'])
     
     # Müşteri notlarını getir
@@ -5047,15 +5215,15 @@ async def get_finance_summary(request: Request, period: str = "this_month", curr
         end_date = today_str
     elif period == "this_month":
         start_date = now.replace(day=1).strftime("%Y-%m-%d")
-        # Bugünün tarihini dahil etmek için end_date'i bugün olarak ayarla
-        # İleri tarihli expense'leri de dahil etmek için end_date'i bugünden sonraki bir tarih yap
-        # Ama "this_month" için sadece bu ay içindeki expense'leri göster
         end_date = today_str
     elif period == "last_month":
         first_day_this_month = now.replace(day=1)
         last_day_last_month = first_day_this_month - timedelta(days=1)
         start_date = last_day_last_month.replace(day=1).strftime("%Y-%m-%d")
         end_date = last_day_last_month.strftime("%Y-%m-%d")
+    elif period == "this_year":
+        start_date = now.replace(month=1, day=1).strftime("%Y-%m-%d")
+        end_date = today_str
     else:
         start_date = now.replace(day=1).strftime("%Y-%m-%d")
         end_date = today_str
@@ -5069,10 +5237,33 @@ async def get_finance_summary(request: Request, period: str = "this_month", curr
             "status": "Tamamlandı",
             "appointment_date": {"$gte": start_date, "$lte": end_date}
         },
-        {"_id": 0, "service_price": 1}
+        {"_id": 0, "service_price": 1, "staff_member_id": 1}
     ).to_list(10000)
     
     total_revenue = sum(apt.get("service_price", 0) or 0 for apt in completed_appointments)
+    
+    # Personel bazlı kazançları hesapla
+    staff_earnings_dict = {}
+    for apt in completed_appointments:
+        staff_id = apt.get("staff_member_id")
+        if staff_id:
+            price = apt.get("service_price", 0) or 0
+            if staff_id not in staff_earnings_dict:
+                staff_earnings_dict[staff_id] = 0
+            staff_earnings_dict[staff_id] += price
+    
+    # Personel isimlerini al
+    staff_users = await db.users.find(
+        {"organization_id": current_user.organization_id, "username": {"$in": list(staff_earnings_dict.keys())}},
+        {"_id": 0, "username": 1, "full_name": 1}
+    ).to_list(100)
+    staff_name_map = {u["username"]: u.get("full_name", u["username"]) for u in staff_users}
+    
+    staff_earnings = [
+        {"username": staff_id, "full_name": staff_name_map.get(staff_id, staff_id), "total": amount}
+        for staff_id, amount in staff_earnings_dict.items()
+    ]
+    staff_earnings.sort(key=lambda x: x["total"], reverse=True)
     
     # Toplam Gider: Expenses tablosundaki kayıtların toplamı
     # MongoDB sorgusu ile doğrudan filtreleme yapıyoruz (this_month için ay filtresi dahil)
@@ -5096,6 +5287,9 @@ async def get_finance_summary(request: Request, period: str = "this_month", curr
         date_conditions.append({"date": {"$gte": start_date, "$lte": end_date}})
     elif period == "last_month":
         date_conditions.append({"date": {"$gte": start_date, "$lte": end_date}})
+    elif period == "this_year":
+        first_day_of_year = now.replace(month=1, day=1).strftime("%Y-%m-%d")
+        date_conditions.append({"date": {"$gte": first_day_of_year, "$lte": today_str}})
     else:
         # Varsayılan olarak bu ay
         first_day_of_month = now.replace(day=1).strftime("%Y-%m-%d")
@@ -5131,7 +5325,8 @@ async def get_finance_summary(request: Request, period: str = "this_month", curr
         "end_date": end_date,
         "total_revenue": total_revenue,
         "total_expenses": total_expenses,
-        "net_profit": net_profit
+        "net_profit": net_profit,
+        "staff_earnings": staff_earnings
     }
 
 @api_router.get("/expenses")
@@ -6391,7 +6586,6 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
         now = datetime.now(timezone.utc)
         first_day_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         
-        # Bu ayın son gününü hesapla
         if now.month == 12:
             last_day_of_month = now.replace(year=now.year + 1, month=1, day=1) - timedelta(days=1)
         else:
@@ -6401,9 +6595,7 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
         first_day_str = first_day_of_month.strftime("%Y-%m-%d")
         last_day_str = last_day_of_month.strftime("%Y-%m-%d")
         
-        # Tüm settings'leri al (her biri bir organizasyonu temsil eder)
         all_settings = await db.settings.find({}).to_list(10000)
-        
         organizations_list = []
         
         for setting in all_settings:
@@ -6411,32 +6603,61 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
             if not org_id:
                 continue
             
-            # İşletme adı ve telefon
             isletme_adi = setting.get('company_name', 'İsimsiz İşletme')
             telefon_numarasi = setting.get('support_phone', 'Telefon Yok')
             
+            # Admin kullanıcıyı bul (işletme sahibi)
+            admin_user = await db.users.find_one({"organization_id": org_id, "role": "admin"})
+            admin_full_name = admin_user.get('full_name', '-') if admin_user else '-'
+            admin_email = admin_user.get('username', '-') if admin_user else '-'
+            
             # Abonelik bilgileri
             plan_doc = await db.organization_plans.find_one({"organization_id": org_id})
+            billing_cycle = 'monthly'
+            days_left = None
+            toplam_odeme = 0
+            
             if not plan_doc:
                 abonelik_paketi = "Trial"
+                plan_id = 'tier_trial'
                 abonelik_durumu = "Kayıt Yok"
             else:
                 plan_id = plan_doc.get('plan_id', 'tier_trial')
                 plan_info = next((p for p in PLANS if p['id'] == plan_id), None)
                 abonelik_paketi = plan_info.get('name', 'Trial') if plan_info else 'Trial'
+                billing_cycle = plan_doc.get('billing_cycle', 'monthly')
                 
-                # Abonelik durumu hesapla
-                trial_end = plan_doc.get('trial_end_date')
-                if plan_id == 'tier_trial' and trial_end:
-                    if isinstance(trial_end, str):
-                        trial_end = datetime.fromisoformat(trial_end.replace('Z', '+00:00'))
-                    days_left = (trial_end - now).days
-                    if days_left < 0:
-                        abonelik_durumu = "Deneme Bitti"
+                # Kalan gün hesapla
+                if plan_id == 'tier_trial':
+                    trial_end = plan_doc.get('trial_end_date')
+                    if trial_end:
+                        if isinstance(trial_end, str):
+                            trial_end = datetime.fromisoformat(trial_end.replace('Z', '+00:00'))
+                        days_left = (trial_end - now).days
+                        if days_left < 0:
+                            abonelik_durumu = "Deneme Bitti"
+                        else:
+                            abonelik_durumu = f"{days_left} Gün Kaldı"
                     else:
-                        abonelik_durumu = f"{days_left} Gün Kaldı"
+                        abonelik_durumu = "Trial"
                 else:
-                    abonelik_durumu = "Aktif"
+                    # Ücretli paket - quota_reset_date'e bak
+                    quota_reset = plan_doc.get('quota_reset_date')
+                    if quota_reset:
+                        if isinstance(quota_reset, str):
+                            quota_reset = datetime.fromisoformat(quota_reset.replace('Z', '+00:00'))
+                        days_left = (quota_reset - now).days
+                        abonelik_durumu = f"{days_left} Gün Kaldı" if days_left >= 0 else "Yenileme Bekliyor"
+                    else:
+                        abonelik_durumu = "Aktif"
+                        days_left = 30
+            
+            # Toplam ödeme miktarı
+            payment_logs = await db.payment_logs.find({
+                "organization_id": org_id,
+                "status": {"$in": ["active", "completed"]}
+            }).to_list(1000)
+            toplam_odeme = sum(log.get('amount', 0) for log in payment_logs)
             
             # Bu ayki randevu sayısı
             bu_ayki_randevu_sayisi = await db.appointments.count_documents({
@@ -6445,22 +6666,23 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
             })
             
             # Toplam müşteri sayısı
-            toplam_musteri_sayisi = await db.customers.count_documents({
-                "organization_id": org_id
-            })
+            toplam_musteri_sayisi = await db.customers.count_documents({"organization_id": org_id})
             
-            # Toplam personel sayısı (staff rolü)
-            toplam_personel_sayisi = await db.users.count_documents({
-                "organization_id": org_id,
-                "role": "staff"
-            })
+            # Toplam personel sayısı
+            toplam_personel_sayisi = await db.users.count_documents({"organization_id": org_id, "role": "staff"})
             
             organizations_list.append({
                 "organization_id": org_id,
                 "isletme_adi": isletme_adi,
                 "telefon_numarasi": telefon_numarasi,
+                "admin_full_name": admin_full_name,
+                "admin_email": admin_email,
+                "plan_id": plan_id,
                 "abonelik_paketi": abonelik_paketi,
+                "billing_cycle": billing_cycle,
                 "abonelik_durumu": abonelik_durumu,
+                "days_left": days_left,
+                "toplam_odeme": toplam_odeme,
                 "bu_ayki_randevu_sayisi": bu_ayki_randevu_sayisi,
                 "toplam_musteri_sayisi": toplam_musteri_sayisi,
                 "toplam_personel_sayisi": toplam_personel_sayisi
@@ -6470,6 +6692,157 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
     except Exception as e:
         logging.error(f"Error in get_superadmin_organizations: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"İşletme listesi alınırken hata oluştu: {str(e)}")
+
+@api_router.post("/superadmin/organizations/{org_id}/assign-plan")
+async def assign_plan_to_organization(
+    org_id: str,
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """İşletmeye paket ata - Sadece superadmin"""
+    try:
+        body = await request.json()
+        plan_id = body.get('plan_id')
+        billing_cycle = body.get('billing_cycle', 'monthly')
+        
+        if not plan_id:
+            raise HTTPException(status_code=400, detail="Plan ID gerekli")
+        
+        plan_info = next((p for p in PLANS if p['id'] == plan_id), None)
+        if not plan_info:
+            raise HTTPException(status_code=400, detail="Geçersiz plan ID")
+        
+        now = datetime.now(timezone.utc)
+        
+        if plan_id == 'tier_trial':
+            # Trial paketi ata
+            trial_end = now + timedelta(days=7)
+            update_data = {
+                "organization_id": org_id,
+                "plan_id": plan_id,
+                "quota_usage": 0,
+                "billing_cycle": "monthly",
+                "trial_start_date": now.isoformat(),
+                "trial_end_date": trial_end.isoformat(),
+                "quota_reset_date": trial_end.isoformat(),
+                "updated_at": now.isoformat()
+            }
+        else:
+            # Ücretli paket ata
+            if billing_cycle == 'yearly':
+                quota_reset = now + timedelta(days=365)
+            else:
+                quota_reset = now + timedelta(days=30)
+            
+            update_data = {
+                "organization_id": org_id,
+                "plan_id": plan_id,
+                "quota_usage": 0,
+                "billing_cycle": billing_cycle,
+                "trial_start_date": None,
+                "trial_end_date": None,
+                "quota_reset_date": quota_reset.isoformat(),
+                "updated_at": now.isoformat()
+            }
+        
+        await db.organization_plans.update_one(
+            {"organization_id": org_id},
+            {"$set": update_data},
+            upsert=True
+        )
+        
+        logger.info(f"SuperAdmin paket atadı: org={org_id}, plan={plan_id}, cycle={billing_cycle}")
+        return {"message": f"Paket başarıyla atandı: {plan_info.get('name')}", "plan_id": plan_id}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error in assign_plan: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Paket atanırken hata: {str(e)}")
+
+@api_router.delete("/superadmin/organizations/{org_id}")
+async def delete_organization(
+    org_id: str,
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """İşletmeyi tamamen sil - Sadece superadmin"""
+    try:
+        # Tüm ilgili verileri sil
+        await db.users.delete_many({"organization_id": org_id})
+        await db.appointments.delete_many({"organization_id": org_id})
+        await db.customers.delete_many({"organization_id": org_id})
+        await db.services.delete_many({"organization_id": org_id})
+        await db.transactions.delete_many({"organization_id": org_id})
+        await db.expenses.delete_many({"organization_id": org_id})
+        await db.settings.delete_one({"organization_id": org_id})
+        await db.organization_plans.delete_one({"organization_id": org_id})
+        await db.audit_logs.delete_many({"organization_id": org_id})
+        await db.customer_notes.delete_many({"organization_id": org_id})
+        await db.payment_logs.delete_many({"organization_id": org_id})
+        
+        logger.info(f"SuperAdmin işletmeyi sildi: org={org_id}")
+        return {"message": "İşletme ve tüm verileri silindi"}
+    
+    except Exception as e:
+        logging.error(f"Error in delete_organization: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"İşletme silinirken hata: {str(e)}")
+
+@api_router.delete("/superadmin/organizations/{org_id}/staff/{user_id}")
+async def delete_staff_member(
+    org_id: str,
+    user_id: str,
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """Personeli sil - Sadece superadmin"""
+    try:
+        # Personeli kontrol et
+        user = await db.users.find_one({"id": user_id, "organization_id": org_id, "role": "staff"})
+        if not user:
+            raise HTTPException(status_code=404, detail="Personel bulunamadı")
+        
+        await db.users.delete_one({"id": user_id})
+        
+        logger.info(f"SuperAdmin personeli sildi: user={user_id}, org={org_id}")
+        return {"message": "Personel silindi"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error in delete_staff: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Personel silinirken hata: {str(e)}")
+
+@api_router.get("/superadmin/organizations/{org_id}/staff")
+async def get_organization_staff(
+    org_id: str,
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """İşletmenin personel listesi - Sadece superadmin"""
+    try:
+        staff_list = await db.users.find(
+            {"organization_id": org_id, "role": "staff"},
+            {"_id": 0, "id": 1, "full_name": 1, "username": 1, "status": 1}
+        ).to_list(1000)
+        
+        return {"staff": staff_list}
+    
+    except Exception as e:
+        logging.error(f"Error in get_staff: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Personel listesi alınırken hata: {str(e)}")
+
+@api_router.get("/superadmin/plans")
+async def get_available_plans(
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user)
+):
+    """Mevcut planları getir - Sadece superadmin"""
+    return {"plans": PLANS}
 
 # === AI CHATBOT ENDPOINT ===
 class AIChatRequest(BaseModel):

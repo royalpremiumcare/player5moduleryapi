@@ -567,121 +567,152 @@ const LandingPage = () => {
               <p className="mt-4 text-gray-600">Planlar yükleniyor...</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-5 lg:gap-6 max-w-6xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 max-w-6xl mx-auto">
               {plans.map((plan, index) => {
-                const isPopular = plan.id === 'tier_4_business'; // Business paketi popüler
+                const isPopular = plan.id === 'tier_4_business';
                 const isYearly = billingCycle === 'yearly';
                 
-                // Yıllık fiyat
                 const yearlyPrice = plan.price_yearly || (plan.price_monthly * 10);
                 const monthlyEquivalent = Math.round(yearlyPrice / 12);
-                
-                // Aylık fiyat (ilk ay indirimi)
                 const discountedPrice = plan.price_monthly_discounted || plan.price_monthly;
                 const originalPrice = plan.price_monthly_original || plan.price_monthly;
                 const hasDiscount = !isYearly && plan.price_monthly_discounted && plan.price_monthly_discounted < plan.price_monthly_original;
-                
-                // Gösterilecek fiyat
                 const displayPrice = isYearly ? monthlyEquivalent : (hasDiscount ? discountedPrice : plan.price_monthly);
-                const displayOriginalPrice = isYearly ? plan.price_monthly : originalPrice;
+                const savingsPercent = isYearly ? 17 : (hasDiscount ? 25 : 0);
                 
                 return (
-                  <Card 
+                  <div 
                     key={plan.id} 
-                    className={`p-3 md:p-4 lg:p-6 relative bg-white border-4 border-blue-500 shadow-2xl flex flex-col h-full ${isPopular ? 'md:transform md:scale-105' : ''}`}
+                    className={`relative group ${isPopular ? 'md:-mt-4 md:mb-4' : ''}`}
                   >
-                    {isPopular && (
-                      <div className="absolute -top-2 md:-top-2.5 left-1/2 transform -translate-x-1/2 z-10">
-                        <span className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-2.5 md:px-3 lg:px-4 py-0.5 md:py-1 rounded-full text-sm md:text-sm font-bold shadow-lg">
-                          Popüler
-                        </span>
-                      </div>
-                    )}
+                    {/* Gradient Border Effect */}
+                    <div className={`absolute -inset-0.5 rounded-2xl opacity-75 blur-sm transition-all duration-500 group-hover:opacity-100 group-hover:blur-md ${
+                      isPopular 
+                        ? 'bg-gradient-to-r from-amber-400 via-orange-500 to-red-500' 
+                        : 'bg-gradient-to-r from-blue-500 to-indigo-600'
+                    }`}></div>
                     
-                    {/* Paket Adı */}
-                    <div className="mb-2">
-                      <h3 className="text-2xl md:text-xl lg:text-2xl font-bold text-gray-900">{plan.name}</h3>
-                    </div>
-                    
-                    {/* Fiyat Bölümü */}
-                    <div className="mb-2 md:mb-3 pb-2 md:pb-3 border-b border-gray-200">
-                      {isYearly ? (
-                        <>
-                          <div className="flex items-baseline gap-1 md:gap-2">
-                            <span className="text-4xl md:text-3xl lg:text-4xl font-bold text-gray-900">
-                              {yearlyPrice.toLocaleString('tr-TR')}
-                            </span>
-                            <span className="text-xl md:text-lg lg:text-xl text-gray-600">₺</span>
-                            <span className="text-base md:text-sm lg:text-base line-through text-gray-400 ml-2">
-                              {(plan.price_monthly * 12).toLocaleString('tr-TR')}₺
-                            </span>
+                    <div className={`relative rounded-2xl p-6 md:p-8 flex flex-col h-full transition-all duration-300 ${
+                      isPopular 
+                        ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white' 
+                        : 'bg-white'
+                    }`}>
+                      
+                      {/* Popular Badge */}
+                      {isPopular && (
+                        <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                          <div className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-orange-500 text-gray-900 px-4 py-1.5 rounded-full text-sm font-bold shadow-lg">
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M10 2l2.5 5.5L18 8.5l-4 4.5 1 6-5-3-5 3 1-6-4-4.5 5.5-1z"/>
+                            </svg>
+                            En Popüler
                           </div>
-                          <div className="text-gray-500 text-base md:text-sm lg:text-base mt-0.5">
-                            Yıllık <span className="text-green-600 font-medium">(aylık ~{monthlyEquivalent.toLocaleString('tr-TR')}₺)</span>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="flex items-baseline gap-1 md:gap-2">
-                            <span className="text-4xl md:text-3xl lg:text-4xl font-bold text-gray-900">
-                              {displayPrice.toLocaleString('tr-TR')}
-                            </span>
-                            <span className="text-xl md:text-lg lg:text-xl text-gray-600">₺</span>
-                            {hasDiscount && (
-                              <span className="text-base md:text-sm lg:text-base line-through text-gray-400 ml-2">
-                                {displayOriginalPrice.toLocaleString('tr-TR')}₺
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-gray-500 text-base md:text-sm lg:text-base mt-0.5">Aylık</div>
-                        </>
+                        </div>
                       )}
-                    </div>
-                    
-                    {/* Hedef Kitle Açıklaması - Çerçeveli ve Animasyonlu */}
-                    <div className="mb-2 md:mb-3">
-                      <div className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-black rounded-lg px-2.5 py-2.5 md:p-3 shadow-sm animate-pulse-glow" style={{ willChange: 'box-shadow', backfaceVisibility: 'hidden' }}>
-                        <p className="text-sm md:text-sm text-gray-800 leading-snug font-medium">
-                        {plan.target_audience_tr}
-                      </p>
+                      
+                      {/* Savings Badge */}
+                      {savingsPercent > 0 && (
+                        <div className={`absolute -top-3 -right-3 w-16 h-16 flex items-center justify-center rounded-full shadow-lg ${
+                          isPopular ? 'bg-amber-400 text-gray-900' : 'bg-green-500 text-white'
+                        }`}>
+                          <div className="text-center">
+                            <div className="text-xs font-bold">%{savingsPercent}</div>
+                            <div className="text-[10px] font-semibold">Tasarruf</div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Plan Name */}
+                      <div className="mb-4">
+                        <h3 className={`text-2xl font-bold ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                          {plan.name}
+                        </h3>
+                        <p className={`text-sm mt-1 ${isPopular ? 'text-gray-300' : 'text-gray-500'}`}>
+                          {plan.target_audience_tr}
+                        </p>
                       </div>
-                    </div>
-                    
-                    {/* Özellikler Listesi - Randevu Limiti En Başta, Kompakt */}
-                    <div className="mb-2 md:mb-3 flex-grow">
-                      <h4 className="text-base md:text-sm font-medium text-gray-600 mb-2 md:mb-3 tracking-normal">Paket İçerikleri</h4>
-                      <ul className="space-y-1 md:space-y-1.5">
-                        {/* Randevu Limiti - En Başta */}
-                        <li className="flex items-start gap-2">
-                          <Check className="w-5 h-5 md:w-4 md:h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                          <span className="text-gray-900 text-base md:text-sm leading-snug font-medium">
-                            {plan.quota_monthly_appointments.toLocaleString('tr-TR')} Randevu / Aylık
+                      
+                      {/* Price Section */}
+                      <div className="mb-6">
+                        <div className="flex items-end gap-2">
+                          <span className={`text-5xl font-extrabold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                            {isYearly ? yearlyPrice.toLocaleString('tr-TR') : displayPrice.toLocaleString('tr-TR')}
                           </span>
-                        </li>
+                          <span className={`text-2xl font-medium mb-1 ${isPopular ? 'text-gray-300' : 'text-gray-500'}`}>₺</span>
+                          {(hasDiscount || isYearly) && (
+                            <span className={`text-lg line-through mb-1 ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
+                              {isYearly ? (plan.price_monthly * 12).toLocaleString('tr-TR') : originalPrice.toLocaleString('tr-TR')}₺
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-sm mt-1 ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {isYearly ? 'yıllık fatura' : 'aylık fatura'}
+                        </p>
+                      </div>
+                      
+                      {/* Divider */}
+                      <div className={`h-px mb-6 ${isPopular ? 'bg-gray-700' : 'bg-gray-200'}`}></div>
+                      
+                      {/* Features */}
+                      <div className="flex-grow space-y-3 mb-6">
+                        {/* Randevu Limiti - Vurgulu */}
+                        <div className={`flex items-center gap-3 p-3 rounded-xl ${
+                          isPopular ? 'bg-amber-400/10 border border-amber-400/30' : 'bg-blue-50 border border-blue-100'
+                        }`}>
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                            isPopular ? 'bg-amber-400 text-gray-900' : 'bg-blue-500 text-white'
+                          }`}>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <div className={`text-lg font-bold ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                              {plan.quota_monthly_appointments.toLocaleString('tr-TR')} Randevu
+                            </div>
+                            <div className={`text-xs ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>Aylık limit</div>
+                          </div>
+                        </div>
+                        
                         {/* Diğer Özellikler */}
                         {plan.features
                           .filter(feature => {
                             const quotaStr = plan.quota_monthly_appointments.toLocaleString('tr-TR');
-                            const featureLower = feature.toLowerCase();
-                            return !(feature.includes(quotaStr) && featureLower.includes('randevu'));
+                            return !(feature.includes(quotaStr) && feature.toLowerCase().includes('randevu'));
                           })
                           .map((feature, i) => (
-                            <li key={i} className="flex items-start gap-2">
-                              <Check className="w-5 h-5 md:w-4 md:h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                              <span className="text-gray-900 text-base md:text-sm leading-snug font-medium">{feature}</span>
-                            </li>
+                            <div key={i} className="flex items-center gap-3">
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                isPopular ? 'bg-green-400' : 'bg-green-500'
+                              }`}>
+                                <Check className="w-3 h-3 text-white" />
+                              </div>
+                              <span className={`text-sm ${isPopular ? 'text-gray-200' : 'text-gray-700'}`}>{feature}</span>
+                            </div>
                           ))}
-                      </ul>
+                      </div>
+                      
+                      {/* CTA Button */}
+                      <button 
+                        onClick={() => navigate("/register")}
+                        className={`w-full py-4 rounded-xl font-bold text-base transition-all duration-300 transform hover:scale-[1.02] hover:shadow-xl ${
+                          isPopular 
+                            ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-gray-900 hover:from-amber-300 hover:to-orange-400' 
+                            : 'bg-gradient-to-r from-gray-800 to-gray-900 text-white hover:from-gray-700 hover:to-gray-800'
+                        }`}
+                      >
+                        Ücretsiz Dene
+                      </button>
+                      
+                      {/* Trust Badge */}
+                      <div className={`flex items-center justify-center gap-2 mt-4 text-xs ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        7 gün ücretsiz deneme
+                      </div>
                     </div>
-                    
-                    {/* CTA Button */}
-                    <Button 
-                      onClick={() => navigate("/register")}
-                      className={`w-full py-2.5 md:py-2.5 text-base md:text-sm font-semibold mt-auto ${isPopular ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700' : 'bg-gray-800 hover:bg-gray-900'}`}
-                    >
-                      Hemen Başla
-                    </Button>
-                  </Card>
+                  </div>
                 );
               })}
             </div>
