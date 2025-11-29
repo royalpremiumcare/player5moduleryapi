@@ -49,6 +49,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const [personnelStats, setPersonnelStats] = useState(null);
   const [staffFilter, setStaffFilter] = useState("all");
   const socketRef = useRef(null);
+  
+  // Mola state'leri
+  const [todayBreaks, setTodayBreaks] = useState([]);
+  const [breakLimits, setBreakLimits] = useState({ minutes: 60, count: 2 });
+  const [showBreakDialog, setShowBreakDialog] = useState(false);
+  const [newBreakStart, setNewBreakStart] = useState("12:00");
+  const [newBreakEnd, setNewBreakEnd] = useState("12:30");
+  const [addingBreak, setAddingBreak] = useState(false);
 
   const today = format(new Date(), "yyyy-MM-dd");
   const tomorrow = format(addDays(new Date(), 1), "yyyy-MM-dd");
@@ -84,6 +92,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
   useEffect(() => {
     loadSettings();
+    loadTodayBreaks();
     if (userRole === 'staff') {
       loadCurrentStaffUsername();
       loadPersonnelStats();
@@ -214,8 +223,60 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     try {
       const response = await api.get("/settings");
       setSettings(response.data);
+      // Mola limitlerini ayarla
+      setBreakLimits({
+        minutes: response.data?.break_limit_minutes || 60,
+        count: response.data?.break_limit_count || 2
+      });
     } catch (error) {
       console.error("Ayarlar yüklenemedi:", error);
+    }
+  };
+
+  // Molaları yükle
+  const loadTodayBreaks = async () => {
+    try {
+      const response = await api.get(`/staff/breaks?date=${today}`);
+      setTodayBreaks(response.data?.breaks || []);
+    } catch (error) {
+      console.error("Molalar yüklenemedi:", error);
+    }
+  };
+
+  // Mola ekle
+  const handleAddBreak = async () => {
+    if (!newBreakStart || !newBreakEnd) {
+      toast.error("Başlangıç ve bitiş saati seçin");
+      return;
+    }
+    
+    setAddingBreak(true);
+    try {
+      await api.post("/staff/breaks", {
+        date: today,
+        start_time: newBreakStart,
+        end_time: newBreakEnd
+      });
+      toast.success("Mola eklendi");
+      setShowBreakDialog(false);
+      loadTodayBreaks();
+      setNewBreakStart("12:00");
+      setNewBreakEnd("12:30");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Mola eklenemedi");
+    } finally {
+      setAddingBreak(false);
+    }
+  };
+
+  // Mola sil
+  const handleDeleteBreak = async (breakId) => {
+    try {
+      await api.delete(`/staff/breaks/${breakId}`);
+      toast.success("Mola silindi");
+      loadTodayBreaks();
+    } catch (error) {
+      toast.error("Mola silinemedi");
     }
   };
 
@@ -522,6 +583,104 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   <p className="text-xl font-bold text-blue-600">{personnelStats.total_revenue_generated?.toLocaleString('tr-TR') || 0} ₺</p>
                 </div>
               </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* KART: Bugünkü Molam (Sadece Personel için) */}
+      {userRole === 'staff' && (
+        <div className="px-4 py-2">
+          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-orange-500" />
+                <h3 className="text-sm font-semibold text-gray-900">Bugünkü Molam</h3>
+              </div>
+              <button
+                onClick={() => setShowBreakDialog(true)}
+                disabled={todayBreaks.length >= breakLimits.count}
+                className="text-xs px-3 py-1 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                + Mola Ekle
+              </button>
+            </div>
+            
+            {todayBreaks.length > 0 ? (
+              <div className="space-y-2">
+                {todayBreaks.map((brk) => {
+                  const startParts = brk.start_time.split(":");
+                  const endParts = brk.end_time.split(":");
+                  const duration = (parseInt(endParts[0]) * 60 + parseInt(endParts[1])) - (parseInt(startParts[0]) * 60 + parseInt(startParts[1]));
+                  return (
+                    <div key={brk.id} className="flex items-center justify-between p-2 bg-orange-50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900">{brk.start_time} - {brk.end_time}</span>
+                        <span className="text-xs text-gray-500">({duration} dk)</span>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteBreak(brk.id)}
+                        className="text-gray-400 hover:text-red-500 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+                <p className="text-xs text-gray-500 mt-1">
+                  Kalan: {breakLimits.minutes - todayBreaks.reduce((sum, b) => {
+                    const s = b.start_time.split(":"), e = b.end_time.split(":");
+                    return sum + ((parseInt(e[0]) * 60 + parseInt(e[1])) - (parseInt(s[0]) * 60 + parseInt(s[1])));
+                  }, 0)} dk / {breakLimits.count - todayBreaks.length} mola
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">Henüz mola eklemediniz</p>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* Mola Ekleme Dialog */}
+      {showBreakDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="bg-white rounded-xl p-6 w-full max-w-sm">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Mola Ekle</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Başlangıç</label>
+                <input
+                  type="time"
+                  value={newBreakStart}
+                  onChange={(e) => setNewBreakStart(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Bitiş</label>
+                <input
+                  type="time"
+                  value={newBreakEnd}
+                  onChange={(e) => setNewBreakEnd(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+              </div>
+              <p className="text-xs text-gray-500">Min: 15 dk, Max: 45 dk</p>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={() => setShowBreakDialog(false)}
+                className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleAddBreak}
+                disabled={addingBreak}
+                className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-medium disabled:opacity-50"
+              >
+                {addingBreak ? "Ekleniyor..." : "Ekle"}
+              </button>
             </div>
           </Card>
         </div>

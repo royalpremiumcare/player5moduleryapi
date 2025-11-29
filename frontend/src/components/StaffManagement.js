@@ -585,6 +585,63 @@ const StaffManagement = ({ onNavigate }) => {
                   }}
                 />
               </div>
+
+              {/* Mola Limiti Ayarları */}
+              <div className="p-4 rounded-lg border border-gray-200 space-y-3">
+                <div>
+                  <Label className="text-sm font-semibold text-gray-900">Personel Mola Limiti</Label>
+                  <p className="text-xs text-gray-600 mt-1">Personellerin günlük mola haklarını belirleyin</p>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <Label htmlFor="break-limit-minutes" className="text-xs text-gray-600">Günlük Max Süre</Label>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Input
+                        id="break-limit-minutes"
+                        type="number"
+                        min="15"
+                        max="180"
+                        step="15"
+                        value={settings?.break_limit_minutes || 60}
+                        onChange={async (e) => {
+                          const value = parseInt(e.target.value) || 60;
+                          try {
+                            await api.put("/settings", { ...settings, break_limit_minutes: value });
+                            setSettings(prev => ({ ...prev, break_limit_minutes: value }));
+                          } catch (error) {
+                            toast.error("Ayar güncellenemedi");
+                          }
+                        }}
+                        className="w-20 h-9 text-center"
+                      />
+                      <span className="text-sm text-gray-600">dk</span>
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <Label htmlFor="break-limit-count" className="text-xs text-gray-600">Günlük Max Sayı</Label>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Input
+                        id="break-limit-count"
+                        type="number"
+                        min="1"
+                        max="5"
+                        value={settings?.break_limit_count || 2}
+                        onChange={async (e) => {
+                          const value = parseInt(e.target.value) || 2;
+                          try {
+                            await api.put("/settings", { ...settings, break_limit_count: value });
+                            setSettings(prev => ({ ...prev, break_limit_count: value }));
+                          } catch (error) {
+                            toast.error("Ayar güncellenemedi");
+                          }
+                        }}
+                        className="w-20 h-9 text-center"
+                      />
+                      <span className="text-sm text-gray-600">mola</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </Card>
