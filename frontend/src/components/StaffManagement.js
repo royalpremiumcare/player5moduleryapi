@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Users, UserPlus, Edit, CheckSquare, Trash2, ArrowLeft, Calendar } from "lucide-react";
+import { Users, UserPlus, Edit, CheckSquare, Trash2, ArrowLeft, Calendar, ShieldCheck, User } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const StaffManagement = ({ onNavigate }) => {
+const StaffManagement = ({ onNavigate, currentUser }) => {
   const [staff, setStaff] = useState([]);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,7 +41,8 @@ const StaffManagement = ({ onNavigate }) => {
     username: "",
     full_name: "",
     payment_type: "salary",
-    payment_amount: 0
+    payment_amount: 0,
+    role: "staff"  // "staff" veya "admin"
   });
 
   useEffect(() => {
@@ -248,6 +249,7 @@ const StaffManagement = ({ onNavigate }) => {
   const handleAddStaff = async () => {
     const trimmedUsername = newStaff.username?.trim();
     const trimmedFullName = newStaff.full_name?.trim();
+    const isAdmin = newStaff.role === "admin";
     
     if (!trimmedUsername || !trimmedFullName) {
       toast.error("Lütfen tüm alanları doldurun");
@@ -260,14 +262,17 @@ const StaffManagement = ({ onNavigate }) => {
       return;
     }
 
-    if (newStaff.payment_type === "salary" && (!newStaff.payment_amount || newStaff.payment_amount <= 0)) {
-      toast.error("Lütfen aylık maaş tutarını girin");
-      return;
-    }
-    
-    if (newStaff.payment_type === "commission" && (!newStaff.payment_amount || newStaff.payment_amount <= 0 || newStaff.payment_amount > 100)) {
-      toast.error("Lütfen geçerli bir komisyon oranı girin (1-100)");
-      return;
+    // Admin için ödeme bilgisi validasyonu gerekmiyor
+    if (!isAdmin) {
+      if (newStaff.payment_type === "salary" && (!newStaff.payment_amount || newStaff.payment_amount <= 0)) {
+        toast.error("Lütfen aylık maaş tutarını girin");
+        return;
+      }
+      
+      if (newStaff.payment_type === "commission" && (!newStaff.payment_amount || newStaff.payment_amount <= 0 || newStaff.payment_amount > 100)) {
+        toast.error("Lütfen geçerli bir komisyon oranı girin (1-100)");
+        return;
+      }
     }
 
     setSaving(true);
@@ -280,19 +285,21 @@ const StaffManagement = ({ onNavigate }) => {
       const payload = {
         username: trimmedUsername,
         full_name: trimmedFullName,
-        payment_type: newStaff.payment_type || "salary",
-        payment_amount: paymentAmount
+        role: newStaff.role || "staff",
+        payment_type: isAdmin ? null : (newStaff.payment_type || "salary"),
+        payment_amount: isAdmin ? null : paymentAmount
       };
       
       console.log("Sending payload:", payload); // Debug için
       
       await api.post("/staff/add", payload);
       
-      toast.success("Personel başarıyla eklendi ve davet e-postası gönderildi");
+      const roleText = isAdmin ? "Admin" : "Personel";
+      toast.success(`${roleText} başarıyla eklendi ve davet e-postası gönderildi`);
       
       await loadData();
       
-      setNewStaff({ username: "", full_name: "", payment_type: "salary", payment_amount: 0 });
+      setNewStaff({ username: "", full_name: "", payment_type: "salary", payment_amount: 0, role: "staff" });
       setShowAddDialog(false);
     } catch (error) {
       console.error("Personel ekleme hatası:", error);
@@ -404,11 +411,50 @@ const StaffManagement = ({ onNavigate }) => {
                   placeholder="ahmet@isletme.com"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  ℹ️ Personele şifresini belirlemesi için bir davet e-postası gönderilecektir.
+                  ℹ️ Davet e-postası ile şifresini belirleyebilecek.
                 </p>
               </div>
               
-              {/* Çalışma Modeli */}
+              {/* Rol Seçimi */}
+              <div className="space-y-3 pt-4 border-t">
+                <Label className="text-sm font-medium text-gray-700 mb-2 block">Kullanıcı Yetkisi</Label>
+                <div className="bg-gray-100 p-1 rounded-lg flex">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewStaff({ ...newStaff, role: "staff", payment_type: "salary", payment_amount: "" });
+                    }}
+                    className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
+                      newStaff.role === "staff"
+                        ? "bg-white text-blue-600 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    <User className="w-4 h-4 inline mr-1" /> Personel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewStaff({ ...newStaff, role: "admin", payment_type: null, payment_amount: null });
+                    }}
+                    className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
+                      newStaff.role === "admin"
+                        ? "bg-white text-purple-600 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    <ShieldCheck className="w-4 h-4 inline mr-1" /> Yönetici
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  {newStaff.role === "admin" 
+                    ? "⚠️ Yönetici yetkileri: Tüm randevuları, personelleri ve ayarları yönetebilir." 
+                    : "Personel sadece kendine atanan randevuları görebilir."}
+                </p>
+              </div>
+              
+              {/* Çalışma Modeli - Sadece Personel için */}
+              {newStaff.role === "staff" && (
               <div className="space-y-3 pt-4 border-t">
                 <Label className="text-sm font-medium text-gray-700 mb-2 block">Çalışma Modeli</Label>
                 
@@ -495,9 +541,12 @@ const StaffManagement = ({ onNavigate }) => {
                   </div>
                 )}
               </div>
+              )}
               
               <p className="text-sm text-gray-600">
-                Bu bilgilerle personel giriş yapabilecek. Daha sonra "Hizmetleri Düzenle" ile hangi hizmetleri verebileceğini atayabilirsiniz.
+                {newStaff.role === "admin" 
+                  ? "Yönetici olarak eklenen kullanıcı tüm işletme ayarlarını yönetebilir."
+                  : "Bu bilgilerle personel giriş yapabilecek. Daha sonra \"Hizmetleri Düzenle\" ile hangi hizmetleri verebileceğini atayabilirsiniz."}
               </p>
             </div>
             <div className="flex gap-2">
@@ -511,9 +560,9 @@ const StaffManagement = ({ onNavigate }) => {
               <Button
                 onClick={handleAddStaff}
                 disabled={saving}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700"
+                className={`flex-1 ${newStaff.role === "admin" ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"}`}
               >
-                {saving ? "Ekleniyor..." : "Personel Ekle"}
+                {saving ? "Ekleniyor..." : (newStaff.role === "admin" ? "Yönetici Ekle" : "Personel Ekle")}
               </Button>
             </div>
           </DialogContent>
@@ -660,10 +709,32 @@ const StaffManagement = ({ onNavigate }) => {
         </div>
       ) : (
         <div className="px-4 py-4 space-y-3">
-          {staff.map((staffMember) => {
+          {(() => {
+            // Kurucu admin'i bul (is_founder flag'i olan veya ilk admin)
+            const founderAdmin = staff.find(s => s.is_founder && s.role === 'admin') 
+              || staff.find(s => s.role === 'admin');
+            
+            // Mevcut kullanıcı kurucu mu?
+            const isCurrentUserFounder = founderAdmin?.username === currentUser?.username;
+            
+            return staff.map((staffMember) => {
             const assignedServices = services.filter(s => 
               staffMember.permitted_service_ids?.includes(s.id)
             );
+            const isFounder = founderAdmin?.username === staffMember.username;
+            const isSelf = staffMember.username === currentUser?.username;
+            const isTargetAdmin = staffMember.role === 'admin';
+            
+            // Düzenleme butonu gösterilsin mi?
+            // - Kendi hizmetlerini herkes düzenleyebilir
+            // - Diğer admin'lerin hizmetlerini sadece kurucu admin düzenleyebilir
+            const canEdit = isTargetAdmin ? (isCurrentUserFounder || isSelf) : true;
+            
+            // Silme butonu gösterilsin mi?
+            // - Kendi üzerinde gösterme
+            // - Kurucu admin silinemez
+            // - Admin'leri sadece kurucu admin silebilir
+            const canDelete = !isSelf && !isFounder && (isTargetAdmin ? isCurrentUserFounder : true);
             
             return (
               <Card key={staffMember.username} className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
@@ -951,6 +1022,7 @@ const StaffManagement = ({ onNavigate }) => {
                     </>
                   )}
                   
+                  {canEdit && (
                   <Dialog
                     open={editingStaff?.username === staffMember.username}
                     onOpenChange={(open) => {
@@ -1039,8 +1111,9 @@ const StaffManagement = ({ onNavigate }) => {
                         </div>
                       </DialogContent>
                   </Dialog>
+                  )}
                   
-                  {staffMember.role !== 'admin' && (
+                  {canDelete && (
                     <Button
                       onClick={() => setDeleteDialog(staffMember)}
                       variant="outline"
@@ -1054,7 +1127,8 @@ const StaffManagement = ({ onNavigate }) => {
                 </div>
               </Card>
             );
-          })}
+          });
+          })()}
         </div>
       )}
 
@@ -1062,9 +1136,9 @@ const StaffManagement = ({ onNavigate }) => {
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Personeli Sil</AlertDialogTitle>
+            <AlertDialogTitle>{deleteDialog?.role === 'admin' ? 'Yöneticiyi Sil' : 'Personeli Sil'}</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteDialog?.full_name || deleteDialog?.username} personelini silmek istediğinizden emin misiniz?
+              <strong>{deleteDialog?.full_name || deleteDialog?.username}</strong> {deleteDialog?.role === 'admin' ? 'yöneticisini' : 'personelini'} silmek istediğinizden emin misiniz?
               Bu işlem geri alınamaz.
             </AlertDialogDescription>
           </AlertDialogHeader>

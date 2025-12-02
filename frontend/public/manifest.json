@@ -1,6 +1,7 @@
 {
   "name": "PLANN - Randevu Yönetim Sistemi",
   "short_name": "PLANN",
+  "gcm_sender_id": "103953800507",
   "id": "/",
   "description": "İşletmeniz için yeni nesil randevu yönetim sistemi. Randevularınızı kolayca yönetin, müşterilerinizi takip edin.",
   "start_url": "/login?mode=app",

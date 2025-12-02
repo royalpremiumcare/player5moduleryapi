@@ -30,6 +30,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 import socketio
 import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
+from pywebpush import webpush, WebPushException
 
 # (Cache ve Rate Limit importları, sizin projenizden alındı)
 from cache import init_redis, invalidate_cache, cache_result
@@ -93,6 +94,18 @@ else:
 # Success ve Cancel URL'leri
 PAYMENT_SUCCESS_URL = "https://plannapp.co/"
 PAYMENT_CANCEL_URL = "https://plannapp.co/"
+
+# --- PUSH NOTIFICATION AYARLARI ---
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', 'BB4nvNoHrWlWS6KTM1ybHUZD260l8b7Nnr2bMHvwnbflCJ4OJVd68Dqmw1hpaOFFUNmRFySvP3Ewzm596xjqF7g')
+# Private key - base64 encoded raw key (pywebpush format)
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '5V68PoLSQ16LLymN-Wur5MwrJk1Q9b3HvS6ijdGDtAM')
+if VAPID_PRIVATE_KEY:
+    logger.info("✅ VAPID private key configured")
+else:
+    logger.warning("⚠️ VAPID_PRIVATE_KEY not configured. Push notifications will not work.")
+VAPID_CLAIMS = {
+    "sub": "mailto:info@plannapp.co"
+}
 
 # --- BREVO EMAIL AYARLARI ---
 BREVO_API_KEY = os.environ.get('BREVO_API_KEY')
@@ -1342,7 +1355,7 @@ class Service(BaseModel):
 class ServiceCreate(BaseModel): name: str; price: float; duration: int = 30
 class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[float] = None; duration: Optional[int] = None
 class Appointment(BaseModel):
-    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None
+    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None; source: Optional[str] = None
 class AppointmentCreate(BaseModel):
     customer_name: str; phone: str; service_id: str; appointment_date: str; appointment_time: str; notes: str = ""; staff_member_id: Optional[str] = None
 class AppointmentUpdate(BaseModel):
@@ -1370,6 +1383,78 @@ class Settings(BaseModel):
         "saturday": {"is_open": False, "open_time": "09:00", "close_time": "18:00"},
         "sunday": {"is_open": False, "open_time": "09:00", "close_time": "18:00"}
     })
+
+# Push Notification Subscription Model
+class PushSubscription(BaseModel):
+    endpoint: str
+    keys: dict  # p256dh ve auth keys
+
+class PushSubscriptionCreate(BaseModel):
+    subscription: dict  # {endpoint, keys: {p256dh, auth}}
+
+# Push notification gönderme fonksiyonu
+async def send_push_notification(db, organization_id: str, title: str, body: str, data: dict = None, user_id: str = None):
+    """Belirli bir organizasyondaki tüm kullanıcılara veya belirli bir kullanıcıya push notification gönder"""
+    if not VAPID_PRIVATE_KEY:
+        logger.warning("VAPID_PRIVATE_KEY not configured, skipping push notification")
+        return
+    
+    try:
+        # Abonelikleri bul
+        query = {"organization_id": organization_id}
+        if user_id:
+            query["user_id"] = user_id
+            
+        subscriptions = await db.push_subscriptions.find(query).to_list(None)
+        
+        if not subscriptions:
+            logger.info(f"No push subscriptions found for org: {organization_id}")
+            return
+        
+        notification_payload = json.dumps({
+            "title": title,
+            "body": body,
+            "icon": "/icons/icon-192x192.png",
+            "badge": "/icons/icon-72x72.png",
+            "data": data or {},
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        
+        # Her aboneliğe bildirim gönder
+        logger.info(f"🔔 Sending push to {len(subscriptions)} subscriptions")
+        for sub in subscriptions:
+            try:
+                subscription_info = {
+                    "endpoint": sub["endpoint"],
+                    "keys": sub["keys"]
+                }
+                logger.info(f"🔔 Attempting push to: {sub.get('user_id', 'unknown')} - endpoint: {sub['endpoint'][:50]}...")
+                
+                webpush(
+                    subscription_info=subscription_info,
+                    data=notification_payload,
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims=VAPID_CLAIMS.copy(),
+                    ttl=86400,
+                    headers={"Urgency": "high"}
+                )
+                logger.info(f"✅ Push notification sent to user: {sub.get('user_id', 'unknown')}")
+                
+            except WebPushException as e:
+                # Subscription geçersiz - sil
+                logger.error(f"❌ WebPushException for {sub.get('user_id', 'unknown')}: {e}")
+                if e.response:
+                    logger.error(f"   Response status: {e.response.status_code}")
+                    logger.error(f"   Response headers: {dict(e.response.headers) if e.response.headers else 'none'}")
+                    logger.error(f"   Response body: {e.response.text if e.response.text else 'empty'}")
+                if e.response and e.response.status_code in [404, 410]:
+                    await db.push_subscriptions.delete_one({"_id": sub["_id"]})
+                    logger.info(f"Removed invalid push subscription: {sub.get('user_id', 'unknown')}")
+            except Exception as e:
+                logger.error(f"❌ Unexpected error for {sub.get('user_id', 'unknown')}: {type(e).__name__}: {e}")
+                    
+    except Exception as e:
+        logger.error(f"Error sending push notifications: {e}")
 
 # === ABONELİK PAKETLERİ ===
 PLANS = [
@@ -4109,6 +4194,83 @@ async def get_personnel_stats(request: Request, current_user: UserInDB = Depends
         "completed_appointments_count": completed_appointments_count
     }
 
+# === PUSH NOTIFICATION ROUTES ===
+@api_router.get("/push/vapid-key")
+async def get_vapid_public_key():
+    """VAPID public key'i döndür - subscription için gerekli"""
+    return {"publicKey": VAPID_PUBLIC_KEY}
+
+@api_router.post("/push/subscribe")
+async def subscribe_push(request: Request, subscription_data: PushSubscriptionCreate, current_user: UserInDB = Depends(get_current_user)):
+    """Push notification aboneliği oluştur"""
+    db = await get_db_from_request(request)
+    
+    subscription = subscription_data.subscription
+    
+    # Mevcut aboneliği kontrol et (aynı endpoint)
+    existing = await db.push_subscriptions.find_one({
+        "organization_id": current_user.organization_id,
+        "user_id": current_user.username,
+        "endpoint": subscription["endpoint"]
+    })
+    
+    if existing:
+        # Güncelle
+        await db.push_subscriptions.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {"keys": subscription["keys"], "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        return {"message": "Push subscription updated"}
+    
+    # Yeni abonelik oluştur
+    push_doc = {
+        "id": str(uuid.uuid4()),
+        "organization_id": current_user.organization_id,
+        "user_id": current_user.username,
+        "user_role": current_user.role,
+        "endpoint": subscription["endpoint"],
+        "keys": subscription["keys"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.push_subscriptions.insert_one(push_doc)
+    logger.info(f"Push subscription created for user: {current_user.username}")
+    
+    return {"message": "Push subscription created"}
+
+@api_router.delete("/push/unsubscribe")
+async def unsubscribe_push(request: Request, current_user: UserInDB = Depends(get_current_user)):
+    """Push notification aboneliğini iptal et"""
+    db = await get_db_from_request(request)
+    
+    result = await db.push_subscriptions.delete_many({
+        "organization_id": current_user.organization_id,
+        "user_id": current_user.username
+    })
+    
+    return {"message": f"Deleted {result.deleted_count} subscriptions"}
+
+@api_router.post("/push/test")
+async def test_push_notification(request: Request, current_user: UserInDB = Depends(get_current_user)):
+    """Test push notification - sadece admin için"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    
+    db = await get_db_from_request(request)
+    
+    try:
+        await send_push_notification(
+            db=db,
+            organization_id=current_user.organization_id,
+            title="🧪 Test Bildirimi",
+            body="Push notification sistemi çalışıyor!",
+            data={"type": "test", "url": "/"}
+        )
+        return {"message": "Test bildirimi gönderildi", "success": True}
+    except Exception as e:
+        logger.error(f"Test push notification error: {e}")
+        return {"message": f"Hata: {str(e)}", "success": False}
+
 # === SETTINGS ROUTES ===
 @api_router.get("/settings", response_model=Settings)
 async def get_settings(request: Request, current_user: UserInDB = Depends(get_current_user)):
@@ -4163,6 +4325,34 @@ async def update_settings(request: Request, settings: Settings, current_user: Us
     
     await db.settings.update_one(query, {"$set": update_data}, upsert=True)
     updated_settings = await db.settings.find_one(query, {"_id": 0})
+    
+    # business_hours değiştiyse, kapalı günleri tüm personelin days_off'una senkronize et
+    if settings.business_hours:
+        # Kapalı günleri bul
+        closed_days = []
+        day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        for day in day_names:
+            day_settings = settings.business_hours.get(day, {})
+            if not day_settings.get('is_open', True):
+                closed_days.append(day)
+        
+        # Tüm personelin days_off'unu güncelle (kapalı günleri ekle)
+        if closed_days:
+            # Organizasyondaki tüm kullanıcıları al
+            all_users = await db.users.find(
+                {"organization_id": current_user.organization_id}
+            ).to_list(1000)
+            
+            for user in all_users:
+                current_days_off = user.get('days_off', [])
+                # Kapalı günleri ekle (zaten yoksa)
+                updated_days_off = list(set(current_days_off + closed_days))
+                await db.users.update_one(
+                    {"username": user['username']},
+                    {"$set": {"days_off": updated_days_off}}
+                )
+            
+            logging.info(f"✅ Synced closed days {closed_days} to all staff days_off for org {current_user.organization_id}")
     
     # Audit log
     await create_audit_log(
@@ -4501,8 +4691,9 @@ class StaffCreate(BaseModel):
     username: str
     password: Optional[str] = None  # Artık optional, e-posta daveti kullanılıyor
     full_name: Optional[str] = None  # Opsiyonel, e-posta'dan çıkarılabilir
-    payment_type: Optional[str] = "salary"
-    payment_amount: Optional[float] = 0.0
+    payment_type: Optional[str] = None  # null olabilir (admin için)
+    payment_amount: Optional[float] = None  # null olabilir (admin için)
+    role: Optional[str] = "staff"  # "staff" veya "admin" - admin davet için
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -4511,10 +4702,15 @@ class UserUpdate(BaseModel):
 
 @api_router.post("/staff/add")
 async def add_staff(request: Request, staff_data: StaffCreate, current_user: UserInDB = Depends(get_current_user)):
-    """Admin, yeni personel ekleyebilir (E-posta daveti ile)"""
+    """Admin, yeni personel veya admin ekleyebilir (E-posta daveti ile)"""
     # Sadece admin ekleyebilir
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    
+    # Role validasyonu
+    invited_role = staff_data.role or "staff"
+    if invited_role not in ["staff", "admin"]:
+        raise HTTPException(status_code=400, detail="Geçersiz rol. 'staff' veya 'admin' olmalı")
     
     db = await get_db_from_request(request)
     
@@ -4556,16 +4752,22 @@ async def add_staff(request: Request, staff_data: StaffCreate, current_user: Use
             else:
                 full_name = email_local.capitalize()
         
+        # Admin için tüm hizmetleri al
+        all_service_ids = []
+        if invited_role == "admin":
+            services = await db.services.find({"organization_id": current_user.organization_id}).to_list(None)
+            all_service_ids = [s.get("id") for s in services if s.get("id")]
+        
         new_user = UserInDB(
             username=staff_data.username,
             full_name=full_name,
             hashed_password=None,  # Şifre henüz belirlenmedi
             organization_id=current_user.organization_id,
-            role="staff",  # Personel rolü
-            slug=None,  # Personellerin slug'ı yok
-            permitted_service_ids=[],  # Başlangıçta boş
-            payment_type=staff_data.payment_type or "salary",
-            payment_amount=payment_amount,
+            role=invited_role,  # staff veya admin rolü
+            slug=None,  # Admin/Personellerin slug'ı yok
+            permitted_service_ids=all_service_ids if invited_role == "admin" else [],  # Admin tüm hizmetlere erişebilir
+            payment_type=staff_data.payment_type or "salary" if invited_role == "staff" else None,
+            payment_amount=payment_amount if invited_role == "staff" else None,
             status="pending",  # Bekliyor durumu
             invitation_token=invitation_token
         )
@@ -4573,26 +4775,30 @@ async def add_staff(request: Request, staff_data: StaffCreate, current_user: Use
         user_dict = new_user.model_dump()
         # Personel için slug field'ını kaldır (MongoDB unique index hatası önlemek için)
         user_dict.pop('slug', None)
+        # Admin için onboarding tamamlanmış olarak işaretle (organization zaten kurulu)
+        if invited_role == "admin":
+            user_dict["onboarding_completed"] = True
         # MongoDB'ye ekle
         await db.users.insert_one(user_dict)
         
         # E-posta daveti gönder
-        invitation_link = f"https://plannapp.co/setup-password?token={invitation_token}"
         email_sent = await send_personnel_invitation_email(
-            user_email=staff_data.username,
-            user_name=staff_data.full_name,
+            recipient_email=staff_data.username,
+            recipient_name=full_name,
+            admin_name=current_user.full_name or current_user.username,
             organization_name=organization_name,
-            invitation_link=invitation_link
+            invitation_token=invitation_token
         )
         
         if not email_sent:
-            logging.warning(f"Personel eklendi ancak e-posta gönderilemedi: {staff_data.username}")
+            logging.warning(f"{'Admin' if invited_role == 'admin' else 'Personel'} eklendi ancak e-posta gönderilemedi: {staff_data.username}")
         
     except Exception as e:
-        logging.error(f"Personel ekleme hatası: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Personel eklenirken bir hata oluştu: {str(e)}")
+        logging.error(f"{'Admin' if invited_role == 'admin' else 'Personel'} ekleme hatası: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"{'Admin' if invited_role == 'admin' else 'Personel'} eklenirken bir hata oluştu: {str(e)}")
     
-    return {"message": "Personel başarıyla eklendi ve davet e-postası gönderildi", "username": staff_data.username, "full_name": staff_data.full_name}
+    role_text = "Admin" if invited_role == "admin" else "Personel"
+    return {"message": f"{role_text} başarıyla eklendi ve davet e-postası gönderildi", "username": staff_data.username, "full_name": staff_data.full_name, "role": invited_role}
 
 @api_router.put("/users/me")
 async def update_current_user(request: Request, user_update: UserUpdate, current_user: UserInDB = Depends(get_current_user), db = Depends(get_db)):
@@ -4728,48 +4934,92 @@ async def update_staff_days_off(request: Request, staff_id: str, days_off_data: 
 
 @api_router.delete("/staff/{staff_id}")
 async def delete_staff(request: Request, staff_id: str, current_user: UserInDB = Depends(get_current_user)):
-    """Admin, personel silebilir"""
+    """Admin, personel/yönetici silebilir (kurucu admin diğer yöneticileri silebilir)"""
     # Sadece admin silebilir
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
     
     db = await get_db_from_request(request)
     
-    # Personelin aynı organization'da olduğunu kontrol et
+    # Silinecek kullanıcıyı bul
     staff = await db.users.find_one({"username": staff_id, "organization_id": current_user.organization_id})
     if not staff:
-        raise HTTPException(status_code=404, detail="Personel bulunamadı veya erişim yok")
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı veya erişim yok")
     
-    # Admin kendini silemez
+    # Kendini silemez
+    if staff.get("username") == current_user.username:
+        raise HTTPException(status_code=400, detail="Kendinizi silemezsiniz")
+    
+    # Eğer silinecek kullanıcı admin ise, kurucu admin kontrolü yap
     if staff.get("role") == "admin":
-        raise HTTPException(status_code=400, detail="Admin kullanıcıları silinemez")
+        # Kurucu admin'i bul (is_founder flag'i veya en eski admin)
+        founder = await db.users.find_one({
+            "organization_id": current_user.organization_id,
+            "role": "admin",
+            "is_founder": True
+        })
+        
+        # Eğer is_founder flag yoksa, en eski admin'i kurucu kabul et
+        if not founder:
+            oldest_admin = await db.users.find_one(
+                {"organization_id": current_user.organization_id, "role": "admin"},
+                sort=[("_id", 1)]  # MongoDB ObjectId sıralı, ilk oluşturulan en eski
+            )
+            founder = oldest_admin
+        
+        # Silinecek kişi kurucu admin ise silinemez
+        if staff.get("username") == founder.get("username"):
+            raise HTTPException(status_code=400, detail="Kurucu yönetici silinemez")
+        
+        # Silmeye çalışan kişi kurucu admin değilse, diğer adminleri silemez
+        if current_user.username != founder.get("username"):
+            raise HTTPException(status_code=403, detail="Sadece kurucu yönetici diğer yöneticileri silebilir")
     
-    # Personeli sil
+    # Kullanıcıyı sil
     await db.users.delete_one({"username": staff_id, "organization_id": current_user.organization_id})
     
-    return {"message": "Personel başarıyla silindi"}
+    role_text = "Yönetici" if staff.get("role") == "admin" else "Personel"
+    return {"message": f"{role_text} başarıyla silindi"}
 
 @api_router.put("/staff/{staff_id}/services")
 async def update_staff_services(request: Request, staff_id: str, service_ids: List[str], current_user: UserInDB = Depends(get_current_user)):
-    """Admin, personelin verebileceği hizmetleri güncelleyebilir"""
+    """Admin, personelin verebileceği hizmetleri güncelleyebilir (sadece kurucu admin diğer adminleri düzenleyebilir)"""
     # Sadece admin güncelleyebilir
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
     
     db = await get_db_from_request(request)
     
-    # Personelin aynı organization'da olduğunu kontrol et
+    # Düzenlenecek kullanıcıyı bul
     staff = await db.users.find_one({"username": staff_id, "organization_id": current_user.organization_id})
     if not staff:
-        raise HTTPException(status_code=404, detail="Personel bulunamadı veya erişim yok")
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı veya erişim yok")
     
-    # Personelin permitted_service_ids'ini güncelle
+    # Eğer düzenlenecek kullanıcı admin ise, kurucu admin kontrolü yap
+    if staff.get("role") == "admin":
+        # Kurucu admin'i bul
+        founder = await db.users.find_one({
+            "organization_id": current_user.organization_id,
+            "role": "admin",
+            "is_founder": True
+        })
+        if not founder:
+            founder = await db.users.find_one(
+                {"organization_id": current_user.organization_id, "role": "admin"},
+                sort=[("_id", 1)]
+            )
+        
+        # Admin kendi hizmetlerini düzenleyebilir, diğer adminlerin hizmetlerini sadece kurucu düzenleyebilir
+        if staff_id != current_user.username and current_user.username != founder.get("username"):
+            raise HTTPException(status_code=403, detail="Sadece kurucu yönetici diğer yöneticilerin hizmetlerini düzenleyebilir")
+    
+    # Kullanıcının permitted_service_ids'ini güncelle
     await db.users.update_one(
         {"username": staff_id, "organization_id": current_user.organization_id},
         {"$set": {"permitted_service_ids": service_ids}}
     )
     
-    return {"message": "Personel hizmetleri güncellendi", "staff_id": staff_id, "permitted_service_ids": service_ids}
+    return {"message": "Kullanıcı hizmetleri güncellendi", "staff_id": staff_id, "permitted_service_ids": service_ids}
 
 # === STAFF BREAKS ROUTES ===
 class BreakCreate(BaseModel):
@@ -6481,6 +6731,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     appointment_data['service_price'] = service['price']
     appointment_data['service_duration'] = service.get('duration', 30)  # Hizmet süresini ekle
     appointment_data['staff_member_id'] = assigned_staff_id
+    appointment_data['source'] = 'public_booking'  # Public booking'den geldiğini işaretle
     
     # Randevu durumunu kontrol et (bitiş saatine göre)
     try:
@@ -6577,6 +6828,45 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
         logger.info(f"Successfully emitted appointment_created for org: {organization_id} (public endpoint)")
     except Exception as emit_error:
         logger.error(f"Failed to emit appointment_created (public endpoint): {emit_error}", exc_info=True)
+    
+    # Push notification gönder (admin ve ilgili personele)
+    try:
+        service_info = service.get('name', 'Randevu')
+        notification_data = {
+            "type": "new_appointment",
+            "appointment_id": appointment_for_emit.get('id'),
+            "source": "public_booking"
+        }
+        notification_body = f"{appointment.customer_name} - {service_info} ({appointment.appointment_date} {appointment.appointment_time})"
+        
+        # Admin'lere bildirim gönder
+        admins = await db.users.find({"organization_id": organization_id, "role": "admin"}).to_list(100)
+        for admin in admins:
+            await send_push_notification(
+                db=db,
+                organization_id=organization_id,
+                title="🔔 Yeni Online Randevu!",
+                body=notification_body,
+                data=notification_data,
+                user_id=admin['username']
+            )
+        
+        # Atanan personele bildirim gönder (admin değilse, çünkü admin zaten yukarıda aldı)
+        if assigned_staff_id:
+            staff = await db.users.find_one({"username": assigned_staff_id, "organization_id": organization_id})
+            if staff and staff.get('role') != 'admin':
+                await send_push_notification(
+                    db=db,
+                    organization_id=organization_id,
+                    title="🔔 Yeni Randevu Atandı!",
+                    body=notification_body,
+                    data=notification_data,
+                    user_id=assigned_staff_id
+                )
+        
+        logger.info(f"Push notification sent for public booking: {organization_id}")
+    except Exception as push_error:
+        logger.error(f"Failed to send push notification: {push_error}")
     
     return {"message": "Randevu başarıyla oluşturuldu", "appointment": appointment_obj}
 

@@ -1,5 +1,5 @@
 // PLANN PWA Service Worker
-const CACHE_NAME = 'plann-cache-v1';
+const CACHE_NAME = 'plann-cache-v2';
 const OFFLINE_URL = '/offline.html';
 
 // Önbelleğe alınacak statik kaynaklar
@@ -60,6 +60,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // POST, PUT, DELETE isteklerini cache'leme - direkt network'e gönder
+  if (request.method !== 'GET') {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   // API istekleri için Network First stratejisi
   if (url.pathname.startsWith('/api/')) {
@@ -169,11 +175,12 @@ async function staleWhileRevalidate(request) {
 self.addEventListener('push', (event) => {
   console.log('[ServiceWorker] Push received');
   
-  let data = { title: 'PLANN', body: 'Yeni bildirim', icon: '/icons/icon-192x192.png' };
+  let data = { title: 'PLANN', body: 'Yeni bildirim', url: '/' };
   
   if (event.data) {
     try {
-      data = event.data.json();
+      const jsonData = event.data.json();
+      data = { ...data, ...jsonData };
     } catch (e) {
       data.body = event.data.text();
     }
@@ -181,15 +188,16 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: data.icon || '/icons/icon-192x192.png',
+    icon: '/icons/icon-192x192.png',
     badge: '/icons/badge-72x72.png',
     vibrate: [100, 50, 100],
     data: {
-      dateOfArrival: Date.now(),
-      url: data.url || '/'
+      url: data.url,
+      timestamp: Date.now()
     },
+    requireInteraction: true, // Kullanıcı müdahale edene kadar ekranda kalsın
     actions: [
-      { action: 'open', title: 'Aç' },
+      { action: 'open', title: 'Görüntüle' },
       { action: 'close', title: 'Kapat' }
     ]
   };
