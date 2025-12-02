@@ -1414,8 +1414,8 @@ async def send_push_notification(db, organization_id: str, title: str, body: str
         notification_payload = json.dumps({
             "title": title,
             "body": body,
-            "icon": "/icons/icon-192x192.png",
-            "badge": "/icons/icon-72x72.png",
+            "icon": "https://plannapp.co/icons/icon-192x192.png",
+            "badge": "https://plannapp.co/icons/badge-mono-72x72.png",
             "data": data or {},
             "timestamp": datetime.now(timezone.utc).isoformat()
         })

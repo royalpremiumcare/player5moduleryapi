@@ -1,5 +1,5 @@
 // PLANN PWA Service Worker
-const CACHE_NAME = 'plann-cache-v2';
+const CACHE_NAME = 'plann-cache-v4';
 const OFFLINE_URL = '/offline.html';
 
 // Önbelleğe alınacak statik kaynaklar
@@ -188,8 +188,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/badge-72x72.png',
+    icon: data.icon || 'https://plannapp.co/icons/icon-192x192.png',
+    badge: data.badge || 'https://plannapp.co/icons/badge-mono-72x72.png',
     vibrate: [100, 50, 100],
     data: {
       url: data.url,

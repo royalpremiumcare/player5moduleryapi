@@ -210,16 +210,18 @@ function App() {
       // Şimdilik tüm 'Bekliyor' randevularını alalım
       const pendingAppointments = allAppointments.filter(appt => appt.status === 'Bekliyor');
       
-      // Bildirim formatına dönüştür (gerekirse) ve state'e at
-      // Mevcut bildirimlerin üzerine yazıyoruz çünkü en güncel durum DB'de
+      // Okunmuş bildirimleri localStorage'dan al
+      const readNotificationIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
+      
+      // Bildirim formatına dönüştür - okunmuş durumu localStorage'dan kontrol et
       setNotifications(pendingAppointments.map(appt => ({
         id: appt.id, // Unique ID kullan
-        read: false,
+        read: readNotificationIds.includes(appt.id), // localStorage'dan kontrol et
         type: 'new_appointment',
         title: 'Yeni Randevu',
         message: `${appt.customer_name} - ${appt.service_name}`,
         details: `${appt.appointment_date} ${appt.appointment_time}`,
-        time: new Date().toISOString() // Bildirim zamanı olarak şu anı göster (yeni yüklendiği için)
+        time: appt.created_at || new Date().toISOString()
       })));
 
       console.log("✅ Randevular yüklendi:", allAppointments.length, "randevu");
@@ -358,7 +360,6 @@ function App() {
       
       setPushSubscribed(true);
       console.log('✅ Push notification subscription successful');
-      toast.success('Bildirimler aktif edildi!', { duration: 3000 });
       
     } catch (error) {
       console.error('Push subscription error:', error);
@@ -686,7 +687,13 @@ function App() {
                       {notifications.length > 0 && (
                         <button 
                           onClick={() => {
+                            // Tüm bildirimleri okundu olarak işaretle
                             setNotifications(prev => prev.map(n => ({...n, read: true})));
+                            // localStorage'a kaydet
+                            const allIds = notifications.map(n => n.id);
+                            const existingIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
+                            const mergedIds = [...new Set([...existingIds, ...allIds])];
+                            localStorage.setItem('readNotificationIds', JSON.stringify(mergedIds));
                           }}
                           className="text-xs text-blue-600 hover:underline"
                         >
