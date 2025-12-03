@@ -1,5 +1,5 @@
 {
-  "appId": "com.plann",
+  "appId": "co.plannapp.app",
   "appName": "PLANN",
   "webDir": "build",
   "server": {
@@ -16,6 +16,10 @@
       "showSpinner": false,
       "splashFullScreen": true,
       "splashImmersive": true
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"],
+      "iconColor": "#2563eb"
     }
   }
 }

@@ -34,7 +34,8 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
 
 function App() {
   const { logout, userRole, token } = useAuth();
@@ -272,6 +273,67 @@ function App() {
 
   // Push Notification Subscription
   const subscribeToPush = useCallback(async () => {
+    const isNative = Capacitor.isNativePlatform();
+    
+    if (isNative) {
+      // Native (Android/iOS) Push Notification Logic
+      try {
+        const permissionStatus = await PushNotifications.requestPermissions();
+        
+        if (permissionStatus.receive === 'granted') {
+          // Token almak için kayıt ol
+          await PushNotifications.register();
+          
+          // Token dinleyicisi
+          PushNotifications.addListener('registration', async (token) => {
+            console.log('📱 Native Push Token:', token.value);
+            // Backend'e native token gönder (type: 'android' veya 'ios')
+            await api.post('/push/subscribe', {
+              subscription: {
+                endpoint: token.value, // FCM token endpoint olarak kullanılır
+                keys: { p256dh: '', auth: '' }, // Native'de key gerekmez ama şema için boş string
+                platform: Capacitor.getPlatform() // 'android' veya 'ios'
+              }
+            });
+            setPushSubscribed(true);
+            console.log('✅ Native Push subscription successful');
+          });
+
+          // Hata dinleyicisi
+          PushNotifications.addListener('registrationError', (error) => {
+             console.error('❌ Native Push registration error:', error);
+          });
+
+          // Bildirim alındığında
+          PushNotifications.addListener('pushNotificationReceived', (notification) => {
+             console.log('🔔 Native Notification received:', notification);
+             // Bildirim içeriğini in-app olarak göster veya state'i güncelle
+             setNotifications(prev => [{
+               id: notification.id || Date.now().toString(),
+               read: false,
+               type: 'new_appointment',
+               title: notification.title,
+               message: notification.body,
+               time: new Date().toISOString()
+             }, ...prev]);
+             toast.info(`${notification.title}: ${notification.body}`);
+          });
+
+          // Bildirime tıklandığında
+          PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
+             console.log('👆 Notification clicked:', notification);
+             // Gerekirse ilgili sayfaya yönlendir
+          });
+        } else {
+          console.log('❌ Native Push permission denied');
+        }
+      } catch (error) {
+        console.error('❌ Native Push Error:', error);
+      }
+      return;
+    }
+
+    // Web Push Logic (Mevcut kod)
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.log('Push notifications not supported');
       return;

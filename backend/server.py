@@ -38,6 +38,17 @@ from rate_limit import initialize_limiter, rate_limit, LIMITS
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
+import firebase_admin
+from firebase_admin import credentials, messaging
+
+# Firebase Initialization
+try:
+    cred = credentials.Certificate("google-services.json")
+    firebase_admin.initialize_app(cred)
+    logging.info("✅ Firebase Admin SDK initialized")
+except Exception as e:
+    logging.error(f"❌ Firebase initialization failed: {e}")
+
 # AI Service Import
 import ai_service
 from ai_service import chat_with_ai
@@ -1388,9 +1399,10 @@ class Settings(BaseModel):
 class PushSubscription(BaseModel):
     endpoint: str
     keys: dict  # p256dh ve auth keys
+    platform: Optional[str] = None # 'android', 'ios' or None (web)
 
 class PushSubscriptionCreate(BaseModel):
-    subscription: dict  # {endpoint, keys: {p256dh, auth}}
+    subscription: dict  # {endpoint, keys: {p256dh, auth}, platform}
 
 # Push notification gönderme fonksiyonu
 async def send_push_notification(db, organization_id: str, title: str, body: str, data: dict = None, user_id: str = None):
@@ -1423,12 +1435,57 @@ async def send_push_notification(db, organization_id: str, title: str, body: str
         # Her aboneliğe bildirim gönder
         logger.info(f"🔔 Sending push to {len(subscriptions)} subscriptions")
         for sub in subscriptions:
+            # Native Platform (Android/iOS) - Firebase Cloud Messaging (FCM)
+            platform = sub.get("platform")
+            if platform in ['android', 'ios']:
+                try:
+                    logger.info(f"🔔 Sending Native Push ({platform}) to: {sub.get('user_id', 'unknown')}")
+                    
+                    # FCM Message oluştur
+                    message = messaging.Message(
+                        token=sub["endpoint"], # Native için endpoint token'dır
+                        notification=messaging.Notification(
+                            title=title,
+                            body=body,
+                        ),
+                        data=data or {}, # String key-value olmalı
+                        android=messaging.AndroidConfig(
+                            priority='high',
+                            notification=messaging.AndroidNotification(
+                                icon='ic_stat_icon', # Native resource adı
+                                color='#2563eb',
+                                click_action='FLUTTER_NOTIFICATION_CLICK' # Capacitor için standart
+                            ),
+                        ),
+                        apns=messaging.APNSConfig(
+                            payload=messaging.APNSPayload(
+                                aps=messaging.Aps(
+                                    badge=1,
+                                    sound='default'
+                                )
+                            )
+                        )
+                    )
+                    
+                    # Gönder
+                    response = messaging.send(message)
+                    logger.info(f"✅ Native Push sent: {response}")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Native Push Error for {sub.get('user_id', 'unknown')}: {e}")
+                    # Token geçersizse sil (firebase exception kontrolü eklenebilir)
+                    if 'registration-token-not-registered' in str(e) or 'invalid-argument' in str(e):
+                         await db.push_subscriptions.delete_one({"_id": sub["_id"]})
+                         logger.info(f"Removed invalid native subscription")
+                continue # Native gönderildi, web push kısmını atla
+
+            # Web Push (VAPID) - Mevcut Kod
             try:
                 subscription_info = {
                     "endpoint": sub["endpoint"],
                     "keys": sub["keys"]
                 }
-                logger.info(f"🔔 Attempting push to: {sub.get('user_id', 'unknown')} - endpoint: {sub['endpoint'][:50]}...")
+                logger.info(f"🔔 Attempting Web Push to: {sub.get('user_id', 'unknown')} - endpoint: {sub['endpoint'][:50]}...")
                 
                 webpush(
                     subscription_info=subscription_info,
@@ -1438,7 +1495,7 @@ async def send_push_notification(db, organization_id: str, title: str, body: str
                     ttl=86400,
                     headers={"Urgency": "high"}
                 )
-                logger.info(f"✅ Push notification sent to user: {sub.get('user_id', 'unknown')}")
+                logger.info(f"✅ Web Push sent to user: {sub.get('user_id', 'unknown')}")
                 
             except WebPushException as e:
                 # Subscription geçersiz - sil

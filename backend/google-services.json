@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "769147806636",
+    "project_id": "plann-54bd6",
+    "storage_bucket": "plann-54bd6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:769147806636:android:3678ab458c8698bc545009",
+        "android_client_info": {
+          "package_name": "co.plannapp.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDymnWOCrEWt1kRatSfOrmNv6VAi3ohDrU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
