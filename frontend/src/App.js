@@ -58,6 +58,23 @@ function App() {
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const notificationsRef = useRef([]);
 
+  // App mode detection - PWA/APK olarak açıldığında is_app_mode set et
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const modeParam = urlParams.get('mode');
+    
+    // URL'de mode=app varsa kaydet
+    if (modeParam === 'app') {
+      localStorage.setItem('is_app_mode', 'true');
+    }
+    
+    // Standalone modda açıldıysa (PWA olarak yüklendi) da app mode olarak işaretle
+    if (window.matchMedia('(display-mode: standalone)').matches || 
+        window.navigator.standalone === true) {
+      localStorage.setItem('is_app_mode', 'true');
+    }
+  }, []);
+
   // URL routing - path'den view'ı oku ve URL değişikliklerini dinle
   useEffect(() => {
     const handleRouteChange = () => {

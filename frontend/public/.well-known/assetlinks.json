@@ -3,6 +3,6 @@
       "target": {
         "namespace": "android_app",
         "package_name": "co.plannapp.twa",
-        "sha256_cert_fingerprints": ["D0:D2:CA:9D:0C:19:CC:9E:47:46:7E:65:1D:37:AD:29:53:A3:A7:4F:3B:DB:BE:50:25:9D:8C:C2:B1:53:5A:56"]
+        "sha256_cert_fingerprints": ["63:4F:D2:75:C2:7A:F4:87:E4:65:E4:2E:49:AC:0B:7C:76:65:16:3E:CC:0F:42:71:A8:15:E6:DE:0C:D5:97:31"]
       }
     }]

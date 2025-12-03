@@ -1415,7 +1415,7 @@ async def send_push_notification(db, organization_id: str, title: str, body: str
             "title": title,
             "body": body,
             "icon": "https://plannapp.co/icons/icon-192x192.png",
-            "badge": "https://plannapp.co/icons/badge-mono-72x72.png",
+            "badge": "https://plannapp.co/icons/badge-mono-96x96.png",
             "data": data or {},
             "timestamp": datetime.now(timezone.utc).isoformat()
         })

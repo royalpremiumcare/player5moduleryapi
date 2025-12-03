@@ -122,13 +122,28 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    // App mode kontrolü
+    const isAppMode = localStorage.getItem('is_app_mode') === 'true';
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                         window.navigator.standalone === true;
+    
+    // State'leri temizle
     setToken(null);
     setUserRole(null);
+    setIsAuthenticated(false);
+    
+    // Sadece auth bilgilerini sil - is_app_mode'u KORUYORUZ
     localStorage.removeItem('authToken');
     localStorage.removeItem('userRole');
     sessionStorage.removeItem('authToken');
     sessionStorage.removeItem('userRole');
-    setIsAuthenticated(false);
+    
+    // Herkesi login'e yönlendir - app mode ise mode=app parametresi ekle
+    if (isAppMode || isStandalone) {
+      window.location.href = '/login?mode=app';
+    } else {
+      window.location.href = '/login';
+    }
   };
 
   return (

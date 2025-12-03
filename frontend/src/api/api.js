@@ -32,17 +32,27 @@ api.interceptors.request.use(
 // === API RESPONSE TUTAMAÇ (INTERCEPTOR) ===
 // 401 hatasında otomatik çıkış yapar
 api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => {
+    return response;
+  },
   (error) => {
     // 401 Unauthorized hatası geldiğinde otomatik logout
     if (error.response && error.response.status === 401) {
+      // App mode kontrolü - yönlendirmeden ÖNCE kontrol et
+      const isAppMode = localStorage.getItem('is_app_mode') === 'true';
+      
+      // Sadece auth bilgilerini sil - is_app_mode'u KORUYORUZ
       localStorage.removeItem('authToken');
       localStorage.removeItem('userRole');
       sessionStorage.removeItem('authToken');
       sessionStorage.removeItem('userRole');
-      window.location.href = '/';
+      
+      // App mode'a göre yönlendirme
+      if (isAppMode) {
+        window.location.href = '/login?mode=app';
+      } else {
+        window.location.href = '/';
+      }
     }
     return Promise.reject(error);
   }

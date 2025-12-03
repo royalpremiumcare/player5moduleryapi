@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLANN - Randevu Yönetim Sistemi</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.8;
+            color: #1a1a2e;
+            background: #fff;
+            font-size: 18px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 50px 40px;
+        }
+        
+        /* Cover Page */
+        .cover {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background: #000000;
+            color: white;
+            padding: 60px;
+            page-break-after: always;
+        }
+        
+        .cover h1 {
+            font-size: 96px;
+            font-weight: 800;
+            margin-bottom: 25px;
+            letter-spacing: -2px;
+            color: #ffffff;
+        }
+        
+        .cover .tagline {
+            font-size: 36px;
+            font-weight: 300;
+            opacity: 0.95;
+            margin-bottom: 50px;
+        }
+        
+        .cover .subtitle {
+            font-size: 22px;
+            opacity: 0.7;
+            max-width: 700px;
+            line-height: 1.8;
+        }
+        
+        .cover .badge {
+            margin-top: 70px;
+            padding: 18px 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 18px;
+        }
+        
+        /* Sections */
+        .section {
+            padding: 40px 0;
+            page-break-inside: avoid;
+        }
+        
+        .page-break {
+            page-break-before: always;
+        }
+        
+        .no-break {
+            page-break-inside: avoid;
+        }
+        
+        .section-title {
+            font-size: 42px;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 35px;
+            padding-bottom: 18px;
+            border-bottom: 4px solid #667eea;
+        }
+        
+        .section-subtitle {
+            font-size: 28px;
+            font-weight: 600;
+            color: #333;
+            margin: 35px 0 20px 0;
+        }
+        
+        /* Problem-Solution Cards */
+        .problem-card {
+            background: #f8f9fa;
+            border-radius: 16px;
+            padding: 35px;
+            margin-bottom: 30px;
+            border-left: 6px solid #e74c3c;
+            page-break-inside: avoid;
+        }
+        
+        .problem-group {
+            page-break-inside: avoid;
+            margin-bottom: 40px;
+        }
+        
+        .problem-card.solution {
+            border-left-color: #27ae60;
+            background: #f0fff4;
+        }
+        
+        .problem-card h3 {
+            font-size: 26px;
+            color: #e74c3c;
+            margin-bottom: 15px;
+        }
+        
+        .problem-card.solution h3 {
+            color: #27ae60;
+        }
+        
+        .problem-card p {
+            color: #555;
+            font-size: 20px;
+            line-height: 1.7;
+        }
+        
+        /* Feature List */
+        .feature-list {
+            list-style: none;
+        }
+        
+        .feature-list li {
+            padding: 16px 0;
+            padding-left: 40px;
+            position: relative;
+            font-size: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .feature-list li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #27ae60;
+            font-weight: bold;
+            font-size: 24px;
+        }
+        
+        /* Comparison Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            font-size: 20px;
+            page-break-inside: avoid;
+        }
+        
+        tr {
+            page-break-inside: avoid;
+        }
+        
+        th, td {
+            padding: 20px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        th {
+            background: #667eea;
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        
+        /* Campaign Box */
+        .campaign-box {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+            color: white;
+            border-radius: 24px;
+            padding: 50px;
+            text-align: center;
+            margin: 40px 0;
+            page-break-inside: avoid;
+        }
+        
+        .campaign-box.green {
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+        }
+        
+        .campaign-box.blue {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .campaign-box h3 {
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+        
+        .campaign-box p {
+            font-size: 22px;
+            opacity: 0.95;
+        }
+        
+        .campaign-box .big-text {
+            font-size: 56px;
+            font-weight: 800;
+            margin: 25px 0;
+        }
+        
+        /* AI Section */
+        .ai-box {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            border-radius: 24px;
+            padding: 50px;
+            margin: 40px 0;
+            page-break-inside: avoid;
+        }
+        
+        .ai-box h3 {
+            color: #667eea;
+            font-size: 30px;
+            margin-bottom: 25px;
+        }
+        
+        .chat-bubble {
+            background: #2d2d44;
+            border-radius: 18px;
+            padding: 28px;
+            margin: 20px 0;
+            font-size: 20px;
+        }
+        
+        .chat-bubble.user {
+            background: #667eea;
+            margin-left: 50px;
+        }
+        
+        .chat-bubble.ai {
+            background: #2d2d44;
+            margin-right: 50px;
+        }
+        
+        .chat-bubble .label {
+            font-size: 16px;
+            opacity: 0.7;
+            margin-bottom: 12px;
+        }
+        
+        /* WhatsApp Section */
+        .whatsapp-box {
+            background: #dcf8c6;
+            border-radius: 20px;
+            padding: 35px;
+            margin: 30px 0;
+            border-left: 6px solid #25d366;
+            font-size: 20px;
+            page-break-inside: avoid;
+        }
+        
+        .whatsapp-box h4 {
+            color: #075e54;
+            margin-bottom: 20px;
+            font-size: 26px;
+        }
+        
+        /* Steps */
+        .steps {
+            display: flex;
+            justify-content: space-between;
+            margin: 40px 0;
+            flex-wrap: wrap;
+        }
+        
+        .step {
+            flex: 1;
+            min-width: 200px;
+            text-align: center;
+            padding: 30px 20px;
+            background: #f8f9fa;
+            border-radius: 16px;
+            margin: 10px;
+        }
+        
+        .step-number {
+            width: 60px;
+            height: 60px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 auto 20px;
+        }
+        
+        .step h4 {
+            font-size: 22px;
+            margin-bottom: 12px;
+        }
+        
+        .step p {
+            font-size: 18px;
+            color: #666;
+        }
+        
+        /* Sectors */
+        .sectors {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 25px 0;
+        }
+        
+        .sector-tag {
+            background: #f0f0ff;
+            color: #667eea;
+            padding: 16px 28px;
+            border-radius: 35px;
+            font-weight: 500;
+            font-size: 20px;
+        }
+        
+        /* FAQ */
+        .faq-item {
+            background: #f8f9fa;
+            border-radius: 16px;
+            padding: 35px;
+            margin-bottom: 20px;
+            page-break-inside: avoid;
+        }
+        
+        .faq-item h4 {
+            color: #667eea;
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+        
+        .faq-item p {
+            color: #555;
+            font-size: 20px;
+            line-height: 1.7;
+        }
+        
+        /* CTA */
+        .cta-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 28px;
+            padding: 70px;
+            text-align: center;
+            margin: 60px 0;
+        }
+        
+        .cta-section h2 {
+            font-size: 44px;
+            margin-bottom: 25px;
+        }
+        
+        .cta-section p {
+            font-size: 26px;
+            opacity: 0.9;
+            margin-bottom: 35px;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: white;
+            color: #667eea;
+            padding: 22px 60px;
+            border-radius: 50px;
+            font-size: 24px;
+            font-weight: 700;
+            text-decoration: none;
+        }
+        
+        /* Contact */
+        .contact-info {
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+            margin: 40px 0;
+            flex-wrap: wrap;
+        }
+        
+        .contact-item {
+            text-align: center;
+        }
+        
+        .contact-item .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        
+        .contact-item p {
+            font-size: 20px;
+        }
+        
+        /* Advantages */
+        .advantage-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 25px;
+            margin: 35px 0;
+            page-break-inside: avoid;
+        }
+        
+        .advantage-item {
+            background: #f8f9fa;
+            padding: 35px;
+            border-radius: 16px;
+            page-break-inside: avoid;
+        }
+        
+        .advantage-item h4 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 24px;
+        }
+        
+        .advantage-item p {
+            font-size: 20px;
+        }
+        
+        /* Print styles */
+        @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            
+            body {
+                font-size: 14px;
+            }
+            
+            .cover {
+                min-height: 100vh;
+                background: #000000 !important;
+            }
+            
+            .cover h1 {
+                color: #ffffff !important;
+            }
+            
+            .section {
+                page-break-inside: avoid;
+            }
+            
+            .problem-group {
+                page-break-inside: avoid !important;
+            }
+            
+            .problem-card {
+                page-break-inside: avoid !important;
+            }
+            
+            .faq-item {
+                page-break-inside: avoid !important;
+            }
+            
+            .ai-box {
+                page-break-inside: avoid !important;
+            }
+            
+            .whatsapp-box {
+                page-break-inside: avoid !important;
+            }
+            
+            .advantage-grid {
+                page-break-inside: avoid !important;
+            }
+            
+            table {
+                page-break-inside: avoid !important;
+            }
+            
+            tr {
+                page-break-inside: avoid !important;
+            }
+            
+            .campaign-box {
+                page-break-inside: avoid !important;
+            }
+            
+            .steps {
+                page-break-inside: avoid !important;
+            }
+            
+            .campaign-box, .ai-box, .cta-section, .whatsapp-box, .problem-card {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+        }
+        
+        /* Highlight */
+        .highlight {
+            background: linear-gradient(120deg, #fff9c4 0%, #fff59d 100%);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        
+        /* Divider */
+        .divider {
+            height: 3px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            margin: 60px 0;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <!-- COVER PAGE -->
+    <div class="cover">
+        <h1>PLANN</h1>
+        <p class="tagline">Randevu Yönetim Sistemi</p>
+        <p class="subtitle">Kuaförler, güzellik merkezleri, psikologlar, diyetisyenler, diş klinikleri, spa salonları ve randevu ile çalışan tüm işletmeler için yeni nesil çözüm.</p>
+        <div class="badge">🤖 Yapay Zeka Destekli • 💬 WhatsApp Entegrasyonlu</div>
+    </div>
+
+    <div class="container">
+        <!-- PROBLEMS & SOLUTIONS -->
+        <div class="section">
+            <h2 class="section-title">😫 Yaşadığınız Sorunları Biliyoruz</h2>
+            
+            <div class="problem-group">
+                <div class="problem-card">
+                    <h3>❌ "Sürekli Telefon Çalıyor, İşime Odaklanamıyorum"</h3>
+                    <p>Müşteri saç kestirirken telefonunuz çalıyor. Cevap veremeseniz müşteri gidiyor, cevap verseniz elinizdeki müşteriye haksızlık ediyorsunuz.</p>
+                </div>
+                <div class="problem-card solution">
+                    <h3>✅ PLANN Çözümü</h3>
+                    <p>Müşterileriniz 7/24 online randevu alır. Siz telefonla uğraşmak yerine işinize odaklanırsınız. Gece 2'de bile randevu alınabilir!</p>
+                </div>
+            </div>
+            
+            <div class="problem-group">
+                <div class="problem-card">
+                    <h3>❌ "Randevular Çakışıyor, Müşteriler Bekliyor"</h3>
+                    <p>Telefonda "14:00'a gel" dediniz, defterinize yazmayı unuttunuz. Aynı saate başka biri daha geldi. Profesyonelliğiniz zedeleniyor.</p>
+                </div>
+                <div class="problem-card solution">
+                    <h3>✅ PLANN Çözümü</h3>
+                    <p>Akıllı çakışma kontrolü sayesinde aynı personele aynı saate asla iki randevu alınamaz. Hizmet süreleri otomatik hesaplanır.</p>
+                </div>
+            </div>
+            
+            <div class="problem-group">
+                <div class="problem-card">
+                    <h3>❌ "Müşteriler Randevuyu Unutuyor, Gelmiyor"</h3>
+                    <p>Randevu aldı, o gün başka işi çıktı, size haber vermeden gelmedi. Siz o saati boş beklediniz. Hem zaman hem para kaybı.</p>
+                </div>
+                <div class="problem-card solution">
+                    <h3>✅ PLANN Çözümü</h3>
+                    <p>Randevudan önce otomatik WhatsApp hatırlatması gider. Müşteri "Yarın saat 14:00'daki randevunuzu hatırlatırız" mesajını görünce ya gelir ya iptal eder. Boş bekleme son bulur.</p>
+                </div>
+            </div>
+            
+            <div class="problem-group">
+                <div class="problem-card">
+                    <h3>❌ "Kağıt Defter Karmaşası"</h3>
+                    <p>Defterde silinti, kazıntı, okunmayan yazılar... Geçen ayki randevuları bulmak için sayfalarca karıştırma. Hangi müşteri ne zaman gelmiş, kaç kez gelmiş, ne kadar ödemiş - hiçbir fikriniz yok.</p>
+                </div>
+                <div class="problem-card solution">
+                    <h3>✅ PLANN Çözümü</h3>
+                    <p>Tüm randevular dijital ortamda, aranabilir, filtrelenebilir. "Ahmet Bey" yazın, tüm geçmişi çıksın. Aylık raporlar, müşteri analizi, gelir takibi - hepsi bir tıkla.</p>
+                </div>
+            </div>
+            
+            <div class="problem-group">
+                <div class="problem-card">
+                    <h3>❌ "Profesyonel Görünmüyorum"</h3>
+                    <p>Rekabette öne çıkmak zor. Büyük markalar uygulama kullanıyor, siz hala telefon ve defter. Müşteriler modern işletmeleri tercih ediyor.</p>
+                </div>
+                <div class="problem-card solution">
+                    <h3>✅ PLANN Çözümü</h3>
+                    <p>Kendi markanızla online randevu sayfası. Mobil uygulama olarak telefona yüklenebilir. WhatsApp'tan profesyonel bildirimler. Müşterileriniz "Vay be, sistem kurmuşlar!" der.</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- KAZANIMLAR TABLOSU -->
+        <div class="section page-break">
+            <h2 class="section-title">🚀 PLANN ile Kazanacaklarınız</h2>
+            
+            <table>
+                <tr>
+                    <th>Sorun</th>
+                    <th>PLANN Öncesi</th>
+                    <th>PLANN Sonrası</th>
+                </tr>
+                <tr>
+                    <td>📞 Telefon Trafiği</td>
+                    <td>Günde 20+ arama</td>
+                    <td style="color: #27ae60; font-weight: 600;">Minimuma iner</td>
+                </tr>
+                <tr>
+                    <td>⚠️ Randevu Çakışması</td>
+                    <td>Ayda 5-10 kriz</td>
+                    <td style="color: #27ae60; font-weight: 600;">Sıfır çakışma</td>
+                </tr>
+                <tr>
+                    <td>😴 Unutulan Randevular</td>
+                    <td>%15-20 gelmeme</td>
+                    <td style="color: #27ae60; font-weight: 600;">%5'in altına düşer</td>
+                </tr>
+                <tr>
+                    <td>📒 Müşteri Takibi</td>
+                    <td>Defter karıştırma</td>
+                    <td style="color: #27ae60; font-weight: 600;">Tek tıkla erişim</td>
+                </tr>
+                <tr>
+                    <td>👥 Personel Takibi</td>
+                    <td>Manuel hesaplama</td>
+                    <td style="color: #27ae60; font-weight: 600;">Otomatik raporlama</td>
+                </tr>
+                <tr>
+                    <td>🏢 Profesyonellik</td>
+                    <td>Geleneksel görünüm</td>
+                    <td style="color: #27ae60; font-weight: 600;">Modern, dijital işletme</td>
+                </tr>
+                <tr>
+                    <td>🕐 Çalışma Saati</td>
+                    <td>Telefonla sınırlı</td>
+                    <td style="color: #27ae60; font-weight: 600;">7/24 randevu alımı</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- AI SECTION -->
+        <div class="section page-break">
+            <h2 class="section-title">🤖 Yapay Zeka Asistanı</h2>
+            <p style="font-size: 18px; margin-bottom: 30px;">PLANN'ın yapay zeka asistanı sayesinde sistemi <strong>konuşarak veya yazarak</strong> yönetebilirsiniz!</p>
+            
+            <div class="ai-box">
+                <h3>📅 Yapay Zeka ile Randevu Oluşturma</h3>
+                <div class="chat-bubble user">
+                    <div class="label">💬 SİZ</div>
+                    "Yarın Ahmet Yılmaz için saat 10:00'a traş randevusu oluştur"
+                </div>
+                <div class="chat-bubble ai">
+                    <div class="label">🤖 PLANN AI</div>
+                    "Tamam! Ahmet Yılmaz için yarın 10:00'da traş randevusu oluşturdum. Müşteriye WhatsApp bildirimi gönderildi. ✅"
+                </div>
+            </div>
+            
+            <div class="ai-box">
+                <h3>📊 Yapay Zeka ile İşletme Analizi</h3>
+                <div class="chat-bubble user">
+                    <div class="label">💬 SİZ</div>
+                    "Bu ay ne kadar kazandık?"
+                </div>
+                <div class="chat-bubble ai">
+                    <div class="label">🤖 PLANN AI</div>
+                    "Bu ay toplam 47.250 ₺ gelir elde ettiniz. Geçen aya göre %12 artış var. En yoğun gününüz Cumartesi oldu. 📈"
+                </div>
+                
+                <div style="margin-top: 25px;">
+                    <p style="opacity: 0.8; margin-bottom: 15px;"><strong>Sorabilecekleriniz:</strong></p>
+                    <ul style="opacity: 0.9; padding-left: 20px;">
+                        <li>"En aktif personelim kim?"</li>
+                        <li>"En çok hangi hizmeti verdik?"</li>
+                        <li>"Hangi müşterim en çok geldi?"</li>
+                        <li>"Personel bazında ciroları göster"</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- WHATSAPP -->
+        <div class="section page-break">
+            <h2 class="section-title">💬 WhatsApp Bildirim Sistemi</h2>
+            <p style="font-size: 18px; margin-bottom: 30px;">Müşterilerinizle en etkili iletişim kanalı olan WhatsApp üzerinden profesyonel bildirimler!</p>
+            
+            <div class="whatsapp-box">
+                <h4>✅ Randevunuz Onaylandı!</h4>
+                <p>
+                    Sayın Ayşe Hanım,<br>
+                    📅 15 Aralık 2024, Pazar<br>
+                    🕐 Saat: 14:00<br>
+                    💇 Hizmet: Saç Kesimi + Fön<br>
+                    📍 Güzellik Merkezi XYZ<br><br>
+                    Görüşmek üzere! 💫
+                </p>
+            </div>
+            
+            <div class="advantage-grid">
+                <div class="advantage-item">
+                    <h4>📱 %98 Açılma Oranı</h4>
+                    <p>SMS'in aksine neredeyse tüm mesajlar okunur</p>
+                </div>
+                <div class="advantage-item">
+                    <h4>💚 Güvenilir</h4>
+                    <p>Müşteriler WhatsApp'a daha çok güvenir</p>
+                </div>
+                <div class="advantage-item">
+                    <h4>💰 Ekonomik</h4>
+                    <p>SMS maliyetlerinden tasarruf</p>
+                </div>
+                <div class="advantage-item">
+                    <h4>⚡ Anlık</h4>
+                    <p>Saniyeler içinde ulaşır</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- SECTORS -->
+        <div class="section page-break">
+            <h2 class="section-title">🎯 Kimler İçin?</h2>
+            <p style="font-size: 18px; margin-bottom: 30px;">PLANN, randevu sistemiyle çalışan her sektör için uygundur:</p>
+            
+            <div class="sectors">
+                <span class="sector-tag">💇 Kuaförler & Berberler</span>
+                <span class="sector-tag">💅 Güzellik Merkezleri</span>
+                <span class="sector-tag">💆 SPA & Masaj Salonları</span>
+                <span class="sector-tag">🧠 Psikologlar & Terapistler</span>
+                <span class="sector-tag">🥗 Diyetisyenler</span>
+                <span class="sector-tag">🦷 Diş Klinikleri</span>
+                <span class="sector-tag">👁️ Göz Doktorları</span>
+                <span class="sector-tag">🏥 Fizik Tedavi</span>
+                <span class="sector-tag">🐕 Veteriner Klinikleri</span>
+                <span class="sector-tag">📸 Fotoğraf Stüdyoları</span>
+                <span class="sector-tag">🎓 Eğitim Merkezleri</span>
+                <span class="sector-tag">🚗 Araç Detailing</span>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- FEATURES -->
+        <div class="section page-break">
+            <h2 class="section-title">⭐ Öne Çıkan Özellikler</h2>
+            
+            <h3 class="section-subtitle">📅 Randevu Yönetimi</h3>
+            <ul class="feature-list">
+                <li>Günlük, haftalık, aylık takvim görünümü</li>
+                <li>Akıllı çakışma kontrolü - asla iki randevu çakışmaz</li>
+                <li>Hizmet süresi otomatik hesaplama</li>
+                <li>Randevu notları ve müşteri geçmişi</li>
+                <li>Tek tıkla iptal ve WhatsApp bildirimi</li>
+            </ul>
+            
+            <h3 class="section-subtitle">👥 Personel Yönetimi</h3>
+            <ul class="feature-list">
+                <li>Sınırsız personel ekleme</li>
+                <li>E-posta ile davet sistemi</li>
+                <li>Personel bazlı hizmet atama</li>
+                <li>Maaş veya komisyon hesaplama</li>
+                <li>Personel mola yönetimi (çakışma kontrolü dahil)</li>
+                <li>Performans takibi ve raporlama</li>
+            </ul>
+            
+            <h3 class="section-subtitle">💰 Finans Yönetimi</h3>
+            <ul class="feature-list">
+                <li>Günlük, haftalık, aylık gelir raporları</li>
+                <li>Hizmet bazında analiz</li>
+                <li>Gider takibi</li>
+                <li>Personel bordrosu otomatik hesaplama</li>
+                <li>Excel'e aktarma</li>
+            </ul>
+            
+            <h3 class="section-subtitle">👤 Müşteri Yönetimi</h3>
+            <ul class="feature-list">
+                <li>Otomatik müşteri kaydı</li>
+                <li>Randevu geçmişi ve toplam harcama</li>
+                <li>Müşteri notları (alerjiler, tercihler vb.)</li>
+                <li>Arama ve filtreleme</li>
+            </ul>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- HOW TO START -->
+        <div class="section page-break">
+            <h2 class="section-title">🚀 Nasıl Başlarım?</h2>
+            
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h4>Kayıt Ol</h4>
+                    <p>1 dakikada ücretsiz hesap oluştur</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h4>Hizmetleri Gir</h4>
+                    <p>Sunduğun hizmetleri tanımla</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h4>Personeli Ekle</h4>
+                    <p>Çalışanlarını davet et</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <h4>Linki Paylaş</h4>
+                    <p>Müşteriler randevu alsın!</p>
+                </div>
+            </div>
+            
+            <p style="text-align: center; font-size: 20px; color: #667eea; font-weight: 600;">⏱️ Kurulum Süresi: Sadece 10 Dakika!</p>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- WHY PLANN -->
+        <div class="section page-break">
+            <h2 class="section-title">🆚 Neden PLANN?</h2>
+            
+            <table>
+                <tr>
+                    <th>Özellik</th>
+                    <th>PLANN</th>
+                    <th>Diğerleri</th>
+                </tr>
+                <tr>
+                    <td>🤖 Yapay Zeka Asistanı</td>
+                    <td>✅ Var</td>
+                    <td>❌ Yok</td>
+                </tr>
+                <tr>
+                    <td>💬 WhatsApp Bildirimi</td>
+                    <td>✅ Var</td>
+                    <td>❌ Çoğunda yok</td>
+                </tr>
+                <tr>
+                    <td>🇹🇷 Türkçe Arayüz & Destek</td>
+                    <td>✅ %100 Türkçe</td>
+                    <td>⚠️ Çeviri hataları</td>
+                </tr>
+                <tr>
+                    <td>📱 Mobil Uygulama</td>
+                    <td>✅ Ücretsiz</td>
+                    <td>💰 Ek ücret</td>
+                </tr>
+                <tr>
+                    <td>👥 Personel Sayısı</td>
+                    <td>✅ Sınırsız</td>
+                    <td>⚠️ Kişi başı ücret</td>
+                </tr>
+                <tr>
+                    <td>💰 Fiyat</td>
+                    <td>✅ Uygun</td>
+                    <td>💰 Pahalı</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- FAQ -->
+        <div class="section page-break">
+            <h2 class="section-title">❓ Sıkça Sorulan Sorular</h2>
+            
+            <div class="faq-item">
+                <h4>"Teknik bilgim yok, kullanabilir miyim?"</h4>
+                <p><strong>Evet!</strong> PLANN, teknik bilgi gerektirmeyecek şekilde tasarlandı. Telefon kullanabiliyorsanız PLANN'ı da kullanabilirsiniz. Üstelik yapay zeka asistanı ile konuşarak bile işlem yapabilirsiniz.</p>
+            </div>
+            
+            <div class="faq-item">
+                <h4>"Müşteri bilgilerim güvende mi?"</h4>
+                <p><strong>Kesinlikle!</strong> SSL şifreleme ile tüm veriler korunur. KVKK uyumlu altyapı. Verileriniz sadece size aittir.</p>
+            </div>
+            
+            <div class="faq-item">
+                <h4>"Kaç personel ekleyebilirim?"</h4>
+                <p><strong>Sınırsız!</strong> Tüm planlarda sınırsız personel ekleme hakkınız var.</p>
+            </div>
+            
+            <div class="faq-item">
+                <h4>"İstediğim zaman iptal edebilir miyim?"</h4>
+                <p><strong>Evet!</strong> Taahhüt yok, istediğiniz zaman iptal edebilirsiniz.</p>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- CAMPAIGNS -->
+        <div class="section page-break">
+            <h2 class="section-title">🎁 Özel Kampanyalar</h2>
+            
+            <div class="campaign-box">
+                <h3>🌟 HOŞGELDİN KAMPANYASI</h3>
+                <div class="big-text">İLK AY %25 İNDİRİM!</div>
+                <p>Yeni üyelere özel, ilk ay tüm planlarda geçerli</p>
+            </div>
+            
+            <div class="campaign-box green">
+                <h3>📅 YILLIK PLAN AVANTAJI</h3>
+                <div class="big-text">2 AY BEDAVA!</div>
+                <p>12 ay yerine 10 ay öde, 12 ay kullan • %17 tasarruf</p>
+            </div>
+            
+            <div class="campaign-box blue">
+                <h3>🆓 RİSKSİZ DENEME</h3>
+                <div class="big-text">7 GÜN ÜCRETSİZ</div>
+                <p>Kredi kartı gerekmez • Tüm özellikler açık • Beğenmezsen taahhüt yok</p>
+            </div>
+        </div>
+
+        <!-- CTA -->
+        <div class="cta-section">
+            <h2>🚀 Hemen Başla!</h2>
+            <p>7 Gün Ücretsiz Dene + İlk Ay %25 İndirim!</p>
+            <a href="https://plannapp.co" class="cta-button">👉 plannapp.co</a>
+        </div>
+
+        <!-- CONTACT -->
+        <div class="section" style="text-align: center;">
+            <h2 class="section-title">📞 İletişim</h2>
+            <div class="contact-info">
+                <div class="contact-item">
+                    <div class="icon">🌐</div>
+                    <p><strong>Web</strong><br>plannapp.co</p>
+                </div>
+                <div class="contact-item">
+                    <div class="icon">📧</div>
+                    <p><strong>E-posta</strong><br>info@plannapp.co</p>
+                </div>
+                <div class="contact-item">
+                    <div class="icon">📱</div>
+                    <p><strong>Telefon</strong><br>0XXX XXX XX XX</p>
+                </div>
+            </div>
+            
+            <p style="margin-top: 50px; font-size: 20px; font-style: italic; color: #667eea;">
+                "İşinize odaklanın, randevuları PLANN yönetsin." 🚀
+            </p>
+        </div>
+    </div>
+</body>
+</html>
