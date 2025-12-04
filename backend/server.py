@@ -108,6 +108,7 @@ else:
 
 # Success ve Cancel URL'leri
 PAYMENT_SUCCESS_URL = "https://plannapp.co/"
+PAYMENT_SUCCESS_URL_NATIVE = "plannapp://payment-success"
 # Native app için deep link, web için normal URL
 PAYMENT_CANCEL_URL = "https://plannapp.co/subscribe"
 PAYMENT_CANCEL_URL_NATIVE = "plannapp://subscribe"
@@ -3410,7 +3411,9 @@ async def create_checkout_session(
             
             # Checkout Session oluştur
             # Native app için deep link, web için normal URL
-            cancel_url = PAYMENT_CANCEL_URL_NATIVE if plan_request.platform in ['android', 'ios'] else PAYMENT_CANCEL_URL
+            is_native = plan_request.platform in ['android', 'ios']
+            success_url = PAYMENT_SUCCESS_URL_NATIVE if is_native else PAYMENT_SUCCESS_URL + f'?session_id={{CHECKOUT_SESSION_ID}}'
+            cancel_url = PAYMENT_CANCEL_URL_NATIVE if is_native else PAYMENT_CANCEL_URL
             
             session_params = {
                 'payment_method_types': ['card'],
@@ -3427,7 +3430,7 @@ async def create_checkout_session(
                     'is_first_month': str(is_first_month),
                     'billing_cycle': billing_cycle
                 },
-                'success_url': PAYMENT_SUCCESS_URL + f'?session_id={{CHECKOUT_SESSION_ID}}',
+                'success_url': success_url,
                 'cancel_url': cancel_url,
                 'billing_address_collection': 'required',
             }

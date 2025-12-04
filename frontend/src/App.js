@@ -6,6 +6,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { useAuth } from "./context/AuthContext";
 import { io } from "socket.io-client";
+import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 
 import Dashboard from "@/components/Dashboard";
 import CalendarView from "@/components/Calendar";
@@ -35,7 +37,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 
 function App() {
@@ -80,6 +81,27 @@ function App() {
     if (window.matchMedia('(display-mode: standalone)').matches || 
         window.navigator.standalone === true) {
       localStorage.setItem('is_app_mode', 'true');
+    }
+  }, []);
+
+  // Deep link handling for native apps (Stripe payment success/cancel)
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      const handleDeepLink = CapacitorApp.addListener('appUrlOpen', (event) => {
+        console.log('🔗 Deep link received:', event.url);
+        
+        if (event.url.includes('payment-success')) {
+          toast.success("🎉 Ödeme başarılı! Planınız güncellendi.", { duration: 5000 });
+          setCurrentView('dashboard');
+        } else if (event.url.includes('subscribe')) {
+          // Cancel - subscribe sayfasında kal
+          setCurrentView('subscribe');
+        }
+      });
+
+      return () => {
+        handleDeepLink.remove();
+      };
     }
   }, []);
 
