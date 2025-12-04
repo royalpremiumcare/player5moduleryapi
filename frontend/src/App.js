@@ -58,10 +58,11 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const notificationsRef = useRef([]);
+  const location = useLocation();
 
   // App mode detection - PWA/APK olarak açıldığında is_app_mode set et
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
+    const urlParams = new URLSearchParams(location.search);
     const modeParam = urlParams.get('mode');
     
     // URL'de mode=app varsa kaydet

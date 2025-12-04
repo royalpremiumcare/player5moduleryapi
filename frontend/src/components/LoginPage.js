@@ -9,6 +9,7 @@ import { ArrowRight, Lock, User } from 'lucide-react';
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -22,8 +23,14 @@ const LoginPage = () => {
   useEffect(() => {
     window.scrollTo(0, 0);
     
-    // App mode detection
-    const urlParams = new URLSearchParams(window.location.search);
+    // Native Capacitor uygulaması kontrolü
+    if (Capacitor.isNativePlatform()) {
+      localStorage.setItem('is_app_mode', 'true');
+      setIsAppMode(true);
+    }
+
+    // App mode detection from URL (HashRouter compatible)
+    const urlParams = new URLSearchParams(location.search);
     const modeParam = urlParams.get('mode');
     
     if (modeParam === 'app') {
@@ -32,7 +39,7 @@ const LoginPage = () => {
     } else if (localStorage.getItem('is_app_mode') === 'true') {
       setIsAppMode(true);
     }
-  }, []);
+  }, [location]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
