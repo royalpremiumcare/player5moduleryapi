@@ -6,8 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import api from "../api/api";
+import api, { BACKEND_URL } from "../api/api";
 import { useAuth } from "../context/AuthContext";
+
+// Logo URL'ini full URL'e çevir (native için gerekli)
+const getFullLogoUrl = (logoUrl) => {
+  if (!logoUrl) return null;
+  if (logoUrl.startsWith('http')) return logoUrl;
+  return `${BACKEND_URL}${logoUrl}`;
+};
 
 const SettingsProfile = ({ onNavigate }) => {
   const { userRole, token } = useAuth();
@@ -342,13 +349,13 @@ const SettingsProfile = ({ onNavigate }) => {
                       <p className="text-xs text-gray-600 mb-1">Randevu Linkiniz:</p>
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                         <code className="flex-1 text-sm font-mono bg-white px-3 py-2 rounded border border-gray-200 text-gray-700 break-all">
-                          {typeof window !== 'undefined' ? window.location.origin : ''}/{settings.slug}
+                          plannapp.co/{settings.slug}
                         </code>
                         <button
                           type="button"
                           onClick={() => {
                             try {
-                              const url = `${typeof window !== 'undefined' ? window.location.origin : ''}/${settings.slug}`;
+                              const url = `https://plannapp.co/${settings.slug}`;
                               navigator.clipboard.writeText(url);
                               toast.success("Link kopyalandı!");
                             } catch (error) {
@@ -410,7 +417,7 @@ const SettingsProfile = ({ onNavigate }) => {
                       {(logoPreview || settings.logo_url) ? (
                         <div className="relative w-32 h-32 border-2 border-gray-300 rounded-lg overflow-hidden bg-white">
                           <img
-                            src={logoPreview || settings.logo_url}
+                            src={logoPreview || getFullLogoUrl(settings.logo_url)}
                             alt="Logo"
                             className="w-full h-full object-contain"
                           />

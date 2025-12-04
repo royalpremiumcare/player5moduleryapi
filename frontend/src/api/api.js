@@ -58,4 +58,5 @@ api.interceptors.response.use(
   }
 );
 
+export { BACKEND_URL };
 export default api;
