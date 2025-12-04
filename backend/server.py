@@ -6912,7 +6912,14 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             "appointment_id": appointment_for_emit.get('id'),
             "source": "public_booking"
         }
-        notification_body = f"{appointment.customer_name} - {service_info} ({appointment.appointment_date} {appointment.appointment_time})"
+        # Tarih formatını dd.mm.yyyy olarak ayarla
+        try:
+            date_parts = appointment.appointment_date.split('-')
+            formatted_date = f"{date_parts[2]}.{date_parts[1]}.{date_parts[0]}"
+        except:
+            formatted_date = appointment.appointment_date
+            
+        notification_body = f"{appointment.customer_name} - {service_info} ({formatted_date} {appointment.appointment_time})"
         
         # Admin'lere bildirim gönder
         admins = await db.users.find({"organization_id": organization_id, "role": "admin"}).to_list(100)
