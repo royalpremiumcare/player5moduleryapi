@@ -387,11 +387,11 @@ const SettingsProfile = ({ onNavigate }) => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="sms-reminder" className="text-sm font-semibold text-gray-900">
-                    SMS Hatırlatma (Saat Önce)
+                  <Label htmlFor="whatsapp-reminder" className="text-sm font-semibold text-gray-900">
+                    WhatsApp Hatırlatma (Saat Önce)
                   </Label>
                   <select
-                    id="sms-reminder"
+                    id="whatsapp-reminder"
                     value={settings.sms_reminder_hours}
                     onChange={(e) => setSettings({ ...settings, sms_reminder_hours: parseFloat(e.target.value) })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base"
@@ -405,7 +405,7 @@ const SettingsProfile = ({ onNavigate }) => {
                     <option value="24">24 Saat Önce</option>
                   </select>
                   <p className="text-xs text-gray-600">
-                    Randevudan kaç saat önce hatırlatma SMS'i gönderilsin
+                    Randevudan kaç saat önce WhatsApp hatırlatması gönderilsin
                   </p>
                 </div>
 
@@ -460,23 +460,23 @@ const SettingsProfile = ({ onNavigate }) => {
                       <p className="text-xs text-gray-600">Müşterilerinizin online randevu alabileceği gün ve saatleri belirleyin.</p>
                     </div>
                     
-                    <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {[
-                        { key: 'monday', label: 'Pazartesi' },
+                        { key: 'monday', label: 'Pzt' },
                         { key: 'tuesday', label: 'Salı' },
-                        { key: 'wednesday', label: 'Çarşamba' },
-                        { key: 'thursday', label: 'Perşembe' },
+                        { key: 'wednesday', label: 'Çrş' },
+                        { key: 'thursday', label: 'Prş' },
                         { key: 'friday', label: 'Cuma' },
-                        { key: 'saturday', label: 'Cumartesi' },
-                        { key: 'sunday', label: 'Pazar' }
+                        { key: 'saturday', label: 'Cmt' },
+                        { key: 'sunday', label: 'Pzr' }
                       ].map((day) => {
                         const dayData = settings.business_hours?.[day.key] || { is_open: true, open_time: "09:00", close_time: "18:00" };
                         return (
-                          <div key={day.key} className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                            <div className="w-full sm:w-24 flex-shrink-0">
-                              <span className="text-sm font-medium text-gray-900">{day.label}</span>
+                          <div key={day.key} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                            <div className="w-12 flex-shrink-0">
+                              <span className="text-xs font-medium text-gray-900">{day.label}</span>
                             </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="flex items-center gap-1 flex-shrink-0">
                               <Switch
                                 checked={dayData.is_open}
                                 onCheckedChange={(checked) => {
@@ -492,12 +492,9 @@ const SettingsProfile = ({ onNavigate }) => {
                                   });
                                 }}
                               />
-                              <span className="text-xs text-gray-600 sm:w-12">
-                                {dayData.is_open ? 'Açık' : 'Kapalı'}
-                              </span>
                             </div>
-                            {dayData.is_open && (
-                              <div className="flex items-center gap-2 flex-1 w-full sm:w-auto">
+                            {dayData.is_open ? (
+                              <div className="flex items-center gap-1 flex-1">
                                 <Input
                                   type="time"
                                   value={dayData.open_time}
@@ -513,9 +510,9 @@ const SettingsProfile = ({ onNavigate }) => {
                                       }
                                     });
                                   }}
-                                  className="flex-1 sm:w-32"
+                                  className="w-20 text-xs p-1"
                                 />
-                                <span className="text-gray-500 flex-shrink-0">-</span>
+                                <span className="text-gray-400 text-xs">-</span>
                                 <Input
                                   type="time"
                                   value={dayData.close_time}
@@ -531,12 +528,11 @@ const SettingsProfile = ({ onNavigate }) => {
                                       }
                                     });
                                   }}
-                                  className="flex-1 sm:w-32"
+                                  className="w-20 text-xs p-1"
                                 />
                               </div>
-                            )}
-                            {!dayData.is_open && (
-                              <span className="text-sm text-gray-400 flex-1 w-full sm:w-auto">Kapalı</span>
+                            ) : (
+                              <span className="text-xs text-gray-400 flex-1">Kapalı</span>
                             )}
                           </div>
                         );
