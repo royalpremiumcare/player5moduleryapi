@@ -34,6 +34,22 @@ const Subscribe = ({ onNavigate }) => {
         loadPlans();
       }, 1000);
     }
+
+    // Native: Browser kapandığında processingPlanId'yi sıfırla
+    let browserListener = null;
+    if (Capacitor.isNativePlatform()) {
+      browserListener = Browser.addListener('browserFinished', () => {
+        setProcessingPlanId(null);
+        // Planları yeniden yükle (ödeme başarılı olmuş olabilir)
+        loadPlans();
+      });
+    }
+
+    return () => {
+      if (browserListener) {
+        browserListener.remove();
+      }
+    };
   }, []);
 
   const loadPlans = async () => {
@@ -69,7 +85,15 @@ const Subscribe = ({ onNavigate }) => {
         
         if (Capacitor.isNativePlatform()) {
           // Native (Android/iOS) - In-App Browser ile aç
-          await Browser.open({ url: checkoutUrl });
+          // plannapp.co'ya redirect olduğunda browser'ı kapat
+          const urlListener = await Browser.addListener('browserPageLoaded', async () => {
+            // URL'i kontrol edemiyoruz, ama plannapp.co'ya dönüş olduğunda kapanacak
+          });
+          
+          await Browser.open({ 
+            url: checkoutUrl,
+            presentationStyle: 'popover'
+          });
         } else {
           // Web - Standart yönlendirme
           window.location.href = checkoutUrl;

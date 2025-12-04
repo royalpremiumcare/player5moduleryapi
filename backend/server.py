@@ -108,7 +108,7 @@ else:
 
 # Success ve Cancel URL'leri
 PAYMENT_SUCCESS_URL = "https://plannapp.co/"
-PAYMENT_CANCEL_URL = "https://plannapp.co/"
+PAYMENT_CANCEL_URL = "https://plannapp.co/subscribe"
 
 # --- PUSH NOTIFICATION AYARLARI ---
 VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', 'BB4nvNoHrWlWS6KTM1ybHUZD260l8b7Nnr2bMHvwnbflCJ4OJVd68Dqmw1hpaOFFUNmRFySvP3Ewzm596xjqF7g')

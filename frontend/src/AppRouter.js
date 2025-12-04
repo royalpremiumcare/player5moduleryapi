@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
 import { useAuth } from "./context/AuthContext";
 import LandingPage from "./components/LandingPage";
 import LoginPage from "./components/LoginPage";
