@@ -104,9 +104,26 @@
       }
     </script>
 </head>
-<body>
+<body style="background-color: #000000; margin: 0;">
     <noscript>You need to enable JavaScript to run this app.</noscript>
+    <!-- Loading splash - React yüklenene kadar gösterilir -->
+    <div id="loading-splash" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000000; display: flex; align-items: center; justify-content: center; z-index: 9999;">
+        <span style="color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 32px; font-weight: 600; letter-spacing: 4px;">PLANN</span>
+    </div>
     <div id="root"></div>
+    <script>
+        // React yüklendiğinde loading splash'ı kaldır
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                var splash = document.getElementById('loading-splash');
+                if (splash) {
+                    splash.style.transition = 'opacity 0.3s';
+                    splash.style.opacity = '0';
+                    setTimeout(function() { splash.remove(); }, 300);
+                }
+            }, 100);
+        });
+    </script>
     <script>
       !(function (t, e) {
         var o, n, p, r;
