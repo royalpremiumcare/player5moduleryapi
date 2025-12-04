@@ -2,6 +2,6 @@
 *.env
 *.env.*
 
-# Capacitor native platforms
-frontend/android/
-frontend/ios/
+# Capacitor native platforms (Not ignored anymore to sync custom changes)
+# frontend/android/
+# frontend/ios/
