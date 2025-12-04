@@ -386,6 +386,7 @@ const SettingsProfile = ({ onNavigate }) => {
                   <p className="text-xs text-gray-600">Müşterilerin size ulaşacağı numara.</p>
                 </div>
 
+                {/* WhatsApp Hatırlatma - Backend'de sms_reminder_hours olarak tutuluyor (legacy naming) */}
                 <div className="space-y-2">
                   <Label htmlFor="whatsapp-reminder" className="text-sm font-semibold text-gray-900">
                     WhatsApp Hatırlatma (Saat Önce)
