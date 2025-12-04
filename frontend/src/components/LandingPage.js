@@ -68,10 +68,6 @@ const LandingPage = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Kontrol bitene kadar veya yönlendirme olana kadar boş ekran göster
-  if (isCheckingMode) {
-    return <div className="min-h-screen bg-white"></div>;
-  }
 
   // Modal açıldığında sayfayı en üste scroll et (mobil Chrome için)
   useEffect(() => {
@@ -303,6 +299,11 @@ const LandingPage = () => {
       answer: "Evet, PLANN olarak tüm verilerinizi güvenli sunucularda şifreli şekilde saklıyoruz. Verileriniz 3. taraflarla paylaşılmaz."
     }
   ];
+
+  // Kontrol bitene kadar veya yönlendirme olana kadar boş ekran göster
+  if (isCheckingMode) {
+    return <div className="min-h-screen bg-white"></div>;
+  }
 
   return (
     <div className="min-h-screen bg-[#fafafa] landing-page-container">
