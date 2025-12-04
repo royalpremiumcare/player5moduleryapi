@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, CreditCard, ArrowLeft, DollarSign, ChartBar, Bell, BellOff } from "lucide-react"; 
 import { Card } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import api from "../api/api";
 import { Capacitor } from '@capacitor/core';
@@ -111,6 +112,30 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
       setIsSubscribing(false);
     }
   };
+
+  const handleDisableNotifications = async () => {
+    setIsSubscribing(true);
+    try {
+      // Backend'den subscription'ı sil
+      await api.delete('/push/unsubscribe');
+      setNotificationStatus('default');
+      toast.success('Bildirimler kapatıldı');
+    } catch (error) {
+      console.error('Bildirim kapatma hatası:', error);
+      toast.error('Bildirimler kapatılamadı');
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
+
+  const handleToggleNotifications = async (checked) => {
+    if (checked) {
+      await handleEnableNotifications();
+    } else {
+      await handleDisableNotifications();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
       <div className="px-4 pt-6 pb-4">
@@ -240,51 +265,33 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                 </>
               )}
 
-              {/* Bildirim Ayarları */}
-              <button
-                onClick={handleEnableNotifications}
-                disabled={isSubscribing || notificationStatus === 'granted'}
-                className={`w-full flex items-center justify-between p-4 rounded-lg border transition-colors text-left ${
-                  notificationStatus === 'granted' 
-                    ? 'border-green-200 bg-green-50' 
-                    : notificationStatus === 'denied'
-                    ? 'border-yellow-200 bg-yellow-50 hover:bg-yellow-100'
-                    : 'border-gray-200 hover:bg-gray-50'
-                }`}
-              >
+              {/* Bildirim Ayarları - Switch */}
+              <div className="w-full flex items-center justify-between p-4 rounded-lg border border-gray-200 bg-white">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                    notificationStatus === 'granted' ? 'bg-green-100' : 
-                    notificationStatus === 'denied' ? 'bg-yellow-100' : 'bg-gray-100'
+                    notificationStatus === 'granted' ? 'bg-green-100' : 'bg-gray-100'
                   }`}>
                     {notificationStatus === 'granted' ? (
                       <Bell className="w-5 h-5 text-green-600" />
                     ) : (
-                      <BellOff className="w-5 h-5 text-yellow-600" />
+                      <BellOff className="w-5 h-5 text-gray-500" />
                     )}
                   </div>
                   <div>
-                    <p className="text-base font-semibold text-gray-900">
-                      {isSubscribing ? 'Etkinleştiriliyor...' : 
-                       notificationStatus === 'granted' ? 'Bildirimler Açık' : 
-                       notificationStatus === 'denied' ? 'Bildirimleri Etkinleştir' : 
-                       'Bildirimleri Etkinleştir'}
-                    </p>
+                    <p className="text-base font-semibold text-gray-900">Bildirimler</p>
                     <p className="text-xs text-gray-600">
                       {notificationStatus === 'granted' 
                         ? 'Yeni randevular için bildirim alacaksınız' 
-                        : notificationStatus === 'denied'
-                        ? 'Tarayıcı ayarlarından izin verin'
-                        : 'Yeni randevu bildirimleri almak için etkinleştirin'}
+                        : 'Bildirimleri açarak randevu hatırlatmaları alın'}
                     </p>
                   </div>
                 </div>
-                {notificationStatus === 'granted' ? (
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Aktif</span>
-                ) : (
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
-                )}
-              </button>
+                <Switch 
+                  checked={notificationStatus === 'granted'}
+                  onCheckedChange={handleToggleNotifications}
+                  disabled={isSubscribing}
+                />
+              </div>
 
               <button
                 onClick={() => onNavigate && onNavigate("help-center")}
