@@ -28,25 +28,7 @@ const LandingPage = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
-  const [isCheckingMode, setIsCheckingMode] = useState(true); // Kontrol state'i
   
-  // App mode kontrolü - PWA/APK kullanıcısını landing page'de tutma, login'e yönlendir
-  useEffect(() => {
-    const checkMode = () => {
-      const isAppMode = localStorage.getItem('is_app_mode') === 'true';
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
-                           window.navigator.standalone === true;
-      
-      if (isAppMode || isStandalone) {
-        navigate('/login?mode=app', { replace: true });
-      } else {
-        setIsCheckingMode(false); // Sadece app mode değilse render izni ver
-      }
-    };
-    
-    checkMode();
-  }, [navigate]);
-
   const [contactForm, setContactForm] = useState({
     name: "",
     phone: "",
@@ -299,11 +281,6 @@ const LandingPage = () => {
       answer: "Evet, PLANN olarak tüm verilerinizi güvenli sunucularda şifreli şekilde saklıyoruz. Verileriniz 3. taraflarla paylaşılmaz."
     }
   ];
-
-  // Kontrol bitene kadar veya yönlendirme olana kadar boş ekran göster
-  if (isCheckingMode) {
-    return <div className="min-h-screen bg-white"></div>;
-  }
 
   return (
     <div className="min-h-screen bg-[#fafafa] landing-page-container">
