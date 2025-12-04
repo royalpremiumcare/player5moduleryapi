@@ -69,6 +69,11 @@ function App() {
       localStorage.setItem('is_app_mode', 'true');
     }
     
+    // Native Capacitor uygulaması ise app mode olarak işaretle
+    if (Capacitor.isNativePlatform()) {
+      localStorage.setItem('is_app_mode', 'true');
+    }
+    
     // Standalone modda açıldıysa (PWA olarak yüklendi) da app mode olarak işaretle
     if (window.matchMedia('(display-mode: standalone)').matches || 
         window.navigator.standalone === true) {

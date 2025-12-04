@@ -29,10 +29,16 @@ const AppRouter = () => {
 
   return (
     <Routes>
-      {/* Root Route - Authenticated ise App, değilse Landing */}
+      {/* Root Route - Authenticated ise App, değilse Landing (Native ise direkt Login) */}
       <Route 
         path="/" 
-        element={isAuthenticated ? <App /> : <LandingPage />} 
+        element={
+          isAuthenticated 
+            ? <App /> 
+            : Capacitor.isNativePlatform()
+              ? <Navigate to="/login?mode=app" replace />
+              : <LandingPage />
+        } 
       />
       {/* Dashboard Route - Same as root for authenticated users */}
       <Route 
