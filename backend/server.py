@@ -1,4 +1,5 @@
 from voice_ai_service import get_voice_ai_service
+from whatsapp_service import send_whatsapp_notification, build_whatsapp_message
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
@@ -200,9 +201,9 @@ scheduler = AsyncIOScheduler()
 _app_instance = None  # Global app instance for scheduler
 
 async def check_and_send_reminders():
-    """Her 5 dakikada bir yaklaşan randevuları kontrol et ve SMS gönder"""
+    """Her 5 dakikada bir yaklaşan randevuları kontrol et ve WhatsApp hatırlatması gönder"""
     try:
-        logging.info("=== SMS Reminder Check Started ===")
+        logging.info("=== WhatsApp Reminder Check Started ===")
         # Global app instance'ından db'yi al
         global _app_instance
         if _app_instance is None:
@@ -255,34 +256,37 @@ async def check_and_send_reminders():
                     
                     # Hatırlatma zamanı geldi mi?
                     if reminder_time_start <= apt_datetime <= reminder_time_end:
-                        logging.info(f"  ✓ Appointment {apt.get('id')} is in reminder window! Sending SMS...")
-                        # SMS gönder - Default mesaj kullan
-                        sms_message = build_sms_message(
-                            company_name, apt['customer_name'],
-                            apt['appointment_date'], apt['appointment_time'],
-                            apt['service_name'], support_phone, 
-                            hours_until=reminder_hours
+                        logging.info(f"  ✓ Appointment {apt.get('id')} is in reminder window! Sending WhatsApp...")
+                        # WhatsApp mesajı oluştur
+                        whatsapp_message = build_whatsapp_message(
+                            company_name=company_name,
+                            customer_name=apt['customer_name'],
+                            service_name=apt['service_name'],
+                            appointment_date=apt['appointment_date'],
+                            appointment_time=apt['appointment_time'],
+                            support_phone=support_phone,
+                            message_type="reminder"
                         )
-                        # send_sms sync olduğu için asyncio.to_thread kullan
+                        # WhatsApp gönder (sync fonksiyon)
                         import asyncio
-                        sms_result = await asyncio.to_thread(send_sms, apt['phone'], sms_message)
+                        wa_result = await asyncio.to_thread(send_whatsapp_notification, apt['phone'], whatsapp_message)
                         
-                        if sms_result:
-                        # Hatırlatma gönderildi olarak işaretle
+                        if wa_result:
+                            # Hatırlatma gönderildi olarak işaretle
                             await db.appointments.update_one(
-                            {"id": apt['id']},
-                            {"$set": {"reminder_sent": True}}
-                        )
-                            logging.info(f"  ✓ SMS reminder sent successfully to {apt['customer_name']} ({apt['phone']}) for appointment {apt['id']}")
+                                {"id": apt['id']},
+                                {"$set": {"reminder_sent": True}}
+                            )
+                            logging.info(f"  ✓ WhatsApp reminder sent successfully to {apt['customer_name']} ({apt['phone']}) for appointment {apt['id']}")
                         else:
-                            logging.error(f"  ✗ Failed to send SMS to {apt['customer_name']} ({apt['phone']}) for appointment {apt['id']}")
+                            logging.error(f"  ✗ Failed to send WhatsApp to {apt['customer_name']} ({apt['phone']}) for appointment {apt['id']}")
                     else:
                         logging.debug(f"  - Appointment {apt.get('id')} is not in reminder window (time: {apt_datetime.strftime('%Y-%m-%d %H:%M:%S')})")
                 
                 except Exception as e:
                     logging.error(f"Error sending reminder for appointment {apt.get('id')}: {e}", exc_info=True)
         
-        logging.info("=== SMS Reminder Check Completed ===")
+        logging.info("=== WhatsApp Reminder Check Completed ===")
     
     except Exception as e:
         logging.error(f"Error in check_and_send_reminders: {e}", exc_info=True)
