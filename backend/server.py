@@ -4279,8 +4279,13 @@ async def subscribe_push(request: Request, subscription_data: PushSubscriptionCr
         # Güncelle
         await db.push_subscriptions.update_one(
             {"_id": existing["_id"]},
-            {"$set": {"keys": subscription["keys"], "updated_at": datetime.now(timezone.utc).isoformat()}}
+            {"$set": {
+                "keys": subscription["keys"], 
+                "platform": subscription.get("platform", "web"),
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
         )
+        logger.info(f"Push subscription updated for user: {current_user.username}, platform: {subscription.get('platform', 'web')}")
         return {"message": "Push subscription updated"}
     
     # Yeni abonelik oluştur
@@ -4291,11 +4296,12 @@ async def subscribe_push(request: Request, subscription_data: PushSubscriptionCr
         "user_role": current_user.role,
         "endpoint": subscription["endpoint"],
         "keys": subscription["keys"],
+        "platform": subscription.get("platform", "web"),  # android, ios, web
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     await db.push_subscriptions.insert_one(push_doc)
-    logger.info(f"Push subscription created for user: {current_user.username}")
+    logger.info(f"Push subscription created for user: {current_user.username}, platform: {subscription.get('platform', 'web')}")
     
     return {"message": "Push subscription created"}
 
