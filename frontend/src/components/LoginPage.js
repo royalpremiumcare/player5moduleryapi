@@ -46,10 +46,8 @@ const LoginPage = () => {
         setError(result.error || 'Kullanıcı adı veya parola hatalı.');
         setLoading(false);
       } else {
-        // Başarılı giriş - token storage'a kaydedildi
-        // Tam sayfa yönlendirmesi yaparak state güncellemesi sorununu çözüyoruz
-        // Sayfa yenilendiğinde AuthContext'teki useEffect storage'dan token'ı okuyacak
-        window.location.href = '/';
+        // Başarılı giriş
+        navigate('/', { replace: true });
       }
     } catch (err) {
       setError(err.message || 'Giriş sırasında bir hata oluştu. Lütfen tekrar deneyin.');
