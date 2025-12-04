@@ -6880,21 +6880,80 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     except Exception as e:
         logging.warning(f"Error adding customer to collection: {e}")
     
-    # SMS gönder - Default mesaj kullan (template desteği kaldırıldı)
+    # WhatsApp ve Push Notification'ları background'da gönder (kullanıcıyı bekletmemek için)
     settings_data = await db.settings.find_one({"organization_id": organization_id})
-    if settings_data:
-        company_name = settings_data.get("company_name", "İşletmeniz")
-        support_phone = settings_data.get("support_phone", "Destek Hattı")
-        
-        sms_message = build_sms_message(
-            company_name, appointment.customer_name,
-            appointment.appointment_date, appointment.appointment_time,
-            service['name'], support_phone, sms_type="confirmation"
-        )
-        send_sms(appointment.phone, sms_message)
     
-    # Emit WebSocket event for real-time update
-    # Use appointment_obj.model_dump() instead of doc to avoid MongoDB _id issues
+    async def send_notifications_background():
+        """Tüm bildirimleri background'da gönder"""
+        try:
+            if settings_data:
+                company_name = settings_data.get("company_name", "İşletmeniz")
+                support_phone = settings_data.get("support_phone", "Destek Hattı")
+                
+                # WhatsApp onay mesajı gönder
+                try:
+                    whatsapp_message = build_whatsapp_message(
+                        company_name=company_name,
+                        customer_name=appointment.customer_name,
+                        service_name=service['name'],
+                        appointment_date=appointment.appointment_date,
+                        appointment_time=appointment.appointment_time,
+                        support_phone=support_phone,
+                        message_type="confirmation"
+                    )
+                    await asyncio.to_thread(send_whatsapp_notification, appointment.phone, whatsapp_message)
+                    logging.info(f"✓ WhatsApp confirmation sent to {appointment.phone}")
+                except Exception as wa_error:
+                    logging.error(f"WhatsApp error: {wa_error}")
+            
+            # Push notification gönder (admin ve ilgili personele)
+            try:
+                service_info = service.get('name', 'Randevu')
+                notification_data = {
+                    "type": "new_appointment",
+                    "appointment_id": appointment_for_emit.get('id'),
+                    "source": "public_booking"
+                }
+                # Tarih formatını dd.mm.yyyy olarak ayarla
+                try:
+                    date_parts = appointment.appointment_date.split('-')
+                    formatted_date = f"{date_parts[2]}.{date_parts[1]}.{date_parts[0]}"
+                except:
+                    formatted_date = appointment.appointment_date
+                    
+                notification_body = f"{appointment.customer_name} - {service_info} ({formatted_date} {appointment.appointment_time})"
+                
+                # Admin'lere bildirim gönder
+                admins = await db.users.find({"organization_id": organization_id, "role": "admin"}).to_list(100)
+                for admin in admins:
+                    await send_push_notification(
+                        db=db,
+                        organization_id=organization_id,
+                        title="🔔 Yeni Online Randevu!",
+                        body=notification_body,
+                        data=notification_data,
+                        user_id=admin['username']
+                    )
+                
+                # Atanan personele bildirim gönder (admin değilse)
+                if assigned_staff_id:
+                    staff = await db.users.find_one({"username": assigned_staff_id, "organization_id": organization_id})
+                    if staff and staff.get('role') != 'admin':
+                        await send_push_notification(
+                            db=db,
+                            organization_id=organization_id,
+                            title="🔔 Yeni Randevu Atandı!",
+                            body=notification_body,
+                            data=notification_data,
+                            user_id=assigned_staff_id
+                        )
+                logging.info(f"✓ Push notifications sent for appointment {appointment_for_emit.get('id')}")
+            except Exception as push_error:
+                logging.error(f"Push notification error: {push_error}")
+        except Exception as e:
+            logging.error(f"Background notification error: {e}")
+    
+    # Emit WebSocket event for real-time update (bu hızlı, bekletmez)
     appointment_for_emit = appointment_obj.model_dump()
     appointment_for_emit['created_at'] = appointment_for_emit['created_at'].isoformat()
     logger.info(f"About to emit appointment_created for org: {organization_id} (public endpoint)")
@@ -6908,51 +6967,8 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     except Exception as emit_error:
         logger.error(f"Failed to emit appointment_created (public endpoint): {emit_error}", exc_info=True)
     
-    # Push notification gönder (admin ve ilgili personele)
-    try:
-        service_info = service.get('name', 'Randevu')
-        notification_data = {
-            "type": "new_appointment",
-            "appointment_id": appointment_for_emit.get('id'),
-            "source": "public_booking"
-        }
-        # Tarih formatını dd.mm.yyyy olarak ayarla
-        try:
-            date_parts = appointment.appointment_date.split('-')
-            formatted_date = f"{date_parts[2]}.{date_parts[1]}.{date_parts[0]}"
-        except:
-            formatted_date = appointment.appointment_date
-            
-        notification_body = f"{appointment.customer_name} - {service_info} ({formatted_date} {appointment.appointment_time})"
-        
-        # Admin'lere bildirim gönder
-        admins = await db.users.find({"organization_id": organization_id, "role": "admin"}).to_list(100)
-        for admin in admins:
-            await send_push_notification(
-                db=db,
-                organization_id=organization_id,
-                title="🔔 Yeni Online Randevu!",
-                body=notification_body,
-                data=notification_data,
-                user_id=admin['username']
-            )
-        
-        # Atanan personele bildirim gönder (admin değilse, çünkü admin zaten yukarıda aldı)
-        if assigned_staff_id:
-            staff = await db.users.find_one({"username": assigned_staff_id, "organization_id": organization_id})
-            if staff and staff.get('role') != 'admin':
-                await send_push_notification(
-                    db=db,
-                    organization_id=organization_id,
-                    title="🔔 Yeni Randevu Atandı!",
-                    body=notification_body,
-                    data=notification_data,
-                    user_id=assigned_staff_id
-                )
-        
-        logger.info(f"Push notification sent for public booking: {organization_id}")
-    except Exception as push_error:
-        logger.error(f"Failed to send push notification: {push_error}")
+    # Background task olarak başlat (kullanıcıyı bekletmez - WhatsApp ve push notification arka planda gönderilir)
+    asyncio.create_task(send_notifications_background())
     
     return {"message": "Randevu başarıyla oluşturuldu", "appointment": appointment_obj}
 
