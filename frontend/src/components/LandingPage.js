@@ -18,6 +18,8 @@ import axios from "axios";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : window.location.origin;
 
+import { Capacitor } from '@capacitor/core';
+
 // Public endpoint için axios instance (token gerektirmez)
 const publicApi = axios.create({
   baseURL: `${BACKEND_URL}/api`,
@@ -29,6 +31,21 @@ const LandingPage = () => {
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
   
+  // PWA/APK kontrolü - Uygulama modundaysa login'e yönlendir
+  useEffect(() => {
+    // Native Capacitor uygulaması mı?
+    const isNative = Capacitor.isNativePlatform();
+    
+    // PWA standalone modunda mı? (iOS veya Android)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                         window.navigator.standalone === true;
+    
+    // Native veya PWA standalone ise login'e yönlendir
+    if (isNative || isStandalone) {
+      navigate('/login?mode=app', { replace: true });
+    }
+  }, [navigate]);
+
   const [contactForm, setContactForm] = useState({
     name: "",
     phone: "",
