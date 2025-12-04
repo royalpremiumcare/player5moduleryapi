@@ -4,6 +4,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import api from "../api/api";
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 
 const SettingsSubscription = ({ onNavigate }) => {
   const [planInfo, setPlanInfo] = useState(null);
