@@ -3,18 +3,70 @@ import { Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, Cr
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import api from "../api/api";
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
 
 const Settings = ({ onNavigate, userRole, onLogout }) => {
   const [notificationStatus, setNotificationStatus] = useState('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
 
   useEffect(() => {
-    if ('Notification' in window) {
-      setNotificationStatus(Notification.permission);
-    }
+    const checkNotificationStatus = async () => {
+      const isNative = Capacitor.isNativePlatform();
+      if (isNative) {
+        try {
+          const status = await PushNotifications.checkPermissions();
+          setNotificationStatus(status.receive);
+        } catch {
+          setNotificationStatus('default');
+        }
+      } else if ('Notification' in window) {
+        setNotificationStatus(Notification.permission);
+      }
+    };
+    checkNotificationStatus();
   }, []);
 
   const handleEnableNotifications = async () => {
+    const isNative = Capacitor.isNativePlatform();
+    
+    // Native (Android/iOS) Push Notification
+    if (isNative) {
+      setIsSubscribing(true);
+      try {
+        const permStatus = await PushNotifications.requestPermissions();
+        
+        if (permStatus.receive === 'granted') {
+          await PushNotifications.register();
+          
+          // Token dinleyicisi
+          PushNotifications.addListener('registration', async (token) => {
+            console.log('📱 Native Push Token:', token.value);
+            await api.post('/push/subscribe', {
+              subscription: {
+                endpoint: token.value,
+                keys: { p256dh: '', auth: '' },
+                platform: Capacitor.getPlatform()
+              }
+            });
+          });
+          
+          setNotificationStatus('granted');
+          toast.success('Bildirimler başarıyla etkinleştirildi!');
+        } else {
+          setNotificationStatus('denied');
+          toast.error('Bildirim izni verilmedi');
+        }
+      } catch (error) {
+        console.error('Native Push Error:', error);
+        toast.error('Bildirim etkinleştirilemedi');
+      } finally {
+        setIsSubscribing(false);
+      }
+      return;
+    }
+    
+    // Web Push Notification
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
       toast.error('Bu tarayıcı bildirimleri desteklemiyor');
       return;

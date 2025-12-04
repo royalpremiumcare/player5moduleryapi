@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { HashRouter } from 'react-router-dom';
+import { HashRouter, BrowserRouter } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import './index.css';
 import AppRouter from './AppRouter';
 import { AuthProvider } from './context/AuthContext';
@@ -25,15 +26,18 @@ window.addEventListener('error', (e) => {
   }
 });
 
+// Native için HashRouter, Web için BrowserRouter
+const Router = Capacitor.isNativePlatform() ? HashRouter : BrowserRouter;
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <HashRouter>
+    <Router>
       <ThemeProvider>
         <AuthProvider>
           <AppRouter />
         </AuthProvider>
       </ThemeProvider>
-    </HashRouter>
+    </Router>
   </React.StrictMode>
 );
