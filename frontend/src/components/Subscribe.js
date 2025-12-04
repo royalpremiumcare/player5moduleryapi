@@ -74,9 +74,15 @@ const Subscribe = ({ onNavigate }) => {
   const handleStartSubscription = async (planId) => {
     setProcessingPlanId(planId);
     try {
+      // Platform bilgisini belirle
+      const platform = Capacitor.isNativePlatform() 
+        ? (Capacitor.getPlatform() === 'ios' ? 'ios' : 'android') 
+        : 'web';
+      
       const response = await api.post("/payments/create-checkout-session", {
         plan_id: planId,
-        billing_cycle: billingCycle
+        billing_cycle: billingCycle,
+        platform: platform
       });
       
       if (response.data && response.data.checkout_url) {
@@ -85,15 +91,7 @@ const Subscribe = ({ onNavigate }) => {
         
         if (Capacitor.isNativePlatform()) {
           // Native (Android/iOS) - In-App Browser ile aç
-          // plannapp.co'ya redirect olduğunda browser'ı kapat
-          const urlListener = await Browser.addListener('browserPageLoaded', async () => {
-            // URL'i kontrol edemiyoruz, ama plannapp.co'ya dönüş olduğunda kapanacak
-          });
-          
-          await Browser.open({ 
-            url: checkoutUrl,
-            presentationStyle: 'popover'
-          });
+          await Browser.open({ url: checkoutUrl });
         } else {
           // Web - Standart yönlendirme
           window.location.href = checkoutUrl;

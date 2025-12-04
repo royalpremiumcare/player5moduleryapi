@@ -108,7 +108,9 @@ else:
 
 # Success ve Cancel URL'leri
 PAYMENT_SUCCESS_URL = "https://plannapp.co/"
+# Native app için deep link, web için normal URL
 PAYMENT_CANCEL_URL = "https://plannapp.co/subscribe"
+PAYMENT_CANCEL_URL_NATIVE = "plannapp://subscribe"
 
 # --- PUSH NOTIFICATION AYARLARI ---
 VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', 'BB4nvNoHrWlWS6KTM1ybHUZD260l8b7Nnr2bMHvwnbflCJ4OJVd68Dqmw1hpaOFFUNmRFySvP3Ewzm596xjqF7g')
@@ -1362,7 +1364,7 @@ class Token(BaseModel): access_token: str; token_type: str
 class ForgotPasswordRequest(BaseModel): username: str
 class ResetPasswordRequest(BaseModel): token: str; new_password: str
 class SetupPasswordRequest(BaseModel): token: str; new_password: str
-class PlanUpdateRequest(BaseModel): plan_id: str; billing_cycle: str = "monthly"  # 'monthly' or 'yearly'
+class PlanUpdateRequest(BaseModel): plan_id: str; billing_cycle: str = "monthly"; platform: str = "web"  # 'web', 'android', 'ios'
 class ContactRequest(BaseModel): name: str = Field(..., min_length=1); phone: str = Field(..., min_length=10); email: Optional[str] = None; message: Optional[str] = None
 class ContactStatusUpdate(BaseModel): status: Literal["pending", "contacted", "resolved"]
 class Service(BaseModel):
@@ -3407,6 +3409,9 @@ async def create_checkout_session(
                     coupon_id = None
             
             # Checkout Session oluştur
+            # Native app için deep link, web için normal URL
+            cancel_url = PAYMENT_CANCEL_URL_NATIVE if plan_request.platform in ['android', 'ios'] else PAYMENT_CANCEL_URL
+            
             session_params = {
                 'payment_method_types': ['card'],
                 'mode': 'subscription',
@@ -3423,7 +3428,7 @@ async def create_checkout_session(
                     'billing_cycle': billing_cycle
                 },
                 'success_url': PAYMENT_SUCCESS_URL + f'?session_id={{CHECKOUT_SESSION_ID}}',
-                'cancel_url': PAYMENT_CANCEL_URL,
+                'cancel_url': cancel_url,
                 'billing_address_collection': 'required',
             }
             
