@@ -5,3 +5,4 @@
 # Capacitor native platforms (Not ignored anymore to sync custom changes)
 # frontend/android/
 # frontend/ios/
+backend/firebase-admin-key.json

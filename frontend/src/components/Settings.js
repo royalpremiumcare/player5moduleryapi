@@ -306,7 +306,29 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                 onClick={async () => {
                   try {
                     toast.info('Bildirim ayarları onarılıyor...');
-                    if ('serviceWorker' in navigator) {
+                    const isNative = Capacitor.isNativePlatform();
+                    
+                    if (isNative) {
+                      // Native için: İzin iste ve yeniden kayıt ol
+                      const permStatus = await PushNotifications.requestPermissions();
+                      if (permStatus.receive === 'granted') {
+                        await PushNotifications.register();
+                        
+                        PushNotifications.addListener('registration', async (token) => {
+                          console.log('📱 Native Push Token (repair):', token.value);
+                          await api.post('/push/subscribe', {
+                            subscription: {
+                              endpoint: token.value,
+                              keys: { p256dh: '', auth: '' },
+                              platform: Capacitor.getPlatform()
+                            }
+                          });
+                          toast.success('Bildirimler onarıldı!');
+                        });
+                      } else {
+                        toast.error('Bildirim izni verilmedi');
+                      }
+                    } else if ('serviceWorker' in navigator) {
                       const reg = await navigator.serviceWorker.ready;
                       const sub = await reg.pushManager.getSubscription();
                       if (sub) {

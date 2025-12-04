@@ -43,9 +43,13 @@ from firebase_admin import credentials, messaging
 
 # Firebase Initialization
 try:
-    cred = credentials.Certificate("google-services.json")
-    firebase_admin.initialize_app(cred)
-    logging.info("✅ Firebase Admin SDK initialized")
+    firebase_cred_path = os.path.join(os.path.dirname(__file__), "firebase-admin-key.json")
+    if os.path.exists(firebase_cred_path):
+        cred = credentials.Certificate(firebase_cred_path)
+        firebase_admin.initialize_app(cred)
+        logging.info("✅ Firebase Admin SDK initialized")
+    else:
+        logging.warning("⚠️ firebase-admin-key.json not found - Native push notifications disabled")
 except Exception as e:
     logging.error(f"❌ Firebase initialization failed: {e}")
 
