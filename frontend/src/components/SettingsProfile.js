@@ -355,7 +355,7 @@ const SettingsProfile = ({ onNavigate }) => {
                           type="button"
                           onClick={() => {
                             try {
-                              const url = `https://plannapp.co/${settings.slug}`;
+                              const url = `plannapp.co/${settings.slug}`;
                               navigator.clipboard.writeText(url);
                               toast.success("Link kopyalandı!");
                             } catch (error) {
