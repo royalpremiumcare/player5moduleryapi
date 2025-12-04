@@ -30,7 +30,15 @@ const SettingsSubscription = ({ onNavigate }) => {
     try {
       const response = await api.post("/subscription/portal");
       // Stripe Customer Portal'a yönlendir
-      window.location.href = response.data.portal_url;
+      const portalUrl = response.data.portal_url;
+      
+      if (Capacitor.isNativePlatform()) {
+        // Native (Android/iOS) - In-App Browser ile aç
+        await Browser.open({ url: portalUrl });
+      } else {
+        // Web - Standart yönlendirme
+        window.location.href = portalUrl;
+      }
     } catch (error) {
       console.error("Portal oluşturma hatası:", error);
       const errorMessage = error.response?.data?.detail || "Stripe portal açılamadı";

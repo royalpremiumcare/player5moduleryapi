@@ -3,6 +3,8 @@ import { ArrowLeft, Check } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import api from "../api/api";
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { toast } from "sonner";
 
 const Subscribe = ({ onNavigate }) => {
@@ -63,7 +65,15 @@ const Subscribe = ({ onNavigate }) => {
       
       if (response.data && response.data.checkout_url) {
         // Stripe Checkout sayfasına yönlendir
-        window.location.href = response.data.checkout_url;
+        const checkoutUrl = response.data.checkout_url;
+        
+        if (Capacitor.isNativePlatform()) {
+          // Native (Android/iOS) - In-App Browser ile aç
+          await Browser.open({ url: checkoutUrl });
+        } else {
+          // Web - Standart yönlendirme
+          window.location.href = checkoutUrl;
+        }
       } else {
         toast.error("Ödeme sayfası oluşturulamadı");
         setProcessingPlanId(null);
