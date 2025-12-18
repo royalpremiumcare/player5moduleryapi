@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calendar, Check, Menu, X, Clock, Users, Smartphone, BarChart3, Bell, Shield, Zap, TrendingUp, Star, MessageSquare, FileText, UserCheck, CircleDollarSign, ChevronDown, Phone, Mail } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { Calendar, Check, Menu, X, Clock, Users, Smartphone, BarChart3, Bell, Shield, Zap, TrendingUp, Star, MessageSquare, FileText, UserCheck, CircleDollarSign, ChevronDown, Phone, Mail, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ const publicApi = axios.create({
 
 const LandingPage = () => {
   const navigate = useNavigate();
+  const { t, i18n } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
@@ -54,18 +56,127 @@ const LandingPage = () => {
   });
   const [contactFormLoading, setContactFormLoading] = useState(false);
   const [contactFormSuccess, setContactFormSuccess] = useState(false);
-  // Animasyonlu kelimeler
-  const words = ["Hızlı", "Pratik", "Kolay", "Hesaplı"];
+  // GBP Fiyatlandırma (İngilizce seçildiğinde)
+  // monthly: normal fiyat, monthlyDiscounted: %25 indirimli (yuvarlanmış), yearly: yıllık fiyat
+  const gbpPricing = {
+    'standart': { monthly: 15, monthlyDiscounted: 11, yearly: 150 },
+    'standard': { monthly: 15, monthlyDiscounted: 11, yearly: 150 },
+    'profesyonel': { monthly: 22, monthlyDiscounted: 17, yearly: 220 },
+    'professional': { monthly: 22, monthlyDiscounted: 17, yearly: 220 },
+    'premium': { monthly: 32, monthlyDiscounted: 24, yearly: 320 },
+    'business': { monthly: 42, monthlyDiscounted: 32, yearly: 420 },
+    'enterprise': { monthly: 55, monthlyDiscounted: 41, yearly: 550 },
+    'kurumsal': { monthly: 79, monthlyDiscounted: 59, yearly: 790 },
+    'corporate': { monthly: 79, monthlyDiscounted: 59, yearly: 790 },
+  };
+
+  // Para birimi ve fiyat formatlama
+  const formatPrice = (plan, isYearly, hasDiscount) => {
+    const planKey = plan.name.toLowerCase();
+    const isEnglish = i18n.language === 'en';
+    
+    if (isEnglish && gbpPricing[planKey]) {
+      let price;
+      if (isYearly) {
+        price = gbpPricing[planKey].yearly;
+      } else if (hasDiscount) {
+        price = gbpPricing[planKey].monthlyDiscounted;
+      } else {
+        price = gbpPricing[planKey].monthly;
+      }
+      return { price, currency: '£', locale: 'en-GB' };
+    }
+    
+    // TL fiyatları (backend'den)
+    const price = isYearly 
+      ? Math.round(plan.price_monthly * 10) // yıllık = aylık * 10
+      : plan.price_monthly;
+    return { price, currency: '₺', locale: 'tr-TR' };
+  };
+
+  // Orijinal fiyatı hesapla (indirim gösterimi için)
+  const getOriginalPrice = (plan, isYearly) => {
+    const planKey = plan.name.toLowerCase();
+    const isEnglish = i18n.language === 'en';
+    
+    if (isEnglish && gbpPricing[planKey]) {
+      const price = isYearly 
+        ? gbpPricing[planKey].monthly * 12 
+        : gbpPricing[planKey].monthly;
+      return { price, currency: '£', locale: 'en-GB' };
+    }
+    
+    const price = isYearly 
+      ? plan.price_monthly * 12 
+      : plan.price_monthly;
+    return { price, currency: '₺', locale: 'tr-TR' };
+  };
+
+  // Backend'den gelen özellikleri çevir
+  const translateFeature = (feature) => {
+    const featureMap = {
+      // WhatsApp
+      'WhatsApp hatırlatma': t('landing.pricing.features.whatsappReminder'),
+      'WhatsApp Hatırlatma': t('landing.pricing.features.whatsappReminder'),
+      // SMS
+      'SMS hatırlatma': t('landing.pricing.features.smsReminder'),
+      'SMS Hatırlatma': t('landing.pricing.features.smsReminder'),
+      // Staff
+      'Sınırsız personel': t('landing.pricing.features.unlimitedStaff'),
+      'Sınırsız Personel': t('landing.pricing.features.unlimitedStaff'),
+      // Customers
+      'Sınırsız müşteri': t('landing.pricing.features.unlimitedCustomers'),
+      'Sınırsız Müşteri': t('landing.pricing.features.unlimitedCustomers'),
+      // Services
+      'Sınırsız hizmet': t('landing.pricing.features.unlimitedServices'),
+      'Sınırsız Hizmet': t('landing.pricing.features.unlimitedServices'),
+      // Booking page
+      'Online rezervasyon sayfası': t('landing.pricing.features.bookingPage'),
+      'Online Rezervasyon Sayfası': t('landing.pricing.features.bookingPage'),
+      'Online randevu': t('landing.pricing.features.bookingPage'),
+      'Online Randevu': t('landing.pricing.features.bookingPage'),
+      // Notifications
+      'Anlık bildirimler': t('landing.pricing.features.instantNotifications'),
+      'Anlık Bildirimler': t('landing.pricing.features.instantNotifications'),
+      // Revenue stats
+      'Gelir gider istatistikleri': t('landing.pricing.features.revenueStats'),
+      'Gelir Gider İstatistikleri': t('landing.pricing.features.revenueStats'),
+      'Gelir & gider istatistikleri': t('landing.pricing.features.revenueStats'),
+      'Gelir & Gider İstatistikleri': t('landing.pricing.features.revenueStats'),
+      'İstatistikler': t('landing.pricing.features.revenueStats'),
+      // AI Assistant
+      'AI akıllı asistan': t('landing.pricing.features.aiAssistant'),
+      'AI Akıllı Asistan': t('landing.pricing.features.aiAssistant'),
+      'Yapay Zeka Akıllı Asistan': t('landing.pricing.features.aiAssistant'),
+      'Yapay Zeka Akıllı Asistan (Limitsiz)': t('landing.pricing.features.aiAssistantUnlimited'),
+      // Priority support
+      'Öncelikli destek': t('landing.pricing.features.prioritySupport'),
+      'Öncelikli Destek': t('landing.pricing.features.prioritySupport'),
+      // Custom integrations
+      'Özel entegrasyonlar': t('landing.pricing.features.customIntegrations'),
+      'Özel Entegrasyonlar': t('landing.pricing.features.customIntegrations'),
+      // Appointment reminder
+      'Randevu hatırlatma dahil': t('landing.pricing.features.appointmentReminder'),
+      'Randevu Hatırlatma Dahil': t('landing.pricing.features.appointmentReminder'),
+    };
+    return featureMap[feature] || feature;
+  };
+
+  // Animasyonlu kelimeler - dil değişince güncellenir
+  const getWords = () => {
+    const wordsArray = t('landing.hero.words', { returnObjects: true });
+    return Array.isArray(wordsArray) ? wordsArray : ["Fast", "Practical", "Easy", "Affordable"];
+  };
   const [wordIndex, setWordIndex] = useState(0);
   
   useEffect(() => {
     const interval = setInterval(() => {
       // Kelime değiştir (fade efekti olmadan direkt değişim)
-      setWordIndex((prev) => (prev + 1) % words.length);
+      setWordIndex((prev) => (prev + 1) % getWords().length);
     }, 900); // Her 0.9 saniyede bir değiş
     
     return () => clearInterval(interval);
-  }, []);
+  }, [i18n.language]);
 
 
   // Modal açıldığında sayfayı en üste scroll et (mobil Chrome için)
@@ -151,82 +262,65 @@ const LandingPage = () => {
   const features = [
     {
       icon: MessageSquare,
-      title: "Otomatik SMS ve Hatırlatma",
-      description: "Randevu öncesi otomatik SMS ile hatırlatma gönderin, unutulan randevulara son verin."
+      title: t('landing.features.autoSms.title'),
+      description: t('landing.features.autoSms.description')
     },
     {
       icon: Calendar,
-      title: "Online Randevu Sistemi",
-      description: "Müşterilerinizin randevularını online olarak kendilerinin oluşturmasını sağlayın."
+      title: t('landing.features.onlineBooking.title'),
+      description: t('landing.features.onlineBooking.description')
     },
     {
       icon: Clock,
-      title: "Periyodik Seans Yönetimi",
-      description: "Müşterilerinize periyodik olarak tekrar eden randevular oluşturup seansları takip edin."
+      title: t('landing.features.periodicSessions.title'),
+      description: t('landing.features.periodicSessions.description')
     },
     {
       icon: Users,
-      title: "Müşteri Yönetimi",
-      description: "Sınırsız sayıda müşteri ekleyip sonraki randevularını kolayca oluşturun ve yönetin."
+      title: t('landing.features.customerManagement.title'),
+      description: t('landing.features.customerManagement.description')
     },
     {
       icon: Calendar,
-      title: "Detaylı Takvim Yönetimi",
-      description: "Randevularınızı günlük, haftalık, aylık olarak takvim üzerinden detaylı takip edip yönetin."
+      title: t('landing.features.calendarManagement.title'),
+      description: t('landing.features.calendarManagement.description')
     },
     {
       icon: UserCheck,
-      title: "Personel Yönetimi",
-      description: "Sınırsız sayıda personel ekleyip randevularını ve istatistiklerini kolayca takip edin."
+      title: t('landing.features.staffManagement.title'),
+      description: t('landing.features.staffManagement.description')
     },
     {
       icon: Smartphone,
-      title: "Çoklu Cihaz Desteği",
-      description: "Bilgisayar, telefon ve tablet üzerinden tüm randevularınıza her yerden erişin."
+      title: t('landing.features.multiDevice.title'),
+      description: t('landing.features.multiDevice.description')
     },
     {
       icon: CircleDollarSign,
-      title: "Gelir Gider Yönetimi",
-      description: "İşletmenize ait gelir giderleri takip edip ön muhasebe sisteminden faydalanın."
+      title: t('landing.features.financeManagement.title'),
+      description: t('landing.features.financeManagement.description')
     },
     {
       icon: BarChart3,
-      title: "Raporlama & İstatistikler",
-      description: "Müşteri, personel ve hizmet istatistiklerinizi görüntüleyin. Gelir giderlerinizi takip edin."
+      title: t('landing.features.reporting.title'),
+      description: t('landing.features.reporting.description')
     }
   ];
 
-  const testimonials = [
-    {
-      name: "Ayşe K.",
-      role: "Güzellik Salonu",
-      content: "PLANN ile randevularımız hiç karışmıyor. Hatırlatma SMS'lerini müşterilerimiz çok beğeniyor."
-    },
-    {
-      name: "Mehmet D.",
-      role: "Diyetisyen",
-      content: "Arayüz çok sade, her şey yerli yerinde. Takvim özelliği hayat kurtarıyor."
-    },
-    {
-      name: "Elif T.",
-      role: "Kuaför",
-      content: "Personel yönetimi sayesinde hangi çalışanın hangi saatte ne işi var görebiliyorum."
-    },
-    {
-      name: "Serkan B.",
-      role: "Psikolog",
-      content: "PLANN, zaman yönetimimizi tamamen değiştirdi. İnanılmaz pratik."
-    },
-    {
-      name: "Merve Y.",
-      role: "Estetisyen",
-      content: "Müşteri sayımız arttıkça PLANN ile kontrolü sağlamak çok daha kolaylaştı."
-    },
-    {
-      name: "Zeynep A.",
-      role: "Veteriner",
-      content: "Hem masaüstü hem telefonda çok güzel çalışıyor. Müşterilerim de çok memnun."
-    }
+  const testimonials = i18n.language === 'tr' ? [
+    { name: "Ayşe K.", role: "Güzellik Salonu", content: "PLANN ile randevularımız hiç karışmıyor. Hatırlatma SMS'lerini müşterilerimiz çok beğeniyor." },
+    { name: "Mehmet D.", role: "Diyetisyen", content: "Arayüz çok sade, her şey yerli yerinde. Takvim özelliği hayat kurtarıyor." },
+    { name: "Elif T.", role: "Kuaför", content: "Personel yönetimi sayesinde hangi çalışanın hangi saatte ne işi var görebiliyorum." },
+    { name: "Serkan B.", role: "Psikolog", content: "PLANN, zaman yönetimimizi tamamen değiştirdi. İnanılmaz pratik." },
+    { name: "Merve Y.", role: "Estetisyen", content: "Müşteri sayımız arttıkça PLANN ile kontrolü sağlamak çok daha kolaylaştı." },
+    { name: "Zeynep A.", role: "Veteriner", content: "Hem masaüstü hem telefonda çok güzel çalışıyor. Müşterilerim de çok memnun." }
+  ] : [
+    { name: "Sarah K.", role: "Beauty Salon", content: "With PLANN, our appointments never get mixed up. Our customers love the reminder SMS." },
+    { name: "Michael D.", role: "Dietitian", content: "The interface is so clean, everything is in its place. The calendar feature is a lifesaver." },
+    { name: "Emma T.", role: "Hair Salon", content: "Thanks to staff management, I can see which employee is doing what at which time." },
+    { name: "James B.", role: "Psychologist", content: "PLANN has completely changed our time management. Incredibly practical." },
+    { name: "Sophie Y.", role: "Aesthetician", content: "As our customer numbers grew, PLANN made it so much easier to stay in control." },
+    { name: "Rachel A.", role: "Veterinarian", content: "Works brilliantly on both desktop and mobile. My clients are very pleased too." }
   ];
 
   const [plans, setPlans] = useState([]);
@@ -253,50 +347,17 @@ const LandingPage = () => {
   }, []);
 
   const faqs = [
-    {
-      question: "PLANN nedir ve nasıl çalışır?",
-      answer: "PLANN, işletmelerin randevularını kolayca yönetmesini sağlayan çevrim içi bir sistemdir. Kullanıcı panelinden müşteri, personel ve randevu işlemlerini zahmetsizce gerçekleştirebilirsiniz."
-    },
-    {
-      question: "Nasıl üye olabilirim?",
-      answer: "PLANN'a üye olmak için Hemen Başla butonuna tıklayarak firma kaydınızı kolayca oluşturabilirsiniz."
-    },
-    {
-      question: "Ücretsiz deneme süresi var mı?",
-      answer: "Evet, PLANN'ı 7 gün boyunca ücretsiz olarak deneyebilirsiniz. Deneme süresi sonunda dilediğiniz paketi seçerek devam edebilirsiniz."
-    },
-    {
-      question: "Randevu limitini aşarsam ne olur?",
-      answer: "Seçtiğiniz pakette belirtilen randevu limitini aştığınızda yeni randevu oluşturamazsınız. Daha yüksek limitli bir pakete geçerek devam edebilirsiniz."
-    },
-    {
-      question: "Fatura ve ödeme işlemleri nasıl ilerliyor?",
-      answer: "Tüm ödemeler güvenli altyapılar üzerinden online olarak yapılır ve her ay otomatik fatura oluşturulur. Faturalara panelinizden ulaşabilirsiniz."
-    },
-    {
-      question: "Sistemi mobil cihazlarda kullanabilir miyim?",
-      answer: "Evet, PLANN mobil uyumludur. Hem cep telefonlarında hem de tabletlerde sorunsuz çalışır."
-    },
-    {
-      question: "Personel hesabı ekleyebilir miyim?",
-      answer: "Evet, her paket belirli sayıda personel hesabı eklemenize olanak tanır. Genişletmek için üst paketlere geçebilirsiniz."
-    },
-    {
-      question: "Müşterilerime hatırlatma SMS'i gönderiliyor mu?",
-      answer: "Evet, PLANN sayesinde randevuyu ilk oluşturduğunuzda bilgi SMS'i gönderilir. Ayrıca randevudan 2 saat önce hatırlatma SMS'i otomatik olarak müşterilerinize gönderilir."
-    },
-    {
-      question: "Müşteri bilgilerimi dışa aktarabilir miyim?",
-      answer: "Evet, müşteri bilgilerinizi Excel formatında dışa aktarabilirsiniz."
-    },
-    {
-      question: "Teknik destek sunuyor musunuz?",
-      answer: "Evet, destek ekibimiz hafta içi her gün size yardımcı olmaktan memnuniyet duyar. Panel içinden destek talebi oluşturabilirsiniz."
-    },
-    {
-      question: "Verilerim güvende mi?",
-      answer: "Evet, PLANN olarak tüm verilerinizi güvenli sunucularda şifreli şekilde saklıyoruz. Verileriniz 3. taraflarla paylaşılmaz."
-    }
+    { question: t('landing.faq.q1'), answer: t('landing.faq.a1') },
+    { question: t('landing.faq.q2'), answer: t('landing.faq.a2') },
+    { question: t('landing.faq.q3'), answer: t('landing.faq.a3') },
+    { question: t('landing.faq.q4'), answer: t('landing.faq.a4') },
+    { question: t('landing.faq.q5'), answer: t('landing.faq.a5') },
+    { question: t('landing.faq.q6'), answer: t('landing.faq.a6') },
+    { question: t('landing.faq.q7'), answer: t('landing.faq.a7') },
+    { question: t('landing.faq.q8'), answer: t('landing.faq.a8') },
+    { question: t('landing.faq.q9'), answer: t('landing.faq.a9') },
+    { question: t('landing.faq.q10'), answer: t('landing.faq.a10') },
+    { question: t('landing.faq.q11'), answer: t('landing.faq.a11') }
   ];
 
   return (
@@ -305,7 +366,7 @@ const LandingPage = () => {
       <div className="w-full bg-gray-900 text-white py-2 md:hidden">
         <div className="container mx-auto px-4 text-center">
           <span className="text-sm font-medium">
-            Yeni üye işyerlerine özel ilk ay %25 indirim !
+            {t('landing.banner')}
           </span>
         </div>
       </div>
@@ -323,19 +384,29 @@ const LandingPage = () => {
 
             {/* Desktop Navigation */}
             <nav className="hidden md:flex items-center gap-8">
-              <a href="#features" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">Özellikler</a>
-              <a href="#pricing" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">Fiyatlar</a>
-              <a href="#testimonials" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">Yorumlar</a>
-              <a href="#faq" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">SSS</a>
+              <a href="#features" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">{t('nav.features')}</a>
+              <a href="#pricing" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">{t('nav.pricing')}</a>
+              <a href="#testimonials" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">{t('nav.testimonials')}</a>
+              <a href="#faq" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">{t('nav.faq')}</a>
             </nav>
 
             {/* Desktop Buttons */}
             <div className="hidden md:flex items-center gap-4">
+              {/* Language Switcher - Test */}
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => i18n.changeLanguage(i18n.language === 'tr' ? 'en' : 'tr')}
+                className="font-medium text-gray-600 hover:text-blue-600"
+              >
+                <Globe className="w-4 h-4 mr-1" />
+                {i18n.language === 'tr' ? '🇬🇧 EN' : '🇹🇷 TR'}
+              </Button>
               <Button variant="ghost" onClick={() => navigate("/login")} className="font-medium">
-                Giriş Yap
+                {t('nav.login')}
               </Button>
               <Button onClick={() => navigate("/register")} className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium shadow-md">
-                Hemen Başla
+                {t('nav.register')}
               </Button>
             </div>
 
@@ -352,16 +423,25 @@ const LandingPage = () => {
           {mobileMenuOpen && (
             <div className="md:hidden py-4 border-t border-gray-200">
               <nav className="flex flex-col gap-4">
-                <a href="#features" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">Özellikler</a>
-                <a href="#pricing" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">Fiyatlar</a>
-                <a href="#testimonials" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">Yorumlar</a>
-                <a href="#faq" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">SSS</a>
+                <a href="#features" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">{t('nav.features')}</a>
+                <a href="#pricing" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">{t('nav.pricing')}</a>
+                <a href="#testimonials" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">{t('nav.testimonials')}</a>
+                <a href="#faq" className="text-gray-600 hover:text-blue-600 transition-colors font-medium">{t('nav.faq')}</a>
+                {/* Language Switcher - Mobile */}
+                <Button 
+                  variant="ghost" 
+                  onClick={() => i18n.changeLanguage(i18n.language === 'tr' ? 'en' : 'tr')}
+                  className="justify-start font-medium text-gray-600 hover:text-blue-600 px-0"
+                >
+                  <Globe className="w-4 h-4 mr-2" />
+                  {i18n.language === 'tr' ? '🇬🇧 English (UK)' : '🇹🇷 Türkçe'}
+                </Button>
                 <div className="flex flex-col gap-2 pt-4 border-t border-gray-200">
                   <Button variant="outline" onClick={() => navigate("/login")} className="w-full">
-                    Giriş Yap
+                    {t('nav.login')}
                   </Button>
                   <Button onClick={() => navigate("/register")} className="w-full bg-gradient-to-r from-blue-500 to-indigo-600">
-                    Hemen Başla
+                    {t('nav.register')}
                   </Button>
                 </div>
               </nav>
@@ -376,7 +456,7 @@ const LandingPage = () => {
         <div className="hidden md:block w-full bg-gray-900 text-white py-2.5 mb-6">
           <div className="container mx-auto px-4 text-center">
             <span className="text-base font-medium">
-              Yeni üye işyerlerine özel ilk ay %25 indirim !
+              {t('landing.banner')}
             </span>
           </div>
         </div>
@@ -384,18 +464,18 @@ const LandingPage = () => {
         <div className="container mx-auto px-4 relative z-10">
           <div className="max-w-4xl mx-auto text-center">
             <h1 className="text-5xl md:text-7xl font-bold text-gray-900 mb-6 leading-tight flex flex-col md:flex-row items-center justify-center gap-2 md:gap-3" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-              <span className="block md:inline-block whitespace-nowrap">PLANN ile</span>
+              <span className="block md:inline-block whitespace-nowrap">{t('landing.hero.with')}</span>
               <span className="block md:inline-block bg-gray-900 text-white py-2 md:py-3 px-5 md:px-8 relative text-center whitespace-nowrap" style={{ minWidth: 'fit-content', width: 'fit-content', boxSizing: 'border-box' }}>
                 <span className="block" style={{ whiteSpace: 'nowrap' }}>
-                  {words[wordIndex]}
+                  {getWords()[wordIndex]}
                 </span>
               </span>
-              <span className="block md:inline-block whitespace-nowrap">Randevu</span>
+              <span className="block md:inline-block whitespace-nowrap">{t('landing.hero.appointment')}</span>
             </h1>
             
             <p className="text-xl md:text-2xl text-gray-700 mb-10 leading-relaxed">
-              Hızlı, güvenilir ve kullanıcı dostu randevu yazılımı ile tanışın.<br/>
-              İşletmeniz her an erişilebilir olsun.
+              {t('landing.hero.subtitle')}<br/>
+              {t('landing.hero.subtitle2')}
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
@@ -404,10 +484,10 @@ const LandingPage = () => {
                   onClick={() => navigate("/register")}
                   className="bg-gray-900 text-white hover:bg-gray-800 px-10 py-6 text-lg font-semibold rounded-full shadow-lg"
                 >
-                  7 Gün Ücretsiz Deneyin
+                  {t('landing.hero.trialButton')}
                 </Button>
                 <p className="text-base text-gray-600 text-center">
-                  Kredi kartı gerekmez.
+                  {t('landing.hero.trialNote')}
                 </p>
               </div>
               <Button 
@@ -421,7 +501,7 @@ const LandingPage = () => {
                 }}
                 className="bg-transparent border-2 border-gray-900 text-gray-900 hover:bg-gray-100 px-10 py-6 text-lg font-semibold rounded-full"
               >
-                Sizi Arayalım
+                {t('landing.hero.callButton')}
               </Button>
             </div>
 
@@ -429,7 +509,7 @@ const LandingPage = () => {
             <div className="mt-16 relative">
               <div className="absolute bottom-6 right-6 bg-white rounded-xl shadow-xl px-4 py-3 flex items-center gap-2 z-10 animate-bounce">
                 <MessageSquare className="w-5 h-5 text-green-500" />
-                <span className="text-sm font-semibold text-gray-700">7 Yeni Randevu</span>
+                <span className="text-sm font-semibold text-gray-700">{t('landing.hero.newAppointments')}</span>
               </div>
               <div className="bg-white rounded-2xl shadow-2xl p-4 border border-gray-200">
                 <img 
@@ -451,11 +531,11 @@ const LandingPage = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 mb-12">
               <div className="text-center">
                 <div className="text-4xl md:text-5xl font-bold text-gray-900 mb-2">500+</div>
-                <div className="text-gray-600 font-medium">Aktif İşletme</div>
+                <div className="text-gray-600 font-medium">{t('landing.stats.activeBusinesses')}</div>
               </div>
               <div className="text-center">
                 <div className="text-4xl md:text-5xl font-bold text-gray-900 mb-2">420K+</div>
-                <div className="text-gray-600 font-medium">Randevu</div>
+                <div className="text-gray-600 font-medium">{t('landing.stats.appointments')}</div>
               </div>
               <div className="text-center">
                 <div className="text-4xl md:text-5xl font-bold text-gray-900 mb-2">4.8</div>
@@ -464,11 +544,11 @@ const LandingPage = () => {
                     <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                   ))}
                 </div>
-                <div className="text-gray-600 font-medium">Kullanıcı Puanı</div>
+                <div className="text-gray-600 font-medium">{t('landing.stats.userRating')}</div>
               </div>
               <div className="text-center">
                 <div className="text-4xl md:text-5xl font-bold text-gray-900 mb-2">%98</div>
-                <div className="text-gray-600 font-medium">Memnuniyet</div>
+                <div className="text-gray-600 font-medium">{t('landing.stats.satisfaction')}</div>
               </div>
             </div>
 
@@ -476,40 +556,40 @@ const LandingPage = () => {
             <div className="flex flex-wrap items-center justify-center gap-6 md:gap-8 pt-8 border-t border-gray-200">
               <div className="flex items-center gap-2">
                 <Shield className="w-6 h-6 text-green-500" />
-                <span className="text-gray-700 font-medium">SSL Güvenli</span>
+                <span className="text-gray-700 font-medium">{t('landing.trust.sslSecure')}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-6 h-6 text-green-500" />
-                <span className="text-gray-700 font-medium">KVKK Uyumlu</span>
+                <span className="text-gray-700 font-medium">{t('landing.trust.gdprCompliant')}</span>
               </div>
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-6 h-6 text-blue-500" />
-                <span className="text-gray-700 font-medium">7/24 Destek</span>
+                <span className="text-gray-700 font-medium">{t('landing.trust.support247')}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Zap className="w-6 h-6 text-yellow-500" />
-                <span className="text-gray-700 font-medium">99.9% Uptime</span>
+                <span className="text-gray-700 font-medium">{t('landing.trust.uptime')}</span>
               </div>
             </div>
 
             {/* Müşteri Kategorileri */}
             <div className="mt-12 pt-8 border-t border-gray-200">
-              <p className="text-center text-gray-600 mb-6 font-medium">Bize Güvenen İşletmeler</p>
+              <p className="text-center text-gray-600 mb-6 font-medium">{t('landing.trust.trustedBy')}</p>
               <div className="flex flex-wrap items-center justify-center gap-4 md:gap-6">
                 <Card className="px-6 py-3 bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                  <span className="text-gray-700 font-semibold text-sm md:text-base">Kuaför Salonları</span>
+                  <span className="text-gray-700 font-semibold text-sm md:text-base">{t('landing.trust.hairSalons')}</span>
                 </Card>
                 <Card className="px-6 py-3 bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                  <span className="text-gray-700 font-semibold text-sm md:text-base">Sağlık Merkezleri</span>
+                  <span className="text-gray-700 font-semibold text-sm md:text-base">{t('landing.trust.healthCentres')}</span>
                 </Card>
                 <Card className="px-6 py-3 bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                  <span className="text-gray-700 font-semibold text-sm md:text-base">Eğitim Kurumları</span>
+                  <span className="text-gray-700 font-semibold text-sm md:text-base">{t('landing.trust.educationInstitutions')}</span>
                 </Card>
                 <Card className="px-6 py-3 bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                  <span className="text-gray-700 font-semibold text-sm md:text-base">Veteriner Klinikleri</span>
+                  <span className="text-gray-700 font-semibold text-sm md:text-base">{t('landing.trust.vetClinics')}</span>
                 </Card>
                 <Card className="px-6 py-3 bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                  <span className="text-gray-700 font-semibold text-sm md:text-base">Spa & Wellness</span>
+                  <span className="text-gray-700 font-semibold text-sm md:text-base">{t('landing.trust.spaWellness')}</span>
                 </Card>
               </div>
             </div>
@@ -521,7 +601,7 @@ const LandingPage = () => {
       <section id="features" className="py-20 bg-[#fafafa] border-t border-gray-200 scroll-mt-24">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">PLANN Neler Sunar?</h2>
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">{t('landing.features.title')}</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -545,12 +625,12 @@ const LandingPage = () => {
       <section id="pricing" className="py-20 bg-[#fafafa] scroll-mt-24">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">Fiyatlandırma</h2>
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">{t('landing.pricing.title')}</h2>
             
             {/* Aylık / Yıllık Toggle */}
             <div className="flex items-center justify-center gap-3 mb-6">
               <span className={`text-lg font-medium ${billingCycle === 'monthly' ? 'text-gray-900' : 'text-gray-400'}`}>
-                Aylık
+                {t('landing.pricing.monthly')}
               </span>
               <button
                 onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'yearly' : 'monthly')}
@@ -562,11 +642,11 @@ const LandingPage = () => {
               </button>
               <div className="flex items-center gap-2">
                 <span className={`text-lg font-medium ${billingCycle === 'yearly' ? 'text-gray-900' : 'text-gray-400'}`}>
-                  Yıllık
+                  {t('landing.pricing.yearly')}
                 </span>
                 {billingCycle === 'yearly' && (
                   <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap">
-                    2 Ay Ücretsiz
+                    {t('landing.pricing.twoMonthsFree')}
                   </span>
                 )}
               </div>
@@ -575,7 +655,7 @@ const LandingPage = () => {
             {/* Yeni Üye İndirimi Banner - Sadece Aylık için */}
             {billingCycle === 'monthly' && (
               <div className="inline-block mb-6 px-6 py-2 bg-gray-900 text-white text-sm font-medium rounded">
-                Yeni üye işyerlerine özel ilk ay %25 indirim !
+                {t('landing.pricing.newUserDiscount')}
               </div>
             )}
           </div>
@@ -583,7 +663,7 @@ const LandingPage = () => {
           {loadingPlans ? (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Planlar yükleniyor...</p>
+              <p className="mt-4 text-gray-600">{t('common.loading')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 max-w-6xl mx-auto">
@@ -624,7 +704,7 @@ const LandingPage = () => {
                             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                               <path d="M10 2l2.5 5.5L18 8.5l-4 4.5 1 6-5-3-5 3 1-6-4-4.5 5.5-1z"/>
                             </svg>
-                            En Popüler
+                            {t('landing.pricing.mostPopular')}
                           </div>
                         </div>
                       )}
@@ -636,7 +716,7 @@ const LandingPage = () => {
                         }`}>
                           <div className="text-center">
                             <div className="text-xs font-bold">%{savingsPercent}</div>
-                            <div className="text-[10px] font-semibold">Tasarruf</div>
+                            <div className="text-[10px] font-semibold">{t('landing.pricing.savings')}</div>
                           </div>
                         </div>
                       )}
@@ -644,29 +724,37 @@ const LandingPage = () => {
                       {/* Plan Name */}
                       <div className="mb-4">
                         <h3 className={`text-2xl font-bold ${isPopular ? 'text-white' : 'text-gray-900'}`}>
-                          {plan.name}
+                          {t(`landing.pricing.plans.${plan.name.toLowerCase()}.name`, plan.name)}
                         </h3>
                         <p className={`text-sm mt-1 ${isPopular ? 'text-gray-300' : 'text-gray-500'}`}>
-                          {plan.target_audience_tr}
+                          {t(`landing.pricing.plans.${plan.name.toLowerCase()}.description`, plan.target_audience_tr)}
                         </p>
                       </div>
                       
                       {/* Price Section */}
                       <div className="mb-6">
-                        <div className="flex items-end gap-2">
-                          <span className={`text-5xl font-extrabold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
-                            {isYearly ? yearlyPrice.toLocaleString('tr-TR') : displayPrice.toLocaleString('tr-TR')}
-                          </span>
-                          <span className={`text-2xl font-medium mb-1 ${isPopular ? 'text-gray-300' : 'text-gray-500'}`}>₺</span>
-                          {(hasDiscount || isYearly) && (
-                            <span className={`text-lg line-through mb-1 ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
-                              {isYearly ? (plan.price_monthly * 12).toLocaleString('tr-TR') : originalPrice.toLocaleString('tr-TR')}₺
-                            </span>
-                          )}
-                        </div>
-                        <p className={`text-sm mt-1 ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {isYearly ? 'yıllık fatura' : 'aylık fatura'}
-                        </p>
+                        {(() => {
+                          const priceInfo = formatPrice(plan, isYearly, hasDiscount);
+                          const originalPriceInfo = getOriginalPrice(plan, isYearly);
+                          const showStrike = hasDiscount || isYearly;
+                          return (
+                            <>
+                              <div className="flex items-end gap-2">
+                                <span className={`text-5xl font-extrabold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                                  {priceInfo.currency}{priceInfo.price.toLocaleString(priceInfo.locale)}
+                                </span>
+                                {showStrike && (
+                                  <span className={`text-lg line-through mb-1 ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
+                                    {originalPriceInfo.currency}{originalPriceInfo.price.toLocaleString(originalPriceInfo.locale)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className={`text-sm mt-1 ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {isYearly ? t('landing.pricing.yearlyBilling') : t('landing.pricing.monthlyBilling')}
+                              </p>
+                            </>
+                          );
+                        })()}
                       </div>
                       
                       {/* Divider */}
@@ -687,9 +775,9 @@ const LandingPage = () => {
                           </div>
                           <div>
                             <div className={`text-lg font-bold ${isPopular ? 'text-white' : 'text-gray-900'}`}>
-                              {plan.quota_monthly_appointments.toLocaleString('tr-TR')} Randevu
+                              {t('landing.pricing.features.appointments', { count: plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') })}
                             </div>
-                            <div className={`text-xs ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>Aylık limit</div>
+                            <div className={`text-xs ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>{t('landing.pricing.monthlyLimit')}</div>
                           </div>
                         </div>
                         
@@ -706,7 +794,7 @@ const LandingPage = () => {
                               }`}>
                                 <Check className="w-3 h-3 text-white" />
                               </div>
-                              <span className={`text-sm ${isPopular ? 'text-gray-200' : 'text-gray-700'}`}>{feature}</span>
+                              <span className={`text-sm ${isPopular ? 'text-gray-200' : 'text-gray-700'}`}>{translateFeature(feature)}</span>
                             </div>
                           ))}
                       </div>
@@ -720,7 +808,7 @@ const LandingPage = () => {
                             : 'bg-gradient-to-r from-gray-800 to-gray-900 text-white hover:from-gray-700 hover:to-gray-800'
                         }`}
                       >
-                        Ücretsiz Dene
+                        {t('landing.pricing.tryFree')}
                       </button>
                       
                       {/* Trust Badge */}
@@ -728,7 +816,7 @@ const LandingPage = () => {
                         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                         </svg>
-                        7 gün ücretsiz deneme
+                        {t('landing.pricing.trustBadge')}
                       </div>
                     </div>
                   </div>
@@ -743,7 +831,7 @@ const LandingPage = () => {
       <section id="testimonials" className="py-20 bg-[#fafafa] scroll-mt-24">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">Kullanıcı Yorumları</h2>
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">{t('landing.testimonials.title')}</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
@@ -769,7 +857,7 @@ const LandingPage = () => {
       <section id="faq" className="py-20 bg-[#fafafa] border-t border-gray-200 scroll-mt-24">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">Sık Sorulan Sorular</h2>
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">{t('landing.faq.title')}</h2>
           </div>
 
           <div className="max-w-3xl mx-auto space-y-3">
@@ -801,16 +889,16 @@ const LandingPage = () => {
       <section className="py-20 bg-[#fafafa]">
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-            Hemen Başlayın!
+            {t('landing.cta.title')}
           </h2>
           <p className="text-xl text-gray-700 mb-8 max-w-2xl mx-auto">
-            Randevularınızı profesyonelce yönetin ve işinizi büyütün
+            {t('landing.cta.subtitle')}
           </p>
           <Button 
             onClick={() => navigate("/register")}
             className="bg-gray-900 text-white hover:bg-gray-800 px-10 py-6 text-lg font-semibold rounded-full shadow-xl"
           >
-            Ücretsiz Deneyin
+            {t('landing.cta.button')}
           </Button>
         </div>
       </section>
@@ -827,10 +915,10 @@ const LandingPage = () => {
             </button>
             <DialogHeader>
               <DialogTitle className="text-2xl md:text-3xl font-bold text-gray-900 text-center pr-8" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-                Sizi Arayalım
+                {t('landing.contact.title')}
               </DialogTitle>
               <DialogDescription className="text-center text-gray-600 text-sm mt-2">
-                İletişim bilgilerinizi bırakın, size en kısa sürede ulaşalım.
+                {t('landing.contact.subtitle')}
               </DialogDescription>
             </DialogHeader>
           </div>
@@ -841,10 +929,10 @@ const LandingPage = () => {
                 <Check className="w-12 h-12 text-white" />
               </div>
               <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-                Talebiniz Alındı!
+                {t('landing.contact.success')}
               </h3>
               <p className="text-gray-600 mb-8 text-base max-w-sm">
-                En kısa sürede sizinle iletişime geçeceğiz.
+                {t('landing.contact.successMessage')}
               </p>
               <Button 
                 onClick={() => {
@@ -854,7 +942,7 @@ const LandingPage = () => {
                 }}
                 className="bg-gray-900 text-white hover:bg-gray-800 px-10 py-6 rounded-full font-semibold text-base shadow-lg transition-all hover:scale-105"
               >
-                Tamam
+                {t('landing.contact.ok')}
               </Button>
             </div>
           ) : (
@@ -891,7 +979,7 @@ const LandingPage = () => {
                   id="contact-name"
                   value={contactForm.name}
                   onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
-                  placeholder="Ad Soyad"
+                  placeholder={t('landing.contact.namePlaceholder')}
                   required
                   className="h-14 border-2 border-gray-200 rounded-xl focus:border-gray-900 focus:ring-0 bg-gray-50 focus:bg-white transition-all text-base placeholder:text-gray-400"
                 />
@@ -903,7 +991,7 @@ const LandingPage = () => {
                   type="tel"
                   value={contactForm.phone}
                   onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
-                  placeholder="Telefon Numarası"
+                  placeholder={t('landing.contact.phonePlaceholder')}
                   required
                   className="h-14 border-2 border-gray-200 rounded-xl focus:border-gray-900 focus:ring-0 bg-gray-50 focus:bg-white transition-all text-base placeholder:text-gray-400"
                 />
@@ -915,7 +1003,7 @@ const LandingPage = () => {
                   type="email"
                   value={contactForm.email}
                   onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
-                  placeholder="E-posta (Opsiyonel)"
+                  placeholder={t('landing.contact.emailPlaceholder')}
                   className="h-14 border-2 border-gray-200 rounded-xl focus:border-gray-900 focus:ring-0 bg-gray-50 focus:bg-white transition-all text-base placeholder:text-gray-400"
                 />
               </div>
@@ -925,7 +1013,7 @@ const LandingPage = () => {
                   id="contact-message"
                   value={contactForm.message}
                   onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
-                  placeholder="Mesajınız (Opsiyonel)"
+                  placeholder={t('landing.contact.messagePlaceholder')}
                   rows={4}
                   className="border-2 border-gray-200 rounded-xl focus:border-gray-900 focus:ring-0 bg-gray-50 focus:bg-white transition-all resize-none text-base placeholder:text-gray-400 min-h-[120px]"
                 />
@@ -940,12 +1028,12 @@ const LandingPage = () => {
                   {contactFormLoading ? (
                     <>
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                      Gönderiliyor...
+                      {t('landing.contact.sending')}
                     </>
                   ) : (
                     <>
                       <Phone className="w-5 h-5 mr-2" />
-                      Gönder
+                      {t('landing.contact.submit')}
                     </>
                   )}
                 </Button>
@@ -953,7 +1041,7 @@ const LandingPage = () => {
 
               <div className="flex items-start gap-2 text-xs text-gray-500 pt-2 pb-2">
                 <Shield className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-400" />
-                <span className="leading-relaxed">Bilgileriniz güvende, sadece sizinle iletişim için kullanılacak.</span>
+                <span className="leading-relaxed">{t('landing.contact.privacy')}</span>
               </div>
             </form>
           )}
@@ -968,27 +1056,27 @@ const LandingPage = () => {
               <div className="mb-4">
                 <span className="text-2xl font-bold text-gray-900">PLANN</span>
               </div>
-              <p className="text-sm text-gray-600">Modern randevu yönetim sistemi</p>
+              <p className="text-sm text-gray-600">{t('landing.footer.description')}</p>
             </div>
             <div>
-              <h4 className="font-bold text-gray-900 mb-4">Ürün</h4>
+              <h4 className="font-bold text-gray-900 mb-4">{t('landing.footer.product')}</h4>
               <ul className="space-y-2 text-sm">
-                <li><a href="#features" className="hover:text-gray-900 text-gray-600">Özellikler</a></li>
-                <li><a href="#pricing" className="hover:text-gray-900 text-gray-600">Fiyatlar</a></li>
-                <li><a href="#testimonials" className="hover:text-gray-900 text-gray-600">Yorumlar</a></li>
+                <li><a href="#features" className="hover:text-gray-900 text-gray-600">{t('nav.features')}</a></li>
+                <li><a href="#pricing" className="hover:text-gray-900 text-gray-600">{t('nav.pricing')}</a></li>
+                <li><a href="#testimonials" className="hover:text-gray-900 text-gray-600">{t('nav.testimonials')}</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-bold text-gray-900 mb-4">Yasal</h4>
+              <h4 className="font-bold text-gray-900 mb-4">{t('landing.footer.legal')}</h4>
               <ul className="space-y-2 text-sm">
-                <li><a href="/privacy" className="hover:text-gray-900 text-gray-600">Gizlilik Politikası</a></li>
-                <li><a href="/terms" className="hover:text-gray-900 text-gray-600">Kullanım Koşulları</a></li>
-                <li><a href="/refund" className="hover:text-gray-900 text-gray-600">İade Politikası</a></li>
-                <li><a href="#faq" className="hover:text-gray-900 text-gray-600">SSS</a></li>
+                <li><a href="/privacy" className="hover:text-gray-900 text-gray-600">{t('landing.footer.privacyPolicy')}</a></li>
+                <li><a href="/terms" className="hover:text-gray-900 text-gray-600">{t('landing.footer.termsOfService')}</a></li>
+                <li><a href="/refund" className="hover:text-gray-900 text-gray-600">{t('landing.footer.refundPolicy')}</a></li>
+                <li><a href="#faq" className="hover:text-gray-900 text-gray-600">{t('nav.faq')}</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-bold text-gray-900 mb-4">İletişim</h4>
+              <h4 className="font-bold text-gray-900 mb-4">{t('landing.footer.contact')}</h4>
               <ul className="space-y-2 text-sm text-gray-600">
                 <li className="flex items-start gap-2">
                   <Phone className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -1011,7 +1099,7 @@ const LandingPage = () => {
           <div className="border-t border-gray-300 mt-8 pt-8">
             {/* Ödeme Logoları */}
             <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
-              <span className="text-gray-600 text-sm font-medium mr-1">Güvenli Ödeme:</span>
+              <span className="text-gray-600 text-sm font-medium mr-1">{t('landing.footer.securePayment')}</span>
               {/* Visa */}
               <div className="bg-white px-4 py-2.5 rounded-md shadow-sm border border-gray-200 hover:shadow-md transition-all flex items-center justify-center h-10">
                 <span className="text-[#1434CB] font-bold text-lg tracking-wider">VISA</span>
@@ -1033,7 +1121,7 @@ const LandingPage = () => {
               </div>
             </div>
             <div className="text-center text-sm text-gray-600 pb-0 mb-0">
-              <p className="mb-0 pb-0">© 2025 PLANN - Tüm hakları saklıdır</p>
+              <p className="mb-0 pb-0">{t('landing.footer.copyright')}</p>
             </div>
           </div>
         </div>

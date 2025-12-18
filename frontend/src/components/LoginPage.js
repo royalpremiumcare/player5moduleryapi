@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { Capacitor } from '@capacitor/core';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, Lock, User } from 'lucide-react';
+import { ArrowRight, Lock, User, Globe } from 'lucide-react';
 
 const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t, i18n } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -51,14 +53,14 @@ const LoginPage = () => {
       const result = await login(username, password, rememberMe);
 
       if (!result.success) {
-        setError(result.error || 'Kullanıcı adı veya parola hatalı.');
+        setError(result.error || t('auth.login.error'));
         setLoading(false);
       } else {
         // Başarılı giriş
         navigate('/', { replace: true });
       }
     } catch (err) {
-      setError(err.message || 'Giriş sırasında bir hata oluştu. Lütfen tekrar deneyin.');
+      setError(err.message || t('auth.login.errorGeneric'));
       setLoading(false);
     }
   };
@@ -68,24 +70,35 @@ const LoginPage = () => {
       <div className="w-full max-w-md px-4">
         {/* Logo & Title */}
         <div className="text-center mb-4 md:mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">PLANN</h1>
-          <p className="text-gray-600">Randevu Yönetim Sistemi</p>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">{t('brand.name')}</h1>
+          <p className="text-gray-600">{t('brand.tagline')}</p>
         </div>
 
         <Card className="shadow-2xl border-0">
           <CardHeader className="space-y-1 pb-4 md:pb-6">
+            <div className="flex justify-end mb-2">
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => i18n.changeLanguage(i18n.language === 'tr' ? 'en' : 'tr')}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <Globe className="w-4 h-4 mr-1" />
+                {i18n.language === 'tr' ? '🇬🇧 EN' : '🇹🇷 TR'}
+              </Button>
+            </div>
             <CardTitle className="text-2xl font-bold text-center text-gray-900">
-              Giriş Yap
+              {t('auth.login.title')}
             </CardTitle>
             <p className="text-center text-sm text-gray-600">
-              Hesabınıza giriş yaparak devam edin
+              {t('auth.login.subtitle')}
             </p>
           </CardHeader>
           <CardContent className="px-4 md:px-6">
             <form onSubmit={handleSubmit} className="space-y-4 md:space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="username" className="text-sm font-semibold text-gray-700">
-                  E Posta
+                  {t('auth.login.email')}
                 </Label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -94,7 +107,7 @@ const LoginPage = () => {
                     type="email"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="ornek@email.com"
+                    placeholder={t('auth.login.emailPlaceholder')}
                     className="pl-10 h-12 border-2 focus:border-gray-900"
                     required
                   />
@@ -103,7 +116,7 @@ const LoginPage = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-semibold text-gray-700">
-                  Parola
+                  {t('auth.login.password')}
                 </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -128,7 +141,7 @@ const LoginPage = () => {
                   className="w-4 h-4 text-gray-900 border-gray-300 rounded focus:ring-gray-900 focus:ring-2"
                 />
                 <Label htmlFor="rememberMe" className="text-sm text-gray-700 cursor-pointer">
-                  Beni Hatırla
+                  {t('auth.login.rememberMe')}
                 </Label>
               </div>
 
@@ -143,7 +156,7 @@ const LoginPage = () => {
                 className="w-full h-12 bg-gray-900 hover:bg-gray-800 text-white font-semibold rounded-full shadow-lg transition-all duration-200" 
                 disabled={loading}
               >
-                {loading ? 'Giriş Yapılıyor...' : 'Giriş Yap'}
+                {loading ? t('auth.login.loggingIn') : t('auth.login.loginButton')}
               </Button>
               
               <Button
@@ -152,18 +165,18 @@ const LoginPage = () => {
                 onClick={() => navigate('/forgot-password')}
                 className="w-full h-12 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 font-semibold rounded-full transition-all duration-200"
               >
-                Şifremi Unuttum
+                {t('auth.login.forgotPassword')}
               </Button>
             </form>
 
             <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-gray-200 text-center">
-              <p className="text-sm text-gray-600 mb-3">Henüz hesabınız yok mu?</p>
+              <p className="text-sm text-gray-600 mb-3">{t('auth.login.noAccount')}</p>
               <Button
                 variant="outline"
                 onClick={() => navigate('/register')}
                 className="w-full h-12 border-2 border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white font-semibold rounded-full transition-all duration-200"
               >
-                Yeni Hesap Oluştur
+                {t('auth.login.createAccount')}
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
@@ -177,7 +190,7 @@ const LoginPage = () => {
               onClick={() => navigate('/')}
               className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
             >
-              ← Ana Sayfaya Dön
+              {t('common.backToHome')}
             </Button>
           </div>
         )}

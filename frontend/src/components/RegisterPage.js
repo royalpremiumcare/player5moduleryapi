@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, User, Mail, Lock, ArrowRight, Phone, Briefcase } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Building2, User, Mail, Lock, ArrowRight, Phone, Globe } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 const RegisterPage = () => { 
     const navigate = useNavigate();
     const { register } = useAuth(); 
+    const { t, i18n } = useTranslation();
 
     // Sayfa yüklendiğinde en üste scroll et ve iOS Chrome scroll sorununu önle
     useEffect(() => {
@@ -39,24 +41,15 @@ const RegisterPage = () => {
                 
                 updateMaxScroll();
                 
-                // En alta yakın mıyız kontrol et
                 const nearBottom = currentScrollTop + clientHeight >= scrollHeight - 1;
                 
                 if (nearBottom) {
                     isAtBottom = true;
-                    // En alttayız, pozisyonu sabitle
                     if (currentScrollTop > currentMaxScroll) {
-                        window.scrollTo({
-                            top: currentMaxScroll,
-                            behavior: 'auto'
-                        });
+                        window.scrollTo({ top: currentMaxScroll, behavior: 'auto' });
                     }
-                    // Aşağı scroll yapılmaya çalışılıyorsa engelle
                     if (currentScrollTop > lastScrollTop && currentScrollTop >= currentMaxScroll - 0.5) {
-                        window.scrollTo({
-                            top: currentMaxScroll,
-                            behavior: 'auto'
-                        });
+                        window.scrollTo({ top: currentMaxScroll, behavior: 'auto' });
                     }
                 } else {
                     isAtBottom = false;
@@ -65,20 +58,15 @@ const RegisterPage = () => {
                 lastScrollTop = currentScrollTop;
             };
             
-            // İlk max scroll'u hesapla
             setTimeout(updateMaxScroll, 100);
             setTimeout(updateMaxScroll, 500);
             setTimeout(updateMaxScroll, 1000);
             
-            // Event listener'ları ekle
             window.addEventListener('scroll', handleScroll, { passive: true });
             window.addEventListener('resize', updateMaxScroll, { passive: true });
             
-            // Touch event'leri için
             let touchStartY = 0;
-            const handleTouchStart = (e) => {
-                touchStartY = e.touches[0].clientY;
-            };
+            const handleTouchStart = (e) => { touchStartY = e.touches[0].clientY; };
             
             const handleTouchMove = (e) => {
                 if (isAtBottom) {
@@ -87,13 +75,9 @@ const RegisterPage = () => {
                     const scrollHeight = document.documentElement.scrollHeight;
                     const clientHeight = document.documentElement.clientHeight;
                     
-                    // En alttayız ve aşağı kaydırılmaya çalışılıyorsa engelle
                     if (scrollTop + clientHeight >= scrollHeight - 1 && touchY < touchStartY) {
                         e.preventDefault();
-                        window.scrollTo({
-                            top: scrollHeight - clientHeight,
-                            behavior: 'auto'
-                        });
+                        window.scrollTo({ top: scrollHeight - clientHeight, behavior: 'auto' });
                     }
                 }
             };
@@ -120,7 +104,6 @@ const RegisterPage = () => {
     });
     const [loading, setLoading] = useState(false);
     const [isAppMode, setIsAppMode] = useState(() => {
-        // Initial check for app mode
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('mode') === 'app') {
             localStorage.setItem('is_app_mode', 'true');
@@ -135,28 +118,19 @@ const RegisterPage = () => {
     
     const handlePhoneChange = (e) => {
         let value = e.target.value;
-        
-        // +90 prefix'i yoksa ekle
         if (!value.startsWith('+90')) {
             value = '+90' + value.replace(/^\+?90?/, '');
         }
-        
-        // Sadece rakam ve + içeren değerlere izin ver
         value = value.replace(/[^0-9+]/g, '');
-        
-        // +90'dan sonra maksimum 10 rakam
         if (value.length > 13) {
             value = value.substring(0, 13);
         }
-        
         setFormData({ ...formData, support_phone: value });
     };
 
     const handleRegister = async (e) => {
         e.preventDefault();
         setLoading(true);
-        
-        console.log('🚀 Kayıt işlemi başlıyor...', formData);
 
         try {
             const result = await register(
@@ -167,23 +141,29 @@ const RegisterPage = () => {
                 formData.support_phone,
                 formData.sector
             );
-            
-            console.log('📦 Register result:', result);
 
             if (result.success) {
-                toast.success('Kayıt başarılı! Şimdi giriş yapabilirsiniz.');
+                toast.success(t('auth.register.success'));
                 navigate('/login'); 
             } else {
-                console.error('❌ Kayıt hatası:', result.error);
-                toast.error(result.error || 'Kayıt sırasında bir hata oluştu.');
+                toast.error(result.error || t('auth.register.error'));
             }
         } catch (error) {
-            console.error('💥 Kayıt exception:', error);
-            toast.error('Kayıt sırasında beklenmedik bir hata oluştu.');
+            toast.error(t('auth.register.error'));
         } finally {
             setLoading(false);
         }
     };
+
+    const sectorOptions = [
+        { value: 'Kuaför', label: t('auth.register.sectors.hairSalon') },
+        { value: 'Güzellik Salonu', label: t('auth.register.sectors.beautySalon') },
+        { value: 'Masaj / SPA', label: t('auth.register.sectors.massageSpa') },
+        { value: 'Diyetisyen', label: t('auth.register.sectors.dietitian') },
+        { value: 'Psikolog / Danışmanlık', label: t('auth.register.sectors.psychologist') },
+        { value: 'Diş Klinikleri', label: t('auth.register.sectors.dentalClinic') },
+        { value: 'Diğer/Boş', label: t('auth.register.sectors.other') },
+    ];
 
     return (
         <div className="bg-white animate-slide-down register-page-container">
@@ -192,24 +172,35 @@ const RegisterPage = () => {
             <div className="w-full max-w-md">
                 {/* Logo & Title */}
                 <div className="text-center mb-8">
-                    <h1 className="text-4xl font-bold text-gray-900 mb-2">PLANN</h1>
-                    <p className="text-gray-600">Randevu Yönetim Sistemi</p>
+                    <h1 className="text-4xl font-bold text-gray-900 mb-2">{t('brand.name')}</h1>
+                    <p className="text-gray-600">{t('brand.tagline')}</p>
                 </div>
 
                 <Card className="shadow-2xl border-0">
                     <CardHeader className="space-y-1 pb-6">
+                        <div className="flex justify-end mb-2">
+                            <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => i18n.changeLanguage(i18n.language === 'tr' ? 'en' : 'tr')}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <Globe className="w-4 h-4 mr-1" />
+                                {i18n.language === 'tr' ? '🇬🇧 EN' : '🇹🇷 TR'}
+                            </Button>
+                        </div>
                         <CardTitle className="text-2xl md:text-3xl font-bold text-center text-gray-900">
-                            PLANN'ı 7 Gün Boyunca Ücretsiz Deneyin
+                            {t('auth.register.title')}
                         </CardTitle>
                         <CardDescription className="text-center text-base">
-                            İşletmenizi yönetmek için hemen başlayın
+                            {t('auth.register.subtitle')}
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <form onSubmit={handleRegister} className="space-y-5">
                             <div className="space-y-2">
                                 <Label htmlFor="organization_name" className="text-sm font-semibold text-gray-700">
-                                    İşletme Adı
+                                    {t('auth.register.businessName')}
                                 </Label>
                                 <div className="relative">
                                     <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -219,7 +210,7 @@ const RegisterPage = () => {
                                         type="text"
                                         value={formData.organization_name}
                                         onChange={handleChange}
-                                        placeholder="İşletme Adınız"
+                                        placeholder={t('auth.register.businessNamePlaceholder')}
                                         className="pl-10 h-12 border-2 focus:border-gray-900"
                                         required
                                     />
@@ -228,40 +219,38 @@ const RegisterPage = () => {
 
                             <div className="space-y-2">
                                 <Label htmlFor="sector" className="text-sm font-semibold text-gray-700">
-                                    Sektör
+                                    {t('auth.register.sector')}
                                 </Label>
                                 <Select
                                     value={formData.sector}
                                     onValueChange={(value) => setFormData({ ...formData, sector: value })}
                                 >
                                     <SelectTrigger className="h-12 border-2 focus:border-gray-900">
-                                        <SelectValue placeholder="Sektörünüzü seçin" />
+                                        <SelectValue placeholder={t('auth.register.sectorPlaceholder')} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="Kuaför">Kuaför</SelectItem>
-                                        <SelectItem value="Güzellik Salonu">Güzellik Salonu</SelectItem>
-                                        <SelectItem value="Masaj / SPA">Masaj / SPA</SelectItem>
-                                        <SelectItem value="Diyetisyen">Diyetisyen</SelectItem>
-                                        <SelectItem value="Psikolog / Danışmanlık">Psikolog / Danışmanlık</SelectItem>
-                                        <SelectItem value="Diş Klinikleri">Diş Klinikleri</SelectItem>
-                                        <SelectItem value="Diğer/Boş">Diğer/Boş</SelectItem>
+                                        {sectorOptions.map((option) => (
+                                            <SelectItem key={option.value} value={option.value}>
+                                                {option.label}
+                                            </SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
                                 {formData.sector === "Diğer/Boş" && (
                                     <p className="text-xs text-amber-600 mt-1">
-                                        ⚠️ Kendi hizmetlerinizi manuel olarak oluşturmanız gerekecek
+                                        {t('auth.register.sectorWarning')}
                                     </p>
                                 )}
                                 {formData.sector && formData.sector !== "Diğer/Boş" && (
                                     <p className="text-xs text-green-600 mt-1">
-                                        ✅ Sektörünüze özel varsayılan hizmetler otomatik yüklenecek
+                                        {t('auth.register.sectorSuccess')}
                                     </p>
                                 )}
                             </div>
 
                             <div className="space-y-2">
                                 <Label htmlFor="full_name" className="text-sm font-semibold text-gray-700">
-                                    Ad Soyad
+                                    {t('auth.register.fullName')}
                                 </Label>
                                 <div className="relative">
                                     <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -271,7 +260,7 @@ const RegisterPage = () => {
                                         type="text"
                                         value={formData.full_name}
                                         onChange={handleChange}
-                                        placeholder="Adınız Soyadınız"
+                                        placeholder={t('auth.register.fullNamePlaceholder')}
                                         className="pl-10 h-12 border-2 focus:border-gray-900"
                                         required
                                     />
@@ -280,7 +269,7 @@ const RegisterPage = () => {
 
                             <div className="space-y-2">
                                 <Label htmlFor="username" className="text-sm font-semibold text-gray-700">
-                                    E-posta
+                                    {t('auth.register.email')}
                                 </Label>
                                 <div className="relative">
                                     <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -290,7 +279,7 @@ const RegisterPage = () => {
                                         type="email"
                                         value={formData.username}
                                         onChange={handleChange}
-                                        placeholder="E-posta"
+                                        placeholder={t('auth.register.email')}
                                         className="pl-10 h-12 border-2 focus:border-gray-900"
                                         required
                                     />
@@ -299,7 +288,7 @@ const RegisterPage = () => {
 
                             <div className="space-y-2">
                                 <Label htmlFor="support_phone" className="text-sm font-semibold text-gray-700">
-                                    Telefon Numarası
+                                    {t('auth.register.phone')}
                                 </Label>
                                 <div className="relative">
                                     <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -320,7 +309,7 @@ const RegisterPage = () => {
 
                             <div className="space-y-2">
                                 <Label htmlFor="password" className="text-sm font-semibold text-gray-700">
-                                    Şifre
+                                    {t('auth.register.password')}
                                 </Label>
                                 <div className="relative">
                                     <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -342,23 +331,22 @@ const RegisterPage = () => {
                                 className="w-full h-12 bg-gray-900 hover:bg-gray-800 text-white font-semibold rounded-full shadow-lg transition-all duration-200" 
                                 disabled={loading}
                             >
-                                {loading ? 'Kayıt Olunuyor...' : 'Hesap Oluştur'}
+                                {loading ? t('auth.register.registering') : t('auth.register.registerButton')}
                             </Button>
                             
-                            {/* Güvence Metni */}
                             <p className="text-xs md:text-sm text-gray-600 text-center mt-3 leading-relaxed">
-                                Ücretsiz deneme süreniz boyunca hiçbir ücret alınmaz. Kredi kartı bilgisi gerekmez.
+                                {t('auth.register.guarantee')}
                             </p>
                         </form>
 
                         <div className="mt-6 pt-6 border-t border-gray-200 text-center">
-                            <p className="text-sm text-gray-600 mb-3">Zaten hesabınız var mı?</p>
+                            <p className="text-sm text-gray-600 mb-3">{t('auth.register.hasAccount')}</p>
                             <Button
                                 variant="outline"
                                 onClick={() => navigate('/login')}
                                 className="w-full h-12 border-2 border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white font-semibold rounded-full transition-all duration-200"
                             >
-                                Giriş Yap
+                                {t('auth.register.loginLink')}
                                 <ArrowRight className="w-4 h-4 ml-2" />
                             </Button>
                         </div>
@@ -372,7 +360,7 @@ const RegisterPage = () => {
                             onClick={() => navigate('/')}
                             className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
                         >
-                            ← Ana Sayfaya Dön
+                            {t('common.backToHome')}
                         </Button>
                     </div>
                 )}

@@ -1,0 +1,506 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "search": "Search",
+    "filter": "Filter",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "yes": "Yes",
+    "no": "No",
+    "close": "Close",
+    "submit": "Submit",
+    "reset": "Reset",
+    "actions": "Actions",
+    "details": "Details",
+    "all": "All",
+    "none": "None",
+    "select": "Select",
+    "download": "Download",
+    "upload": "Upload",
+    "refresh": "Refresh",
+    "backToHome": "← Back to Home",
+    "or": "or"
+  },
+  "brand": {
+    "name": "PLANN",
+    "tagline": "Appointment Management System"
+  },
+  "nav": {
+    "home": "Home",
+    "features": "Features",
+    "pricing": "Pricing",
+    "testimonials": "Testimonials",
+    "faq": "FAQ",
+    "login": "Login",
+    "register": "Get Started",
+    "dashboard": "Dashboard",
+    "customers": "Customers",
+    "appointments": "Appointments",
+    "calendar": "Calendar",
+    "services": "Services",
+    "staff": "Staff",
+    "reports": "Reports",
+    "settings": "Settings",
+    "finance": "Finance",
+    "profile": "Profile",
+    "logout": "Logout"
+  },
+  "landing": {
+    "banner": "Special offer: 25% off first month for new businesses!",
+    "hero": {
+      "with": "with PLANN",
+      "appointment": "Appointment",
+      "words": ["Fast", "Practical", "Easy", "Affordable"],
+      "subtitle": "Meet the fast, reliable and user-friendly appointment software.",
+      "subtitle2": "Keep your business accessible at all times.",
+      "trialButton": "Try Free for 7 Days",
+      "trialNote": "No credit card required.",
+      "callButton": "Request a Call",
+      "newAppointments": "7 New Appointments"
+    },
+    "stats": {
+      "activeBusinesses": "Active Businesses",
+      "appointments": "Appointments",
+      "userRating": "User Rating",
+      "satisfaction": "Satisfaction"
+    },
+    "trust": {
+      "sslSecure": "SSL Secure",
+      "gdprCompliant": "GDPR Compliant",
+      "support247": "24/7 Support",
+      "uptime": "99.9% Uptime",
+      "trustedBy": "Trusted by Businesses",
+      "hairSalons": "Hair Salons",
+      "healthCentres": "Health Centres",
+      "educationInstitutions": "Education Institutions",
+      "vetClinics": "Veterinary Clinics",
+      "spaWellness": "Spa & Wellness"
+    },
+    "features": {
+      "title": "What Does PLANN Offer?",
+      "autoSms": {
+        "title": "Automatic SMS & Reminders",
+        "description": "Send automatic SMS reminders before appointments, eliminate forgotten appointments."
+      },
+      "onlineBooking": {
+        "title": "Online Booking System",
+        "description": "Allow your customers to create their own appointments online."
+      },
+      "periodicSessions": {
+        "title": "Periodic Session Management",
+        "description": "Create recurring appointments for your customers and track sessions."
+      },
+      "customerManagement": {
+        "title": "Customer Management",
+        "description": "Add unlimited customers and easily create and manage their appointments."
+      },
+      "calendarManagement": {
+        "title": "Detailed Calendar Management",
+        "description": "Track and manage your appointments daily, weekly, monthly on the calendar."
+      },
+      "staffManagement": {
+        "title": "Staff Management",
+        "description": "Add unlimited staff and easily track their appointments and statistics."
+      },
+      "multiDevice": {
+        "title": "Multi-Device Support",
+        "description": "Access all your appointments from anywhere on computer, phone and tablet."
+      },
+      "financeManagement": {
+        "title": "Income & Expense Management",
+        "description": "Track your business income and expenses with the pre-accounting system."
+      },
+      "reporting": {
+        "title": "Reporting & Statistics",
+        "description": "View customer, staff and service statistics. Track income and expenses."
+      }
+    },
+    "pricing": {
+      "title": "Pricing",
+      "monthly": "Monthly",
+      "yearly": "Yearly",
+      "twoMonthsFree": "2 Months Free",
+      "newUserDiscount": "Special offer: 25% off first month for new businesses!",
+      "mostPopular": "Most Popular",
+      "tryFree": "Try Free",
+      "perMonth": "/month",
+      "perYear": "/year",
+      "monthlyBilling": "monthly billing",
+      "yearlyBilling": "yearly billing",
+      "savingsPercent": "{{percent}}% Off",
+      "appointmentsPerMonth": "{{count}} Appointments",
+      "monthlyLimit": "Monthly limit",
+      "yearlyLimit": "Yearly limit",
+      "daysRemaining": "{{days}} days remaining",
+      "trialDaysRemaining": "{{days}} days remaining",
+      "trustBadge": "7-day free trial",
+      "savings": "Off",
+      "plans": {
+        "standart": {
+          "name": "Standard",
+          "description": "Ideal for small businesses just getting started"
+        },
+        "profesyonel": {
+          "name": "Professional",
+          "description": "For growing businesses with more clients"
+        },
+        "premium": {
+          "name": "Premium",
+          "description": "For established businesses with steady clientele"
+        },
+        "business": {
+          "name": "Business",
+          "description": "High volume solution for busy salons"
+        },
+        "enterprise": {
+          "name": "Enterprise",
+          "description": "For multi-staff clinics and larger teams"
+        },
+        "kurumsal": {
+          "name": "Corporate",
+          "description": "Maximum capacity, large-scale solution"
+        }
+      },
+      "features": {
+        "appointments": "{{count}} Appointments/month",
+        "whatsappReminder": "WhatsApp Reminders",
+        "smsReminder": "SMS Reminders",
+        "unlimitedStaff": "Unlimited Staff",
+        "unlimitedCustomers": "Unlimited Customers",
+        "unlimitedServices": "Unlimited Services",
+        "bookingPage": "Online Booking",
+        "instantNotifications": "Instant Notifications",
+        "revenueStats": "Statistics",
+        "aiAssistant": "AI Smart Assistant",
+        "aiAssistantUnlimited": "AI Smart Assistant (Unlimited)",
+        "prioritySupport": "Priority Support",
+        "customIntegrations": "Custom Integrations",
+        "appointmentReminder": "Appointment Reminders Included"
+      }
+    },
+    "testimonials": {
+      "title": "User Reviews"
+    },
+    "faq": {
+      "title": "Frequently Asked Questions",
+      "q1": "What is PLANN and how does it work?",
+      "a1": "PLANN is an online system that allows businesses to easily manage their appointments. You can effortlessly perform customer, staff and appointment operations from the user panel.",
+      "q2": "How can I become a member?",
+      "a2": "To become a member of PLANN, click the Get Started button to easily create your business registration.",
+      "q3": "Is there a free trial period?",
+      "a3": "Yes, you can try PLANN free for 7 days. After the trial period, you can continue by selecting the package you want.",
+      "q4": "What happens if I exceed my appointment limit?",
+      "a4": "When you exceed the appointment limit specified in your package, you cannot create new appointments. You can continue by upgrading to a higher limit package.",
+      "q5": "How do billing and payment processes work?",
+      "a5": "All payments are made online through secure infrastructure and automatic invoices are created every month. You can access invoices from your panel.",
+      "q6": "Can I use the system on mobile devices?",
+      "a6": "Yes, PLANN is mobile-friendly. It works seamlessly on both mobile phones and tablets.",
+      "q7": "Can I add staff accounts?",
+      "a7": "Yes, each package allows you to add a certain number of staff accounts. You can upgrade to higher packages to expand.",
+      "q8": "Are reminder SMS sent to my customers?",
+      "a8": "Yes, with PLANN, an information SMS is sent when you first create the appointment. Also, a reminder SMS is automatically sent to your customers 2 hours before the appointment.",
+      "q9": "Can I export my customer information?",
+      "a9": "Yes, you can export your customer information in Excel format.",
+      "q10": "Do you offer technical support?",
+      "a10": "Yes, our support team is happy to help you every weekday. You can create a support request from within the panel.",
+      "q11": "Is my data safe?",
+      "a11": "Yes, at PLANN we store all your data encrypted on secure servers. Your data is not shared with third parties."
+    },
+    "cta": {
+      "title": "Get Started Now!",
+      "subtitle": "Manage your appointments professionally and grow your business",
+      "button": "Try Free"
+    },
+    "contact": {
+      "title": "Request a Call",
+      "subtitle": "Leave your contact details and we'll get back to you as soon as possible.",
+      "name": "Full Name",
+      "namePlaceholder": "Full Name",
+      "phone": "Phone Number",
+      "phonePlaceholder": "Phone Number",
+      "email": "Email (Optional)",
+      "emailPlaceholder": "Email (Optional)",
+      "message": "Message (Optional)",
+      "messagePlaceholder": "Your Message (Optional)",
+      "submit": "Send",
+      "sending": "Sending...",
+      "success": "Request Received!",
+      "successMessage": "We will contact you as soon as possible.",
+      "ok": "OK",
+      "privacy": "Your information is safe, it will only be used to contact you."
+    },
+    "footer": {
+      "description": "Modern appointment management system",
+      "product": "Product",
+      "legal": "Legal",
+      "privacyPolicy": "Privacy Policy",
+      "termsOfService": "Terms of Service",
+      "refundPolicy": "Refund Policy",
+      "contact": "Contact",
+      "securePayment": "Secure Payment:",
+      "copyright": "© 2025 PLANN - All rights reserved"
+    }
+  },
+  "auth": {
+    "login": {
+      "title": "Login",
+      "subtitle": "Sign in to your account to continue",
+      "email": "Email",
+      "emailPlaceholder": "example@email.com",
+      "password": "Password",
+      "rememberMe": "Remember Me",
+      "forgotPassword": "Forgot Password",
+      "loginButton": "Login",
+      "loggingIn": "Logging in...",
+      "noAccount": "Don't have an account yet?",
+      "createAccount": "Create New Account",
+      "error": "Invalid username or password.",
+      "errorGeneric": "An error occurred during login. Please try again."
+    },
+    "register": {
+      "title": "Try PLANN Free for 7 Days",
+      "subtitle": "Get started managing your business",
+      "businessName": "Business Name",
+      "businessNamePlaceholder": "Your Business Name",
+      "sector": "Sector",
+      "sectorPlaceholder": "Select your sector",
+      "sectors": {
+        "hairSalon": "Hair Salon",
+        "beautySalon": "Beauty Salon",
+        "massageSpa": "Massage / SPA",
+        "dietitian": "Dietitian",
+        "psychologist": "Psychologist / Counselling",
+        "dentalClinic": "Dental Clinics",
+        "other": "Other/Empty"
+      },
+      "sectorWarning": "⚠️ You will need to create your services manually",
+      "sectorSuccess": "✅ Default services for your sector will be loaded automatically",
+      "fullName": "Full Name",
+      "fullNamePlaceholder": "Your Full Name",
+      "email": "Email",
+      "phone": "Phone Number",
+      "password": "Password",
+      "registerButton": "Create Account",
+      "registering": "Registering...",
+      "guarantee": "No charges during your free trial. No credit card required.",
+      "hasAccount": "Already have an account?",
+      "loginLink": "Login",
+      "success": "Registration successful! You can now login.",
+      "error": "An error occurred during registration."
+    },
+    "forgotPassword": {
+      "title": "Forgot Password",
+      "subtitle": "Enter your email address and we'll send you a reset link",
+      "email": "Email Address",
+      "sendButton": "Send Reset Link",
+      "sending": "Sending...",
+      "backToLogin": "Back to Login",
+      "success": "Password reset link has been sent to your email.",
+      "error": "An error occurred. Please try again."
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "quickView": "Quick View",
+    "todaysAppointments": "Today's Appointments",
+    "todayStats": {
+      "today": "Today",
+      "completed": "Completed",
+      "todayServiceAmount": "Today's Service Amount"
+    },
+    "subscription": {
+      "freeTrial": "Free Trial",
+      "yearlyPlan": "Yearly Plan",
+      "monthlyPlan": "Monthly",
+      "daysRemaining": "{{days}} days remaining",
+      "appointmentQuota": "Appointment Quota",
+      "remaining": "Remaining",
+      "appointments": "appointments",
+      "thisMonth": "(This month)",
+      "thisYear": "(This year)",
+      "quotaLow": "Your limit is running out, upgrade your plan",
+      "trialEnding": "Your trial is ending, select a plan",
+      "subscribeNow": "Subscribe Now"
+    },
+    "todayFlow": {
+      "title": "Today's Appointments",
+      "noAppointments": "No appointments today",
+      "allStaff": "All Staff"
+    },
+    "tomorrowSummary": {
+      "title": "Tomorrow's Summary"
+    },
+    "breaks": {
+      "title": "Today's Break",
+      "addBreak": "+ Add Break",
+      "noBreaks": "You haven't added a break yet",
+      "remaining": "Remaining",
+      "minutes": "min",
+      "breaks": "breaks",
+      "addBreakTitle": "Add Break",
+      "startTime": "Start Time",
+      "endTime": "End Time",
+      "minMax": "Min: 15 min, Max: 45 min",
+      "adding": "Adding...",
+      "breakAdded": "Break added",
+      "breakDeleted": "Break deleted"
+    },
+    "appointment": {
+      "edit": "Edit",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "call": "Call",
+      "whatsapp": "WhatsApp",
+      "staff": "Staff",
+      "unassigned": "Unassigned",
+      "unknown": "Unknown"
+    },
+    "deleteDialog": {
+      "title": "Delete Appointment",
+      "description": "Are you sure you want to delete the appointment for {{name}}? This action cannot be undone.",
+      "cancel": "Cancel",
+      "delete": "Delete"
+    },
+    "status": {
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "pending": "Pending"
+    },
+    "toast": {
+      "statusUpdated": "Status updated",
+      "statusError": "Could not update status",
+      "appointmentDeleted": "Appointment deleted",
+      "deleteError": "Could not delete appointment",
+      "paymentSuccess": "🎉 Payment successful! Your plan has been updated."
+    }
+  },
+  "customers": {
+    "title": "Customers",
+    "addCustomer": "Add Customer",
+    "editCustomer": "Edit Customer",
+    "searchPlaceholder": "Search customers...",
+    "noCustomers": "No customers yet",
+    "noResults": "No customers found",
+    "fields": {
+      "name": "Full Name",
+      "phone": "Phone",
+      "email": "Email",
+      "notes": "Notes",
+      "createdAt": "Registration Date"
+    },
+    "actions": {
+      "call": "Call",
+      "whatsapp": "WhatsApp",
+      "edit": "Edit",
+      "delete": "Delete",
+      "viewHistory": "View History"
+    },
+    "deleteConfirm": "Are you sure you want to delete customer {{name}}?"
+  },
+  "appointments": {
+    "title": "Appointments",
+    "addAppointment": "New Appointment",
+    "editAppointment": "Edit Appointment",
+    "noAppointments": "No appointments",
+    "fields": {
+      "customer": "Customer",
+      "service": "Service",
+      "staff": "Staff Member",
+      "date": "Date",
+      "time": "Time",
+      "duration": "Duration",
+      "status": "Status",
+      "notes": "Notes",
+      "price": "Price"
+    },
+    "status": {
+      "pending": "Pending",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    }
+  },
+  "services": {
+    "title": "Services",
+    "addService": "Add Service",
+    "editService": "Edit Service",
+    "noServices": "No services yet",
+    "fields": {
+      "name": "Service Name",
+      "duration": "Duration (minutes)",
+      "price": "Price",
+      "description": "Description",
+      "category": "Category"
+    }
+  },
+  "staff": {
+    "title": "Staff",
+    "addStaff": "Add Staff",
+    "editStaff": "Edit Staff",
+    "noStaff": "No staff members yet",
+    "fields": {
+      "name": "Full Name",
+      "email": "Email",
+      "phone": "Phone",
+      "role": "Role",
+      "services": "Services"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "business": "Business Settings",
+    "notifications": "Notifications",
+    "security": "Security",
+    "subscription": "Subscription",
+    "language": "Language",
+    "theme": "Theme",
+    "darkMode": "Dark Mode",
+    "lightMode": "Light Mode"
+  },
+  "calendar": {
+    "title": "Calendar",
+    "today": "Today",
+    "week": "Week",
+    "month": "Month",
+    "day": "Day"
+  },
+  "finance": {
+    "title": "Finance",
+    "income": "Income",
+    "expense": "Expense",
+    "balance": "Balance",
+    "addTransaction": "Add Transaction"
+  },
+  "validation": {
+    "required": "This field is required",
+    "invalidEmail": "Invalid email address",
+    "invalidPhone": "Invalid phone number",
+    "minLength": "Must be at least {{min}} characters",
+    "maxLength": "Must be at most {{max}} characters",
+    "passwordMismatch": "Passwords do not match"
+  },
+  "errors": {
+    "generic": "An error occurred. Please try again.",
+    "network": "Network error. Please check your connection.",
+    "server": "Server error. Please try again later.",
+    "unauthorized": "You are not authorised to perform this action.",
+    "notFound": "The requested item could not be found.",
+    "sessionExpired": "Your session has expired. Please log in again."
+  },
+  "time": {
+    "minutes": "minutes",
+    "hours": "hours",
+    "days": "days",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "yesterday": "Yesterday"
+  }
+}

@@ -1,0 +1,506 @@
+{
+  "common": {
+    "save": "Kaydet",
+    "cancel": "İptal",
+    "delete": "Sil",
+    "edit": "Düzenle",
+    "add": "Ekle",
+    "search": "Ara",
+    "filter": "Filtrele",
+    "loading": "Yükleniyor...",
+    "error": "Hata",
+    "success": "Başarılı",
+    "confirm": "Onayla",
+    "back": "Geri",
+    "next": "İleri",
+    "yes": "Evet",
+    "no": "Hayır",
+    "close": "Kapat",
+    "submit": "Gönder",
+    "reset": "Sıfırla",
+    "actions": "İşlemler",
+    "details": "Detaylar",
+    "all": "Tümü",
+    "none": "Hiçbiri",
+    "select": "Seç",
+    "download": "İndir",
+    "upload": "Yükle",
+    "refresh": "Yenile",
+    "backToHome": "← Ana Sayfaya Dön",
+    "or": "veya"
+  },
+  "brand": {
+    "name": "PLANN",
+    "tagline": "Randevu Yönetim Sistemi"
+  },
+  "nav": {
+    "home": "Ana Sayfa",
+    "features": "Özellikler",
+    "pricing": "Fiyatlar",
+    "testimonials": "Yorumlar",
+    "faq": "SSS",
+    "login": "Giriş Yap",
+    "register": "Hemen Başla",
+    "dashboard": "Panel",
+    "customers": "Müşteriler",
+    "appointments": "Randevular",
+    "calendar": "Takvim",
+    "services": "Hizmetler",
+    "staff": "Personel",
+    "reports": "Raporlar",
+    "settings": "Ayarlar",
+    "finance": "Finans",
+    "profile": "Profil",
+    "logout": "Çıkış Yap"
+  },
+  "landing": {
+    "banner": "Yeni üye işyerlerine özel ilk ay %25 indirim!",
+    "hero": {
+      "with": "PLANN ile",
+      "appointment": "Randevu",
+      "words": ["Hızlı", "Pratik", "Kolay", "Hesaplı"],
+      "subtitle": "Hızlı, güvenilir ve kullanıcı dostu randevu yazılımı ile tanışın.",
+      "subtitle2": "İşletmeniz her an erişilebilir olsun.",
+      "trialButton": "7 Gün Ücretsiz Deneyin",
+      "trialNote": "Kredi kartı gerekmez.",
+      "callButton": "Sizi Arayalım",
+      "newAppointments": "7 Yeni Randevu"
+    },
+    "stats": {
+      "activeBusinesses": "Aktif İşletme",
+      "appointments": "Randevu",
+      "userRating": "Kullanıcı Puanı",
+      "satisfaction": "Memnuniyet"
+    },
+    "trust": {
+      "sslSecure": "SSL Güvenli",
+      "gdprCompliant": "KVKK Uyumlu",
+      "support247": "7/24 Destek",
+      "uptime": "99.9% Uptime",
+      "trustedBy": "Bize Güvenen İşletmeler",
+      "hairSalons": "Kuaför Salonları",
+      "healthCentres": "Sağlık Merkezleri",
+      "educationInstitutions": "Eğitim Kurumları",
+      "vetClinics": "Veteriner Klinikleri",
+      "spaWellness": "Spa & Wellness"
+    },
+    "features": {
+      "title": "PLANN Neler Sunar?",
+      "autoSms": {
+        "title": "Otomatik SMS ve Hatırlatma",
+        "description": "Randevu öncesi otomatik SMS ile hatırlatma gönderin, unutulan randevulara son verin."
+      },
+      "onlineBooking": {
+        "title": "Online Randevu Sistemi",
+        "description": "Müşterilerinizin randevularını online olarak kendilerinin oluşturmasını sağlayın."
+      },
+      "periodicSessions": {
+        "title": "Periyodik Seans Yönetimi",
+        "description": "Müşterilerinize periyodik olarak tekrar eden randevular oluşturup seansları takip edin."
+      },
+      "customerManagement": {
+        "title": "Müşteri Yönetimi",
+        "description": "Sınırsız sayıda müşteri ekleyip sonraki randevularını kolayca oluşturun ve yönetin."
+      },
+      "calendarManagement": {
+        "title": "Detaylı Takvim Yönetimi",
+        "description": "Randevularınızı günlük, haftalık, aylık olarak takvim üzerinden detaylı takip edip yönetin."
+      },
+      "staffManagement": {
+        "title": "Personel Yönetimi",
+        "description": "Sınırsız sayıda personel ekleyip randevularını ve istatistiklerini kolayca takip edin."
+      },
+      "multiDevice": {
+        "title": "Çoklu Cihaz Desteği",
+        "description": "Bilgisayar, telefon ve tablet üzerinden tüm randevularınıza her yerden erişin."
+      },
+      "financeManagement": {
+        "title": "Gelir Gider Yönetimi",
+        "description": "İşletmenize ait gelir giderleri takip edip ön muhasebe sisteminden faydalanın."
+      },
+      "reporting": {
+        "title": "Raporlama & İstatistikler",
+        "description": "Müşteri, personel ve hizmet istatistiklerinizi görüntüleyin. Gelir giderlerinizi takip edin."
+      }
+    },
+    "pricing": {
+      "title": "Fiyatlandırma",
+      "monthly": "Aylık",
+      "yearly": "Yıllık",
+      "twoMonthsFree": "2 Ay Ücretsiz",
+      "newUserDiscount": "Yeni üye işyerlerine özel ilk ay %25 indirim!",
+      "mostPopular": "En Popüler",
+      "tryFree": "Ücretsiz Dene",
+      "perMonth": "/ay",
+      "perYear": "/yıl",
+      "monthlyBilling": "aylık fatura",
+      "yearlyBilling": "yıllık fatura",
+      "savingsPercent": "%{{percent}} Tasarruf",
+      "appointmentsPerMonth": "{{count}} Randevu",
+      "monthlyLimit": "Aylık limit",
+      "yearlyLimit": "Yıllık limit",
+      "daysRemaining": "{{days}} gün kaldı",
+      "trialDaysRemaining": "Kalan {{days}} gün",
+      "trustBadge": "7 gün ücretsiz deneme",
+      "savings": "Tasarruf",
+      "plans": {
+        "standart": {
+          "name": "Standart",
+          "description": "Yeni başlayan küçük işletmeler için ideal"
+        },
+        "profesyonel": {
+          "name": "Profesyonel",
+          "description": "Büyüyen işletmeler için uygun"
+        },
+        "premium": {
+          "name": "Premium",
+          "description": "Düzenli müşterisi olan işletmeler için"
+        },
+        "business": {
+          "name": "Business",
+          "description": "Yoğun salonlar için yüksek hacimli çözüm"
+        },
+        "enterprise": {
+          "name": "Enterprise",
+          "description": "Çok personelli klinikler ve büyük ekipler için"
+        },
+        "kurumsal": {
+          "name": "Kurumsal",
+          "description": "Maksimum kapasite, büyük ölçekli çözüm"
+        }
+      },
+      "features": {
+        "appointments": "{{count}} Randevu/ay",
+        "whatsappReminder": "WhatsApp Hatırlatma",
+        "smsReminder": "SMS Hatırlatma",
+        "unlimitedStaff": "Sınırsız Personel",
+        "unlimitedCustomers": "Sınırsız Müşteri",
+        "unlimitedServices": "Sınırsız Hizmet",
+        "bookingPage": "Online Randevu",
+        "instantNotifications": "Anlık Bildirimler",
+        "revenueStats": "İstatistikler",
+        "aiAssistant": "AI Akıllı Asistan",
+        "aiAssistantUnlimited": "Yapay Zeka Akıllı Asistan (Limitsiz)",
+        "prioritySupport": "Öncelikli Destek",
+        "customIntegrations": "Özel Entegrasyonlar",
+        "appointmentReminder": "Randevu Hatırlatma Dahil"
+      }
+    },
+    "testimonials": {
+      "title": "Kullanıcı Yorumları"
+    },
+    "faq": {
+      "title": "Sık Sorulan Sorular",
+      "q1": "PLANN nedir ve nasıl çalışır?",
+      "a1": "PLANN, işletmelerin randevularını kolayca yönetmesini sağlayan çevrim içi bir sistemdir. Kullanıcı panelinden müşteri, personel ve randevu işlemlerini zahmetsizce gerçekleştirebilirsiniz.",
+      "q2": "Nasıl üye olabilirim?",
+      "a2": "PLANN'a üye olmak için Hemen Başla butonuna tıklayarak firma kaydınızı kolayca oluşturabilirsiniz.",
+      "q3": "Ücretsiz deneme süresi var mı?",
+      "a3": "Evet, PLANN'ı 7 gün boyunca ücretsiz olarak deneyebilirsiniz. Deneme süresi sonunda dilediğiniz paketi seçerek devam edebilirsiniz.",
+      "q4": "Randevu limitini aşarsam ne olur?",
+      "a4": "Seçtiğiniz pakette belirtilen randevu limitini aştığınızda yeni randevu oluşturamazsınız. Daha yüksek limitli bir pakete geçerek devam edebilirsiniz.",
+      "q5": "Fatura ve ödeme işlemleri nasıl ilerliyor?",
+      "a5": "Tüm ödemeler güvenli altyapılar üzerinden online olarak yapılır ve her ay otomatik fatura oluşturulur. Faturalara panelinizden ulaşabilirsiniz.",
+      "q6": "Sistemi mobil cihazlarda kullanabilir miyim?",
+      "a6": "Evet, PLANN mobil uyumludur. Hem cep telefonlarında hem de tabletlerde sorunsuz çalışır.",
+      "q7": "Personel hesabı ekleyebilir miyim?",
+      "a7": "Evet, her paket belirli sayıda personel hesabı eklemenize olanak tanır. Genişletmek için üst paketlere geçebilirsiniz.",
+      "q8": "Müşterilerime hatırlatma SMS'i gönderiliyor mu?",
+      "a8": "Evet, PLANN sayesinde randevuyu ilk oluşturduğunuzda bilgi SMS'i gönderilir. Ayrıca randevudan 2 saat önce hatırlatma SMS'i otomatik olarak müşterilerinize gönderilir.",
+      "q9": "Müşteri bilgilerimi dışa aktarabilir miyim?",
+      "a9": "Evet, müşteri bilgilerinizi Excel formatında dışa aktarabilirsiniz.",
+      "q10": "Teknik destek sunuyor musunuz?",
+      "a10": "Evet, destek ekibimiz hafta içi her gün size yardımcı olmaktan memnuniyet duyar. Panel içinden destek talebi oluşturabilirsiniz.",
+      "q11": "Verilerim güvende mi?",
+      "a11": "Evet, PLANN olarak tüm verilerinizi güvenli sunucularda şifreli şekilde saklıyoruz. Verileriniz 3. taraflarla paylaşılmaz."
+    },
+    "cta": {
+      "title": "Hemen Başlayın!",
+      "subtitle": "Randevularınızı profesyonelce yönetin ve işinizi büyütün",
+      "button": "Ücretsiz Deneyin"
+    },
+    "contact": {
+      "title": "Sizi Arayalım",
+      "subtitle": "İletişim bilgilerinizi bırakın, size en kısa sürede ulaşalım.",
+      "name": "Ad Soyad",
+      "namePlaceholder": "Ad Soyad",
+      "phone": "Telefon Numarası",
+      "phonePlaceholder": "Telefon Numarası",
+      "email": "E-posta (Opsiyonel)",
+      "emailPlaceholder": "E-posta (Opsiyonel)",
+      "message": "Mesajınız (Opsiyonel)",
+      "messagePlaceholder": "Mesajınız (Opsiyonel)",
+      "submit": "Gönder",
+      "sending": "Gönderiliyor...",
+      "success": "Talebiniz Alındı!",
+      "successMessage": "En kısa sürede sizinle iletişime geçeceğiz.",
+      "ok": "Tamam",
+      "privacy": "Bilgileriniz güvende, sadece sizinle iletişim için kullanılacak."
+    },
+    "footer": {
+      "description": "Modern randevu yönetim sistemi",
+      "product": "Ürün",
+      "legal": "Yasal",
+      "privacyPolicy": "Gizlilik Politikası",
+      "termsOfService": "Kullanım Koşulları",
+      "refundPolicy": "İade Politikası",
+      "contact": "İletişim",
+      "securePayment": "Güvenli Ödeme:",
+      "copyright": "© 2025 PLANN - Tüm hakları saklıdır"
+    }
+  },
+  "auth": {
+    "login": {
+      "title": "Giriş Yap",
+      "subtitle": "Hesabınıza giriş yaparak devam edin",
+      "email": "E Posta",
+      "emailPlaceholder": "ornek@email.com",
+      "password": "Parola",
+      "rememberMe": "Beni Hatırla",
+      "forgotPassword": "Şifremi Unuttum",
+      "loginButton": "Giriş Yap",
+      "loggingIn": "Giriş Yapılıyor...",
+      "noAccount": "Henüz hesabınız yok mu?",
+      "createAccount": "Yeni Hesap Oluştur",
+      "error": "Kullanıcı adı veya parola hatalı.",
+      "errorGeneric": "Giriş sırasında bir hata oluştu. Lütfen tekrar deneyin."
+    },
+    "register": {
+      "title": "PLANN'ı 7 Gün Boyunca Ücretsiz Deneyin",
+      "subtitle": "İşletmenizi yönetmek için hemen başlayın",
+      "businessName": "İşletme Adı",
+      "businessNamePlaceholder": "İşletme Adınız",
+      "sector": "Sektör",
+      "sectorPlaceholder": "Sektörünüzü seçin",
+      "sectors": {
+        "hairSalon": "Kuaför",
+        "beautySalon": "Güzellik Salonu",
+        "massageSpa": "Masaj / SPA",
+        "dietitian": "Diyetisyen",
+        "psychologist": "Psikolog / Danışmanlık",
+        "dentalClinic": "Diş Klinikleri",
+        "other": "Diğer/Boş"
+      },
+      "sectorWarning": "⚠️ Kendi hizmetlerinizi manuel olarak oluşturmanız gerekecek",
+      "sectorSuccess": "✅ Sektörünüze özel varsayılan hizmetler otomatik yüklenecek",
+      "fullName": "Ad Soyad",
+      "fullNamePlaceholder": "Adınız Soyadınız",
+      "email": "E-posta",
+      "phone": "Telefon Numarası",
+      "password": "Şifre",
+      "registerButton": "Hesap Oluştur",
+      "registering": "Kayıt Olunuyor...",
+      "guarantee": "Ücretsiz deneme süreniz boyunca hiçbir ücret alınmaz. Kredi kartı bilgisi gerekmez.",
+      "hasAccount": "Zaten hesabınız var mı?",
+      "loginLink": "Giriş Yap",
+      "success": "Kayıt başarılı! Şimdi giriş yapabilirsiniz.",
+      "error": "Kayıt sırasında bir hata oluştu."
+    },
+    "forgotPassword": {
+      "title": "Şifremi Unuttum",
+      "subtitle": "E-posta adresinizi girin, size sıfırlama bağlantısı gönderelim",
+      "email": "E-posta Adresi",
+      "sendButton": "Sıfırlama Bağlantısı Gönder",
+      "sending": "Gönderiliyor...",
+      "backToLogin": "Giriş Sayfasına Dön",
+      "success": "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.",
+      "error": "Bir hata oluştu. Lütfen tekrar deneyin."
+    }
+  },
+  "dashboard": {
+    "title": "Panel",
+    "quickView": "Hızlı Bakış",
+    "todaysAppointments": "Bugünün Randevuları",
+    "todayStats": {
+      "today": "Bugünkü",
+      "completed": "Tamamlanan",
+      "todayServiceAmount": "Bugünkü Hizmet Tutarı"
+    },
+    "subscription": {
+      "freeTrial": "Ücretsiz Deneme",
+      "yearlyPlan": "Yıllık Plan",
+      "monthlyPlan": "Aylık",
+      "daysRemaining": "Kalan {{days}} gün",
+      "appointmentQuota": "Randevu Kotası",
+      "remaining": "Kalan",
+      "appointments": "randevu",
+      "thisMonth": "(Bu ay)",
+      "thisYear": "(Bu yıl)",
+      "quotaLow": "Limitiniz dolmak üzere, paketinizi yükseltin",
+      "trialEnding": "Trial süreniz bitiyor, paket seçin",
+      "subscribeNow": "Şimdi Abone Ol"
+    },
+    "todayFlow": {
+      "title": "Bugünün Randevuları",
+      "noAppointments": "Bugün randevu bulunmuyor",
+      "allStaff": "Tüm Personel"
+    },
+    "tomorrowSummary": {
+      "title": "Yarının Özeti"
+    },
+    "breaks": {
+      "title": "Bugünkü Molam",
+      "addBreak": "+ Mola Ekle",
+      "noBreaks": "Henüz mola eklemediniz",
+      "remaining": "Kalan",
+      "minutes": "dk",
+      "breaks": "mola",
+      "addBreakTitle": "Mola Ekle",
+      "startTime": "Başlangıç",
+      "endTime": "Bitiş",
+      "minMax": "Min: 15 dk, Max: 45 dk",
+      "adding": "Ekleniyor...",
+      "breakAdded": "Mola eklendi",
+      "breakDeleted": "Mola silindi"
+    },
+    "appointment": {
+      "edit": "Düzenle",
+      "delete": "Sil",
+      "cancel": "İptal Et",
+      "call": "Ara",
+      "whatsapp": "WhatsApp",
+      "staff": "Personel",
+      "unassigned": "Atanmadı",
+      "unknown": "Bilinmiyor"
+    },
+    "deleteDialog": {
+      "title": "Randevuyu Sil",
+      "description": "{{name}} için oluşturulan randevuyu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
+      "cancel": "İptal",
+      "delete": "Sil"
+    },
+    "status": {
+      "completed": "Tamamlandı",
+      "cancelled": "İptal",
+      "pending": "Bekliyor"
+    },
+    "toast": {
+      "statusUpdated": "Durum güncellendi",
+      "statusError": "Durum güncellenemedi",
+      "appointmentDeleted": "Randevu silindi",
+      "deleteError": "Randevu silinemedi",
+      "paymentSuccess": "🎉 Ödeme başarılı! Planınız güncellendi."
+    }
+  },
+  "customers": {
+    "title": "Müşteriler",
+    "addCustomer": "Müşteri Ekle",
+    "editCustomer": "Müşteri Düzenle",
+    "searchPlaceholder": "Müşteri ara...",
+    "noCustomers": "Henüz müşteri bulunmuyor",
+    "noResults": "Müşteri bulunamadı",
+    "fields": {
+      "name": "Ad Soyad",
+      "phone": "Telefon",
+      "email": "E-posta",
+      "notes": "Notlar",
+      "createdAt": "Kayıt Tarihi"
+    },
+    "actions": {
+      "call": "Ara",
+      "whatsapp": "WhatsApp",
+      "edit": "Düzenle",
+      "delete": "Sil",
+      "viewHistory": "Geçmişi Görüntüle"
+    },
+    "deleteConfirm": "{{name}} müşterisini silmek istediğinizden emin misiniz?"
+  },
+  "appointments": {
+    "title": "Randevular",
+    "addAppointment": "Yeni Randevu",
+    "editAppointment": "Randevu Düzenle",
+    "noAppointments": "Randevu bulunmuyor",
+    "fields": {
+      "customer": "Müşteri",
+      "service": "Hizmet",
+      "staff": "Personel",
+      "date": "Tarih",
+      "time": "Saat",
+      "duration": "Süre",
+      "status": "Durum",
+      "notes": "Notlar",
+      "price": "Fiyat"
+    },
+    "status": {
+      "pending": "Bekliyor",
+      "completed": "Tamamlandı",
+      "cancelled": "İptal Edildi"
+    }
+  },
+  "services": {
+    "title": "Hizmetler",
+    "addService": "Hizmet Ekle",
+    "editService": "Hizmet Düzenle",
+    "noServices": "Henüz hizmet bulunmuyor",
+    "fields": {
+      "name": "Hizmet Adı",
+      "duration": "Süre (dakika)",
+      "price": "Fiyat",
+      "description": "Açıklama",
+      "category": "Kategori"
+    }
+  },
+  "staff": {
+    "title": "Personel",
+    "addStaff": "Personel Ekle",
+    "editStaff": "Personel Düzenle",
+    "noStaff": "Henüz personel bulunmuyor",
+    "fields": {
+      "name": "Ad Soyad",
+      "email": "E-posta",
+      "phone": "Telefon",
+      "role": "Rol",
+      "services": "Hizmetler"
+    }
+  },
+  "settings": {
+    "title": "Ayarlar",
+    "general": "Genel",
+    "business": "İşletme Ayarları",
+    "notifications": "Bildirimler",
+    "security": "Güvenlik",
+    "subscription": "Abonelik",
+    "language": "Dil",
+    "theme": "Tema",
+    "darkMode": "Karanlık Mod",
+    "lightMode": "Aydınlık Mod"
+  },
+  "calendar": {
+    "title": "Takvim",
+    "today": "Bugün",
+    "week": "Hafta",
+    "month": "Ay",
+    "day": "Gün"
+  },
+  "finance": {
+    "title": "Finans",
+    "income": "Gelir",
+    "expense": "Gider",
+    "balance": "Bakiye",
+    "addTransaction": "İşlem Ekle"
+  },
+  "validation": {
+    "required": "Bu alan zorunludur",
+    "invalidEmail": "Geçersiz e-posta adresi",
+    "invalidPhone": "Geçersiz telefon numarası",
+    "minLength": "En az {{min}} karakter olmalıdır",
+    "maxLength": "En fazla {{max}} karakter olmalıdır",
+    "passwordMismatch": "Şifreler eşleşmiyor"
+  },
+  "errors": {
+    "generic": "Bir hata oluştu. Lütfen tekrar deneyin.",
+    "network": "Bağlantı hatası. Lütfen bağlantınızı kontrol edin.",
+    "server": "Sunucu hatası. Lütfen daha sonra tekrar deneyin.",
+    "unauthorized": "Bu işlemi gerçekleştirme yetkiniz yok.",
+    "notFound": "İstenen öğe bulunamadı.",
+    "sessionExpired": "Oturumunuz sona erdi. Lütfen tekrar giriş yapın."
+  },
+  "time": {
+    "minutes": "dakika",
+    "hours": "saat",
+    "days": "gün",
+    "today": "Bugün",
+    "tomorrow": "Yarın",
+    "yesterday": "Dün"
+  }
+}
