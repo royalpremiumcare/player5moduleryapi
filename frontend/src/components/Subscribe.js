@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, Globe, ExternalLink, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import api from "../api/api";
@@ -10,6 +10,40 @@ import { useTranslation } from "react-i18next";
 
 const Subscribe = ({ onNavigate }) => {
   const { t, i18n } = useTranslation();
+  
+  // Pricing Display Configuration - Exact flat numbers matching Stripe Fixed Amount Coupons
+  const PRICING_DISPLAY = {
+    try: {
+      // Math: Base Price - Coupon Amount = Discounted Price
+      standard:     { original: 750,  discounted: 550 },  // 750 - 200 = 550
+      professional: { original: 1000, discounted: 750 },  // 1000 - 250 = 750
+      premium:      { original: 1550, discounted: 1150 }, // 1550 - 400 = 1150
+      business:     { original: 1950, discounted: 1450 }, // 1950 - 500 = 1450
+      enterprise:   { original: 2350, discounted: 1750 }, // 2350 - 600 = 1750
+      corporate:    { original: 3600, discounted: 2700 }, // 3600 - 900 = 2700
+    },
+    gbp: {
+      // Math: Base Price - Coupon Amount = Discounted Price
+      standard:     { original: 16, discounted: 12 },     // 16 - 4 = 12
+      professional: { original: 24, discounted: 18 },     // 24 - 6 = 18
+      premium:      { original: 32, discounted: 24 },     // 32 - 8 = 24
+      business:     { original: 40, discounted: 30 },     // 40 - 10 = 30
+      enterprise:   { original: 56, discounted: 42 },     // 56 - 14 = 42
+      corporate:    { original: 80, discounted: 60 },     // 80 - 20 = 60
+    }
+  };
+  
+  // Plan ismine göre pricing key'i döndür
+  const getPlanPricingKey = (planName) => {
+    const planNameLower = planName.toLowerCase();
+    if (planNameLower.includes('standart') || planNameLower.includes('standard')) return 'standard';
+    if (planNameLower.includes('profesyonel') || planNameLower.includes('professional')) return 'professional';
+    if (planNameLower.includes('premium')) return 'premium';
+    if (planNameLower.includes('business')) return 'business';
+    if (planNameLower.includes('enterprise')) return 'enterprise';
+    if (planNameLower.includes('kurumsal') || planNameLower.includes('corporate')) return 'corporate';
+    return 'standard'; // fallback
+  };
   
   // Plan isimleri çevirisi
   const getPlanName = (planName) => {
@@ -31,33 +65,67 @@ const Subscribe = ({ onNavigate }) => {
   // Eğer app mode ise, sadece bilgilendirme mesajı göster
   if (isAppMode) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-20 flex items-center justify-center" style={{ fontFamily: 'Inter, sans-serif' }}>
-        <div className="px-4">
-          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-8 max-w-md mx-auto text-center">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">{t('settings.subscribePage.subscriptionManagement')}</h2>
-            <p className="text-gray-600 mb-6">
-              {t('appCompliance.subscriptionInfo')}
-            </p>
-            <Button
-              onClick={() => {
-                const webUrl = 'https://plannapp.co';
-                if (Capacitor.isNativePlatform()) {
-                  Browser.open({ url: webUrl });
-                } else {
-                  window.location.href = webUrl;
-                }
-              }}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {t('appCompliance.goToWebsite')}
-            </Button>
-            <button
-              onClick={() => onNavigate && onNavigate("settings")}
-              className="mt-4 text-sm text-gray-500 hover:text-gray-700"
-            >
-              {t('settings.subscribePage.backToSettings')}
-            </button>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 pb-20 flex items-center justify-center" style={{ fontFamily: 'Inter, sans-serif' }}>
+        <div className="px-4 w-full max-w-md">
+          <Card className="bg-white/80 backdrop-blur-sm shadow-2xl border-0 rounded-3xl p-8 mx-auto text-center overflow-hidden relative">
+            {/* Decorative gradient overlay */}
+            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+            <div className="absolute bottom-0 left-0 w-64 h-64 bg-gradient-to-tr from-purple-400/10 to-pink-400/10 rounded-full blur-3xl -ml-32 -mb-32"></div>
+            
+            <div className="relative z-10">
+              {/* Icon */}
+              <div className="mx-auto mb-6 w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+                <Globe className="w-10 h-10 text-white" />
+              </div>
+              
+              {/* Title */}
+              <h2 className="text-2xl font-bold text-gray-900 mb-3">
+                {t('settings.subscribePage.subscriptionManagement')}
+              </h2>
+              
+              {/* Description */}
+              <p className="text-gray-600 mb-8 leading-relaxed px-2">
+                {t('appCompliance.subscriptionInfo')}
+              </p>
+              
+              {/* CTA Button */}
+              <Button
+                onClick={() => {
+                  const webUrl = 'https://plannapp.co';
+                  if (Capacitor.isNativePlatform()) {
+                    Browser.open({ url: webUrl });
+                  } else {
+                    window.location.href = webUrl;
+                  }
+                }}
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02] flex items-center justify-center gap-2 group"
+              >
+                <ExternalLink className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                {t('appCompliance.goToWebsite')}
+              </Button>
+              
+              {/* Back button */}
+              <button
+                onClick={() => onNavigate && onNavigate("settings")}
+                className="mt-6 text-sm text-gray-500 hover:text-gray-700 font-medium transition-colors duration-200 flex items-center justify-center gap-1 mx-auto"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                {t('settings.subscribePage.backToSettings')}
+              </button>
+            </div>
           </Card>
+          
+          {/* Additional info card */}
+          <div className="mt-4 bg-white/60 backdrop-blur-sm rounded-2xl p-4 text-center">
+            <div className="flex items-center justify-center gap-2 text-gray-600 text-sm">
+              <Sparkles className="w-4 h-4 text-purple-500" />
+              <span className="font-medium">
+                {i18n.language === 'tr' 
+                  ? 'Hızlı ve güvenli ödeme için web sitesini ziyaret edin' 
+                  : 'Visit our website for quick and secure payment'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -240,20 +308,21 @@ const Subscribe = ({ onNavigate }) => {
             const isYearly = billingCycle === 'yearly';
             const isFirstMonth = !isYearly && currentPlan && currentPlan.is_first_month;
             
-            // Currency symbol - Backend'den gelen fiyatlar zaten doğru para biriminde
-            const currencySymbol = i18n.language === 'tr' ? '₺' : '£';
+            // Currency detection - Language bazlı
+            const currency = i18n.language === 'en' ? 'gbp' : 'try';
+            const currencySymbol = currency === 'try' ? '₺' : '£';
             
-            // Backend'den gelen fiyatlar zaten para birimine göre (TRY veya GBP)
-            const priceMonthly = plan.price_monthly;
-            const priceYearly = plan.price_yearly || (plan.price_monthly * 10);
+            // Plan pricing key'i al
+            const planPricingKey = getPlanPricingKey(plan.name);
+            const pricing = PRICING_DISPLAY[currency][planPricingKey];
             
-            // Yıllık fiyat hesaplama
-            const yearlyPrice = priceYearly;
+            // PRICING_DISPLAY'den exact flat numbers kullan
+            const originalPrice = pricing.original;
+            const discountedPrice = pricing.discounted;
+            
+            // Yıllık fiyat hesaplama (original price * 10)
+            const yearlyPrice = originalPrice * 10;
             const monthlyEquivalent = Math.round(yearlyPrice / 12);
-            
-            // Aylık fiyat hesaplama
-            const discountedPrice = isFirstMonth ? Math.round(priceMonthly * 0.75 * 100) / 100 : priceMonthly;
-            const originalPrice = priceMonthly;
             
             const isProcessing = processingPlanId === plan.id;
             const isCurrentPlan = currentPlan && currentPlan.plan_id === plan.id;

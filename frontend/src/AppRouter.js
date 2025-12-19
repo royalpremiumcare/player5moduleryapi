@@ -44,7 +44,13 @@ const AppRouter = () => {
       {/* Dashboard Route - Same as root for authenticated users */}
       <Route 
         path="/dashboard" 
-        element={isAuthenticated ? <Navigate to="/" replace /> : <Navigate to="/login" replace />} 
+        element={
+          isAuthenticated 
+            ? <App /> 
+            : Capacitor.isNativePlatform()
+              ? <Navigate to="/login?mode=app" replace />
+              : <Navigate to="/login" replace />
+        } 
       />
       <Route 
         path="/login" 

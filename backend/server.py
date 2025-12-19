@@ -111,8 +111,8 @@ else:
 PAYMENT_SUCCESS_URL = "https://plannapp.co/"
 PAYMENT_SUCCESS_URL_NATIVE = "plannapp://payment-success"
 # Native app için deep link, web için normal URL
-PAYMENT_CANCEL_URL = "https://plannapp.co/subscribe"
-PAYMENT_CANCEL_URL_NATIVE = "plannapp://subscribe"
+PAYMENT_CANCEL_URL = "https://plannapp.co/dashboard"
+PAYMENT_CANCEL_URL_NATIVE = "plannapp://dashboard"
 
 # --- PUSH NOTIFICATION AYARLARI ---
 VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', 'BB4nvNoHrWlWS6KTM1ybHUZD260l8b7Nnr2bMHvwnbflCJ4OJVd68Dqmw1hpaOFFUNmRFySvP3Ewzm596xjqF7g')
@@ -3928,6 +3928,24 @@ async def create_checkout_session(
 ):
     """PayTR ödeme oturumu oluştur"""
     try:
+        # Maps normalized 'lookup_key' to the ACTUAL Stripe Coupon ID
+        COUPON_MAP = {
+            # --- MONTHLY TRY COUPONS (Turkey) ---
+            'standard_monthly_try':     'qcrphAHF',  # LAUNCH_STD_TRY (-200 TL)
+            'professional_monthly_try': 'LhtiDQfU',  # LAUNCH_PRO_TRY (-250 TL)
+            'premium_monthly_try':      'aMUqlGOn',  # LAUNCH_PRE_TRY (-400 TL)
+            'business_monthly_try':     'SJSEK6LZ',  # LAUNCH_BUS_TRY (-500 TL)
+            'enterprise_monthly_try':   'EgiWhRFI',  # LAUNCH_ENT_TRY (-600 TL)
+            'corporate_monthly_try':    'z7n9rmxE',  # LAUNCH_COR_TRY (-900 TL)
+            # --- MONTHLY GBP COUPONS (UK) ---
+            'standard_monthly_gbp':     'JqOc3ta6',  # LAUNCH_STD_GBP (-£4)
+            'professional_monthly_gbp': 'drRoM3Kc',  # LAUNCH_PRO_GBP (-£6)
+            'premium_monthly_gbp':      'NFnpf2Og',  # LAUNCH_PRE_GBP (-£8)
+            'business_monthly_gbp':     'XOnrysiP',  # LAUNCH_BUS_GBP (-£10)
+            'enterprise_monthly_gbp':   'C6g1vI2G',  # LAUNCH_ENT_GBP (-£14)
+            'corporate_monthly_gbp':    'u4jV6TAJ',  # LAUNCH_COR_GBP (-£20)
+        }
+        
         # Log mesajını hem console'a hem de file'a yaz
         billing_cycle = plan_request.billing_cycle or "monthly"
         log_msg = f"Payment checkout session başlatılıyor: user={current_user.username}, plan_id={plan_request.plan_id}, billing_cycle={billing_cycle}"
@@ -4006,10 +4024,24 @@ async def create_checkout_session(
                 recurring_interval = 'month'
                 plan_suffix = "(Aylık)"
             
+            # Verbose logging: Raw payload
+            logger.info(f"🔍 DEBUG - Raw Payload:")
+            logger.info(f"   plan_id: '{plan_request.plan_id}'")
+            logger.info(f"   currency: '{currency}'")
+            logger.info(f"   billing_cycle: '{billing_cycle}'")
+            
             # Lookup key ile Stripe'dan fiyat çekmeyi dene
             # Not: Lookup key currency içerir (örn: standard_monthly_gbp, professional_monthly_try)
             lookup_key = get_stripe_lookup_key(plan_request.plan_id, billing_cycle, currency)
+            logger.info(f"🔑 Generated Lookup Key: '{lookup_key}'")
+            
             stripe_price = get_stripe_price_by_lookup_key(lookup_key)
+            
+            # COUPON_MAP için lookup_key'i normalize et (standart -> standard)
+            # Normalize: lowercase, strip whitespace, standart -> standard
+            coupon_lookup_key = lookup_key.lower().strip()
+            coupon_lookup_key = coupon_lookup_key.replace('standart_', 'standard_') if 'standart_' in coupon_lookup_key else coupon_lookup_key
+            logger.info(f"🔑 Normalized Coupon Lookup Key: '{coupon_lookup_key}'")
             
             if stripe_price:
                 # Lookup key ile fiyat bulundu, kullan
@@ -4051,27 +4083,42 @@ async def create_checkout_session(
             logger.info(f"💰 Fiyat: {price_amount} ({currency_upper}) ({recurring_interval})")
             logger.info(f"💰 is_first_month: {is_first_month}")
             
-            # İlk ay indirimi için Coupon oluştur (sadece aylık ve ilk ödemeye uygulanır)
+            # COUPON_MAP'ten coupon ID al (sadece aylık planlar için)
             coupon_id = None
-            if is_first_month and not is_yearly:
-                try:
-                    coupon = stripe.Coupon.create(
-                        percent_off=25,
-                        duration='once',  # Sadece ilk ödemeye uygulanır
-                        name='İlk Ay %25 İndirim',
-                        id=f'first_month_{current_user.organization_id}_{int(datetime.now(timezone.utc).timestamp())}'
-                    )
-                    coupon_id = coupon.id
-                    logger.info(f"✅ İlk ay indirimi oluşturuldu: {coupon_id}")
-                except stripe.error.StripeError as e:
-                    logger.warning(f"Coupon oluşturma hatası: {e}. İndirim olmadan devam ediliyor.")
-                    coupon_id = None
+            if not is_yearly:
+                # Explicit key check with verbose logging
+                logger.info(f"🔍 Checking COUPON_MAP for key: '{coupon_lookup_key}'")
+                logger.info(f"📋 Available Keys in COUPON_MAP: {list(COUPON_MAP.keys())}")
+                
+                if coupon_lookup_key in COUPON_MAP:
+                    coupon_id = COUPON_MAP[coupon_lookup_key]
+                    logger.info(f"✅ Coupon found: '{coupon_id}' for key '{coupon_lookup_key}'")
+                else:
+                    error_msg = f"❌ CRITICAL MISMATCH: Key '{coupon_lookup_key}' is NOT in COUPON_MAP."
+                    logger.error(error_msg)
+                    logger.error(f"📋 Available Keys in Map: {list(COUPON_MAP.keys())}")
+                    logger.error(f"🔑 Original Lookup Key: '{lookup_key}'")
+                    logger.error(f"🔑 Normalized Key: '{coupon_lookup_key}'")
+                    raise ValueError(f"{error_msg} Available keys: {list(COUPON_MAP.keys())}")
             
             # Checkout Session oluştur
             # Native app için deep link, web için normal URL
             is_native = plan_request.platform in ['android', 'ios']
-            success_url = PAYMENT_SUCCESS_URL_NATIVE if is_native else PAYMENT_SUCCESS_URL + f'?session_id={{CHECKOUT_SESSION_ID}}'
-            cancel_url = PAYMENT_CANCEL_URL_NATIVE if is_native else PAYMENT_CANCEL_URL
+            
+            # Domain algılama: Origin veya Referer header'ından domain'i çıkar
+            domain = "plannapp.co"  # Default
+            origin = request.headers.get('Origin', '')
+            referer = request.headers.get('Referer', '')
+            
+            if 'plannapp.co.uk' in origin or 'plannapp.co.uk' in referer:
+                domain = "plannapp.co.uk"
+            elif 'plannapp.co' in origin or 'plannapp.co' in referer:
+                domain = "plannapp.co"
+            
+            success_url = PAYMENT_SUCCESS_URL_NATIVE if is_native else f"https://{domain}/?session_id={{CHECKOUT_SESSION_ID}}"
+            cancel_url = PAYMENT_CANCEL_URL_NATIVE if is_native else f"https://{domain}/dashboard"
+            
+            logger.info(f"🌐 Domain algılandı: {domain}, cancel_url: {cancel_url}, success_url: {success_url}")
             
             session_params = {
                 'payment_method_types': ['card'],
@@ -4095,15 +4142,27 @@ async def create_checkout_session(
                 'billing_address_collection': 'required',
             }
             
-            # İlk ay indirimi varsa coupon ekle
+            # COUPON_MAP'ten gelen coupon'u uygula (sadece monthly planlar için)
             if coupon_id:
                 session_params['discounts'] = [{'coupon': coupon_id}]
-                logger.info(f"🎁 İlk ay %25 indirim uygulandı. İlk ödeme: {price_monthly * 0.75} TL, Sonraki ödemeler: {price_monthly} TL")
+                logger.info(f"🎁 COUPON_MAP coupon uygulandı: {coupon_id} (lookup_key: {coupon_lookup_key})")
             else:
                 # Coupon yoksa promotion code'a izin ver
                 session_params['allow_promotion_codes'] = True
             
-            session = stripe.checkout.Session.create(**session_params)
+            try:
+                session = stripe.checkout.Session.create(**session_params)
+            except stripe.error.StripeError as stripe_err:
+                # Stripe hatası durumunda detaylı log
+                logger.error(f"❌ Stripe Checkout Session Creation Failed:")
+                logger.error(f"   Error Type: {type(stripe_err).__name__}")
+                logger.error(f"   Error Message: {str(stripe_err)}")
+                if coupon_id:
+                    logger.error(f"   Attempted Coupon ID: '{coupon_id}'")
+                    logger.error(f"   ⚠️ Coupon '{coupon_id}' might not exist in Stripe!")
+                logger.error(f"   Session Params: {session_params}")
+                # Re-raise the error so it's properly handled
+                raise
             
             # Payment log oluştur
             if is_yearly:
