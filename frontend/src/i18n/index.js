@@ -3,6 +3,34 @@ import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import HttpApi from 'i18next-http-backend';
 
+// Helper function to detect if user should see Turkish
+const detectInitialLanguage = () => {
+  const stored = localStorage.getItem('i18nextLng');
+  
+  // Domain bazlı dil kontrolü
+  const hostname = window.location.hostname;
+  if (hostname.includes('plannapp.co.uk')) {
+    return 'en';
+  } else if (hostname.includes('plannapp.co') || hostname.includes('plannapp.com')) {
+    // plannapp.co ve plannapp.com -> Türkçe
+    return 'tr';
+  }
+  
+  if (stored && ['en', 'tr'].includes(stored)) {
+    return stored; // Use stored preference
+  }
+  
+  // Check browser language
+  const browserLang = navigator.language || navigator.userLanguage || '';
+  if (browserLang.startsWith('tr')) {
+    return 'tr';
+  } else {
+    return 'en';
+  }
+};
+
+const detectedLang = detectInitialLanguage();
+
 i18n
   // Load translations using http backend
   .use(HttpApi)
@@ -12,9 +40,10 @@ i18n
   .use(initReactI18next)
   // Init i18next
   .init({
+    lng: detectedLang, // Set initial language explicitly
     supportedLngs: ['en', 'tr'],
     fallbackLng: 'en', // British English as fallback
-    debug: true, // Enable debug temporarily to see what's happening
+    debug: false, // Disable debug in production
     
     detection: {
       order: ['localStorage', 'navigator', 'htmlTag'],
@@ -23,8 +52,10 @@ i18n
     },
     
     backend: {
-      // Use path relative to public folder (works with both HashRouter and BrowserRouter)
-      loadPath: process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/locales/{{lng}}/translation.json` : '/locales/{{lng}}/translation.json',
+      // Use absolute path from root - works with both HashRouter and BrowserRouter
+      loadPath: window.location.origin + '/locales/{{lng}}/translation.json',
+      // Add cache busting query parameter
+      queryStringParams: { v: Date.now() },
     },
     
     interpolation: {
@@ -32,41 +63,12 @@ i18n
     },
     
     react: {
-      useSuspense: true,
+      useSuspense: false, // Disable suspense to prevent issues
     },
   });
 
-// Helper function to detect if user should see Turkish
-const detectInitialLanguage = () => {
-  const stored = localStorage.getItem('i18nextLng');
-  
-  // Domain bazlı dil kontrolü
-  const hostname = window.location.hostname;
-  if (hostname.includes('plannapp.co.uk')) {
-    i18n.changeLanguage('en');
-    localStorage.setItem('i18nextLng', 'en');
-    return;
-  } else if (hostname.includes('plannapp.co') || hostname.includes('plannapp.com')) {
-    // plannapp.co ve plannapp.com -> Türkçe
-    i18n.changeLanguage('tr');
-    localStorage.setItem('i18nextLng', 'tr');
-    return;
-  }
-  
-  if (stored && ['en', 'tr'].includes(stored)) {
-    return; // Use stored preference
-  }
-  
-  // Check browser language
-  const browserLang = navigator.language || navigator.userLanguage || '';
-  if (browserLang.startsWith('tr')) {
-    i18n.changeLanguage('tr');
-  } else {
-    i18n.changeLanguage('en');
-  }
-};
-
-// Run detection after i18n is initialized
-i18n.on('initialized', detectInitialLanguage);
+// Set language after initialization
+i18n.changeLanguage(detectedLang);
+localStorage.setItem('i18nextLng', detectedLang);
 
 export default i18n;
