@@ -15,7 +15,8 @@ const SettingsSubscription = ({ onNavigate }) => {
   const [loadingPortal, setLoadingPortal] = useState(false);
   
   // App Store Compliance: Mobil uygulamada (Android/iOS) ödeme butonlarını gizle
-  const isAppMode = localStorage.getItem('is_app_mode') === 'true' || Capacitor.isNativePlatform();
+  // Sadece native platform kontrolü yap, localStorage kontrolü yapma (web'de ?mode=app ile giriş yapıldığında localStorage'a yazılıyor)
+  const isAppMode = Capacitor.isNativePlatform();
 
   useEffect(() => {
     loadPlanInfo();

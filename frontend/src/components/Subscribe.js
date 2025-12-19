@@ -12,7 +12,8 @@ const Subscribe = ({ onNavigate }) => {
   const { t, i18n } = useTranslation();
   
   // App Store Compliance: Mobil uygulamada (Android/iOS) ödeme sayfasını gizle
-  const isAppMode = localStorage.getItem('is_app_mode') === 'true' || Capacitor.isNativePlatform();
+  // Sadece native platform kontrolü yap, localStorage kontrolü yapma (web'de ?mode=app ile giriş yapıldığında localStorage'a yazılıyor)
+  const isAppMode = Capacitor.isNativePlatform();
   
   // Eğer app mode ise, sadece bilgilendirme mesajı göster
   if (isAppMode) {
