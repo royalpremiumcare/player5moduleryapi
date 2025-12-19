@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowLeft, Search, ChevronDown, ChevronUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { faqData } from "@/data/faqData";
@@ -6,18 +7,22 @@ import { useAuth } from "@/context/AuthContext";
 
 const HelpCenter = ({ onNavigate }) => {
   const { userRole } = useAuth();
+  const { t, i18n } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
   const [openItems, setOpenItems] = useState({});
 
-  // Rol bazlı FAQ verilerini al
+  // Rol bazlı FAQ verilerini al - dil bazlı
   const faqs = useMemo(() => {
+    const lang = i18n.language || 'tr';
+    const data = faqData[lang] || faqData['tr'] || {};
+    
     if (userRole === "admin") {
-      return faqData.admin || [];
+      return data.admin || [];
     } else if (userRole === "staff" || userRole === "personnel") {
-      return faqData.personnel || [];
+      return data.personnel || [];
     }
     return [];
-  }, [userRole]);
+  }, [userRole, i18n.language]);
 
   // Arama filtresi
   const filteredFaqs = useMemo(() => {
@@ -54,12 +59,12 @@ const HelpCenter = ({ onNavigate }) => {
               className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />
-              <span className="text-sm font-medium">Ayarlara Dön</span>
+              <span className="text-sm font-medium">{t('settings.helpCentre.backToSettings', 'Back to Settings')}</span>
             </button>
 
             {/* Sayfa Başlığı */}
             <h2 className="text-xl font-bold text-gray-900 mb-6">
-              Yardım Merkezi
+              {t('settings.helpCentre.title', 'Help Centre')}
             </h2>
 
             {/* Arama Çubuğu */}
@@ -67,7 +72,7 @@ const HelpCenter = ({ onNavigate }) => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Sorunuzu arayın..."
+                placeholder={t('settings.helpCentre.searchPlaceholder', 'Search your question...')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-800"
@@ -80,7 +85,7 @@ const HelpCenter = ({ onNavigate }) => {
           <div className="space-y-3">
             {filteredFaqs.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                <p>Aradığınız soru bulunamadı.</p>
+                <p>{t('settings.helpCentre.noResults', 'No questions found.')}</p>
               </div>
             ) : (
               filteredFaqs.map((faq) => {

@@ -9,7 +9,8 @@ import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
-import { tr } from "date-fns/locale";
+import { tr, enGB } from "date-fns/locale";
+import { useTranslation } from "react-i18next";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +30,8 @@ import {
 } from "@/components/ui/dialog";
 
 const Finance = ({ onNavigate }) => {
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language === 'tr' ? tr : enGB;
   const [activeTab, setActiveTab] = useState("summary");
   const [period, setPeriod] = useState("this_month");
   const [summary, setSummary] = useState(null);
@@ -42,7 +45,7 @@ const Finance = ({ onNavigate }) => {
   const [expenseForm, setExpenseForm] = useState({
     title: "",
     amount: "",
-    category: "Diğer",
+    category: i18n.language === 'tr' ? "Diğer" : "Other",
     date: format(new Date(), "yyyy-MM-dd")
   });
   const [paymentForm, setPaymentForm] = useState({
@@ -50,7 +53,9 @@ const Finance = ({ onNavigate }) => {
     date: format(new Date(), "yyyy-MM-dd")
   });
 
-  const expenseCategories = ["Fatura", "Kira", "Malzeme", "Personel Ödemesi", "Diğer"];
+  const expenseCategories = i18n.language === 'tr' 
+    ? [t('finance.management.expenses.categories.bill'), t('finance.management.expenses.categories.rent'), t('finance.management.expenses.categories.material'), t('finance.management.expenses.categories.staffPayment'), t('finance.management.expenses.categories.other')]
+    : [t('finance.management.expenses.categories.bill'), t('finance.management.expenses.categories.rent'), t('finance.management.expenses.categories.material'), t('finance.management.expenses.categories.staffPayment'), t('finance.management.expenses.categories.other')];
 
   useEffect(() => {
     loadData();
@@ -70,7 +75,7 @@ const Finance = ({ onNavigate }) => {
         setPayroll(response.data);
       }
     } catch (error) {
-      toast.error("Veriler yüklenemedi");
+      toast.error(t('finance.management.loadingError'));
     } finally {
       setLoading(false);
     }
@@ -78,7 +83,7 @@ const Finance = ({ onNavigate }) => {
 
   const handleAddExpense = async () => {
     if (!expenseForm.title || !expenseForm.amount || !expenseForm.date) {
-      toast.error("Lütfen tüm alanları doldurun");
+      toast.error(t('finance.management.fillAllFields'));
       return;
     }
 
@@ -89,9 +94,9 @@ const Finance = ({ onNavigate }) => {
         category: expenseForm.category,
         date: expenseForm.date
       });
-      toast.success("Gider eklendi");
+      toast.success(t('finance.management.expenseAdded'));
       setShowExpenseDialog(false);
-      setExpenseForm({ title: "", amount: "", category: "Diğer", date: format(new Date(), "yyyy-MM-dd") });
+      setExpenseForm({ title: "", amount: "", category: i18n.language === 'tr' ? "Diğer" : "Other", date: format(new Date(), "yyyy-MM-dd") });
       // Verileri yeniden yükle
       setLoading(true);
       try {
@@ -109,7 +114,7 @@ const Finance = ({ onNavigate }) => {
         setLoading(false);
       }
     } catch (error) {
-      toast.error("Gider eklenemedi");
+      toast.error(t('finance.management.expenseAddError'));
     }
   };
 
@@ -118,7 +123,7 @@ const Finance = ({ onNavigate }) => {
 
     try {
       await api.delete(`/expenses/${deleteExpenseId}`);
-      toast.success("Gider silindi");
+      toast.success(t('finance.management.expenseDeleted'));
       setDeleteExpenseId(null);
       await loadData();
       if (activeTab === "summary") {
@@ -126,13 +131,13 @@ const Finance = ({ onNavigate }) => {
         setSummary(response.data);
       }
     } catch (error) {
-      toast.error("Gider silinemedi");
+      toast.error(t('finance.management.expenseDeleteError'));
     }
   };
 
   const handleMakePayment = async () => {
     if (!selectedStaff || !paymentForm.amount) {
-      toast.error("Lütfen tutarı girin");
+      toast.error(t('finance.management.enterAmount'));
       return;
     }
 
@@ -143,7 +148,7 @@ const Finance = ({ onNavigate }) => {
         date: paymentForm.date
       });
       console.log("Payment response:", response.data);
-      toast.success("Ödeme kaydedildi");
+      toast.success(t('finance.management.paymentSaved'));
       setShowPaymentDialog(false);
       setSelectedStaff(null);
       setPaymentForm({ amount: "", date: format(new Date(), "yyyy-MM-dd") });
@@ -169,7 +174,7 @@ const Finance = ({ onNavigate }) => {
       }
     } catch (error) {
       console.error("Payment error:", error);
-      const errorMessage = error.response?.data?.detail || error.message || "Ödeme kaydedilemedi";
+      const errorMessage = error.response?.data?.detail || error.message || t('finance.management.paymentSaveError');
       toast.error(errorMessage);
     }
   };
@@ -183,21 +188,21 @@ const Finance = ({ onNavigate }) => {
           className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
-          <span className="text-sm font-medium">Ayarlara Dön</span>
+          <span className="text-sm font-medium">{t('settings.backToSettings')}</span>
         </button>
       </div>
 
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Finans & Kasa Yönetimi</h2>
-        <p className="text-sm text-gray-600 mt-1">Gelir, gider ve personel ödemelerini yönetin</p>
+        <h2 className="text-2xl font-bold text-gray-900">{t('finance.management.title')}</h2>
+        <p className="text-sm text-gray-600 mt-1">{t('finance.management.subtitle')}</p>
       </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="summary">Özet</TabsTrigger>
-          <TabsTrigger value="expenses">Giderler</TabsTrigger>
-          <TabsTrigger value="payroll">Personel</TabsTrigger>
+          <TabsTrigger value="summary">{t('finance.management.tabs.summary')}</TabsTrigger>
+          <TabsTrigger value="expenses">{t('finance.management.tabs.expenses')}</TabsTrigger>
+          <TabsTrigger value="payroll">{t('finance.management.tabs.payroll')}</TabsTrigger>
         </TabsList>
 
         {/* SEKME 1: Özet */}
@@ -209,34 +214,34 @@ const Finance = ({ onNavigate }) => {
               size="sm"
               onClick={() => setPeriod("today")}
             >
-              Bugün
+              {t('finance.management.periods.today')}
             </Button>
             <Button
               variant={period === "this_month" ? "default" : "outline"}
               size="sm"
               onClick={() => setPeriod("this_month")}
             >
-              Bu Ay
+              {t('finance.management.periods.thisMonth')}
             </Button>
             <Button
               variant={period === "last_month" ? "default" : "outline"}
               size="sm"
               onClick={() => setPeriod("last_month")}
             >
-              Geçen Ay
+              {t('finance.management.periods.lastMonth')}
             </Button>
             <Button
               variant={period === "this_year" ? "default" : "outline"}
               size="sm"
               onClick={() => setPeriod("this_year")}
             >
-              Bu Yıl
+              {t('finance.management.periods.thisYear')}
             </Button>
           </div>
 
           {loading ? (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">Yükleniyor...</p>
+              <p className="text-gray-500">{t('common.loading')}</p>
             </Card>
           ) : summary ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -244,9 +249,9 @@ const Finance = ({ onNavigate }) => {
               <Card className="p-6 bg-gradient-to-br from-green-50 to-green-100 border-green-200">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-green-700 font-medium mb-1">Toplam Gelir</p>
+                    <p className="text-sm text-green-700 font-medium mb-1">{t('finance.management.summary.totalRevenue')}</p>
                     <p className="text-3xl font-bold text-green-900">
-                      {Math.round(summary.total_revenue || 0).toLocaleString('tr-TR')} ₺
+                      {Math.round(summary.total_revenue || 0).toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {i18n.language === 'tr' ? '₺' : '£'}
                     </p>
                   </div>
                   <TrendingUp className="w-10 h-10 text-green-600" />
@@ -257,9 +262,9 @@ const Finance = ({ onNavigate }) => {
               <Card className="p-6 bg-gradient-to-br from-red-50 to-red-100 border-red-200">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-red-700 font-medium mb-1">Toplam Gider</p>
+                    <p className="text-sm text-red-700 font-medium mb-1">{t('finance.management.summary.totalExpenses')}</p>
                     <p className="text-3xl font-bold text-red-900">
-                      {Math.round(summary.total_expenses || 0).toLocaleString('tr-TR')} ₺
+                      {Math.round(summary.total_expenses || 0).toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {i18n.language === 'tr' ? '₺' : '£'}
                     </p>
                   </div>
                   <TrendingDown className="w-10 h-10 text-red-600" />
@@ -271,10 +276,10 @@ const Finance = ({ onNavigate }) => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium mb-1" style={{ color: summary.net_profit >= 0 ? '#1e40af' : '#374151' }}>
-                      Net Kâr
+                      {t('finance.management.summary.netProfit')}
                     </p>
                     <p className={`text-3xl font-bold ${summary.net_profit >= 0 ? 'text-blue-900' : 'text-gray-900'}`}>
-                      {Math.round(summary.net_profit || 0).toLocaleString('tr-TR')} ₺
+                      {Math.round(summary.net_profit || 0).toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {i18n.language === 'tr' ? '₺' : '£'}
                     </p>
                   </div>
                 </div>
@@ -286,10 +291,10 @@ const Finance = ({ onNavigate }) => {
           {summary?.staff_earnings?.length > 0 && (
             <Card className="p-4 mt-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                {period === "today" && "Bugünkü Personel Kazançları"}
-                {period === "this_month" && "Bu Ayki Personel Kazançları"}
-                {period === "last_month" && "Geçen Ayki Personel Kazançları"}
-                {period === "this_year" && "Bu Yılki Personel Kazançları"}
+                {period === "today" && t('finance.management.summary.staffEarnings.today')}
+                {period === "this_month" && t('finance.management.summary.staffEarnings.thisMonth')}
+                {period === "last_month" && t('finance.management.summary.staffEarnings.lastMonth')}
+                {period === "this_year" && t('finance.management.summary.staffEarnings.thisYear')}
               </h3>
               <div className="flex flex-wrap gap-2">
                 {summary.staff_earnings.map((staff) => (
@@ -298,7 +303,7 @@ const Finance = ({ onNavigate }) => {
                     className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm"
                   >
                     <span className="font-medium text-gray-900">{staff.full_name}</span>
-                    <span className="font-bold text-green-600">{Math.round(staff.total).toLocaleString('tr-TR')}₺</span>
+                    <span className="font-bold text-green-600">{Math.round(staff.total).toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')}{i18n.language === 'tr' ? '₺' : '£'}</span>
                   </div>
                 ))}
               </div>
@@ -310,14 +315,14 @@ const Finance = ({ onNavigate }) => {
         <TabsContent value="expenses" className="space-y-4">
           {loading ? (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">Yükleniyor...</p>
+              <p className="text-gray-500">{t('common.loading')}</p>
             </Card>
           ) : (
             <>
               <div className="space-y-3">
                 {expenses.length === 0 ? (
                   <Card className="p-8 text-center">
-                    <p className="text-gray-500">Henüz gider kaydı yok</p>
+                    <p className="text-gray-500">{t('finance.management.expenses.noExpenses')}</p>
                   </Card>
                 ) : (
                   expenses.map((expense) => (
@@ -327,7 +332,7 @@ const Finance = ({ onNavigate }) => {
                           <h3 className="font-semibold text-gray-900">{expense.title}</h3>
                           <div className="flex items-center gap-4 mt-1">
                             <span className="text-sm text-gray-600">
-                              {format(new Date(expense.date), "d MMMM yyyy", { locale: tr })}
+                              {format(new Date(expense.date), "d MMMM yyyy", { locale: dateLocale })}
                             </span>
                             <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">
                               {expense.category}
@@ -336,7 +341,7 @@ const Finance = ({ onNavigate }) => {
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="text-lg font-bold text-red-600">
-                            {expense.amount?.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 0} ₺
+                            {expense.amount?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 0} {i18n.language === 'tr' ? '₺' : '£'}
                           </span>
                           <Button
                             variant="ghost"
@@ -375,26 +380,26 @@ const Finance = ({ onNavigate }) => {
               size="sm"
               onClick={() => setPeriod("this_month")}
             >
-              Bu Ay
+              {t('finance.management.periods.thisMonth')}
             </Button>
             <Button
               variant={period === "last_month" ? "default" : "outline"}
               size="sm"
               onClick={() => setPeriod("last_month")}
             >
-              Geçen Ay
+              {t('finance.management.periods.lastMonth')}
             </Button>
           </div>
 
           {loading ? (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">Yükleniyor...</p>
+              <p className="text-gray-500">{t('common.loading')}</p>
             </Card>
           ) : payroll && payroll.payroll ? (
             <div className="space-y-3">
               {payroll.payroll.length === 0 ? (
                 <Card className="p-8 text-center">
-                  <p className="text-gray-500">Personel bulunamadı</p>
+                  <p className="text-gray-500">{t('finance.management.payroll.noStaff')}</p>
                 </Card>
               ) : (
                 payroll.payroll.map((staff) => (
@@ -404,29 +409,29 @@ const Finance = ({ onNavigate }) => {
                         <h3 className="font-semibold text-gray-900">{staff.full_name}</h3>
                         <p className="text-sm text-gray-600">
                           {staff.payment_type === "salary" 
-                            ? `Sabit Maaş - ${staff.payment_amount?.toLocaleString('tr-TR') || 0} ₺`
-                            : `Komisyon - %${staff.payment_amount || 0}`
+                            ? `${t('finance.management.payroll.fixedSalary')} - ${staff.payment_amount?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') || 0} ${i18n.language === 'tr' ? '₺' : '£'}`
+                            : `${t('finance.management.payroll.commission')} - %${staff.payment_amount || 0}`
                           }
                         </p>
                       </div>
                     </div>
                     <div className="grid grid-cols-3 gap-3 mb-3">
                       <div>
-                        <p className="text-xs text-gray-600 mb-1">Hakediş</p>
+                        <p className="text-xs text-gray-600 mb-1">{t('finance.management.payroll.earned')}</p>
                         <p className="text-lg font-bold text-green-600">
-                          {staff.earned?.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 0} ₺
+                          {staff.earned?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 0} {i18n.language === 'tr' ? '₺' : '£'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-600 mb-1">Ödenen</p>
+                        <p className="text-xs text-gray-600 mb-1">{t('finance.management.payroll.paid')}</p>
                         <p className="text-lg font-bold text-blue-600">
-                          {staff.paid?.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 0} ₺
+                          {staff.paid?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 0} {i18n.language === 'tr' ? '₺' : '£'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-600 mb-1">Kalan Bakiye</p>
+                        <p className="text-xs text-gray-600 mb-1">{t('finance.management.payroll.balance')}</p>
                         <p className={`text-lg font-bold ${staff.balance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
-                          {staff.balance?.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 0} ₺
+                          {staff.balance?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 0} {i18n.language === 'tr' ? '₺' : '£'}
                         </p>
                       </div>
                     </div>
@@ -437,7 +442,7 @@ const Finance = ({ onNavigate }) => {
                       }}
                       className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
                     >
-                      Ödeme Yap
+                      {t('finance.management.payroll.makePayment')}
                     </Button>
                   </Card>
                 ))
@@ -451,23 +456,23 @@ const Finance = ({ onNavigate }) => {
       <Dialog open={showExpenseDialog} onOpenChange={setShowExpenseDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Yeni Gider Ekle</DialogTitle>
+            <DialogTitle>{t('finance.management.expenses.addTitle')}</DialogTitle>
             <DialogDescription>
-              Yeni bir gider kaydı oluşturun.
+              {t('finance.management.expenses.addDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="expense_title">Başlık *</Label>
+              <Label htmlFor="expense_title">{t('finance.management.expenses.fields.title')} *</Label>
               <Input
                 id="expense_title"
                 value={expenseForm.title}
                 onChange={(e) => setExpenseForm({ ...expenseForm, title: e.target.value })}
-                placeholder="Örn: Kira Ödemesi"
+                placeholder={t('finance.management.expenses.fields.titlePlaceholder')}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="expense_amount">Tutar (TL) *</Label>
+              <Label htmlFor="expense_amount">{t('finance.management.expenses.fields.amount')} *</Label>
               <Input
                 id="expense_amount"
                 type="number"
@@ -479,7 +484,7 @@ const Finance = ({ onNavigate }) => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="expense_category">Kategori *</Label>
+              <Label htmlFor="expense_category">{t('finance.management.expenses.fields.category')} *</Label>
               <Select
                 value={expenseForm.category}
                 onValueChange={(value) => setExpenseForm({ ...expenseForm, category: value })}
@@ -495,7 +500,7 @@ const Finance = ({ onNavigate }) => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="expense_date">Tarih *</Label>
+              <Label htmlFor="expense_date">{t('finance.management.expenses.fields.date')} *</Label>
               <Input
                 id="expense_date"
                 type="date"
@@ -510,13 +515,13 @@ const Finance = ({ onNavigate }) => {
               onClick={() => setShowExpenseDialog(false)}
               className="flex-1"
             >
-              İptal
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleAddExpense}
               className="flex-1 bg-blue-600 hover:bg-blue-700"
             >
-              Kaydet
+              {t('common.save')}
             </Button>
           </div>
         </DialogContent>
@@ -526,14 +531,14 @@ const Finance = ({ onNavigate }) => {
       <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{selectedStaff?.full_name} - Ödeme Yap</DialogTitle>
+            <DialogTitle>{t('finance.management.payroll.paymentTitle', { name: selectedStaff?.full_name })}</DialogTitle>
             <DialogDescription>
-              Personel ödemesini kaydedin. Bu işlem giderler listesine eklenecektir.
+              {t('finance.management.payroll.paymentDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="payment_amount">Tutar (TL) *</Label>
+              <Label htmlFor="payment_amount">{t('finance.management.payroll.paymentAmount')} *</Label>
               <Input
                 id="payment_amount"
                 type="number"
@@ -545,7 +550,7 @@ const Finance = ({ onNavigate }) => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="payment_date">Tarih *</Label>
+              <Label htmlFor="payment_date">{t('finance.management.payroll.paymentDate')} *</Label>
               <Input
                 id="payment_date"
                 type="date"
@@ -563,13 +568,13 @@ const Finance = ({ onNavigate }) => {
               }}
               className="flex-1"
             >
-              İptal
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleMakePayment}
               className="flex-1 bg-blue-600 hover:bg-blue-700"
             >
-              Kaydet
+              {t('common.save')}
             </Button>
           </div>
         </DialogContent>
@@ -579,18 +584,18 @@ const Finance = ({ onNavigate }) => {
       <AlertDialog open={!!deleteExpenseId} onOpenChange={() => setDeleteExpenseId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Gideri Sil</AlertDialogTitle>
+            <AlertDialogTitle>{t('finance.management.expenses.deleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Bu gideri silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.
+              {t('finance.management.expenses.deleteDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteExpense}
               className="bg-red-500 hover:bg-red-600"
             >
-              Sil
+              {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

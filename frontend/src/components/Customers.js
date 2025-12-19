@@ -28,10 +28,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { format } from "date-fns";
-import { tr } from "date-fns/locale";
+import { tr, enGB } from "date-fns/locale";
+import { useTranslation } from "react-i18next";
 
 const Customers = ({ onNavigate, onNewAppointment }) => {
   const { userRole, token } = useAuth();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language === 'tr' ? tr : enGB;
   const [currentStaffUsername, setCurrentStaffUsername] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -194,7 +197,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       setCustomers(customerList);
     } catch (error) {
       if (error.response && error.response.status !== 401) {
-        toast.error("Müşteriler yüklenemedi");
+        toast.error(t('customers.loadingError'));
       }
     } finally {
       setLoading(false);
@@ -222,7 +225,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       // Müşteri notlarını backend'den yükle
       setCustomerNotes(response.data.notes || "");
     } catch (error) {
-      toast.error("Müşteri geçmişi yüklenemedi");
+      toast.error(t('customers.historyLoadingError'));
     } finally {
       setLoadingHistory(false);
     }
@@ -254,9 +257,9 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         await api.put(`/customers/${selectedCustomer.phone}/notes`, {
           notes: customerNotes
         });
-        toast.success("Notlar kaydedildi");
+        toast.success(t('customers.notesSaved'));
       } catch (error) {
-        toast.error(error.response?.data?.detail || "Notlar kaydedilemedi");
+        toast.error(error.response?.data?.detail || t('customers.notesSaveError'));
       }
     }
   };
@@ -276,7 +279,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     setDeleting(true);
     try {
       const response = await api.delete(`/customers/${customerToDelete.phone}`);
-      toast.success(response.data?.message || "Müşteri başarıyla silindi");
+      toast.success(response.data?.message || t('customers.deleteSuccess'));
       
       // Eğer silinen müşteri seçiliyse, seçimi temizle
       if (selectedCustomer && selectedCustomer.phone === customerToDelete.phone) {
@@ -291,7 +294,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       setDeleteDialogOpen(false);
       setCustomerToDelete(null);
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Müşteri silinirken bir hata oluştu");
+      toast.error(error.response?.data?.detail || t('customers.deleteError'));
     } finally {
       setDeleting(false);
     }
@@ -299,14 +302,14 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
 
   const handleAddNewCustomer = async () => {
     if (!newCustomerData.name.trim() || !newCustomerData.phone.trim()) {
-      toast.error("Lütfen müşteri adı ve telefon numarasını girin");
+      toast.error(t('customers.addValidationNamePhone'));
       return;
     }
 
     // Telefon numarası formatını temizle
     const cleanPhone = newCustomerData.phone.replace(/\D/g, "");
     if (cleanPhone.length < 10) {
-      toast.error("Geçerli bir telefon numarası girin");
+      toast.error(t('customers.addValidationPhone'));
       return;
     }
 
@@ -318,7 +321,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         phone: newCustomerData.phone.trim()
       });
       
-      toast.success(response.data?.message || "Müşteri başarıyla eklendi");
+      toast.success(response.data?.message || t('customers.addSuccess'));
       
       // Dialog'u kapat ve formu temizle
       setNewCustomerDialogOpen(false);
@@ -327,7 +330,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       // Müşteriler listesini yeniden yükle
       await loadCustomers();
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || "Müşteri eklenirken bir hata oluştu";
+      const errorMessage = error.response?.data?.detail || t('customers.addError');
       toast.error(errorMessage);
     } finally {
       setSavingCustomer(false);
@@ -354,7 +357,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
             className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span className="text-sm font-medium">Müşterilere Dön</span>
+            <span className="text-sm font-medium">{t('customers.backToCustomers')}</span>
           </button>
         </div>
 
@@ -382,14 +385,14 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                 className="flex-1 border border-gray-300 text-gray-700 rounded-lg"
               >
                 <Phone className="w-4 h-4 mr-2" />
-                Ara
+                {t('customers.actions.call')}
               </Button>
               <Button
                 onClick={() => handleWhatsApp(selectedCustomer.phone)}
                 className="flex-1 bg-green-500 hover:bg-green-600 text-white rounded-lg"
               >
                 <MessageSquare className="w-4 h-4 mr-2" />
-                WhatsApp
+                {t('customers.actions.whatsapp')}
               </Button>
             </div>
             
@@ -404,7 +407,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                 className="w-full max-w-xs mt-3 border border-red-300 text-red-600 hover:bg-red-50 rounded-lg"
               >
                 <Trash2 className="w-4 h-4 mr-2" />
-                Müşteriyi Sil
+                {t('customers.deleteButton')}
               </Button>
             )}
           </div>
@@ -412,9 +415,9 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
 
         {/* KART 2: Randevu Geçmişi */}
         <Card className="bg-white p-4 rounded-xl shadow-sm mt-4">
-          <h3 className="font-semibold text-gray-900 mb-3">Randevu Geçmişi</h3>
+          <h3 className="font-semibold text-gray-900 mb-3">{t('customers.historyTitle')}</h3>
           {loadingHistory ? (
-            <p className="text-gray-500 text-center py-4">Yükleniyor...</p>
+            <p className="text-gray-500 text-center py-4">{t('customers.loading')}</p>
           ) : customerHistory && customerHistory.appointments.length > 0 ? (
             <div className="space-y-3">
               {customerHistory.appointments.map((apt, idx) => (
@@ -424,7 +427,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                 >
                   <div>
                     <p className="font-medium text-gray-900">
-                      {format(new Date(apt.appointment_date), "d MMMM yyyy", { locale: tr })}
+                      {format(new Date(apt.appointment_date), "d MMMM yyyy", { locale: dateLocale })}
                     </p>
                     <p className="text-sm text-gray-600">
                       {apt.appointment_time} - {apt.service_name}
@@ -432,13 +435,13 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                     {userRole === 'admin' && apt.staff_member_id && 
                      (!settings || settings.customer_can_choose_staff || settings.admin_provides_service) && (
                       <p className="text-xs text-gray-500 mt-1">
-                        Personel: {apt.staff_member_id}
+                        {t('customers.staff')}: {apt.staff_member_id}
                       </p>
                     )}
                   </div>
                   <span className={`px-2 py-1 rounded text-xs font-medium ${
-                    apt.status === 'Tamamlandı' ? 'bg-green-100 text-green-700' :
-                    apt.status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-700' :
+                    apt.status === t('dashboard.status.completed') || apt.status === 'Tamamlandı' ? 'bg-green-100 text-green-700' :
+                    apt.status === t('dashboard.status.pending') || apt.status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-700' :
                     'bg-gray-100 text-gray-700'
                   }`}>
                     {apt.status}
@@ -447,18 +450,18 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
               ))}
             </div>
           ) : (
-            <p className="text-gray-500 text-center py-4">Randevu geçmişi bulunamadı</p>
+            <p className="text-gray-500 text-center py-4">{t('customers.historyEmpty')}</p>
           )}
         </Card>
 
         {/* KART 3: Müşteri Notları */}
         <Card className="bg-white p-4 rounded-xl shadow-sm mt-4">
-          <h3 className="font-semibold text-gray-900 mb-2">Notlar</h3>
+          <h3 className="font-semibold text-gray-900 mb-2">{t('customers.notesTitle')}</h3>
           <div className="space-y-3">
             <Textarea
               value={customerNotes}
               onChange={(e) => setCustomerNotes(e.target.value)}
-              placeholder="Müşteriyle ilgili notlar (alerji, tercih vb.)..."
+              placeholder={t('customers.notesPlaceholder')}
               rows={4}
               className="rounded-lg border border-gray-300"
             />
@@ -466,7 +469,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
               onClick={handleSaveNotes}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
             >
-              Kaydet
+              {t('common.save')}
             </Button>
           </div>
         </Card>
@@ -475,25 +478,25 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Müşteriyi Sil</AlertDialogTitle>
+              <AlertDialogTitle>{t('customers.deleteTitle')}</AlertDialogTitle>
               <AlertDialogDescription>
                 {customerToDelete && (
                   <>
-                    <strong>{customerToDelete.name}</strong> müşterisini ve tüm randevularını silmek istediğinize emin misiniz?
+                    <strong>{customerToDelete.name}</strong> {i18n.language === 'tr' ? 'müşterisini ve tüm randevularını silmek istediğinize emin misiniz?' : 'customer and all their appointments?'}
                     <br />
-                    <span className="text-red-600 font-semibold">Bu işlem geri alınamaz!</span>
+                    <span className="text-red-600 font-semibold">{t('customers.deleteWarning')}</span>
                   </>
                 )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleting}>İptal</AlertDialogCancel>
+              <AlertDialogCancel disabled={deleting}>{t('common.cancel')}</AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleDeleteCustomer}
                 disabled={deleting}
                 className="bg-red-600 hover:bg-red-700"
               >
-                {deleting ? "Siliniyor..." : "Sil"}
+                {deleting ? t('customers.deleting') : t('customers.actions.delete')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -512,7 +515,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors mb-2"
         >
           <ArrowLeft className="w-5 h-5" />
-          <span className="text-sm font-medium">Anasayfaya Dön</span>
+          <span className="text-sm font-medium">{t('customers.backToHome')}</span>
         </button>
       )}
       
@@ -523,7 +526,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
           <Input
             type="text"
-            placeholder="Müşteri Ara..."
+            placeholder={t('customers.searchPlaceholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 bg-white rounded-lg border border-gray-300 shadow-sm"
@@ -539,7 +542,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
             className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
           >
             <Plus className="w-4 h-4 mr-2" />
-            Yeni Müşteri
+            {t('customers.newCustomer')}
           </Button>
         )}
       </div>
@@ -548,11 +551,11 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       <div className="space-y-3">
         {loading ? (
           <Card className="p-8 text-center">
-            <p className="text-gray-500">Yükleniyor...</p>
+            <p className="text-gray-500">{t('customers.loading')}</p>
           </Card>
         ) : filteredCustomers.length === 0 ? (
           <Card className="p-8 text-center">
-            <p className="text-gray-500">Müşteri bulunamadı</p>
+            <p className="text-gray-500">{t('customers.noResults')}</p>
           </Card>
         ) : (
           filteredCustomers.map((customer) => (
@@ -592,7 +595,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                         setDeleteDialogOpen(true);
                       }}
                       className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Müşteriyi Sil"
+                      title={t('customers.deleteButton')}
                     >
                       <Trash2 className="w-5 h-5" />
                     </button>
@@ -640,20 +643,20 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       <Dialog open={newCustomerDialogOpen} onOpenChange={setNewCustomerDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Yeni Müşteri Ekle</DialogTitle>
+            <DialogTitle>{t('customers.addTitle')}</DialogTitle>
             <DialogDescription>
-              Müşteri bilgilerini girin. Randevu oluştururken bu müşteriyi seçebilirsiniz.
+              {t('customers.addDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="new-customer-name" className="text-sm font-semibold text-gray-900">
-                Ad Soyad *
+                {t('customers.fields.name')} *
               </Label>
               <Input
                 id="new-customer-name"
                 type="text"
-                placeholder="Ad Soyad"
+                placeholder={t('customers.fields.name')}
                 value={newCustomerData.name}
                 onChange={(e) => setNewCustomerData({ ...newCustomerData, name: e.target.value })}
                 className="rounded-lg border border-gray-300"
@@ -662,12 +665,12 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="new-customer-phone" className="text-sm font-semibold text-gray-900">
-                Telefon Numarası *
+                {t('customers.fields.phone')} *
               </Label>
               <Input
                 id="new-customer-phone"
                 type="tel"
-                placeholder="05XX XXX XX XX"
+                placeholder={i18n.language === 'en' ? '+44 XXXX XXXXXX' : '05XX XXX XX XX'}
                 value={newCustomerData.phone}
                 onChange={(e) => setNewCustomerData({ ...newCustomerData, phone: e.target.value })}
                 className="rounded-lg border border-gray-300"
@@ -683,14 +686,14 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
               }}
               disabled={savingCustomer}
             >
-              İptal
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleAddNewCustomer}
               disabled={savingCustomer || !newCustomerData.name.trim() || !newCustomerData.phone.trim()}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {savingCustomer ? "Kaydediliyor..." : "Kaydet"}
+              {savingCustomer ? t('customers.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

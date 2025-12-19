@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { tr } from "date-fns/locale";
+import { tr, enGB } from "date-fns/locale";
+import { useTranslation } from "react-i18next";
 import { Calendar as CalendarIcon, Clock, ArrowLeft, User, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
@@ -24,6 +25,8 @@ const publicApi = axios.create({
 
 const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   const { userRole } = useAuth();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language === 'tr' ? tr : enGB;
   const [currentStep, setCurrentStep] = useState(1);
   const [currentUser, setCurrentUser] = useState(null);
   const [allStaff, setAllStaff] = useState([]);
@@ -202,7 +205,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   const handleNext = () => {
     if (currentStep === 1) {
       if (!formData.service_id) {
-        toast.error("Lütfen bir hizmet seçin");
+        toast.error(t('appointments.form.wizard.selectServiceError', 'Please select a service'));
         return;
       }
       if (userRole === 'admin' && !formData.staff_member_id && qualifiedStaff.length > 0) {
@@ -211,7 +214,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       setCurrentStep(2);
     } else if (currentStep === 2) {
       if (!formData.customer_name || !formData.phone) {
-        toast.error("Lütfen müşteri bilgilerini doldurun");
+        toast.error(t('appointments.form.wizard.fillCustomerInfo', 'Please fill in customer information'));
         return;
       }
       setCurrentStep(3);
@@ -226,13 +229,13 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   const handleSubmit = async () => {
     if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
-      toast.error("Lütfen tüm zorunlu alanları doldurun");
+      toast.error(t('appointments.form.fillRequiredFields'));
       return;
     }
 
     if (userRole === 'staff' && currentUser) {
       if (!currentUser.permitted_service_ids?.includes(formData.service_id)) {
-        toast.error("Bu hizmete randevu alma yetkiniz yok");
+        toast.error(t('appointments.form.noPermission'));
         return;
       }
     }
@@ -254,10 +257,10 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
       if (appointment) {
         await api.put(`/appointments/${appointment.id}`, payload);
-        toast.success("Randevu güncellendi");
+        toast.success(t('appointments.form.updated'));
       } else {
         const response = await api.post("/appointments", payload);
-        toast.success("Randevu oluşturuldu");
+        toast.success(t('appointments.form.created'));
         console.log("✅ Randevu oluşturuldu:", response.data);
         
         // Yeni müşteri eklendiğinde customers listesini yeniden yükle
@@ -267,7 +270,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       await new Promise(resolve => setTimeout(resolve, 500));
       onSave();
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || "İşlem başarısız";
+      const errorMessage = error.response?.data?.detail || t('appointments.form.operationFailed');
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -280,9 +283,9 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   );
 
   const stepTitles = {
-    1: "Hizmet ve Personel",
-    2: "Müşteri Bilgileri",
-    3: "Tarih ve Saat"
+    1: t('appointments.form.wizard.step1', 'Service and Staff'),
+    2: t('appointments.form.wizard.step2', 'Customer Information'),
+    3: t('appointments.form.wizard.step3', 'Date and Time')
   };
 
   return (
@@ -310,7 +313,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             )}
             <div>
               <h2 className="text-lg font-bold text-gray-800">
-                Adım {currentStep}/3: {stepTitles[currentStep]}
+                {t('appointments.form.wizard.step', 'Step')} {currentStep}/3: {stepTitles[currentStep]}
               </h2>
             </div>
           </div>
@@ -331,11 +334,11 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             <div className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="service" className="font-medium text-sm text-gray-700">
-                  Hizmet Seçin
+                  {t('appointments.form.selectService')}
                 </Label>
                 {userRole === 'staff' && filteredServices.length === 0 ? (
                   <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-gray-300">
-                    Size hiçbir hizmet atanmamış. Lütfen yöneticinizle iletişime geçin.
+                    {t('appointments.form.noServicesAssigned')}
                   </div>
                 ) : (
                   <Select
@@ -343,12 +346,12 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                     onValueChange={(value) => setFormData({ ...formData, service_id: value })}
                   >
                     <SelectTrigger className="rounded-lg border border-gray-300">
-                      <SelectValue placeholder="Hizmet seçin" />
+                      <SelectValue placeholder={t('appointments.form.selectService')} />
                     </SelectTrigger>
                     <SelectContent>
                       {filteredServices.map((service) => (
                         <SelectItem key={service.id} value={service.id}>
-                          {service.name} - {Math.round(service.price)}₺
+                          {service.name} - {Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -360,20 +363,20 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               {userRole === 'admin' && formData.service_id && qualifiedStaff.length > 0 && (
                 <div className="space-y-2">
                   <Label htmlFor="staff" className="font-medium text-sm text-gray-700">
-                    Personel Seçin
+                    {t('appointments.form.selectStaff')}
                   </Label>
                   <Select
                     value={formData.staff_member_id || "auto"}
                     onValueChange={(value) => setFormData({ ...formData, staff_member_id: value === "auto" ? "" : value })}
                   >
                     <SelectTrigger className="rounded-lg border border-gray-300">
-                      <SelectValue placeholder="Personel seçin..." />
+                      <SelectValue placeholder={t('appointments.form.selectStaff')} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="auto">
                         <div className="flex items-center gap-2">
                           <User className="w-4 h-4" />
-                          <span>Otomatik Atama</span>
+                          <span>{t('appointments.form.autoAssign')}</span>
                         </div>
                       </SelectItem>
                       {qualifiedStaff.map((staff) => (
@@ -397,13 +400,13 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               {/* Müşteri Arama */}
               <div className="space-y-2">
                 <Label className="font-medium text-sm text-gray-700">
-                  Mevcut Müşteri Ara
+                  {t('appointments.form.searchCustomer')}
                 </Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <Input
                     type="text"
-                    placeholder="Müşteri adı veya telefon ara..."
+                    placeholder={t('appointments.form.searchCustomer')}
                     value={customerSearchTerm}
                     onChange={(e) => {
                       setCustomerSearchTerm(e.target.value);
@@ -435,7 +438,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                           <span className="text-xs text-gray-500">{customer.phone}</span>
                         </div>
                         <span className="text-xs text-gray-500">
-                          {customer.total_appointments} randevu
+                          {customer.total_appointments} {t('appointments.form.appointmentsCount')}
                         </span>
                       </div>
                     </button>
@@ -447,13 +450,13 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="customer_name" className="font-medium text-sm text-gray-700">
-                    Yeni Müşteri Adı
+                    {t('customers.fields.name')} *
                   </Label>
                   <Input
                     id="customer_name"
                     value={formData.customer_name}
                     onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
-                    placeholder="Ad Soyad"
+                    placeholder={t('customers.fields.name')}
                     className="rounded-lg border border-gray-300"
                     required
                   />
@@ -461,14 +464,33 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
                 <div className="space-y-2">
                   <Label htmlFor="phone" className="font-medium text-sm text-gray-700">
-                    Telefon Numarası
+                    {t('customers.fields.phone')} *
                   </Label>
                   <Input
                     id="phone"
                     type="tel"
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="05XX XXX XX XX"
+                    onChange={(e) => {
+                      let value = e.target.value;
+                      // İngilizce ise +44 ile başlamalı
+                      if (i18n.language === 'en') {
+                        if (!value.startsWith('+44')) {
+                          value = '+44' + value.replace(/^\+?[0-9]*/, '');
+                        }
+                        value = value.replace(/[^0-9+]/g, '');
+                        if (value.length > 14) {
+                          value = value.substring(0, 14);
+                        }
+                      } else {
+                        // Türkçe ise 05XX formatı
+                        value = value.replace(/[^0-9]/g, '');
+                        if (value.length > 11) {
+                          value = value.substring(0, 11);
+                        }
+                      }
+                      setFormData({ ...formData, phone: value });
+                    }}
+                    placeholder={i18n.language === 'en' ? '+44XXXXXXXXXX' : '05XX XXX XX XX'}
                     className="rounded-lg border border-gray-300"
                     required
                   />
@@ -476,13 +498,13 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
                 <div className="space-y-2">
                   <Label htmlFor="notes" className="font-medium text-sm text-gray-700">
-                    Randevu Notu (Opsiyonel)
+                    {t('appointments.form.notes')} ({t('common.optional', 'Optional')})
                   </Label>
                   <Textarea
                     id="notes"
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Ek bilgiler..."
+                    placeholder={t('appointments.form.notesPlaceholder')}
                     rows={3}
                     className="rounded-lg border border-gray-300"
                   />
@@ -497,7 +519,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               {/* Tarih Seçici */}
               <div className="space-y-2">
                 <Label className="font-medium text-sm text-gray-700">
-                  Tarih Seçin *
+                  {t('appointments.form.appointmentDate')} *
                 </Label>
                 <Popover>
                   <PopoverTrigger asChild>
@@ -506,7 +528,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                       className="w-full justify-start text-left font-normal rounded-lg border border-gray-300"
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {formData.appointment_date ? format(formData.appointment_date, "d MMMM yyyy", { locale: tr }) : "Tarih seçin"}
+                      {formData.appointment_date ? format(formData.appointment_date, "d MMMM yyyy", { locale: dateLocale }) : t('appointments.form.selectDate')}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
@@ -519,7 +541,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                         setBusySlots([]);
                         setAllSlots([]);
                       }}
-                      locale={tr}
+                      locale={dateLocale}
                       disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
                       className="rounded-lg"
                     />
@@ -530,13 +552,13 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               {/* Müsait Saatler */}
               <div className="space-y-2">
                 <Label className="font-medium text-sm text-gray-700">
-                  Müsait Saatler
+                  {t('appointments.form.appointmentTime')}
                 </Label>
                 {allSlots.length === 0 && formData.service_id && formData.appointment_date ? (
                   <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-gray-300">
                     {formData.staff_member_id 
-                      ? "Seçili personelin bu tarihte müsait saati yok" 
-                      : "Bu tarih için müsait saat bulunmamaktadır"}
+                      ? t('appointments.form.noAvailableSlotsForStaff')
+                      : t('appointments.form.noAvailableSlots')}
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
@@ -567,11 +589,11 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                           title={
                             isBusy 
                               ? formData.staff_member_id 
-                                ? "Seçili personel bu saatte dolu" 
-                                : "Tüm personeller bu saatte dolu"
+                                ? t('appointments.form.wizard.staffBusy', 'Selected staff is busy at this time')
+                                : t('appointments.form.wizard.allStaffBusy', 'All staff are busy at this time')
                               : isAvailable 
-                              ? "Müsait" 
-                              : "Dolu"
+                              ? t('appointments.form.wizard.available', 'Available')
+                              : t('appointments.form.wizard.busy', 'Busy')
                           }
                         >
                           {isBusy && (
@@ -601,7 +623,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               className="flex-1 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-lg"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Geri
+              {t('common.back')}
             </Button>
           )}
           {currentStep < 3 ? (
@@ -610,7 +632,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               onClick={handleNext}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
             >
-              İleri
+              {t('common.next')}
             </Button>
           ) : (
             <Button
@@ -619,7 +641,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               disabled={loading || !formData.appointment_time}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Oluşturuluyor..." : "Randevuyu Oluştur"}
+              {loading ? t('appointments.form.saving') : t('appointments.form.wizard.createAppointment', 'Create Appointment')}
             </Button>
           )}
         </div>

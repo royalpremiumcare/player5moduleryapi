@@ -6,8 +6,48 @@ import api from "../api/api";
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 
 const Subscribe = ({ onNavigate }) => {
+  const { t, i18n } = useTranslation();
+  
+  // App Store Compliance: Mobil uygulamada (Android/iOS) ödeme sayfasını gizle
+  const isAppMode = localStorage.getItem('is_app_mode') === 'true' || Capacitor.isNativePlatform();
+  
+  // Eğer app mode ise, sadece bilgilendirme mesajı göster
+  if (isAppMode) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-20 flex items-center justify-center" style={{ fontFamily: 'Inter, sans-serif' }}>
+        <div className="px-4">
+          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-8 max-w-md mx-auto text-center">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">{t('subscribePage.subscriptionManagement')}</h2>
+            <p className="text-gray-600 mb-6">
+              {t('subscribePage.subscriptionInfo')}
+            </p>
+            <Button
+              onClick={() => {
+                const webUrl = window.location.origin.replace(/\/$/, '');
+                if (Capacitor.isNativePlatform()) {
+                  Browser.open({ url: webUrl });
+                } else {
+                  window.location.href = webUrl;
+                }
+              }}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {t('subscribePage.goToWebsite')}
+            </Button>
+            <button
+              onClick={() => onNavigate && onNavigate("settings")}
+              className="mt-4 text-sm text-gray-500 hover:text-gray-700"
+            >
+              {t('subscribePage.backToSettings')}
+            </button>
+          </Card>
+        </div>
+      </div>
+    );
+  }
   const [plans, setPlans] = useState([]);
   const [currentPlan, setCurrentPlan] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -22,7 +62,7 @@ const Subscribe = ({ onNavigate }) => {
     const sessionId = urlParams.get('session_id');
     
     if (sessionId) {
-      toast.success("🎉 Ödeme başarılı! Planınız güncellendi.", {
+      toast.success(t('subscribePage.paymentSuccess'), {
         duration: 5000,
       });
       
@@ -65,7 +105,7 @@ const Subscribe = ({ onNavigate }) => {
       setCurrentPlan(currentPlanResponse.data);
     } catch (error) {
       console.error("Planlar yüklenemedi:", error);
-      toast.error("Planlar yüklenemedi");
+      toast.error(t('subscribePage.plansLoadError'));
     } finally {
       setLoading(false);
     }
@@ -79,10 +119,14 @@ const Subscribe = ({ onNavigate }) => {
         ? (Capacitor.getPlatform() === 'ios' ? 'ios' : 'android') 
         : 'web';
       
+      // Para birimi algılama (frontend'den gönderilir, backend'de de kontrol edilir)
+      const currency = i18n.language === 'en' ? 'gbp' : 'try';
+      
       const response = await api.post("/payments/create-checkout-session", {
         plan_id: planId,
         billing_cycle: billingCycle,
-        platform: platform
+        platform: platform,
+        currency: currency
       });
       
       if (response.data && response.data.checkout_url) {
@@ -97,12 +141,12 @@ const Subscribe = ({ onNavigate }) => {
           window.location.href = checkoutUrl;
         }
       } else {
-        toast.error("Ödeme sayfası oluşturulamadı");
+        toast.error(t('subscribePage.paymentPageError'));
         setProcessingPlanId(null);
       }
     } catch (error) {
       console.error("Ödeme işlemi başlatılamadı:", error);
-      const errorMessage = error.response?.data?.detail || error.message || "Ödeme işlemi başlatılamadı";
+      const errorMessage = error.response?.data?.detail || error.message || t('subscribePage.paymentError');
       toast.error(errorMessage);
       setProcessingPlanId(null);
     }
@@ -113,7 +157,7 @@ const Subscribe = ({ onNavigate }) => {
       <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
         <div className="px-4 pt-6 pb-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-            <p className="text-sm text-gray-600">Planlar yükleniyor...</p>
+            <p className="text-sm text-gray-600">{t('subscribePage.loading')}</p>
           </Card>
         </div>
       </div>
@@ -129,15 +173,15 @@ const Subscribe = ({ onNavigate }) => {
           className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
-          <span className="text-sm font-medium">Geri Dön</span>
+          <span className="text-sm font-medium">{t('subscribePage.back')}</span>
         </button>
-        <h1 className="text-2xl font-bold text-gray-900">Abonelik Paketleri</h1>
-        <p className="text-sm text-gray-600 mt-1">Size uygun paketi seçin</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t('subscribePage.title')}</h1>
+        <p className="text-sm text-gray-600 mt-1">{t('subscribePage.subtitle')}</p>
         
         {/* Aylık / Yıllık Toggle */}
         <div className="flex items-center justify-center gap-3 mt-6">
           <span className={`text-base font-medium ${billingCycle === 'monthly' ? 'text-gray-900' : 'text-gray-400'}`}>
-            Aylık
+            {t('subscribePage.monthly')}
           </span>
           <button
             onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'yearly' : 'monthly')}
@@ -149,11 +193,11 @@ const Subscribe = ({ onNavigate }) => {
           </button>
           <div className="flex items-center gap-2">
             <span className={`text-base font-medium ${billingCycle === 'yearly' ? 'text-gray-900' : 'text-gray-400'}`}>
-              Yıllık
+              {t('subscribePage.yearly')}
             </span>
             {billingCycle === 'yearly' && (
               <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap">
-                2 Ay Ücretsiz
+                {t('subscribePage.twoMonthsFree')}
               </span>
             )}
           </div>
@@ -164,12 +208,12 @@ const Subscribe = ({ onNavigate }) => {
       {billingCycle === 'monthly' && currentPlan && currentPlan.is_first_month && (
         <div className="px-4 pb-4">
           <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl p-6 shadow-lg">
-            <h2 className="text-xl font-bold mb-2">🎉 İlk Aya Özel %25 İndirim!</h2>
+            <h2 className="text-xl font-bold mb-2">🎉 {t('subscribePage.firstMonthDiscount')}</h2>
             <p className="text-sm text-blue-50">
-              İlk ay özel fırsatı! Seçtiğiniz paketin ilk ay ödemesi <strong>%25 indirimli</strong>.
+              {t('subscribePage.firstMonthDiscountDesc')}
             </p>
             <p className="text-sm text-blue-50 mt-2">
-              <strong>Sonraki aylarda</strong> normal fiyattan otomatik olarak tahsilat yapılacaktır.
+              <strong>{t('subscribePage.nextMonths')}</strong>
             </p>
           </div>
         </div>
@@ -190,6 +234,9 @@ const Subscribe = ({ onNavigate }) => {
             const discountedPrice = isFirstMonth ? Math.round(plan.price_monthly * 0.75) : plan.price_monthly;
             const originalPrice = plan.price_monthly;
             
+            // Currency symbol
+            const currencySymbol = i18n.language === 'tr' ? '₺' : '£';
+            
             const isProcessing = processingPlanId === plan.id;
             const isCurrentPlan = currentPlan && currentPlan.plan_id === plan.id;
 
@@ -207,36 +254,36 @@ const Subscribe = ({ onNavigate }) => {
                     <>
                       <div className="flex items-baseline gap-2 mb-1">
                         <span className="text-3xl font-bold text-blue-600">
-                          {yearlyPrice.toLocaleString('tr-TR')} ₺
+                          {yearlyPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
                         </span>
                         <span className="text-gray-500 line-through text-lg">
-                          {(originalPrice * 12).toLocaleString('tr-TR')} ₺
+                          {(originalPrice * 12).toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
                         </span>
                       </div>
-                      <p className="text-xs text-green-600 font-semibold">Yıllık (2 ay ücretsiz)</p>
-                      <p className="text-xs text-gray-500 mt-1">Aylık karşılığı: ~{monthlyEquivalent.toLocaleString('tr-TR')} ₺</p>
+                      <p className="text-xs text-green-600 font-semibold">{t('subscribePage.yearlyBadge')}</p>
+                      <p className="text-xs text-gray-500 mt-1">{t('subscribePage.monthlyEquivalent')}{monthlyEquivalent.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}</p>
                     </>
                   ) : isFirstMonth ? (
                     <>
                       <div className="flex items-baseline gap-2 mb-1">
                         <span className="text-3xl font-bold text-blue-600">
-                          {discountedPrice.toLocaleString('tr-TR')} ₺
+                          {discountedPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
                         </span>
                         <span className="text-gray-500 line-through text-lg">
-                          {originalPrice.toLocaleString('tr-TR')} ₺
+                          {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
                         </span>
                       </div>
-                      <p className="text-xs text-green-600 font-semibold">İlk ay %25 indirimli</p>
-                      <p className="text-xs text-gray-500 mt-1">Sonraki aylar: {originalPrice.toLocaleString('tr-TR')} ₺/ay</p>
+                      <p className="text-xs text-green-600 font-semibold">{t('subscribePage.firstMonthBadge')}</p>
+                      <p className="text-xs text-gray-500 mt-1">{t('subscribePage.nextMonthsPrice')} {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}/ay</p>
                     </>
                   ) : (
                     <>
                       <div className="flex items-baseline gap-2">
                         <span className="text-3xl font-bold text-blue-600">
-                          {originalPrice.toLocaleString('tr-TR')} ₺
+                          {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600 mt-1">/ Aylık</p>
+                      <p className="text-sm text-gray-600 mt-1">{t('subscribePage.perMonth')}</p>
                     </>
                   )}
                 </div>
@@ -244,7 +291,7 @@ const Subscribe = ({ onNavigate }) => {
                 {/* Ana Özellik (Randevu Limiti) */}
                 <div className="mb-4">
                   <p className="text-base font-semibold text-gray-900">
-                    {plan.quota_monthly_appointments.toLocaleString('tr-TR')} Randevu / Aylık
+                    {plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {t('subscribePage.appointmentsPerMonth')}
                   </p>
                 </div>
 
@@ -270,7 +317,7 @@ const Subscribe = ({ onNavigate }) => {
                       : 'bg-blue-600 hover:bg-blue-700 text-white'
                   }`}
                 >
-                  {isCurrentPlan ? "Mevcut Abonelik" : isProcessing ? "İşleniyor..." : "Aboneliği Başlat"}
+                  {isCurrentPlan ? t('subscribePage.currentSubscription') : isProcessing ? t('subscribePage.processing') : t('subscribePage.startSubscription')}
                 </Button>
               </Card>
             );

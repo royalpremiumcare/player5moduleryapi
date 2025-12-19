@@ -3,11 +3,13 @@ import { Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, Cr
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import api from "../api/api";
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 
 const Settings = ({ onNavigate, userRole, onLogout }) => {
+  const { t } = useTranslation();
   const [notificationStatus, setNotificationStatus] = useState('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
 
@@ -53,14 +55,14 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
           });
           
           setNotificationStatus('granted');
-          toast.success('Bildirimler başarıyla etkinleştirildi!');
+          toast.success(t('settings.notificationsEnabledSuccess'));
         } else {
           setNotificationStatus('denied');
-          toast.error('Bildirim izni verilmedi');
+          toast.error(t('settings.notificationsPermissionDenied'));
         }
       } catch (error) {
         console.error('Native Push Error:', error);
-        toast.error('Bildirim etkinleştirilemedi');
+        toast.error(t('settings.notificationsEnableError'));
       } finally {
         setIsSubscribing(false);
       }
@@ -69,7 +71,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
     
     // Web Push Notification
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-      toast.error('Bu tarayıcı bildirimleri desteklemiyor');
+      toast.error(t('settings.notificationsBrowserNotSupported'));
       return;
     }
 
@@ -101,13 +103,13 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
         });
 
         await api.post('/push/subscribe', { subscription: subscription.toJSON() });
-        toast.success('Bildirimler başarıyla etkinleştirildi!');
+        toast.success(t('settings.notificationsEnabledSuccess'));
       } else if (permission === 'denied') {
-        toast.error('Bildirim izni reddedildi. Tarayıcı ayarlarından izin verin.');
+        toast.error(t('settings.notificationsPermissionDeniedWeb'));
       }
     } catch (error) {
       console.error('Bildirim etkinleştirme hatası:', error);
-      toast.error('Bildirim etkinleştirilemedi');
+      toast.error(t('settings.notificationsEnableError'));
     } finally {
       setIsSubscribing(false);
     }
@@ -119,10 +121,10 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
       // Backend'den subscription'ı sil
       await api.delete('/push/unsubscribe');
       setNotificationStatus('default');
-      toast.success('Bildirimler kapatıldı');
+      toast.success(t('settings.notificationsDisabledSuccess'));
     } catch (error) {
       console.error('Bildirim kapatma hatası:', error);
-      toast.error('Bildirimler kapatılamadı');
+      toast.error(t('settings.notificationsDisableError'));
     } finally {
       setIsSubscribing(false);
     }
@@ -147,11 +149,11 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                 className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />
-                <span className="text-sm font-medium">Anasayfaya Dön</span>
+                <span className="text-sm font-medium">{t('settings.backToHome')}</span>
               </button>
               <div>
-                <h2 className="text-lg font-bold text-gray-900">Ayarlar</h2>
-                <p className="text-sm text-gray-600 mt-1">Hesap ve sistem ayarlarınızı yönetin</p>
+                <h2 className="text-lg font-bold text-gray-900">{t('settings.title')}</h2>
+                <p className="text-sm text-gray-600 mt-1">{t('settings.subtitle')}</p>
               </div>
             </div>
 
@@ -167,8 +169,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                       <User className="w-5 h-5 text-green-600" />
               </div>
               <div>
-                      <p className="text-base font-semibold text-gray-900">Profilim</p>
-                      <p className="text-xs text-gray-600">Kişisel bilgiler ve hesap ayarları</p>
+                      <p className="text-base font-semibold text-gray-900">{t('settings.profile')}</p>
+                      <p className="text-xs text-gray-600">{t('settings.profileDescription')}</p>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -188,8 +190,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                         <User className="w-5 h-5 text-green-600" />
                       </div>
                       <div>
-                        <p className="text-base font-semibold text-gray-900">İşletme Ayarları</p>
-                        <p className="text-xs text-gray-600">İşletme bilgileri ve genel ayarlar</p>
+                        <p className="text-base font-semibold text-gray-900">{t('settings.business')}</p>
+                        <p className="text-xs text-gray-600">{t('settings.businessDescription')}</p>
                       </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -205,8 +207,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                         <UserCog className="w-5 h-5 text-purple-600" />
                 </div>
                       <div>
-                        <p className="text-base font-semibold text-gray-900">Personel Yönetimi</p>
-                        <p className="text-xs text-gray-600">Personel ekleme ve yönetimi</p>
+                        <p className="text-base font-semibold text-gray-900">{t('settings.staffManagement')}</p>
+                        <p className="text-xs text-gray-600">{t('settings.staffManagementDescription')}</p>
               </div>
             </div>
                     <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -222,8 +224,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                         <Briefcase className="w-5 h-5 text-orange-600" />
               </div>
               <div>
-                        <p className="text-base font-semibold text-gray-900">Hizmet Yönetimi</p>
-                        <p className="text-xs text-gray-600">Hizmet ekleme ve fiyatlandırma</p>
+                        <p className="text-base font-semibold text-gray-900">{t('settings.serviceManagement')}</p>
+                        <p className="text-xs text-gray-600">{t('settings.serviceManagementDescription')}</p>
               </div>
             </div>
                     <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -239,8 +241,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                         <DollarSign className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <p className="text-base font-semibold text-gray-900">Finans & Kasa Yönetimi</p>
-                      <p className="text-xs text-gray-600">Gelir, Gider ve Personel Ödemelerini Yönetin</p>
+                      <p className="text-base font-semibold text-gray-900">{t('settings.financeManagement')}</p>
+                      <p className="text-xs text-gray-600">{t('settings.financeManagementDescription')}</p>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -256,8 +258,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                         <Package className="w-5 h-5 text-blue-600" />
               </div>
                       <div>
-                        <p className="text-base font-semibold text-gray-900">Abonelik ve Faturalandırma</p>
-                        <p className="text-xs text-gray-600">Paket bilgileri ve ödeme ayarları</p>
+                        <p className="text-base font-semibold text-gray-900">{t('settings.subscription')}</p>
+                        <p className="text-xs text-gray-600">{t('settings.subscriptionDescription')}</p>
             </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -278,11 +280,11 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                     )}
                   </div>
                   <div>
-                    <p className="text-base font-semibold text-gray-900">Bildirimler</p>
+                    <p className="text-base font-semibold text-gray-900">{t('settings.notifications')}</p>
                     <p className="text-xs text-gray-600">
                       {notificationStatus === 'granted' 
-                        ? 'Yeni randevular için bildirim alacaksınız' 
-                        : 'Bildirimleri açarak randevu hatırlatmaları alın'}
+                        ? t('settings.notificationsEnabled')
+                        : t('settings.notificationsDisabled')}
                     </p>
                   </div>
                 </div>
@@ -302,8 +304,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                     <HelpCircle className="w-5 h-5 text-indigo-600" />
             </div>
               <div>
-                    <p className="text-base font-semibold text-gray-900">Yardım Merkezi</p>
-                    <p className="text-xs text-gray-600">Sık sorulan sorular ve destek</p>
+                    <p className="text-base font-semibold text-gray-900">{t('settings.helpCenter')}</p>
+                    <p className="text-xs text-gray-600">{t('settings.helpCenterDescription')}</p>
             </div>
           </div>
                 <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -312,7 +314,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
               <button
                 onClick={async () => {
                   try {
-                    toast.info('Bildirim ayarları onarılıyor...');
+                    toast.info(t('settings.notificationsRepairing'));
                     const isNative = Capacitor.isNativePlatform();
                     
                     if (isNative) {
@@ -330,10 +332,10 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                               platform: Capacitor.getPlatform()
                             }
                           });
-                          toast.success('Bildirimler onarıldı!');
+                          toast.success(t('settings.notificationsRepaired'));
                         });
                       } else {
-                        toast.error('Bildirim izni verilmedi');
+                        toast.error(t('settings.notificationsPermissionDenied'));
                       }
                     } else if ('serviceWorker' in navigator) {
                       const reg = await navigator.serviceWorker.ready;
@@ -345,11 +347,11 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                       // Sayfayı yenileyerek App.js'deki otomatik aboneliği tetikle
                       window.location.reload();
                     } else {
-                      toast.error('Tarayıcınız bildirimleri desteklemiyor');
+                      toast.error(t('settings.notificationsBrowserNotSupportedRepair'));
                     }
                   } catch (error) {
                     console.error('Bildirim onarım hatası:', error);
-                    toast.error('Onarım başarısız oldu');
+                    toast.error(t('settings.notificationsRepairError'));
                   }
                 }}
                 className="w-full flex items-center justify-between p-4 rounded-lg border border-orange-200 hover:bg-orange-50 transition-colors text-left mb-3"
@@ -359,8 +361,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                     <Bell className="w-5 h-5 text-orange-600" />
                   </div>
                   <div>
-                    <p className="text-base font-semibold text-orange-700">Bildirimleri Onar</p>
-                    <p className="text-xs text-orange-600">Bildirim gelmiyorsa buna tıklayın</p>
+                    <p className="text-base font-semibold text-orange-700">{t('settings.notificationsRepair')}</p>
+                    <p className="text-xs text-orange-600">{t('settings.notificationsRepairDescription')}</p>
                   </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-orange-400" />
@@ -375,8 +377,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                     <LogOut className="w-5 h-5 text-red-600" />
               </div>
               <div>
-                    <p className="text-base font-semibold text-red-600">Çıkış Yap</p>
-                    <p className="text-xs text-red-500">Hesabınızdan güvenli şekilde çıkış yapın</p>
+                    <p className="text-base font-semibold text-red-600">{t('settings.logout')}</p>
+                    <p className="text-xs text-red-500">{t('settings.logoutDescription')}</p>
               </div>
             </div>
                 <ChevronRight className="w-5 h-5 text-red-400" />

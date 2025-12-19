@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday, addDays, subDays, addMonths, subMonths, parseISO } from "date-fns";
-import { tr } from "date-fns/locale";
+import { tr, enGB } from "date-fns/locale";
+import { useTranslation } from "react-i18next";
 import { 
   Calendar as CalendarIcon, 
   Clock, 
@@ -54,6 +55,8 @@ import {
 
 const Calendar = ({ onEditAppointment, onNewAppointment }) => {
   const { userRole, token } = useAuth();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language === 'tr' ? tr : enGB;
   const [appointments, setAppointments] = useState([]);
   const [staffMembers, setStaffMembers] = useState([]);
   const [selectedStaffFilter, setSelectedStaffFilter] = useState("all");
@@ -228,7 +231,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
 
       setAppointments(filteredAppointments);
     } catch (error) {
-      toast.error("Randevular yüklenemedi");
+      toast.error(t('calendar.loadingError'));
     } finally {
       setLoading(false);
     }
@@ -320,10 +323,10 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
     }
     
     if (!staffId) {
-      return "Atanmadı";
+      return t('calendar.unassigned');
     }
     const staff = staffMembers.find(s => s.username === staffId);
-    return staff?.full_name || staff?.username || "Bilinmiyor";
+    return staff?.full_name || staff?.username || t('calendar.unknown');
   };
 
   const getStaffColor = (staffId) => {
@@ -341,9 +344,13 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
   };
 
   const getStatusColor = (status) => {
+    const completed = t('dashboard.status.completed');
+    const cancelled = t('dashboard.status.cancelled');
     switch (status) {
+      case completed:
       case "Tamamlandı":
         return "text-green-600";
+      case cancelled:
       case "İptal":
         return "text-red-600";
       default:
@@ -362,14 +369,14 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
     setDeleting(true);
     try {
       await api.delete(`/appointments/${selectedAppointment.id}`);
-      toast.success("Randevu başarıyla silindi");
+      toast.success(t('calendar.deleteSuccess'));
       setShowDeleteDialog(false);
       setShowAppointmentDialog(false);
       setSelectedAppointment(null);
       loadAppointments();
     } catch (error) {
       console.error("Randevu silinemedi:", error);
-      toast.error("Randevu silinirken hata oluştu");
+      toast.error(t('calendar.deleteError'));
     } finally {
       setDeleting(false);
     }
@@ -481,8 +488,8 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
   };
 
   const renderWeekView = () => {
-    const weekStart = startOfWeek(currentDate, { locale: tr });
-    const weekDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(currentDate, { locale: tr }) });
+    const weekStart = startOfWeek(currentDate, { locale: dateLocale });
+    const weekDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(currentDate, { locale: dateLocale }) });
 
     return (
       // Mobilde yatay scroll, desktop'ta grid
@@ -589,14 +596,18 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
   const renderMonthView = () => {
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
-    const calendarStart = startOfWeek(monthStart, { locale: tr });
-    const calendarEnd = endOfWeek(monthEnd, { locale: tr });
+    const calendarStart = startOfWeek(monthStart, { locale: dateLocale });
+    const calendarEnd = endOfWeek(monthEnd, { locale: dateLocale });
     const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+
+    const dayNames = i18n.language === 'tr' 
+      ? ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
+      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
     return (
       <div className="grid grid-cols-7 gap-1 sm:gap-1">
         {/* Header */}
-        {['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'].map((day, index) => (
+        {dayNames.map((day, index) => (
           <div key={index} className="text-center text-xs sm:text-sm font-semibold text-gray-600 py-2 sm:py-2">
             {day}
           </div>
@@ -646,13 +657,13 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                       // Desktop'ta: İlk randevuyu göster
                       <>
                         {dayAppointments.slice(0, 1).map((apt) => (
-                          <div key={apt.id} className="font-semibold truncate" title={`${apt.appointment_time || apt.time || '--:--'} - ${apt.customer_name || 'Müşteri'}`}>
+                          <div key={apt.id} className="font-semibold truncate" title={`${apt.appointment_time || apt.time || '--:--'} - ${apt.customer_name || t('customers.title')}`}>
                             {apt.customer_name}
                           </div>
                         ))}
                         {dayAppointments.length > 1 && (
                           <div className="text-[9px] text-gray-500 mt-0.5">
-                            +{dayAppointments.length - 1} daha
+                            +{dayAppointments.length - 1} {t('common.more')}
                           </div>
                         )}
                       </>
@@ -696,7 +707,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
               <div className="flex-1 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2 sm:mb-2">
                   <div className="text-sm sm:text-sm font-semibold text-gray-900">
-                    {apt.appointment_date || apt.date ? format(parseISO(apt.appointment_date || apt.date), "d MMM yyyy", { locale: tr }) : 'Tarih yok'}
+                    {apt.appointment_date || apt.date ? format(parseISO(apt.appointment_date || apt.date), "d MMM yyyy", { locale: dateLocale }) : t('common.noDate')}
                   </div>
                   <div className="flex items-center gap-2 text-sm sm:text-sm text-gray-600">
                     <Clock className="w-4 h-4 sm:w-4 sm:h-4 flex-shrink-0" />
@@ -746,10 +757,10 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                 <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
               </Button>
               <div className="text-sm sm:text-lg font-semibold text-gray-900 flex-1 text-center px-1">
-                {viewMode === "day" && format(currentDate, "d MMM yyyy", { locale: tr })}
-                {viewMode === "week" && `${format(startOfWeek(currentDate, { locale: tr }), "d MMM", { locale: tr })} - ${format(endOfWeek(currentDate, { locale: tr }), "d MMM", { locale: tr })}`}
-                {viewMode === "month" && format(currentDate, "MMM yyyy", { locale: tr })}
-                {viewMode === "list" && "Randevular"}
+                {viewMode === "day" && format(currentDate, "d MMM yyyy", { locale: dateLocale })}
+                {viewMode === "week" && `${format(startOfWeek(currentDate, { locale: dateLocale }), "d MMM", { locale: dateLocale })} - ${format(endOfWeek(currentDate, { locale: dateLocale }), "d MMM", { locale: dateLocale })}`}
+                {viewMode === "month" && format(currentDate, "MMM yyyy", { locale: dateLocale })}
+                {viewMode === "list" && t('appointments.title')}
               </div>
               <Button
                 variant="outline"
@@ -765,7 +776,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                 onClick={() => setCurrentDate(new Date())}
                 className="px-2 sm:px-3 text-xs sm:text-sm"
               >
-                Bugün
+                {t('calendar.today')}
               </Button>
             </div>
 
@@ -778,8 +789,8 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   onChange={(e) => setSelectedStaffFilter(e.target.value)}
                   className="text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-500 min-w-[120px]"
                 >
-                  <option value="all">Tüm Personel</option>
-                  <option value="unassigned">Atanmamış</option>
+                  <option value="all">{t('calendar.allStaff')}</option>
+                  <option value="unassigned">{t('calendar.unassigned')}</option>
                   {staffMembers.map((staff) => (
                     <option key={staff.username} value={staff.username}>
                       {staff.full_name || staff.username}
@@ -796,7 +807,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   onClick={() => setViewMode("day")}
                   className="px-2 sm:px-3 text-xs sm:text-sm h-7 sm:h-9"
                 >
-                  Gün
+                  {t('calendar.day')}
                 </Button>
                 <Button
                   variant={viewMode === "week" ? "default" : "ghost"}
@@ -804,7 +815,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   onClick={() => setViewMode("week")}
                   className="px-2 sm:px-3 text-xs sm:text-sm h-7 sm:h-9"
                 >
-                  Hafta
+                  {t('calendar.week')}
                 </Button>
                 <Button
                   variant={viewMode === "month" ? "default" : "ghost"}
@@ -812,7 +823,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   onClick={() => setViewMode("month")}
                   className="px-2 sm:px-3 text-xs sm:text-sm h-7 sm:h-9"
                 >
-                  Ay
+                  {t('calendar.month')}
                 </Button>
                 <Button
                   variant={viewMode === "list" ? "default" : "ghost"}
@@ -829,7 +840,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
           {/* Content */}
           {loading ? (
             <div className="text-center py-12">
-              <p className="text-gray-600">Yükleniyor...</p>
+              <p className="text-gray-600">{t('common.loading')}</p>
             </div>
           ) : (
             <>
@@ -843,7 +854,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
           {appointments.length === 0 && !loading && (
             <div className="text-center py-12">
               <CalendarIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">Bu dönemde randevu bulunmuyor</p>
+              <p className="text-gray-600">{t('calendar.noAppointments')}</p>
             </div>
           )}
         </Card>
@@ -853,9 +864,9 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
       <Dialog open={showAppointmentDialog} onOpenChange={setShowAppointmentDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Randevu Bilgileri</DialogTitle>
+            <DialogTitle>{t('appointments.details')}</DialogTitle>
             <DialogDescription>
-              Randevu detaylarını görüntüleyebilir ve silebilirsiniz
+              {t('appointments.viewDeleteDescription')}
             </DialogDescription>
           </DialogHeader>
           
@@ -877,21 +888,21 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
               {/* Randevu Detayları */}
               <div className="space-y-3 pt-3 border-t border-gray-200">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Hizmet</span>
+                  <span className="text-sm text-gray-600">{t('appointments.service')}</span>
                   <span className="text-sm font-semibold text-gray-900">{selectedAppointment.service_name}</span>
                 </div>
                 
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Tarih</span>
+                  <span className="text-sm text-gray-600">{t('appointments.date')}</span>
                   <span className="text-sm font-semibold text-gray-900">
                     {selectedAppointment.appointment_date || selectedAppointment.date 
-                      ? format(parseISO(selectedAppointment.appointment_date || selectedAppointment.date), "d MMMM yyyy", { locale: tr })
-                      : 'Tarih yok'}
+                      ? format(parseISO(selectedAppointment.appointment_date || selectedAppointment.date), "d MMMM yyyy", { locale: dateLocale })
+                      : t('common.noDate')}
                   </span>
                 </div>
                 
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Saat</span>
+                  <span className="text-sm text-gray-600">{t('appointments.time')}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-gray-900">
                       {selectedAppointment.appointment_time || selectedAppointment.time || '--:--'}
@@ -906,16 +917,16 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
 
                 {selectedAppointment.service_price && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Fiyat</span>
+                    <span className="text-sm text-gray-600">{t('appointments.price')}</span>
                     <span className="text-sm font-semibold text-gray-900">
-                      {selectedAppointment.service_price.toLocaleString('tr-TR')} ₺
+                      {selectedAppointment.service_price.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {i18n.language === 'tr' ? '₺' : '£'}
                     </span>
                   </div>
                 )}
 
                 {userRole === 'admin' && selectedAppointment.staff_member_id && getStaffName(selectedAppointment.staff_member_id) && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Personel</span>
+                    <span className="text-sm text-gray-600">{t('customers.staff')}</span>
                     <span className="text-sm font-semibold text-gray-900">
                       {getStaffName(selectedAppointment.staff_member_id)}
                     </span>
@@ -923,7 +934,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                 )}
 
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Durum</span>
+                  <span className="text-sm text-gray-600">{t('appointments.status')}</span>
                   <Badge className={getStatusColor(selectedAppointment.status)}>
                     {selectedAppointment.status}
                   </Badge>
@@ -931,7 +942,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
 
                 {selectedAppointment.notes && (
                   <div className="pt-2 border-t border-gray-200">
-                    <span className="text-sm text-gray-600">Notlar</span>
+                    <span className="text-sm text-gray-600">{t('customers.fields.notes')}</span>
                     <p className="text-sm text-gray-900 mt-1">{selectedAppointment.notes}</p>
                   </div>
                 )}
@@ -949,7 +960,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                     }}
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
-                    Randevuyu Sil
+                    {t('calendar.deleteTitle')}
                   </Button>
                 </div>
               )}
@@ -962,19 +973,19 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Randevuyu Sil</AlertDialogTitle>
+            <AlertDialogTitle>{t('calendar.deleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Bu randevuyu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.
+              {t('calendar.deleteConfirm')} {t('customers.deleteWarning')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>İptal</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteAppointment}
               disabled={deleting}
               className="bg-red-600 hover:bg-red-700"
             >
-              {deleting ? "Siliniyor..." : "Sil"}
+              {deleting ? t('customers.deleting') : t('customers.actions.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -985,16 +996,16 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
         <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {selectedDay ? format(selectedDay, "d MMMM yyyy", { locale: tr }) : "Randevular"}
+              {selectedDay ? format(selectedDay, "d MMMM yyyy", { locale: dateLocale }) : t('appointments.title')}
             </DialogTitle>
             <DialogDescription>
-              Bu günkü tüm randevular
+              {t('calendar.appointmentsFor', { date: selectedDay ? format(selectedDay, "d MMMM yyyy", { locale: dateLocale }) : '' })}
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-3 mt-4">
             {selectedDayAppointments.length === 0 ? (
-              <p className="text-center text-gray-500 py-4">Bu gün randevu bulunmuyor</p>
+              <p className="text-center text-gray-500 py-4">{t('calendar.noAppointments')}</p>
             ) : (
               selectedDayAppointments
                 .sort((a, b) => {

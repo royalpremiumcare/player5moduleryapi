@@ -94,12 +94,28 @@ const RegisterPage = () => {
         }
     }, []); 
 
+    // Dil bazlı telefon numarası başlangıcı - useEffect ile güncelle
+    useEffect(() => {
+        const savedLang = localStorage.getItem('i18nextLng');
+        const browserLang = navigator.language || navigator.userLanguage;
+        const isEnglish = savedLang === 'en' || (!savedLang && browserLang && !browserLang.startsWith('tr'));
+        const prefix = isEnglish ? '+44' : '+90';
+        
+        // Eğer mevcut telefon numarası diğer prefix ile başlıyorsa, yeni prefix ile değiştir
+        setFormData(prev => {
+            if (!prev.support_phone.startsWith(prefix)) {
+                return { ...prev, support_phone: prefix };
+            }
+            return prev;
+        });
+    }, [i18n.language]);
+
     const [formData, setFormData] = useState({
         username: '',
         password: '',
         full_name: '',
         organization_name: '',
-        support_phone: '+90',
+        support_phone: i18n.language === 'en' ? '+44' : '+90',
         sector: ''
     });
     const [loading, setLoading] = useState(false);
@@ -118,12 +134,16 @@ const RegisterPage = () => {
     
     const handlePhoneChange = (e) => {
         let value = e.target.value;
-        if (!value.startsWith('+90')) {
-            value = '+90' + value.replace(/^\+?90?/, '');
+        const isEnglish = i18n.language === 'en';
+        const prefix = isEnglish ? '+44' : '+90';
+        const maxLength = isEnglish ? 14 : 13; // +44XXXXXXXXXX (14) vs +90XXXXXXXXX (13)
+        
+        if (!value.startsWith(prefix)) {
+            value = prefix + value.replace(/^\+?[0-9]*/, '');
         }
         value = value.replace(/[^0-9+]/g, '');
-        if (value.length > 13) {
-            value = value.substring(0, 13);
+        if (value.length > maxLength) {
+            value = value.substring(0, maxLength);
         }
         setFormData({ ...formData, support_phone: value });
     };
@@ -298,7 +318,7 @@ const RegisterPage = () => {
                                         type="tel"
                                         value={formData.support_phone}
                                         onChange={handlePhoneChange}
-                                        placeholder="+905XXXXXXXXX"
+                                        placeholder={i18n.language === 'en' ? '+44XXXXXXXXXX' : '+905XXXXXXXXX'}
                                         className="pl-10 h-12 border-2 focus:border-gray-900"
                                         required
                                         minLength={13}

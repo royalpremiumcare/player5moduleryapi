@@ -70,6 +70,19 @@ const LandingPage = () => {
     'corporate': { monthly: 79, monthlyDiscounted: 59, yearly: 790 },
   };
 
+  // TL İlk Ay İndirimli Fiyatlar (Türkçe seçildiğinde)
+  const tlFirstMonthPricing = {
+    'standart': 530,
+    'standard': 530,
+    'profesyonel': 750,
+    'professional': 750,
+    'premium': 1150,
+    'business': 1450,
+    'enterprise': 1750,
+    'kurumsal': 2700,
+    'corporate': 2700,
+  };
+
   // Para birimi ve fiyat formatlama
   const formatPrice = (plan, isYearly, hasDiscount) => {
     const planKey = plan.name.toLowerCase();
@@ -87,10 +100,23 @@ const LandingPage = () => {
       return { price, currency: '£', locale: 'en-GB' };
     }
     
-    // TL fiyatları (backend'den)
-    const price = isYearly 
-      ? Math.round(plan.price_monthly * 10) // yıllık = aylık * 10
-      : plan.price_monthly;
+    // TL fiyatları (backend'den) - aylık küsüratları yuvarla
+    const monthlyPrice = Math.round(plan.price_monthly);
+    let price;
+    if (isYearly) {
+      price = Math.round(monthlyPrice * 10); // yıllık = aylık * 10
+    } else if (hasDiscount) {
+      // İndirimli fiyat: Önce sabit değerleri kontrol et, sonra backend, son olarak %25 indirim
+      if (tlFirstMonthPricing[planKey]) {
+        price = tlFirstMonthPricing[planKey];
+      } else if (plan.price_monthly_discounted) {
+        price = Math.round(plan.price_monthly_discounted);
+      } else {
+        price = Math.round(monthlyPrice * 0.75); // %25 indirim
+      }
+    } else {
+      price = monthlyPrice;
+    }
     return { price, currency: '₺', locale: 'tr-TR' };
   };
 
@@ -106,9 +132,17 @@ const LandingPage = () => {
       return { price, currency: '£', locale: 'en-GB' };
     }
     
+    // TL fiyatları - aylık küsüratları yuvarla
+    // Backend'den original price geliyorsa onu kullan, yoksa normal fiyatı göster
+    let monthlyPrice;
+    if (plan.price_monthly_original) {
+      monthlyPrice = Math.round(plan.price_monthly_original);
+    } else {
+      monthlyPrice = Math.round(plan.price_monthly);
+    }
     const price = isYearly 
-      ? plan.price_monthly * 12 
-      : plan.price_monthly;
+      ? Math.round(monthlyPrice * 12) 
+      : monthlyPrice;
     return { price, currency: '₺', locale: 'tr-TR' };
   };
 
@@ -336,9 +370,15 @@ const LandingPage = () => {
         // Trial hariç tüm planları al (Trial sadece kayıt sonrası)
         const paidPlans = (response.data.plans || []).filter(p => p.id !== 'tier_trial');
         console.log('Filtered Plans:', paidPlans);
-        setPlans(paidPlans);
+        if (paidPlans.length > 0) {
+          setPlans(paidPlans);
+        } else {
+          console.warn('No plans found in response');
+        }
       } catch (error) {
         console.error('Planlar yüklenemedi:', error);
+        console.error('Error details:', error.response?.data || error.message);
+        // Hata durumunda bile plans array'ini boş bırak (UI'da loading false olacak)
       } finally {
         setLoadingPlans(false);
       }
@@ -580,6 +620,9 @@ const LandingPage = () => {
                   <span className="text-gray-700 font-semibold text-sm md:text-base">{t('landing.trust.hairSalons')}</span>
                 </Card>
                 <Card className="px-6 py-3 bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                  <span className="text-gray-700 font-semibold text-sm md:text-base">{t('landing.trust.beautySalons')}</span>
+                </Card>
+                <Card className="px-6 py-3 bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                   <span className="text-gray-700 font-semibold text-sm md:text-base">{t('landing.trust.healthCentres')}</span>
                 </Card>
                 <Card className="px-6 py-3 bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
@@ -665,19 +708,40 @@ const LandingPage = () => {
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
               <p className="mt-4 text-gray-600">{t('common.loading')}</p>
             </div>
+          ) : plans.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-600">{t('landing.pricing.noPlans') || 'Plans are loading...'}</p>
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 max-w-6xl mx-auto">
               {plans.map((plan, index) => {
                 const isPopular = plan.id === 'tier_4_business';
                 const isYearly = billingCycle === 'yearly';
                 
-                const yearlyPrice = plan.price_yearly || (plan.price_monthly * 10);
+                const roundedMonthly = Math.round(plan.price_monthly);
+                const yearlyPrice = plan.price_yearly || (roundedMonthly * 10);
                 const monthlyEquivalent = Math.round(yearlyPrice / 12);
-                const discountedPrice = plan.price_monthly_discounted || plan.price_monthly;
-                const originalPrice = plan.price_monthly_original || plan.price_monthly;
-                const hasDiscount = !isYearly && plan.price_monthly_discounted && plan.price_monthly_discounted < plan.price_monthly_original;
-                const displayPrice = isYearly ? monthlyEquivalent : (hasDiscount ? discountedPrice : plan.price_monthly);
-                const savingsPercent = isYearly ? 17 : (hasDiscount ? 25 : 0);
+                const planKey = plan.name.toLowerCase();
+                
+                // İndirimli fiyat hesaplama: Önce sabit değerleri kontrol et, sonra backend, son olarak %25 indirim
+                let discountedPrice, originalPrice;
+                if (plan.price_monthly_discounted && plan.price_monthly_original) {
+                  discountedPrice = Math.round(plan.price_monthly_discounted);
+                  originalPrice = Math.round(plan.price_monthly_original);
+                } else if (tlFirstMonthPricing[planKey]) {
+                  // Sabit ilk ay indirimli fiyatları kullan
+                  discountedPrice = tlFirstMonthPricing[planKey];
+                  originalPrice = roundedMonthly;
+                } else {
+                  // Backend'den gelmiyorsa frontend'de hesapla: %25 indirim
+                  originalPrice = roundedMonthly;
+                  discountedPrice = Math.round(roundedMonthly * 0.75); // %25 indirim
+                }
+                
+                // Aylık faturalamada her zaman indirim var (ilk ay için)
+                const hasDiscount = !isYearly;
+                const displayPrice = isYearly ? monthlyEquivalent : discountedPrice;
+                const savingsPercent = isYearly ? 17 : 25;
                 
                 return (
                   <div 

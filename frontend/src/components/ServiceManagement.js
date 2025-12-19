@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Briefcase, Edit, Trash2, Plus, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import api from "../api/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
+  const { t, i18n } = useTranslation();
   const [showDialog, setShowDialog] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [editingService, setEditingService] = useState(null);
@@ -55,19 +57,19 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
     e.preventDefault();
     
     if (!formData.name || !formData.price || !formData.duration) {
-      toast.error("Lütfen tüm alanları doldurun");
+      toast.error(t('services.management.fillAllFields'));
       return;
     }
 
     const price = parseFloat(formData.price);
     if (isNaN(price) || price <= 0) {
-      toast.error("Geçerli bir fiyat girin");
+      toast.error(t('services.management.validPrice'));
       return;
     }
 
     const duration = parseInt(formData.duration);
     if (isNaN(duration) || duration <= 0) {
-      toast.error("Geçerli bir süre girin (dakika)");
+      toast.error(t('services.management.validDuration'));
       return;
     }
 
@@ -77,17 +79,17 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       
       if (editingService) {
         await api.put(`/services/${editingService.id}`, payload);
-        toast.success("Hizmet güncellendi");
+        toast.success(t('services.management.serviceUpdated'));
       } else {
         await api.post("/services", payload);
-        toast.success("Hizmet eklendi");
+        toast.success(t('services.management.serviceAdded'));
       }
       
       setShowDialog(false);
       setFormData({ name: "", price: "", duration: "30" });
       onRefresh();
     } catch (error) {
-      toast.error("İşlem başarısız");
+      toast.error(t('services.management.operationFailed'));
     } finally {
       setLoading(false);
     }
@@ -96,11 +98,11 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
   const handleDelete = async (serviceId) => {
     try {
       await api.delete(`/services/${serviceId}`);
-      toast.success("Hizmet silindi");
+      toast.success(t('services.management.serviceDeleted'));
       setDeleteDialog(null);
       onRefresh();
     } catch (error) {
-      toast.error("Hizmet silinemedi");
+      toast.error(t('services.management.deleteFailed'));
     }
   };
 
@@ -125,9 +127,9 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       const updatedSettings = { ...settings, [field]: value };
       await api.put("/settings", updatedSettings);
       setSettings(updatedSettings);
-      toast.success("Ayar güncellendi");
+      toast.success(t('services.management.settingUpdated'));
     } catch (error) {
-      toast.error("Ayar güncellenemedi");
+      toast.error(t('services.management.settingUpdateFailed'));
       console.error("Settings update error:", error);
     } finally {
       setSavingSettings(false);
@@ -146,11 +148,11 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />
-                <span className="text-sm font-medium">Ayarlara Dön</span>
+                <span className="text-sm font-medium">{t('settings.backToSettings')}</span>
               </button>
         <div>
-                <h2 className="text-lg font-bold text-gray-900">Hizmet Yönetimi</h2>
-          <p className="text-sm text-gray-600 mt-1">Hizmetlerinizi ekleyin, düzenleyin veya silin</p>
+                <h2 className="text-lg font-bold text-gray-900">{t('services.management.title')}</h2>
+          <p className="text-sm text-gray-600 mt-1">{t('services.management.subtitle')}</p>
         </div>
             </div>
 
@@ -160,7 +162,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold rounded-full"
         >
           <Plus className="w-4 h-4 mr-2" />
-          Yeni Hizmet
+          {t('services.management.newService')}
         </Button>
           </div>
         </Card>
@@ -171,17 +173,17 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
         <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
           <div className="space-y-4">
             <div>
-              <h3 className="text-base font-bold text-gray-900 mb-1">Online Randevu Ayarları</h3>
-              <p className="text-sm text-gray-600">Online randevu sayfasında gösterilecek bilgileri seçin</p>
+              <h3 className="text-base font-bold text-gray-900 mb-1">{t('services.management.onlineSettings')}</h3>
+              <p className="text-sm text-gray-600">{t('services.management.onlineSettingsDescription')}</p>
             </div>
             
             <div className="space-y-4 pt-2">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <Label htmlFor="show-duration" className="text-sm font-medium text-gray-900 cursor-pointer">
-                    Hizmet süresi gösterilsin mi?
+                    {t('services.management.showDuration')}
                   </Label>
-                  <p className="text-xs text-gray-500 mt-0.5">Online randevu sayfasında hizmet süresi (dakika) bilgisi gösterilir</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('services.management.showDurationNote')}</p>
                 </div>
                 <Switch
                   id="show-duration"
@@ -194,9 +196,9 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <Label htmlFor="show-price" className="text-sm font-medium text-gray-900 cursor-pointer">
-                    Hizmet ücreti gösterilsin mi?
+                    {t('services.management.showPrice')}
                   </Label>
-                  <p className="text-xs text-gray-500 mt-0.5">Online randevu sayfasında hizmet fiyatı gösterilir</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('services.management.showPriceNote')}</p>
                 </div>
                 <Switch
                   id="show-price"
@@ -216,8 +218,8 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <div className="text-center py-8">
               <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <h3 className="text-base font-semibold text-gray-900 mb-2">Henüz Hizmet Yok</h3>
-              <p className="text-sm text-gray-600">Hizmet eklemek için "Yeni Hizmet" butonunu kullanın</p>
+              <h3 className="text-base font-semibold text-gray-900 mb-2">{t('services.management.noServicesTitle')}</h3>
+              <p className="text-sm text-gray-600">{t('services.management.noServicesDescription')}</p>
             </div>
           </Card>
         </div>
@@ -237,8 +239,8 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                   <div className="flex-1 min-w-0">
                     <h3 className="text-base font-semibold text-gray-900 mb-1">{service.name}</h3>
                     <div className="flex items-center gap-3">
-                      <p className="text-lg font-bold text-blue-600">{Math.round(service.price)}₺</p>
-                      <p className="text-sm text-gray-500">{(service.duration || 30)} dk</p>
+                      <p className="text-lg font-bold text-blue-600">{Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}</p>
+                      <p className="text-sm text-gray-500">{(service.duration || 30)} {t('services.management.minutes')}</p>
                     </div>
                 </div>
               </div>
@@ -250,7 +252,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 variant="outline"
               >
                 <Edit className="w-4 h-4 mr-1" />
-                Düzenle
+                {t('common.edit')}
               </Button>
               <Button
                 data-testid={`delete-service-${service.id}`}
@@ -272,25 +274,25 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingService ? "Hizmeti Düzenle" : "Yeni Hizmet Ekle"}</DialogTitle>
+            <DialogTitle>{editingService ? t('services.management.editTitle') : t('services.management.addTitle')}</DialogTitle>
             <DialogDescription>
-              Hizmet bilgilerini girin
+              {t('services.management.dialogDescription')}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="service-name">Hizmet Adı</Label>
+              <Label htmlFor="service-name">{t('services.fields.name')}</Label>
               <Input
                 id="service-name"
                 data-testid="service-name-input"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Örn: Saç Kesimi, Bakım, Danışmanlık"
+                placeholder={t('services.management.pricePlaceholder')}
                 required
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="service-price">Fiyat (₺)</Label>
+              <Label htmlFor="service-price">{t('services.fields.price')} ({i18n.language === 'tr' ? '₺' : '£'})</Label>
               <Input
                 id="service-price"
                 data-testid="service-price-input"
@@ -303,7 +305,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="service-duration">Hizmet Süresi (Dakika)</Label>
+              <Label htmlFor="service-duration">{t('services.fields.duration')}</Label>
               <Input
                 id="service-duration"
                 data-testid="service-duration-input"
@@ -315,11 +317,11 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 placeholder="30"
                 required
               />
-              <p className="text-xs text-gray-500">Randevu oluştururken bu süre baz alınacaktır</p>
+              <p className="text-xs text-gray-500">{t('services.management.durationNote')}</p>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowDialog(false)}>
-                İptal
+                {t('common.cancel')}
               </Button>
               <Button
                 data-testid="save-service-button"
@@ -327,7 +329,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 disabled={loading}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                {loading ? "Kaydediliyor..." : "Kaydet"}
+                {loading ? t('settings.profile.buttons.saving') : t('common.save')}
               </Button>
             </DialogFooter>
           </form>
@@ -338,20 +340,19 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Hizmeti Sil</AlertDialogTitle>
+            <AlertDialogTitle>{t('services.management.deleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteDialog?.name} hizmetini silmek istediğinizden emin misiniz?
-              Bu işlem geri alınamaz.
+              {t('services.management.deleteDescription', { name: deleteDialog?.name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               data-testid="confirm-delete-service"
               onClick={() => handleDelete(deleteDialog?.id)}
               className="bg-red-500 hover:bg-red-600"
             >
-              Sil
+              {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

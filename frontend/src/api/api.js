@@ -14,7 +14,7 @@ const api = axios.create({
 });
 
 // === API REQUEST TUTAMAÇ (INTERCEPTOR) ===
-// Her istekten önce token'ı Authorization başlığına ekler
+// Her istekten önce token'ı Authorization başlığına ekler ve dil bilgisini gönderir
 api.interceptors.request.use(
   (config) => {
     // Önce localStorage'dan kontrol et, yoksa sessionStorage'dan
@@ -22,6 +22,11 @@ api.interceptors.request.use(
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
+    
+    // Dil bilgisini Accept-Language header'ına ekle
+    const savedLang = localStorage.getItem('i18nextLng') || 'tr';
+    config.headers['Accept-Language'] = savedLang;
+    
     return config;
   },
   (error) => {

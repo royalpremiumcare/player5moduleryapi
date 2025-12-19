@@ -30,6 +30,7 @@ import SetupWizard from "@/components/SetupWizard";
 import ChatWidget from "@/components/ChatWidget";
 import { Calendar, Briefcase, DollarSign, SettingsIcon, Users, Upload, LogOut, Moon, Sun, UserCog, FileText, Home, Plus, CreditCard, User, HelpCircle, Package, Bell } from "lucide-react";
 import { useTheme } from "./context/ThemeContext";
+import { useTranslation } from "react-i18next";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +43,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 function App() {
   const { logout, userRole, token } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { t } = useTranslation();
   const bottomNavRef = useRef(null);
   
   const [currentView, setCurrentView] = useState("dashboard");
@@ -1059,7 +1061,7 @@ function App() {
               className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors text-blue-600"
             >
               <Home className="w-5 h-5" />
-              <span className="text-xs font-medium">Anasayfa</span>
+              <span className="text-xs font-medium">{t('nav.dashboard', 'Dashboard')}</span>
             </button>
 
             {/* Takvim */}
@@ -1073,7 +1075,7 @@ function App() {
               }`}
             >
               <Calendar className="w-5 h-5" />
-              <span className="text-xs font-medium">Takvim</span>
+              <span className="text-xs font-medium">{t('nav.calendar', 'Calendar')}</span>
             </button>
 
             {/* Yeni Randevu Ekle (Ana Renk - Mavi) */}
@@ -1093,7 +1095,7 @@ function App() {
               className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
             >
               <Users className="w-5 h-5" />
-              <span className="text-xs font-medium">Müşteriler</span>
+              <span className="text-xs font-medium">{t('nav.customers', 'Customers')}</span>
             </button>
 
             {/* Ayarlar */}
@@ -1105,7 +1107,7 @@ function App() {
               className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
             >
               <SettingsIcon className="w-5 h-5" />
-              <span className="text-xs font-medium">Ayarlar</span>
+              <span className="text-xs font-medium">{t('nav.settings', 'Settings')}</span>
             </button>
           </div>
         </div>

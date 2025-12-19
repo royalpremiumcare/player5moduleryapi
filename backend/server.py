@@ -1,5 +1,5 @@
 from voice_ai_service import get_voice_ai_service
-from whatsapp_service import send_whatsapp_notification, build_whatsapp_message
+from whatsapp_service import send_whatsapp_template
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
@@ -257,19 +257,19 @@ async def check_and_send_reminders():
                     # Hatırlatma zamanı geldi mi?
                     if reminder_time_start <= apt_datetime <= reminder_time_end:
                         logging.info(f"  ✓ Appointment {apt.get('id')} is in reminder window! Sending WhatsApp...")
-                        # WhatsApp mesajı oluştur
-                        whatsapp_message = build_whatsapp_message(
-                            company_name=company_name,
-                            customer_name=apt['customer_name'],
-                            service_name=apt['service_name'],
-                            appointment_date=apt['appointment_date'],
-                            appointment_time=apt['appointment_time'],
-                            support_phone=support_phone,
-                            message_type="reminder"
-                        )
-                        # WhatsApp gönder (sync fonksiyon)
+                        # WhatsApp hatırlatma mesajı gönder (Content API)
                         import asyncio
-                        wa_result = await asyncio.to_thread(send_whatsapp_notification, apt['phone'], whatsapp_message)
+                        wa_result = await asyncio.to_thread(
+                            send_whatsapp_template,
+                            apt['phone'],
+                            "REMINDER",
+                            apt['customer_name'],
+                            company_name,
+                            apt['appointment_date'],
+                            apt['appointment_time'],
+                            apt['service_name'],
+                            support_phone
+                        )
                         
                         if wa_result:
                             # Hatırlatma gönderildi olarak işaretle
@@ -1148,6 +1148,7 @@ async def get_organization_plan(db, organization_id: str) -> Optional[dict]:
             plan_id="tier_trial",
             quota_usage=0,
             quota_reset_date=quota_reset,
+            quota_last_reset_date=trial_start,  # Lazy reset için başlangıç tarihi
             trial_start_date=trial_start,
             trial_end_date=trial_end,
             is_first_month=True
@@ -1171,8 +1172,64 @@ async def get_organization_plan(db, organization_id: str) -> Optional[dict]:
     
     return plan_doc
 
+async def check_and_reset_quota(db, organization_id: str) -> None:
+    """
+    TASK 2: Lazy Quota Reset - Yearly kullanıcılar için aylık reset kontrolü.
+    
+    Stripe yearly subscription'lar için aylık webhook göndermediği için,
+    her ay başında quota'yu sıfırlamak için internal trigger gerekiyor.
+    
+    Bu fonksiyon quota_last_reset_date ile mevcut ay/yıl'ı karşılaştırır.
+    Eğer ay değişmişse, quota_usage'i sıfırlar.
+    """
+    plan_doc = await get_organization_plan(db, organization_id)
+    if not plan_doc:
+        return
+    
+    quota_last_reset = plan_doc.get('quota_last_reset_date')
+    if not quota_last_reset:
+        # quota_last_reset_date yoksa, şimdi olarak ayarla
+        now = datetime.now(timezone.utc)
+        await db.organization_plans.update_one(
+            {"organization_id": organization_id},
+            {"$set": {"quota_last_reset_date": now.isoformat()}}
+        )
+        return
+    
+    # String ise datetime'a çevir
+    if isinstance(quota_last_reset, str):
+        quota_last_reset = datetime.fromisoformat(quota_last_reset.replace('Z', '+00:00'))
+    
+    # Mevcut tarih
+    now = datetime.now(timezone.utc)
+    
+    # Ay ve yıl karşılaştırması
+    last_reset_month = quota_last_reset.month
+    last_reset_year = quota_last_reset.year
+    current_month = now.month
+    current_year = now.year
+    
+    # Ay değişmiş mi kontrol et
+    if (current_year > last_reset_year) or (current_year == last_reset_year and current_month > last_reset_month):
+        # Ay değişmiş, quota'yu sıfırla
+        logger.info(f"🔄 Monthly quota reset triggered for Org ID: {organization_id} (Last reset: {last_reset_month}/{last_reset_year}, Current: {current_month}/{current_year})")
+        
+        await db.organization_plans.update_one(
+            {"organization_id": organization_id},
+            {
+                "$set": {
+                    "quota_usage": 0,
+                    "quota_last_reset_date": now.isoformat(),
+                    "updated_at": now.isoformat()
+                }
+            }
+        )
+
 async def check_quota_and_increment(db, organization_id: str) -> tuple[bool, str]:
     """Kota kontrolü yap ve kullanılırsa artır. (success, error_message)"""
+    # TASK 2: Lazy quota reset kontrolü (yearly kullanıcılar için)
+    await check_and_reset_quota(db, organization_id)
+    
     plan_doc = await get_organization_plan(db, organization_id)
     if not plan_doc:
         return False, "Plan bilgisi bulunamadı"
@@ -1190,13 +1247,19 @@ async def check_quota_and_increment(db, organization_id: str) -> tuple[bool, str
         if trial_end and datetime.now(timezone.utc) > trial_end:
             return False, "Deneme süreniz doldu. Devam etmek için lütfen bir paket seçin."
     
-    # Kota reset kontrolü
+    # Kota reset kontrolü (eski mantık - quota_reset_date bazlı)
     quota_reset = plan_doc.get('quota_reset_date')
     if isinstance(quota_reset, str):
         quota_reset = datetime.fromisoformat(quota_reset.replace('Z', '+00:00'))
     
     current_usage = plan_doc.get('quota_usage', 0)
-    quota_limit = plan_info.get('quota_monthly_appointments', 50)
+    
+    # quota_limit'i plan_doc'dan al (webhook'tan kaydedilmiş olmalı)
+    # Fallback: plan_info'dan al
+    quota_limit = plan_doc.get('quota_limit')
+    if not quota_limit:
+        quota_limit = plan_info.get('quota_monthly_appointments', 50)
+        logger.warning(f"⚠️ quota_limit plan_doc'da yok, plan_info'dan alındı: {quota_limit}")
     
     # Eğer reset tarihi geçmişse, kullanımı sıfırla
     if quota_reset and datetime.now(timezone.utc) > quota_reset:
@@ -1369,7 +1432,11 @@ class Token(BaseModel): access_token: str; token_type: str
 class ForgotPasswordRequest(BaseModel): username: str
 class ResetPasswordRequest(BaseModel): token: str; new_password: str
 class SetupPasswordRequest(BaseModel): token: str; new_password: str
-class PlanUpdateRequest(BaseModel): plan_id: str; billing_cycle: str = "monthly"; platform: str = "web"  # 'web', 'android', 'ios'
+class PlanUpdateRequest(BaseModel): 
+    plan_id: str
+    billing_cycle: str = "monthly"
+    platform: str = "web"  # 'web', 'android', 'ios'
+    currency: Optional[str] = None  # 'gbp' veya 'try' - otomatik algılanır
 class ContactRequest(BaseModel): name: str = Field(..., min_length=1); phone: str = Field(..., min_length=10); email: Optional[str] = None; message: Optional[str] = None
 class ContactStatusUpdate(BaseModel): status: Literal["pending", "contacted", "resolved"]
 class Service(BaseModel):
@@ -1662,6 +1729,7 @@ class OrganizationPlan(BaseModel):
     quota_usage: int = 0  # Bu ay kullanılan randevu sayısı
     ai_usage_count: int = 0  # Bu ay atılan AI mesaj sayısı
     quota_reset_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(days=30))  # Kota sıfırlama tarihi
+    quota_last_reset_date: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))  # Son quota reset tarihi (lazy reset için)
     trial_start_date: Optional[datetime] = None  # Trial başlangıç tarihi
     trial_end_date: Optional[datetime] = None  # Trial bitiş tarihi
     is_first_month: bool = True  # İlk ay indirimi için
@@ -1732,6 +1800,7 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
         plan_id="tier_trial",
         quota_usage=0,
         quota_reset_date=quota_reset,
+        quota_last_reset_date=trial_start,  # Lazy reset için başlangıç tarihi
         trial_start_date=trial_start,
         trial_end_date=trial_end,
         is_first_month=True
@@ -1749,42 +1818,33 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
     service_ids = []
     
     if sector and sector != "Diğer/Boş":
-        sector_services = {
-            "Kuaför": [
-                {"name": "Saç Kesimi", "price": 150},
-                {"name": "Saç Boyama", "price": 300},
-                {"name": "Sakal Traşı", "price": 80},
-            ],
-            "Güzellik Salonu": [
-                {"name": "Manikür", "price": 100},
-                {"name": "Pedikür", "price": 120},
-                {"name": "Cilt Bakımı", "price": 250},
-                {"name": "Kaş Dizaynı", "price": 80},
-            ],
-            "Masaj / SPA": [
-                {"name": "Klasik Masaj", "price": 300},
-                {"name": "Aromaterapi Masajı", "price": 350},
-                {"name": "İsveç Masajı", "price": 400},
-            ],
-            "Diyetisyen": [
-                {"name": "İlk Danışma", "price": 300},
-                {"name": "Kontrol Muayenesi", "price": 200},
-                {"name": "Diyet Planı", "price": 250},
-            ],
-            "Psikolog / Danışmanlık": [
-                {"name": "Bireysel Terapi", "price": 500},
-                {"name": "Çift Terapisi", "price": 700},
-                {"name": "Aile Danışmanlığı", "price": 600},
-            ],
-            "Diş Klinikleri": [
-                {"name": "Muayene", "price": 200},
-                {"name": "Dolgu", "price": 400},
-                {"name": "Diş Temizliği", "price": 300},
-                {"name": "Beyazlatma", "price": 1500},
-            ],
+        # Dil belirleme - email'e göre
+        lang = get_email_language(user_in.username)
+        
+        # Default services'i dil bazlı al
+        services_to_add = get_sector_default_services(sector, lang)
+        
+        # Eğer dil bazlı bulunamazsa, Türkçe'den al
+        if not services_to_add:
+            services_to_add = get_sector_default_services(sector, 'tr')
+        
+        # Price'ları ekle (dil bazlı değil, sabit)
+        price_map = {
+            "Kuaför": {"Saç Kesimi": 150, "Saç Boyama": 300, "Sakal Traşı": 80, "Haircut": 150, "Hair Colouring": 300, "Beard Trim": 80},
+            "Güzellik Salonu": {"Manikür": 100, "Pedikür": 120, "Cilt Bakımı": 250, "Kaş Dizaynı": 80, "Manicure": 100, "Pedicure": 120, "Facial Treatment": 250, "Eyebrow Design": 80},
+            "Masaj / SPA": {"Klasik Masaj": 300, "Aromaterapi Masajı": 350, "İsveç Masajı": 400, "Classic Massage": 300, "Aromatherapy Massage": 350, "Swedish Massage": 400},
+            "Diyetisyen": {"İlk Danışma": 300, "Kontrol Muayenesi": 200, "Diyet Planı": 250, "Initial Consultation": 300, "Follow-up Consultation": 200, "Diet Plan": 250},
+            "Psikolog / Danışmanlık": {"Bireysel Terapi": 500, "Çift Terapisi": 700, "Aile Danışmanlığı": 600, "Individual Therapy": 500, "Couples Therapy": 700, "Family Counselling": 600},
+            "Diş Klinikleri": {"Muayene": 200, "Dolgu": 400, "Diş Temizliği": 300, "Beyazlatma": 1500, "Examination": 200, "Filling": 400, "Teeth Cleaning": 300, "Teeth Whitening": 1500},
         }
         
-        services_to_add = sector_services.get(sector, [])
+        # Price'ları ekle
+        for service in services_to_add:
+            service_name = service.get("name", "")
+            if sector in price_map and service_name in price_map[sector]:
+                service["price"] = price_map[sector][service_name]
+        
+        # Services'leri oluştur
         for service_data in services_to_add:
             service_id = str(uuid.uuid4())
             service = Service(
@@ -1804,52 +1864,101 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
     
     # Brevo ile hoş geldin e-postası gönder
     try:
+        # Dil belirleme
+        lang = get_email_language(user_in.username)
+        
         logo_url = "https://plannapp.co/api/static/logo.png"
-        dashboard_url = "https://plannapp.co"
+        dashboard_url = "https://plannapp.co.uk" if lang == 'en' else "https://plannapp.co"
         user_name = user_in.full_name or user_in.username
-        subject = "PLANN'a Hoş Geldiniz! Ücretsiz Deneme Sürümünüz Başladı."
-        html_content = f"""
-        <html>
-        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-            <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td align="center" style="padding: 20px 0;">
-                        <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                            <tr>
-                                <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                    <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
-                                </td>
-                            </tr>
-                            <tr style="background-color: #ffffff;">
-                                <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                    <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">PLANN Randevu Sistemine Hoş Geldiniz!</h1>
-                                    <p>Merhaba {user_name},</p>
-                                    <p>İşletmenizi PLANN ile dijital dünyaya taşımaya karar verdiğiniz için teşekkür ederiz.</p>
-                                    <p>Randevu yönetiminizi kolaylaştırmak için tasarlanan tüm özelliklerimize erişim sağlayan <strong>7 günlük (veya 50 randevuluk)</strong> ücretsiz deneme sürümünüz başarıyla başlatıldı.</p>
-                                    <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
-                                        Artık panonuza giderek ilk randevunuzu oluşturabilir ve sistemi keşfetmeye başlayabilirsiniz.
-                                    </p>
-                                </td>
-                            </tr>
-                            <tr style="background-color: #ffffff;">
-                                <td align="center" style="padding: 0 30px 40px 30px;">
-                                    <a href="{dashboard_url}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
-                                        Kullanmaya Başla
-                                    </a>
-                                </td>
-                            </tr>
-                            <tr style="background-color: #f9f9f9;">
-                                <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                    <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """
+        
+        if lang == 'en':
+            subject = "Welcome to PLANN! Your Free Trial Has Started."
+            html_content = f"""
+            <html>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
+                <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td align="center" style="padding: 20px 0;">
+                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                                <tr>
+                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                                        <img src="{logo_url}" alt="PLANN Logo" style="max-width: 150px; height: auto;">
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
+                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Welcome to PLANN Appointment System!</h1>
+                                        <p>Hello {user_name},</p>
+                                        <p>Thank you for deciding to bring your business into the digital world with PLANN.</p>
+                                        <p>Your <strong>7-day (or 50-appointment)</strong> free trial has been successfully started, giving you access to all our features designed to simplify your appointment management.</p>
+                                        <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
+                                            You can now go to your dashboard to create your first appointment and start exploring the system.
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td align="center" style="padding: 0 30px 40px 30px;">
+                                        <a href="{dashboard_url}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
+                                            Get Started
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #f9f9f9;">
+                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                                        <p>© 2025 PLANN. All rights reserved.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """
+        else:
+            subject = "PLANN'a Hoş Geldiniz! Ücretsiz Deneme Sürümünüz Başladı."
+            html_content = f"""
+            <html>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
+                <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td align="center" style="padding: 20px 0;">
+                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                                <tr>
+                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                                        <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
+                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">PLANN Randevu Sistemine Hoş Geldiniz!</h1>
+                                        <p>Merhaba {user_name},</p>
+                                        <p>İşletmenizi PLANN ile dijital dünyaya taşımaya karar verdiğiniz için teşekkür ederiz.</p>
+                                        <p>Randevu yönetiminizi kolaylaştırmak için tasarlanan tüm özelliklerimize erişim sağlayan <strong>7 günlük (veya 50 randevuluk)</strong> ücretsiz deneme sürümünüz başarıyla başlatıldı.</p>
+                                        <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
+                                            Artık panonuza giderek ilk randevunuzu oluşturabilir ve sistemi keşfetmeye başlayabilirsiniz.
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td align="center" style="padding: 0 30px 40px 30px;">
+                                        <a href="{dashboard_url}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
+                                            Kullanmaya Başla
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #f9f9f9;">
+                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                                        <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """
         
         await send_email(
             to_email=user_in.username,
@@ -1891,53 +2000,373 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred during login. Please try again later.")
 
 # === E-POSTA GÖNDERME FONKSİYONLARI ===
+def get_email_language(email: str) -> str:
+    """Email domain'ine göre dil belirler"""
+    if email and ('.co.uk' in email.lower() or '@' in email and email.split('@')[1].startswith('uk')):
+        return 'en'
+    return 'tr'
+
+def get_request_language(request: Request) -> str:
+    """Request header'dan dil belirler"""
+    accept_language = request.headers.get('Accept-Language', '')
+    if accept_language and ('en' in accept_language.lower() and 'tr' not in accept_language.lower()):
+        return 'en'
+    return 'tr'
+
+def detect_currency(request: Request, user_phone: Optional[str] = None) -> str:
+    """
+    Para birimini algılar: Telefon prefix veya IP bazlı.
+    
+    Args:
+        request: FastAPI Request objesi
+        user_phone: Kullanıcı telefon numarası (opsiyonel)
+    
+    Returns:
+        'gbp' veya 'try'
+    """
+    # 1. Telefon numarası prefix kontrolü
+    if user_phone:
+        clean_phone = re.sub(r'[^\d+]', '', user_phone)
+        if clean_phone.startswith('+44') or clean_phone.startswith('44'):
+            return 'gbp'
+        if clean_phone.startswith('+90') or clean_phone.startswith('90'):
+            return 'try'
+        if clean_phone.startswith('0') and len(clean_phone) == 11:
+            return 'try'
+    
+    # 2. IP bazlı algılama (basit - UK IP'leri için)
+    # Not: Production'da daha gelişmiş bir IP geolocation servisi kullanılabilir
+    client_ip = request.client.host if request.client else None
+    if client_ip:
+        # Basit kontrol: localhost veya private IP'ler için TRY
+        if client_ip in ['127.0.0.1', 'localhost'] or client_ip.startswith('192.168.') or client_ip.startswith('10.'):
+            return 'try'
+        # Production'da burada bir IP geolocation API çağrısı yapılabilir
+    
+    # 3. Accept-Language header kontrolü
+    accept_language = request.headers.get('Accept-Language', '')
+    if accept_language and 'en' in accept_language.lower() and 'tr' not in accept_language.lower():
+        # İngilizce dil tercihi varsa GBP'ye yönlendir (UK pazarı için)
+        return 'gbp'
+    
+    # 4. Varsayılan: TRY
+    return 'try'
+
+def get_stripe_lookup_key(plan_id: str, billing_cycle: str, currency: str) -> str:
+    """
+    Stripe lookup key oluşturur (currency ile birlikte).
+    
+    Format: {plan_name}_{billing_cycle}_{currency}
+    Örnek: standard_monthly_gbp, professional_monthly_try
+    
+    Note: Stripe'da her currency için ayrı lookup key kullanılıyor.
+    Bu sayede doğrudan ilgili fiyatı çekebiliriz, filtrelemeye gerek yok.
+    
+    Args:
+        plan_id: Plan ID (tier_1_standard, tier_2_profesyonel, vb.)
+        billing_cycle: 'monthly' veya 'yearly'
+        currency: 'gbp' veya 'try'
+    
+    Returns:
+        Lookup key string (currency ile birlikte)
+    """
+    # Plan ID'den plan adını çıkar
+    # Not: Stripe'da "standart" kullanılıyor (Türkçe), "standard" değil
+    plan_name_map = {
+        'tier_1_standard': 'standart',  # Stripe'da "standart" olarak kayıtlı
+        'tier_2_profesyonel': 'professional',
+        'tier_3_premium': 'premium',
+        'tier_4_business': 'business',
+        'tier_5_enterprise': 'enterprise',
+        'tier_6_kurumsal': 'corporate'
+    }
+    
+    plan_name = plan_name_map.get(plan_id, plan_id.replace('tier_', '').replace('_', ''))
+    currency_lower = currency.lower()
+    
+    return f"{plan_name}_{billing_cycle}_{currency_lower}"
+
+def get_stripe_price_by_lookup_key(lookup_key: str) -> Optional[stripe.Price]:
+    """
+    Stripe'dan lookup key ile fiyat çeker.
+    
+    Lookup key zaten currency içeriyor (örn: professional_monthly_gbp),
+    bu yüzden doğrudan ilgili fiyatı çekebiliriz, filtrelemeye gerek yok.
+    
+    Args:
+        lookup_key: Stripe lookup key (örn: standard_monthly_gbp, professional_monthly_try)
+    
+    Returns:
+        Stripe Price objesi veya None
+    """
+    try:
+        if not STRIPE_SECRET_KEY:
+            logger.error("STRIPE_SECRET_KEY tanımlı değil!")
+            return None
+        
+        logger.info(f"🔍 Stripe'da lookup key aranıyor: '{lookup_key}'")
+        
+        # Stripe'da lookup key ile fiyat ara (currency zaten key'de)
+        prices = stripe.Price.list(
+            lookup_keys=[lookup_key],
+            active=True,
+            limit=1  # Currency-specific key olduğu için sadece 1 sonuç bekleniyor
+        )
+        
+        if not prices.data or len(prices.data) == 0:
+            logger.warning(f"❌ Stripe'da lookup key bulunamadı: '{lookup_key}'")
+            logger.warning(f"   💡 Kontrol edin: Stripe Dashboard'da bu lookup key ile bir fiyat var mı?")
+            logger.warning(f"   💡 Lookup key formatı: '{lookup_key}' (örn: 'standard_monthly_gbp', 'professional_monthly_try')")
+            return None
+        
+        # İlk (ve muhtemelen tek) fiyatı döndür
+        price = prices.data[0]
+        logger.info(f"✅ Stripe fiyat bulundu: lookup_key={lookup_key}, currency={price.currency}, price_id={price.id}, amount={price.unit_amount}")
+        return price
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"❌ Stripe lookup key hatası: {e}")
+        logger.error(f"   Lookup key: '{lookup_key}'")
+        return None
+    except Exception as e:
+        logger.error(f"❌ Fiyat çekme hatası: {e}")
+        logger.error(f"   Lookup key: '{lookup_key}'")
+        return None
+
+async def get_exchange_rate(from_currency: str, to_currency: str) -> float:
+    """
+    Gerçek kur bilgisini API'den çeker.
+    
+    Args:
+        from_currency: Kaynak para birimi (örn: 'TRY')
+        to_currency: Hedef para birimi (örn: 'GBP')
+    
+    Returns:
+        Kur oranı (örn: 1 TRY = X GBP)
+    """
+    # Aynı para birimiyse 1.0 döndür
+    if from_currency.upper() == to_currency.upper():
+        return 1.0
+    
+    try:
+        # ExchangeRate-API (ücretsiz tier) kullan
+        # Alternatif: exchangerate-api.com veya fixer.io
+        api_url = f"https://api.exchangerate-api.com/v4/latest/{from_currency.upper()}"
+        
+        response = requests.get(api_url, timeout=5)
+        response.raise_for_status()
+        
+        data = response.json()
+        rates = data.get('rates', {})
+        
+        if to_currency.upper() in rates:
+            rate = rates[to_currency.upper()]
+            logger.info(f"✅ Kur bilgisi alındı: 1 {from_currency.upper()} = {rate} {to_currency.upper()}")
+            return float(rate)
+        else:
+            logger.warning(f"⚠️ Kur bulunamadı: {to_currency.upper()}, gerçek kur fallback kullanılıyor")
+            # Fallback: GBP/TRY için gerçek kur (güncel: 2025-12-19)
+            if from_currency.upper() == 'TRY' and to_currency.upper() == 'GBP':
+                return 0.0175  # 1 TRY = 0.0175 GBP (gerçek kur)
+            elif from_currency.upper() == 'GBP' and to_currency.upper() == 'TRY':
+                return 57.14  # 1 GBP = 57.14 TRY (gerçek kur)
+            return 1.0
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ Kur API hatası: {e}, gerçek kur fallback kullanılıyor")
+        # Fallback: GBP/TRY için gerçek kur (güncel: 2025-12-19)
+        if from_currency.upper() == 'TRY' and to_currency.upper() == 'GBP':
+            return 0.0175  # 1 TRY = 0.0175 GBP (gerçek kur)
+        elif from_currency.upper() == 'GBP' and to_currency.upper() == 'TRY':
+            return 57.14  # 1 GBP = 57.14 TRY (gerçek kur)
+        return 1.0
+    except Exception as e:
+        logger.error(f"❌ Kur hesaplama hatası: {e}, gerçek kur fallback kullanılıyor")
+        # Fallback: GBP/TRY için gerçek kur (güncel: 2025-12-19)
+        if from_currency.upper() == 'TRY' and to_currency.upper() == 'GBP':
+            return 0.0175  # 1 TRY = 0.0175 GBP (gerçek kur)
+        elif from_currency.upper() == 'GBP' and to_currency.upper() == 'TRY':
+            return 57.14  # 1 GBP = 57.14 TRY (gerçek kur)
+        return 1.0
+
+def get_sector_default_services(sector: str, lang: str = 'tr') -> list:
+    """Sektör bazlı default hizmetleri dil bazlı döndürür"""
+    if lang == 'en':
+        sector_defaults = {
+            "Hair Salon": [
+                {"name": "Haircut", "price": 0, "duration": 30},
+                {"name": "Hair Colouring", "price": 0, "duration": 60},
+                {"name": "Beard Trim", "price": 0, "duration": 20}
+            ],
+            "Beauty Salon": [
+                {"name": "Manicure", "price": 0, "duration": 30},
+                {"name": "Pedicure", "price": 0, "duration": 40},
+                {"name": "Facial Treatment", "price": 0, "duration": 60},
+                {"name": "Eyebrow Design", "price": 0, "duration": 20}
+            ],
+            "Massage / SPA": [
+                {"name": "Classic Massage", "price": 0, "duration": 60},
+                {"name": "Aromatherapy Massage", "price": 0, "duration": 90},
+                {"name": "Swedish Massage", "price": 0, "duration": 60}
+            ],
+            "Dietitian": [
+                {"name": "Initial Consultation", "price": 0, "duration": 45},
+                {"name": "Follow-up Consultation", "price": 0, "duration": 30},
+                {"name": "Diet Plan", "price": 0, "duration": 60}
+            ],
+            "Psychologist / Counselling": [
+                {"name": "Individual Therapy", "price": 0, "duration": 60},
+                {"name": "Couples Therapy", "price": 0, "duration": 90},
+                {"name": "Family Counselling", "price": 0, "duration": 90}
+            ],
+            "Dental Clinics": [
+                {"name": "Examination", "price": 0, "duration": 30},
+                {"name": "Filling", "price": 0, "duration": 45},
+                {"name": "Teeth Cleaning", "price": 0, "duration": 40},
+                {"name": "Teeth Whitening", "price": 0, "duration": 60}
+            ],
+        }
+        # Türkçe sektör isimlerini İngilizce'ye map et
+        sector_map = {
+            "Kuaför": "Hair Salon",
+            "Güzellik Salonu": "Beauty Salon",
+            "Masaj / SPA": "Massage / SPA",
+            "Diyetisyen": "Dietitian",
+            "Psikolog / Danışmanlık": "Psychologist / Counselling",
+            "Diş Klinikleri": "Dental Clinics"
+        }
+        mapped_sector = sector_map.get(sector, sector)
+        return sector_defaults.get(mapped_sector, [])
+    else:
+        sector_defaults = {
+            "Kuaför": [
+                {"name": "Saç Kesimi", "price": 0, "duration": 30},
+                {"name": "Saç Boyama", "price": 0, "duration": 60},
+                {"name": "Sakal Traşı", "price": 0, "duration": 20}
+            ],
+            "Güzellik Salonu": [
+                {"name": "Manikür", "price": 0, "duration": 30},
+                {"name": "Pedikür", "price": 0, "duration": 40},
+                {"name": "Cilt Bakımı", "price": 0, "duration": 60},
+                {"name": "Kaş Dizaynı", "price": 0, "duration": 20}
+            ],
+            "Masaj / SPA": [
+                {"name": "Klasik Masaj", "price": 0, "duration": 60},
+                {"name": "Aromaterapi Masajı", "price": 0, "duration": 90},
+                {"name": "İsveç Masajı", "price": 0, "duration": 60}
+            ],
+            "Diyetisyen": [
+                {"name": "İlk Danışma", "price": 0, "duration": 45},
+                {"name": "Kontrol Muayenesi", "price": 0, "duration": 30},
+                {"name": "Diyet Planı", "price": 0, "duration": 60}
+            ],
+            "Psikolog / Danışmanlık": [
+                {"name": "Bireysel Terapi", "price": 0, "duration": 60},
+                {"name": "Çift Terapisi", "price": 0, "duration": 90},
+                {"name": "Aile Danışmanlığı", "price": 0, "duration": 90}
+            ],
+            "Diş Klinikleri": [
+                {"name": "Muayene", "price": 0, "duration": 30},
+                {"name": "Dolgu", "price": 0, "duration": 45},
+                {"name": "Diş Temizliği", "price": 0, "duration": 40},
+                {"name": "Beyazlatma", "price": 0, "duration": 60}
+            ],
+        }
+        return sector_defaults.get(sector, [])
+
 async def send_personnel_invitation_email(recipient_email: str, recipient_name: str, admin_name: str, organization_name: str, invitation_token: str):
     """Personel davet e-postası gönderir."""
     try:
+        # Dil belirleme
+        lang = get_email_language(recipient_email)
+        
         # Invitation link oluştur (setup-password route'u kullan)
-        invitation_link = f"https://plannapp.co/setup-password?token={invitation_token}"
+        invitation_link = f"https://plannapp.co/setup-password?token={invitation_token}" if lang == 'tr' else f"https://plannapp.co.uk/setup-password?token={invitation_token}"
         
         logo_url = "https://plannapp.co/api/static/logo.png"
-        subject = "PLANN Davetiyesi: Hesabınızı Oluşturun"
-        html_content = f"""
-        <html>
-        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-            <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td align="center" style="padding: 20px 0;">
-                        <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                            <tr>
-                                <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                    <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
-                                </td>
-                            </tr>
-                            <tr style="background-color: #ffffff;">
-                                <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                    <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">PLANN Davetiyesi</h1>
-                                    <p>Merhaba {recipient_name},</p>
-                                    <p><strong>{admin_name}</strong> sizi <strong>{organization_name}</strong> işletmesinin PLANN randevu sistemine personel olarak ekledi.</p>
-                                    <p>Hesabınızı aktif etmek ve şifrenizi belirlemek için lütfen aşağıdaki butona tıklayın.</p>
-                                </td>
-                            </tr>
-                            <tr style="background-color: #ffffff;">
-                                <td align="center" style="padding: 0 30px 40px 30px;">
-                                    <a href="{invitation_link}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
-                                        Şifremi Belirle ve Giriş Yap
-                                    </a>
-                                </td>
-                            </tr>
-                            <tr style="background-color: #f9f9f9;">
-                                <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                    <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """
+        
+        if lang == 'en':
+            subject = "PLANN Invitation: Create Your Account"
+            html_content = f"""
+            <html>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
+                <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td align="center" style="padding: 20px 0;">
+                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                                <tr>
+                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                                        <img src="{logo_url}" alt="PLANN Logo" style="max-width: 150px; height: auto;">
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
+                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">PLANN Invitation</h1>
+                                        <p>Hello {recipient_name},</p>
+                                        <p><strong>{admin_name}</strong> has added you as staff to <strong>{organization_name}</strong>'s PLANN appointment system.</p>
+                                        <p>Please click the button below to activate your account and set your password.</p>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td align="center" style="padding: 0 30px 40px 30px;">
+                                        <a href="{invitation_link}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
+                                            Set Password and Log In
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #f9f9f9;">
+                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                                        <p>© 2025 PLANN. All rights reserved.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """
+        else:
+            subject = "PLANN Davetiyesi: Hesabınızı Oluşturun"
+            html_content = f"""
+            <html>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
+                <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td align="center" style="padding: 20px 0;">
+                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                                <tr>
+                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                                        <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
+                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">PLANN Davetiyesi</h1>
+                                        <p>Merhaba {recipient_name},</p>
+                                        <p><strong>{admin_name}</strong> sizi <strong>{organization_name}</strong> işletmesinin PLANN randevu sistemine personel olarak ekledi.</p>
+                                        <p>Hesabınızı aktif etmek ve şifrenizi belirlemek için lütfen aşağıdaki butona tıklayın.</p>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td align="center" style="padding: 0 30px 40px 30px;">
+                                        <a href="{invitation_link}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
+                                            Şifremi Belirle ve Giriş Yap
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #f9f9f9;">
+                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                                        <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """
         
         logging.info(f"📧 Personel davet e-postası gönderiliyor: {recipient_email} (Token: {invitation_token[:8]}...)")
         
@@ -1970,54 +2399,107 @@ async def send_password_reset_email(user_email: str, user_name: str, reset_link:
         
         logging.info(f"📧 [SEND_PASSWORD_RESET_EMAIL] user_email: {user_email}, user_name: {user_name}, reset_link: {reset_link[:50]}...")
         
+        # Dil belirleme
+        lang = get_email_language(user_email)
+        
         logo_url = "https://plannapp.co/api/static/logo.png"
-        subject = "PLANN Şifre Sıfırlama Talebi"
-        html_content = f"""
-        <html>
-        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-            <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td align="center" style="padding: 20px 0;">
-                        <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                            <tr>
-                                <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                    <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
-                                </td>
-                            </tr>
-                            <tr style="background-color: #ffffff;">
-                                <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                    <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Şifrenizi mi Unuttunuz?</h1>
-                                    <p>Merhaba {user_name},</p>
-                                    <p>PLANN hesabınız için bir şifre sıfırlama talebi aldık. Hesabınıza yeniden erişim sağlamak için lütfen aşağıdaki butona tıklayın.</p>
-                                    <p>Bu link, güvenlik nedeniyle <strong>30 dakika</strong> sonra geçerliliğini yitirecektir.</p>
-                                </td>
-                            </tr>
-                            <tr style="background-color: #ffffff;">
-                                <td align="center" style="padding: 0 30px 40px 30px;">
-                                    <a href="{reset_link}" target="_blank" style="background-color: #dc3545; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
-                                        Şifremi Sıfırla
-                                    </a>
-                                </td>
-                            </tr>
-                            <tr style="background-color: #ffffff;">
-                                <td align="center" style="padding: 0 30px 40px 30px; font-size: 14px; color: #888888;">
-                                    <p style="border-top: 1px solid #eeeeee; padding-top: 20px;">
-                                        Eğer bu talebi siz yapmadıysanız, bu e-postayı dikkate almayınız. Hesabınız güvende kalmaya devam edecektir.
-                                    </p>
-                                </td>
-                            </tr>
-                            <tr style="background-color: #f9f9f9;">
-                                <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                    <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """
+        
+        if lang == 'en':
+            subject = "PLANN Password Reset Request"
+            html_content = f"""
+            <html>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
+                <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td align="center" style="padding: 20px 0;">
+                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                                <tr>
+                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                                        <img src="{logo_url}" alt="PLANN Logo" style="max-width: 150px; height: auto;">
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
+                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Forgot Your Password?</h1>
+                                        <p>Hello {user_name},</p>
+                                        <p>We received a password reset request for your PLANN account. Please click the button below to regain access to your account.</p>
+                                        <p>This link will expire after <strong>30 minutes</strong> for security reasons.</p>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td align="center" style="padding: 0 30px 40px 30px;">
+                                        <a href="{reset_link}" target="_blank" style="background-color: #dc3545; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
+                                            Reset Password
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td align="center" style="padding: 0 30px 40px 30px; font-size: 14px; color: #888888;">
+                                        <p style="border-top: 1px solid #eeeeee; padding-top: 20px;">
+                                            If you did not make this request, please ignore this email. Your account will remain secure.
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #f9f9f9;">
+                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                                        <p>© 2025 PLANN. All rights reserved.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """
+        else:
+            subject = "PLANN Şifre Sıfırlama Talebi"
+            html_content = f"""
+            <html>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
+                <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td align="center" style="padding: 20px 0;">
+                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                                <tr>
+                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                                        <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
+                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Şifrenizi mi Unuttunuz?</h1>
+                                        <p>Merhaba {user_name},</p>
+                                        <p>PLANN hesabınız için bir şifre sıfırlama talebi aldık. Hesabınıza yeniden erişim sağlamak için lütfen aşağıdaki butona tıklayın.</p>
+                                        <p>Bu link, güvenlik nedeniyle <strong>30 dakika</strong> sonra geçerliliğini yitirecektir.</p>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td align="center" style="padding: 0 30px 40px 30px;">
+                                        <a href="{reset_link}" target="_blank" style="background-color: #dc3545; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
+                                            Şifremi Sıfırla
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td align="center" style="padding: 0 30px 40px 30px; font-size: 14px; color: #888888;">
+                                        <p style="border-top: 1px solid #eeeeee; padding-top: 20px;">
+                                            Eğer bu talebi siz yapmadıysanız, bu e-postayı dikkate almayınız. Hesabınız güvende kalmaya devam edecektir.
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #f9f9f9;">
+                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                                        <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """
         
         # HTML içeriğinin uzunluğunu kontrol et
         html_length = len(html_content)
@@ -2048,48 +2530,95 @@ async def send_contact_notification_email(contact_name: str, contact_phone: str,
         # Admin e-posta adresi - environment variable'dan al veya default kullan
         admin_email = os.environ.get('ADMIN_EMAIL', 'fatihsenyuz12@gmail.com')
         
+        # Dil belirleme - contact_email veya contact_phone'a göre
+        lang = get_email_language(contact_email or contact_phone) if contact_email else 'tr'
+        
         logo_url = "https://plannapp.co/api/static/logo.png"
-        subject = "PLANN - Yeni İletişim Talebi"
-        html_content = f"""
-        <html>
-        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-            <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td align="center" style="padding: 20px 0;">
-                        <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                            <tr>
-                                <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                    <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
-                                </td>
-                            </tr>
-                            <tr style="background-color: #ffffff;">
-                                <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                    <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Yeni İletişim Talebi</h1>
-                                    <p>Merhaba,</p>
-                                    <p>PLANN arayüzünden yeni bir iletişim talebi alındı. Detaylar aşağıdadır:</p>
-                                    <div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
-                                        <p style="margin: 10px 0;"><strong>Ad Soyad:</strong> {contact_name}</p>
-                                        <p style="margin: 10px 0;"><strong>Telefon:</strong> <a href="tel:{contact_phone}" style="color: #007bff; text-decoration: none;">{contact_phone}</a></p>
-                                        <p style="margin: 10px 0;"><strong>E-posta:</strong> {contact_email if contact_email else '<em>Belirtilmemiş</em>'}</p>
-                                        {f'<p style="margin: 10px 0;"><strong>Mesaj:</strong></p><p style="margin: 10px 0; padding: 10px; background-color: #ffffff; border-left: 3px solid #007bff;">{contact_message}</p>' if contact_message else ''}
-                                    </div>
-                                    <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
-                                        Lütfen en kısa sürede müşteri ile iletişime geçin.
-                                    </p>
-                                </td>
-                            </tr>
-                            <tr style="background-color: #f9f9f9;">
-                                <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                    <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """
+        
+        if lang == 'en':
+            subject = "PLANN - New Contact Request"
+            html_content = f"""
+            <html>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
+                <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td align="center" style="padding: 20px 0;">
+                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                                <tr>
+                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                                        <img src="{logo_url}" alt="PLANN Logo" style="max-width: 150px; height: auto;">
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
+                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">New Contact Request</h1>
+                                        <p>Hello,</p>
+                                        <p>A new contact request has been received from the PLANN interface. Details are below:</p>
+                                        <div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                                            <p style="margin: 10px 0;"><strong>Full Name:</strong> {contact_name}</p>
+                                            <p style="margin: 10px 0;"><strong>Phone:</strong> <a href="tel:{contact_phone}" style="color: #007bff; text-decoration: none;">{contact_phone}</a></p>
+                                            <p style="margin: 10px 0;"><strong>Email:</strong> {contact_email if contact_email else '<em>Not provided</em>'}</p>
+                                            {f'<p style="margin: 10px 0;"><strong>Message:</strong></p><p style="margin: 10px 0; padding: 10px; background-color: #ffffff; border-left: 3px solid #007bff;">{contact_message}</p>' if contact_message else ''}
+                                        </div>
+                                        <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
+                                            Please contact the customer as soon as possible.
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #f9f9f9;">
+                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                                        <p>© 2025 PLANN. All rights reserved.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """
+        else:
+            subject = "PLANN - Yeni İletişim Talebi"
+            html_content = f"""
+            <html>
+            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
+                <table width="100%" border="0" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td align="center" style="padding: 20px 0;">
+                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                                <tr>
+                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                                        <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
+                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Yeni İletişim Talebi</h1>
+                                        <p>Merhaba,</p>
+                                        <p>PLANN arayüzünden yeni bir iletişim talebi alındı. Detaylar aşağıdadır:</p>
+                                        <div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                                            <p style="margin: 10px 0;"><strong>Ad Soyad:</strong> {contact_name}</p>
+                                            <p style="margin: 10px 0;"><strong>Telefon:</strong> <a href="tel:{contact_phone}" style="color: #007bff; text-decoration: none;">{contact_phone}</a></p>
+                                            <p style="margin: 10px 0;"><strong>E-posta:</strong> {contact_email if contact_email else '<em>Belirtilmemiş</em>'}</p>
+                                            {f'<p style="margin: 10px 0;"><strong>Mesaj:</strong></p><p style="margin: 10px 0; padding: 10px; background-color: #ffffff; border-left: 3px solid #007bff;">{contact_message}</p>' if contact_message else ''}
+                                        </div>
+                                        <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
+                                            Lütfen en kısa sürede müşteri ile iletişime geçin.
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #f9f9f9;">
+                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                                        <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """
         
         result = await send_email(
             to_email=admin_email,
@@ -3364,6 +3893,16 @@ async def create_checkout_session(
             logger.error(f"Geçersiz email (kullanıcı: {current_user.username}): {user_email}")
             raise HTTPException(status_code=400, detail="Geçerli bir e-posta adresi gerekli")
         
+        # Para birimi algılama
+        # Settings'den telefon numarasını al
+        settings_doc = await db.settings.find_one({"organization_id": current_user.organization_id})
+        user_phone = settings_doc.get("support_phone") if settings_doc else None
+        
+        currency = plan_request.currency or detect_currency(request, user_phone)
+        currency_upper = currency.upper()  # 'GBP' veya 'TRY'
+        
+        logger.info(f"💱 Para birimi algılandı: {currency_upper} (plan_id={plan_request.plan_id}, phone={user_phone})")
+        
         # Stripe Checkout Session oluştur
         try:
             # Yıllık veya aylık fiyat belirleme
@@ -3380,22 +3919,50 @@ async def create_checkout_session(
                 recurring_interval = 'month'
                 plan_suffix = "(Aylık)"
             
-            price_kurus = int(price_amount * 100)
+            # Lookup key ile Stripe'dan fiyat çekmeyi dene
+            # Not: Lookup key currency içerir (örn: standard_monthly_gbp, professional_monthly_try)
+            lookup_key = get_stripe_lookup_key(plan_request.plan_id, billing_cycle, currency)
+            stripe_price = get_stripe_price_by_lookup_key(lookup_key)
+            
+            if stripe_price:
+                # Lookup key ile fiyat bulundu, kullan
+                logger.info(f"✅ Stripe lookup key ile fiyat bulundu: {lookup_key} (currency: {currency})")
+                price = stripe_price
+            else:
+                # Lookup key ile bulunamadı, dinamik oluştur (fallback)
+                logger.warning(f"⚠️ Stripe lookup key bulunamadı: {lookup_key}, dinamik fiyat oluşturuluyor")
+                
+                # Para birimine göre fiyat dönüşümü - Gerçek kur API kullan
+                if currency == 'gbp':
+                    # GBP fiyatları (plan'dan alınan TRY fiyatlarını GBP'ye çevir)
+                    # Gerçek kur API'sinden kur bilgisi al
+                    exchange_rate = await get_exchange_rate('TRY', 'GBP')
+                    price_amount_gbp = price_amount * exchange_rate
+                    price_kurus = int(price_amount_gbp * 100)  # GBP için pence
+                    logger.info(f"💱 Kur dönüşümü: {price_amount} TRY × {exchange_rate:.6f} = {price_amount_gbp:.2f} GBP")
+                else:
+                    # TRY fiyatları
+                    price_kurus = int(price_amount * 100)  # TRY için kuruş
+                
+                # Stripe Price objesi oluştur (fallback - lookup key kullanmıyoruz)
+                # Not: lookup_key kullanmıyoruz çünkü Stripe'da zaten o key'e sahip fiyatlar olabilir
+                # Bu dinamik fiyatlar geçici/fallback amaçlı, lookup key'e gerek yok
+                price = stripe.Price.create(
+                    currency=currency,
+                    unit_amount=price_kurus,
+                    recurring={'interval': recurring_interval},
+                    product_data={
+                        'name': f'PLANN {plan.get("name", "Plan")} {plan_suffix}'
+                    }
+                    # lookup_key kullanmıyoruz - çakışma önlemek için
+                )
+                logger.info(f"✅ Dinamik Stripe fiyat oluşturuldu (fallback): currency={currency}, amount={price_kurus}, lookup_key={lookup_key} (kullanılmadı)")
             
             logger.info(f"💰 Fiyat Hesaplama - Plan: {plan_request.plan_id}")
             logger.info(f"💰 Billing Cycle: {billing_cycle}")
-            logger.info(f"💰 Fiyat: {price_amount} TL ({recurring_interval})")
+            logger.info(f"💰 Currency: {currency_upper}")
+            logger.info(f"💰 Fiyat: {price_amount} ({currency_upper}) ({recurring_interval})")
             logger.info(f"💰 is_first_month: {is_first_month}")
-            
-            # Stripe Price objesi oluştur
-            price = stripe.Price.create(
-                currency='try',
-                unit_amount=price_kurus,
-                recurring={'interval': recurring_interval},
-                product_data={
-                    'name': f'PLANN {plan.get("name", "Plan")} {plan_suffix}'
-                }
-            )
             
             # İlk ay indirimi için Coupon oluştur (sadece aylık ve ilk ödemeye uygulanır)
             coupon_id = None
@@ -3432,7 +3999,9 @@ async def create_checkout_session(
                     'plan_id': plan_request.plan_id,
                     'organization_id': current_user.organization_id,
                     'is_first_month': str(is_first_month),
-                    'billing_cycle': billing_cycle
+                    'billing_cycle': billing_cycle,
+                    'currency': currency,
+                    'appointment_limit': str(plan.get('quota_monthly_appointments', 0))  # Metadata'ya appointment_limit ekle
                 },
                 'success_url': success_url,
                 'cancel_url': cancel_url,
@@ -3465,7 +4034,7 @@ async def create_checkout_session(
                 "status": "pending",
                 "amount": actual_amount,
                 "original_amount": original_amount,
-                "currency": "TRY",
+                "currency": currency_upper,
                 "is_first_month": is_first_month,
                 "discount_applied": is_first_month and not is_yearly,
                 "billing_cycle": billing_cycle,
@@ -3768,19 +4337,109 @@ async def handle_stripe_webhook(request: Request):
             metadata = session.get('metadata', {})
             billing_cycle = metadata.get('billing_cycle', 'monthly')
             
+            # TASK 1: appointment_limit'i Price Object'in metadata'sından al (Single Source of Truth)
+            # Stripe session'da line_items var, onun içindeki price'ın metadata'sına bakmalıyız
+            appointment_limit = None
+            quota_limit = None
+            
+            try:
+                # TASK 1: Price Object'in metadata'sından appointment_limit almak için
+                # Stripe session'da line_items expand edilmemiş olabilir, retrieve et
+                # Product metadata fallback için product'ı da expand et
+                session_expanded = stripe.checkout.Session.retrieve(
+                    session_id,
+                    expand=['line_items.data.price.product']
+                )
+                
+                line_items = session_expanded.get('line_items', {})
+                if isinstance(line_items, dict) and 'data' in line_items:
+                    line_items = line_items['data']
+                elif not isinstance(line_items, list):
+                    line_items = []
+                
+                # İlk line item'dan price'ı al
+                if line_items and len(line_items) > 0:
+                    price_obj = line_items[0].get('price')
+                    if price_obj:
+                        # FALLBACK STRATEGY: First check price.metadata, then product.metadata
+                        # Step 1: Check Price metadata
+                        price_metadata = price_obj.get('metadata', {})
+                        appointment_limit = price_metadata.get('appointment_limit')
+                        
+                        # Step 2: If not found in price, check product metadata
+                        if not appointment_limit:
+                            product_obj = price_obj.get('product')
+                            if product_obj:
+                                # product_obj can be a string (ID) or dict (expanded)
+                                if isinstance(product_obj, dict):
+                                    product_metadata = product_obj.get('metadata', {})
+                                    appointment_limit = product_metadata.get('appointment_limit')
+                                    if appointment_limit:
+                                        logger.info(f"✅ Appointment limit Product metadata'dan alındı (fallback): {appointment_limit}")
+                                elif isinstance(product_obj, str):
+                                    # Product not expanded, retrieve it
+                                    try:
+                                        product_retrieved = stripe.Product.retrieve(product_obj)
+                                        product_metadata = product_retrieved.get('metadata', {})
+                                        appointment_limit = product_metadata.get('appointment_limit')
+                                        if appointment_limit:
+                                            logger.info(f"✅ Appointment limit Product metadata'dan alındı (fallback, retrieved): {appointment_limit}")
+                                    except Exception as e:
+                                        logger.warning(f"⚠️ Product retrieve hatası: {e}")
+                        
+                        if appointment_limit:
+                            try:
+                                quota_limit = int(appointment_limit)
+                                source = "Price metadata" if price_metadata.get('appointment_limit') else "Product metadata"
+                                logger.info(f"✅ Appointment limit {source}'dan alındı: {quota_limit} (Monthly Capacity)")
+                            except (ValueError, TypeError):
+                                logger.warning(f"⚠️ Metadata'daki appointment_limit geçersiz: {appointment_limit}")
+                        else:
+                            logger.warning(f"⚠️ Price ve Product metadata'da appointment_limit bulunamadı. Price ID: {price_obj.get('id')}")
+                
+                if not quota_limit:
+                    # Fallback: Session metadata'dan dene
+                    appointment_limit = metadata.get('appointment_limit')
+                    if appointment_limit:
+                        try:
+                            quota_limit = int(appointment_limit)
+                            logger.info(f"✅ Appointment limit session metadata'dan alındı: {quota_limit}")
+                        except (ValueError, TypeError):
+                            pass
+                
+                # Son fallback: Plan'dan al
+                if not quota_limit:
+                    quota_limit = plan_data.get('quota_monthly_appointments', 100)
+                    logger.warning(f"⚠️ Appointment limit Price metadata'dan alınamadı, plan'dan alındı: {quota_limit}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Price metadata'dan appointment_limit alınırken hata: {e}")
+                # Fallback: Plan'dan al
+                quota_limit = plan_data.get('quota_monthly_appointments', 100)
+                logger.warning(f"⚠️ Hata nedeniyle appointment limit plan'dan alındı: {quota_limit}")
+            
+            # CRITICAL RULE: quota_limit metadata'daki değer aynen kullanılır (Monthly Capacity)
+            # Yearly planlar için 12 ile çarpılmaz - her ay aynı limit yenilenir
+            logger.info(f"📊 Quota limit kaydediliyor: {quota_limit} (Monthly Capacity, billing_cycle={billing_cycle})")
+            
             # Yeni plana geç - yıllık ise 365 gün, aylık ise 30 gün
             if billing_cycle == 'yearly':
                 quota_reset = datetime.now(timezone.utc) + timedelta(days=365)
             else:
                 quota_reset = datetime.now(timezone.utc) + timedelta(days=30)
             
+            # quota_last_reset_date'i şimdi olarak ayarla (lazy reset için)
+            now = datetime.now(timezone.utc)
+            
             update_data = {
                 "plan_id": plan_id,
                 "quota_usage": 0,  # Yeni plana geçince sıfırla
+                "quota_limit": quota_limit,  # Price metadata'dan alınan appointment_limit (Monthly Capacity)
                 "quota_reset_date": quota_reset.isoformat(),
+                "quota_last_reset_date": now.isoformat(),  # Lazy reset için son reset tarihi
                 "is_first_month": False,  # Artık indirim kullanamaz
                 "billing_cycle": billing_cycle,  # Yıllık/Aylık bilgisi
-                "updated_at": datetime.now(timezone.utc).isoformat()
+                "updated_at": now.isoformat()
             }
             
             # Trial tarihlerini temizle
@@ -4477,41 +5136,11 @@ async def get_onboarding_info(request: Request, current_user: UserInDB = Depends
             "duration": service.get("duration", 30)
         })
     
-    # Sector bazlı default hizmet önerileri (frontend için)
-    sector_defaults = {
-        "Kuaför": [
-            {"name": "Saç Kesimi", "price": 0, "duration": 30},
-            {"name": "Saç Boyama", "price": 0, "duration": 60},
-            {"name": "Sakal Traşı", "price": 0, "duration": 20}
-        ],
-        "Güzellik Salonu": [
-            {"name": "Manikür", "price": 0, "duration": 30},
-            {"name": "Pedikür", "price": 0, "duration": 40},
-            {"name": "Cilt Bakımı", "price": 0, "duration": 60}
-        ],
-        "Masaj / SPA": [
-            {"name": "Klasik Masaj", "price": 0, "duration": 60},
-            {"name": "Aromaterapi Masajı", "price": 0, "duration": 90},
-            {"name": "İsveç Masajı", "price": 0, "duration": 60}
-        ],
-        "Diyetisyen": [
-            {"name": "İlk Danışma", "price": 0, "duration": 45},
-            {"name": "Kontrol Muayenesi", "price": 0, "duration": 30},
-            {"name": "Diyet Planı", "price": 0, "duration": 60}
-        ],
-        "Psikolog / Danışmanlık": [
-            {"name": "Bireysel Terapi", "price": 0, "duration": 60},
-            {"name": "Çift Terapisi", "price": 0, "duration": 90},
-            {"name": "Aile Danışmanlığı", "price": 0, "duration": 90}
-        ],
-        "Diş Klinikleri": [
-            {"name": "Muayene", "price": 0, "duration": 30},
-            {"name": "Dolgu", "price": 0, "duration": 45},
-            {"name": "Diş Temizliği", "price": 0, "duration": 40}
-        ],
-    }
+    # Dil belirleme - request header'dan
+    lang = get_request_language(request)
     
-    default_services = sector_defaults.get(sector, [])
+    # Sector bazlı default hizmet önerileri (frontend için) - dil bazlı
+    default_services = get_sector_default_services(sector, lang) if sector else []
     
     return {
         "user": {
@@ -6890,18 +7519,19 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                 company_name = settings_data.get("company_name", "İşletmeniz")
                 support_phone = settings_data.get("support_phone", "Destek Hattı")
                 
-                # WhatsApp onay mesajı gönder
+                # WhatsApp onay mesajı gönder (Content API)
                 try:
-                    whatsapp_message = build_whatsapp_message(
-                        company_name=company_name,
-                        customer_name=appointment.customer_name,
-                        service_name=service['name'],
-                        appointment_date=appointment.appointment_date,
-                        appointment_time=appointment.appointment_time,
-                        support_phone=support_phone,
-                        message_type="confirmation"
+                    await asyncio.to_thread(
+                        send_whatsapp_template,
+                        appointment.phone,
+                        "CONFIRMATION",
+                        appointment.customer_name,
+                        company_name,
+                        appointment.appointment_date,
+                        appointment.appointment_time,
+                        service['name'],
+                        support_phone
                     )
-                    await asyncio.to_thread(send_whatsapp_notification, appointment.phone, whatsapp_message)
                     logging.info(f"✓ WhatsApp confirmation sent to {appointment.phone}")
                 except Exception as wa_error:
                     logging.error(f"WhatsApp error: {wa_error}")
@@ -7526,3 +8156,190 @@ app.add_middleware(
 # Export socket_app as the main application for ASGI servers
 # This allows both FastAPI and Socket.IO to work together
 application = socket_app
+
+async def run_stripe_audit():
+    """
+    COMPREHENSIVE STRIPE AUDIT
+    Verifies that every plan, cycle, and currency combination exists in Stripe
+    AND has the correct appointment_limit in its metadata.
+    """
+    if not STRIPE_SECRET_KEY:
+        logger.error("❌ STRIPE_SECRET_KEY tanımlı değil! Audit çalıştırılamıyor.")
+        return
+    
+    # Expected Source of Truth
+    EXPECTED_CONFIG = {
+        "standart": 100,  # Not: "standard" değil, "standart" (Türkçe)
+        "professional": 300,
+        "premium": 600,
+        "business": 900,
+        "enterprise": 1200,
+        "corporate": 2000
+    }
+    CYCLES = ["monthly", "yearly"]
+    CURRENCIES = ["gbp", "try"]
+    
+    logger.info("=" * 80)
+    logger.info("🔍 STRIPE COMPREHENSIVE AUDIT - Starting...")
+    logger.info("=" * 80)
+    
+    results = {
+        "pass": [],
+        "fail": [],
+        "warn": []
+    }
+    
+    total_checks = 0
+    
+    # Iterate through every Plan x Cycle x Currency combination
+    for plan_name, expected_limit in EXPECTED_CONFIG.items():
+        for cycle in CYCLES:
+            for currency in CURRENCIES:
+                total_checks += 1
+                lookup_key = f"{plan_name}_{cycle}_{currency}"
+                
+                try:
+                    # Call Stripe API with product expansion for fallback
+                    prices = stripe.Price.list(
+                        lookup_keys=[lookup_key],
+                        active=True,
+                        limit=1,
+                        expand=['data.product']
+                    )
+                    
+                    # Check 1: Existence
+                    if not prices.data or len(prices.data) == 0:
+                        error_msg = f"Price not found in Stripe"
+                        results["fail"].append({
+                            "lookup_key": lookup_key,
+                            "error": error_msg,
+                            "expected_limit": expected_limit
+                        })
+                        logger.error(f"[❌ FAIL] {lookup_key:35} | Expected Limit: {expected_limit:4} | Error: {error_msg}")
+                        continue
+                    
+                    price = prices.data[0]
+                    
+                    # Check 2: Metadata Presence (FALLBACK STRATEGY)
+                    # Step 1: Check Price metadata
+                    price_metadata = price.metadata or {}
+                    appointment_limit = price_metadata.get('appointment_limit')
+                    metadata_source = "Price"
+                    
+                    # Step 2: If not found in price, check product metadata
+                    if not appointment_limit:
+                        product_obj = price.product
+                        if product_obj:
+                            # product_obj can be a string (ID) or dict (expanded)
+                            if isinstance(product_obj, dict):
+                                product_metadata = product_obj.get('metadata', {})
+                                appointment_limit = product_metadata.get('appointment_limit')
+                                if appointment_limit:
+                                    metadata_source = "Product"
+                                    logger.info(f"✅ Found appointment_limit in Product metadata (fallback): {appointment_limit}")
+                            elif isinstance(product_obj, str):
+                                # Product not expanded, retrieve it
+                                try:
+                                    product_retrieved = stripe.Product.retrieve(product_obj)
+                                    product_metadata = product_retrieved.get('metadata', {})
+                                    appointment_limit = product_metadata.get('appointment_limit')
+                                    if appointment_limit:
+                                        metadata_source = "Product"
+                                        logger.info(f"✅ Found appointment_limit in Product metadata (fallback, retrieved): {appointment_limit}")
+                                except Exception as e:
+                                    logger.warning(f"⚠️ Product retrieve hatası: {e}")
+                    
+                    if not appointment_limit:
+                        error_msg = f"Metadata 'appointment_limit' missing in both Price and Product"
+                        results["warn"].append({
+                            "lookup_key": lookup_key,
+                            "error": error_msg,
+                            "expected_limit": expected_limit,
+                            "price_id": price.id,
+                            "currency": price.currency.upper()
+                        })
+                        logger.warning(f"[⚠️ WARN] {lookup_key:35} | Expected Limit: {expected_limit:4} | Error: {error_msg} | Price ID: {price.id}")
+                        continue
+                    
+                    # Check 3: Metadata Accuracy
+                    try:
+                        actual_limit = int(appointment_limit)
+                    except (ValueError, TypeError):
+                        error_msg = f"Metadata 'appointment_limit' is not a valid integer: '{appointment_limit}'"
+                        results["fail"].append({
+                            "lookup_key": lookup_key,
+                            "error": error_msg,
+                            "expected_limit": expected_limit,
+                            "price_id": price.id
+                        })
+                        logger.error(f"[❌ FAIL] {lookup_key:35} | Expected Limit: {expected_limit:4} | Error: {error_msg} | Price ID: {price.id}")
+                        continue
+                    
+                    # Yearly plans must also have the MONTHLY limit (not multiplied by 12)
+                    if actual_limit == expected_limit:
+                        results["pass"].append({
+                            "lookup_key": lookup_key,
+                            "expected_limit": expected_limit,
+                            "actual_limit": actual_limit,
+                            "price_id": price.id,
+                            "currency": price.currency.upper(),
+                            "amount": price.unit_amount / 100,
+                            "metadata_source": metadata_source
+                        })
+                        logger.info(f"[✅ PASS] {lookup_key:35} | Limit: {actual_limit:4} (Expected: {expected_limit:4}) | Source: {metadata_source:7} | {price.currency.upper():4} | {price.unit_amount/100:8.2f} | Price ID: {price.id}")
+                    else:
+                        error_msg = f"Limit mismatch: Expected {expected_limit}, Found {actual_limit}"
+                        results["fail"].append({
+                            "lookup_key": lookup_key,
+                            "error": error_msg,
+                            "expected_limit": expected_limit,
+                            "actual_limit": actual_limit,
+                            "price_id": price.id
+                        })
+                        logger.error(f"[❌ FAIL] {lookup_key:35} | Expected Limit: {expected_limit:4} | Actual Limit: {actual_limit:4} | Error: {error_msg} | Price ID: {price.id}")
+                
+                except stripe.error.StripeError as e:
+                    error_msg = f"Stripe API error: {str(e)}"
+                    results["fail"].append({
+                        "lookup_key": lookup_key,
+                        "error": error_msg,
+                        "expected_limit": expected_limit
+                    })
+                    logger.error(f"[❌ FAIL] {lookup_key:35} | Expected Limit: {expected_limit:4} | Error: {error_msg}")
+                except Exception as e:
+                    error_msg = f"Unexpected error: {str(e)}"
+                    results["fail"].append({
+                        "lookup_key": lookup_key,
+                        "error": error_msg,
+                        "expected_limit": expected_limit
+                    })
+                    logger.error(f"[❌ FAIL] {lookup_key:35} | Expected Limit: {expected_limit:4} | Error: {error_msg}")
+    
+    # Summary
+    logger.info("=" * 80)
+    logger.info("📊 AUDIT SUMMARY")
+    logger.info("=" * 80)
+    logger.info(f"Total Checks: {total_checks}")
+    logger.info(f"✅ PASS: {len(results['pass'])}")
+    logger.info(f"⚠️  WARN: {len(results['warn'])}")
+    logger.info(f"❌ FAIL: {len(results['fail'])}")
+    logger.info("=" * 80)
+    
+    if results["fail"]:
+        logger.error("\n❌ FAILED ITEMS:")
+        for item in results["fail"]:
+            logger.error(f"   - {item['lookup_key']}: {item['error']}")
+    
+    if results["warn"]:
+        logger.warning("\n⚠️  WARNINGS:")
+        for item in results["warn"]:
+            logger.warning(f"   - {item['lookup_key']}: {item['error']}")
+    
+    if len(results["pass"]) == total_checks:
+        logger.info("\n✅ ALL CHECKS PASSED! Stripe configuration is perfect!")
+    else:
+        logger.warning(f"\n⚠️  {len(results['fail']) + len(results['warn'])} issues found. Please fix them in Stripe Dashboard.")
+    
+    logger.info("=" * 80)
+    
+    return results

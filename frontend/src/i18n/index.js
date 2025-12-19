@@ -39,6 +39,20 @@ i18n
 // Helper function to detect if user should see Turkish
 const detectInitialLanguage = () => {
   const stored = localStorage.getItem('i18nextLng');
+  
+  // Domain bazlı dil kontrolü
+  const hostname = window.location.hostname;
+  if (hostname.includes('plannapp.co.uk')) {
+    i18n.changeLanguage('en');
+    localStorage.setItem('i18nextLng', 'en');
+    return;
+  } else if (hostname.includes('plannapp.co') || hostname.includes('plannapp.com')) {
+    // plannapp.co ve plannapp.com -> Türkçe
+    i18n.changeLanguage('tr');
+    localStorage.setItem('i18nextLng', 'tr');
+    return;
+  }
+  
   if (stored && ['en', 'tr'].includes(stored)) {
     return; // Use stored preference
   }

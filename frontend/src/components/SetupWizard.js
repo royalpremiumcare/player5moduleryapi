@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { CheckCircle, ChevronRight, ChevronLeft, Plus, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import api from "../api/api";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 
 const SetupWizard = ({ onComplete }) => {
+  const { t } = useTranslation();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [onboardingData, setOnboardingData] = useState(null);
@@ -22,13 +24,13 @@ const SetupWizard = ({ onComplete }) => {
   const [newStaffName, setNewStaffName] = useState("");
 
   const daysOfWeek = [
-    { key: 'monday', label: 'Pazartesi' },
-    { key: 'tuesday', label: 'Salı' },
-    { key: 'wednesday', label: 'Çarşamba' },
-    { key: 'thursday', label: 'Perşembe' },
-    { key: 'friday', label: 'Cuma' },
-    { key: 'saturday', label: 'Cumartesi' },
-    { key: 'sunday', label: 'Pazar' }
+    { key: 'monday', label: t('settingsProfile.businessHours.monday', 'Monday') },
+    { key: 'tuesday', label: t('settingsProfile.businessHours.tuesday', 'Tuesday') },
+    { key: 'wednesday', label: t('settingsProfile.businessHours.wednesday', 'Wednesday') },
+    { key: 'thursday', label: t('settingsProfile.businessHours.thursday', 'Thursday') },
+    { key: 'friday', label: t('settingsProfile.businessHours.friday', 'Friday') },
+    { key: 'saturday', label: t('settingsProfile.businessHours.saturday', 'Saturday') },
+    { key: 'sunday', label: t('settingsProfile.businessHours.sunday', 'Sunday') }
   ];
 
   useEffect(() => {
@@ -105,7 +107,7 @@ const SetupWizard = ({ onComplete }) => {
       }
     } catch (error) {
       console.error("Onboarding verileri yüklenemedi:", error);
-      toast.error("Veriler yüklenirken hata oluştu");
+      toast.error(t('setupWizard.errorLoading'));
     }
   };
 
@@ -118,13 +120,13 @@ const SetupWizard = ({ onComplete }) => {
       // Mevcut hizmetlerin fiyat ve sürelerini kontrol et
       const hasInvalidService = Object.values(serviceUpdates).some(s => !s.price || !s.duration);
       if (hasInvalidService) {
-        toast.error("Lütfen tüm hizmetler için fiyat ve süre girin");
+        toast.error(t('setupWizard.errorFillPriceDuration'));
         return;
       }
     } else {
       // Yeni hizmet kontrolü
       if (!newService.name || !newService.price || !newService.duration) {
-        toast.error("Lütfen tüm alanları doldurun");
+        toast.error(t('setupWizard.errorFillAll'));
         return;
       }
     }
@@ -158,7 +160,7 @@ const SetupWizard = ({ onComplete }) => {
       setCurrentStep(2);
     } catch (error) {
       console.error("Hizmet kaydetme hatası:", error);
-      toast.error(error.response?.data?.detail || "Hizmetler kaydedilirken hata oluştu");
+      toast.error(error.response?.data?.detail || t('setupWizard.errorSavingServices'));
     } finally {
       setLoading(false);
     }
@@ -172,7 +174,7 @@ const SetupWizard = ({ onComplete }) => {
       setCurrentStep(3);
     } catch (error) {
       console.error("Çalışma saatleri kaydetme hatası:", error);
-      toast.error(error.response?.data?.detail || "Çalışma saatleri kaydedilirken hata oluştu");
+      toast.error(error.response?.data?.detail || t('setupWizard.errorSavingHours'));
     } finally {
       setLoading(false);
     }
@@ -181,7 +183,7 @@ const SetupWizard = ({ onComplete }) => {
   // Handler: Staff invite ekle (Step 3)
   const handleAddStaffInvite = () => {
     if (!newStaffEmail || !newStaffName) {
-      toast.error("Lütfen isim ve e-posta girin");
+      toast.error(t('setupWizard.errorFillNameEmail'));
       return;
     }
     
@@ -191,7 +193,7 @@ const SetupWizard = ({ onComplete }) => {
     }]);
     setNewStaffEmail("");
     setNewStaffName("");
-    toast.success("Personel listeye eklendi");
+    toast.success(t('setupWizard.staffAdded'));
   };
 
   // Handler: Bitir
@@ -217,11 +219,11 @@ const SetupWizard = ({ onComplete }) => {
       
       await api.post("/onboarding/complete", payload);
       
-      toast.success("🎉 Kurulum tamamlandı!");
+      toast.success(t('setupWizard.completed'));
       setCurrentStep(4);
     } catch (error) {
       console.error("Onboarding tamamlanamadı:", error);
-      toast.error(error.response?.data?.detail || "Bir hata oluştu");
+      toast.error(error.response?.data?.detail || t('setupWizard.errorCompleting'));
     } finally {
       setLoading(false);
     }
@@ -237,16 +239,18 @@ const SetupWizard = ({ onComplete }) => {
               <CheckCircle className="w-6 h-6 text-white" />
             </div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">
-              Hoş Geldin, {onboardingData?.user?.full_name ? onboardingData.user.full_name.split(' ')[0] : 'Admin'}! 👋
+              {onboardingData?.user?.full_name 
+                ? t('setupWizard.welcome', { name: onboardingData.user.full_name.split(' ')[0] })
+                : t('setupWizard.welcomeAdmin')}
             </h2>
             <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-              PLANN'ı verimli kullanmak için 3 hızlı ayarı tamamlayalım.
+              {t('setupWizard.welcomeDescription')}
             </p>
             <Button
               onClick={() => setCurrentStep(1)}
               className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 h-10 text-sm font-semibold rounded-lg shadow-lg"
             >
-              Başlayalım
+              {t('setupWizard.getStarted')}
             </Button>
           </div>
         </div>
@@ -266,27 +270,21 @@ const SetupWizard = ({ onComplete }) => {
               <CheckCircle className="w-6 h-6 text-green-600" />
             </div>
             <h2 className="text-lg font-bold text-gray-900 mb-2">
-              🎉 Kurulum Tamamlandı!
+              {t('setupWizard.completed')}
             </h2>
             <p className="text-sm text-gray-600 mb-3">
-              Tebrikler! İşletmeniz PLANN ile hazır.
+              {t('setupWizard.completedDescription')}
             </p>
             
             {hasInvitedStaff && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-left">
-                <p className="text-xs text-blue-900 font-medium mb-1">💡 Bir Adım Kaldı!</p>
-                <p className="text-xs text-blue-800">
-                  Davet ettiğiniz personellerinizin <strong>maaş bilgilerini</strong> ve <strong>verebileceği hizmetleri</strong> ayarlayarak sistemin tam performansta çalışmasını sağlayabilirsiniz.
-                </p>
-                <p className="text-xs text-blue-700 mt-2">
-                  <strong>Personel Ayarları</strong> bölümünden kolayca düzenleyebilirsiniz.
-                </p>
+                <p className="text-xs text-blue-900 font-medium mb-1">{t('setupWizard.oneStepLeft')}</p>
+                <p className="text-xs text-blue-800" dangerouslySetInnerHTML={{ __html: t('setupWizard.staffInfoNote') }} />
+                <p className="text-xs text-blue-700 mt-2" dangerouslySetInnerHTML={{ __html: t('setupWizard.staffSettingsNote') }} />
               </div>
             )}
             
-            <p className="text-xs text-gray-500 mb-4">
-              İşletmenizin tüm ayarlarını <strong>Ayarlar</strong> sayfasından yönetebilirsiniz.
-            </p>
+            <p className="text-xs text-gray-500 mb-4" dangerouslySetInnerHTML={{ __html: t('setupWizard.settingsNote') }} />
             
             <Button
               onClick={() => {
@@ -295,7 +293,7 @@ const SetupWizard = ({ onComplete }) => {
               }}
               className="w-full bg-blue-600 hover:bg-blue-700 h-10 text-sm font-semibold"
             >
-              Hadi Başlayalım! 🚀
+              {t('setupWizard.letsStart')}
             </Button>
           </div>
         </div>
@@ -315,17 +313,17 @@ const SetupWizard = ({ onComplete }) => {
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-base font-bold text-gray-900">
                 {isSectorKnown && services.length > 0 
-                  ? "1. Hizmetlerinizi Gözden Geçirin"
-                  : "1. İlk Hizmetinizi Ekleyin"}
+                  ? t('setupWizard.step1Review')
+                  : t('setupWizard.step1Add')}
               </h2>
-              <span className="text-xs text-gray-500">Adım 1/3</span>
+              <span className="text-xs text-gray-500">{t('setupWizard.step')} 1/3</span>
             </div>
             <p className="text-xs text-gray-600">
               {isSectorKnown && services.length > 0
-                ? `Sektörünüze (${onboardingData.sector}) göre sizin için ${services.length} ana hizmet oluşturduk. Lütfen bu hizmetlerin fiyatlarını ve sürelerini hızlıca girin.`
-                : "Sistemin çalışması için en az 1 hizmet eklemeniz gerekmektedir. Lütfen hizmetin adını, fiyatını ve süresini girin."}
+                ? t('setupWizard.step1Description', { sector: onboardingData.sector, count: services.length })
+                : t('setupWizard.step1DescriptionNoSector')}
             </p>
-            <p className="text-xs text-amber-600 mt-1">⚠️ Hizmet süresi zorunludur.</p>
+            <p className="text-xs text-amber-600 mt-1">{t('setupWizard.durationRequired')}</p>
           </div>
           <div className="p-3 space-y-2">
             {isSectorKnown && services.length > 0 ? (
@@ -337,7 +335,7 @@ const SetupWizard = ({ onComplete }) => {
                     <div className="flex-1 text-sm font-medium text-gray-900">{service.name}</div>
                     <div className="flex gap-2">
                       <div>
-                        <Label className="text-xs text-gray-600">Fiyat</Label>
+                        <Label className="text-xs text-gray-600">{t('setupWizard.price')}</Label>
                         <div className="relative">
                           <Input
                             type="number"
@@ -351,11 +349,11 @@ const SetupWizard = ({ onComplete }) => {
                             }}
                             className="w-24 sm:w-32 h-8 text-sm pr-9 sm:pr-10"
                           />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">TL</span>
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">{t('setupWizard.currency')}</span>
                         </div>
                       </div>
                       <div>
-                        <Label className="text-xs text-gray-600">Süre</Label>
+                        <Label className="text-xs text-gray-600">{t('setupWizard.duration')}</Label>
                         <div className="relative">
                           <Input
                             type="number"
@@ -369,7 +367,7 @@ const SetupWizard = ({ onComplete }) => {
                             }}
                             className="w-24 sm:w-32 h-8 text-sm pr-9 sm:pr-10"
                           />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">dk</span>
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">{t('setupWizard.minutes')}</span>
                         </div>
                       </div>
                     </div>
@@ -379,9 +377,9 @@ const SetupWizard = ({ onComplete }) => {
             ) : (
               <div className="space-y-2">
                 <div>
-                  <Label className="text-sm">Hizmet Adı *</Label>
+                  <Label className="text-sm">{t('setupWizard.serviceName')} *</Label>
                   <Input
-                    placeholder="örn: Danışmanlık, Toplantı, Muayene"
+                    placeholder={t('setupWizard.serviceNamePlaceholder')}
                     value={newService.name}
                     onChange={(e) => setNewService({ ...newService, name: e.target.value })}
                     className="h-10"
@@ -389,7 +387,7 @@ const SetupWizard = ({ onComplete }) => {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <Label className="text-sm">Fiyat *</Label>
+                    <Label className="text-sm">{t('setupWizard.price')} *</Label>
                     <div className="relative">
                       <Input
                         type="number"
@@ -398,11 +396,11 @@ const SetupWizard = ({ onComplete }) => {
                         onChange={(e) => setNewService({ ...newService, price: e.target.value })}
                         className="h-9 text-sm pr-10"
                       />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">TL</span>
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">{t('setupWizard.currency')}</span>
                     </div>
                   </div>
                   <div>
-                    <Label className="text-sm">Süre *</Label>
+                    <Label className="text-sm">{t('setupWizard.duration')} *</Label>
                     <div className="relative">
                       <Input
                         type="number"
@@ -411,7 +409,7 @@ const SetupWizard = ({ onComplete }) => {
                         onChange={(e) => setNewService({ ...newService, duration: e.target.value })}
                         className="h-9 text-sm pr-10"
                       />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">dk</span>
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">{t('setupWizard.minutes')}</span>
                     </div>
                   </div>
                 </div>
@@ -424,7 +422,7 @@ const SetupWizard = ({ onComplete }) => {
               disabled={loading}
               className="bg-blue-600 hover:bg-blue-700 h-9 text-sm"
             >
-              İleri <ChevronRight className="w-4 h-4 ml-1" />
+              {t('setupWizard.next')} <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
           </div>
         </div>
@@ -439,11 +437,11 @@ const SetupWizard = ({ onComplete }) => {
         <div className="bg-white rounded-xl max-w-md w-full max-h-[80vh] overflow-y-auto shadow-xl">
           <div className="p-3 border-b border-gray-200">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-base font-bold text-gray-900">2. Genel Çalışma Saatleriniz</h2>
-              <span className="text-xs text-gray-500">Adım 2/3</span>
+              <h2 className="text-base font-bold text-gray-900">{t('setupWizard.step2Title')}</h2>
+              <span className="text-xs text-gray-500">{t('setupWizard.step')} 2/3</span>
             </div>
             <p className="text-xs text-gray-600">
-              Müşterilerinizin online randevu alabileceği Genel İşletme Saatlerini belirleyin.
+              {t('setupWizard.step2Description')}
             </p>
           </div>
           <div className="p-3 space-y-2 max-h-[50vh] overflow-y-auto">
@@ -464,7 +462,7 @@ const SetupWizard = ({ onComplete }) => {
                         });
                       }}
                     />
-                    <span className="text-xs text-gray-500 sm:hidden">{dayData.is_open ? 'Açık' : 'Kapalı'}</span>
+                    <span className="text-xs text-gray-500 sm:hidden">{dayData.is_open ? t('setupWizard.open') : t('setupWizard.closed')}</span>
                   </div>
                   {dayData.is_open && (
                     <div className="flex items-center gap-1.5 flex-1 w-full sm:w-auto">
@@ -494,7 +492,7 @@ const SetupWizard = ({ onComplete }) => {
                     </div>
                   )}
                   {!dayData.is_open && (
-                    <span className="text-xs sm:text-sm text-gray-500 hidden sm:inline">Kapalı</span>
+                    <span className="text-xs sm:text-sm text-gray-500 hidden sm:inline">{t('setupWizard.closed')}</span>
                   )}
                 </div>
               );
@@ -506,14 +504,14 @@ const SetupWizard = ({ onComplete }) => {
               variant="outline"
               className="flex items-center gap-1 h-9 text-sm"
             >
-              <ChevronLeft className="w-4 h-4" /> Geri
+              <ChevronLeft className="w-4 h-4" /> {t('setupWizard.back')}
             </Button>
             <Button
               onClick={handleStep2Next}
               disabled={loading}
               className="bg-blue-600 hover:bg-blue-700 h-9 text-sm"
             >
-              İleri <ChevronRight className="w-4 h-4 ml-1" />
+              {t('setupWizard.next')} <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
           </div>
         </div>
@@ -528,23 +526,23 @@ const SetupWizard = ({ onComplete }) => {
         <div className="bg-white rounded-xl max-w-md w-full max-h-[80vh] overflow-y-auto shadow-xl">
           <div className="p-3 border-b border-gray-200">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-base font-bold text-gray-900">3. Personelinizi Ekleyin</h2>
-              <span className="text-xs text-gray-500">Adım 3/3</span>
+              <h2 className="text-base font-bold text-gray-900">{t('setupWizard.step3Title')}</h2>
+              <span className="text-xs text-gray-500">{t('setupWizard.step')} 3/3</span>
             </div>
           </div>
           <div className="p-3">
             <div className="space-y-4">
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-1">Personelinizi Davet Edin</h3>
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">{t('setupWizard.inviteStaff')}</h3>
                 <p className="text-sm text-gray-600">
-                  Varsa, diğer personellerinizi şimdi davet edebilirsiniz.
+                  {t('setupWizard.inviteStaffDescription')}
                 </p>
               </div>
               <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     type="text"
-                    placeholder="İsim Soyisim"
+                    placeholder={t('setupWizard.fullName')}
                     value={newStaffName}
                     onChange={(e) => setNewStaffName(e.target.value)}
                     onKeyPress={(e) => {
@@ -556,7 +554,7 @@ const SetupWizard = ({ onComplete }) => {
                   />
                   <Input
                     type="email"
-                    placeholder="E-posta"
+                    placeholder={t('setupWizard.email')}
                     value={newStaffEmail}
                     onChange={(e) => setNewStaffEmail(e.target.value)}
                     onKeyPress={(e) => {
@@ -574,15 +572,15 @@ const SetupWizard = ({ onComplete }) => {
                   className="w-full h-9 text-sm flex items-center justify-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
-                  Listeye Ekle
+                  {t('setupWizard.addToList')}
                 </Button>
                 <p className="text-xs text-gray-500 text-center">
-                  💡 Enter tuşuna basarak veya "Listeye Ekle" butonuyla ekleyebilirsiniz
+                  {t('setupWizard.addToListHint')}
                 </p>
               </div>
               {staffInvites.length > 0 && (
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-900">Davet Edilecek Personeller</Label>
+                  <Label className="text-sm font-medium text-gray-900">{t('setupWizard.invitedStaff')}</Label>
                   {staffInvites.map((staff, idx) => (
                     <div key={idx} className="flex items-center justify-between p-2 bg-blue-50 rounded border border-blue-200">
                       <div className="text-sm text-gray-700">
@@ -609,7 +607,7 @@ const SetupWizard = ({ onComplete }) => {
               variant="outline"
               className="flex items-center gap-1 h-9 text-sm"
             >
-              <ChevronLeft className="w-4 h-4" /> Geri
+              <ChevronLeft className="w-4 h-4" /> {t('setupWizard.back')}
             </Button>
             <div className="flex gap-2">
               <Button
@@ -618,14 +616,14 @@ const SetupWizard = ({ onComplete }) => {
                 variant="outline"
                 className="text-gray-600 h-9 text-sm"
               >
-                Geç
+                {t('setupWizard.skip')}
               </Button>
               <Button
                 onClick={() => handleComplete(false)}
                 disabled={loading}
                 className="bg-blue-600 hover:bg-blue-700 h-9 text-sm"
               >
-                Bitir
+                {t('setupWizard.finish')}
               </Button>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Users, UserPlus, Edit, CheckSquare, Trash2, ArrowLeft, Calendar, ShieldCheck, User } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import api from "../api/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const StaffManagement = ({ onNavigate, currentUser }) => {
+  const { t, i18n } = useTranslation();
   const [staff, setStaff] = useState([]);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -64,7 +66,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       setLoading(false);
     } catch (error) {
       console.error("Veri yüklenemedi:", error);
-      toast.error("Veriler yüklenirken hata oluştu");
+      toast.error(t('staff.management.loadingError'));
       setLoading(false);
     }
   };
@@ -93,7 +95,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
         headers: { 'Content-Type': 'application/json' }
       });
       
-      toast.success("Personel hizmetleri güncellendi");
+      toast.success(t('staff.management.servicesUpdated'));
       
       setStaff(prev => prev.map(s => 
         s.username === editingStaff.username 
@@ -104,7 +106,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       setEditingStaff(null);
     } catch (error) {
       console.error("Kaydetme hatası:", error);
-      let errorMessage = "Hizmetler kaydedilemedi";
+      let errorMessage = t('staff.management.servicesSaveError');
       if (error.response?.data?.detail) {
         if (typeof error.response.data.detail === 'string') {
           errorMessage = error.response.data.detail;
@@ -151,7 +153,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
         headers: { 'Content-Type': 'application/json' }
       });
       
-      toast.success("Personel tatil günleri güncellendi");
+      toast.success(t('staff.management.daysOffUpdated'));
       
       // Local state'i güncelle
       setStaff(prev => prev.map(s => 
@@ -167,7 +169,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       setSelectedDaysOff([]);
     } catch (error) {
       console.error("Kaydetme hatası:", error);
-      let errorMessage = "Tatil günleri kaydedilemedi";
+      let errorMessage = t('staff.management.daysOffSaveError');
       if (error.response?.data?.detail) {
         if (typeof error.response.data.detail === 'string') {
           errorMessage = error.response.data.detail;
@@ -197,12 +199,12 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
     
     // Validation
     if (editingPaymentStaff.payment_type === "salary" && (!paymentAmount || paymentAmount <= 0)) {
-      toast.error("Lütfen aylık maaş tutarını girin");
+      toast.error(t('staff.management.salaryRequired'));
       return;
     }
     
     if (editingPaymentStaff?.payment_type === "commission" && (!paymentAmount || paymentAmount <= 0 || paymentAmount > 100)) {
-      toast.error("Lütfen geçerli bir komisyon oranı girin (1-100)");
+      toast.error(t('staff.management.commissionRequired'));
       return;
     }
     
@@ -216,7 +218,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
         headers: { 'Content-Type': 'application/json' }
       });
       
-      toast.success("Personel ödeme ayarları güncellendi");
+      toast.success(t('staff.management.paymentUpdated'));
       
       // Local state'i güncelle
       setStaff(prev => prev.map(s => 
@@ -232,7 +234,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       setEditingPaymentStaff(null);
     } catch (error) {
       console.error("Kaydetme hatası:", error);
-      let errorMessage = "Ödeme ayarları kaydedilemedi";
+      let errorMessage = t('staff.management.paymentSaveError');
       if (error.response?.data?.detail) {
         if (typeof error.response.data.detail === 'string') {
           errorMessage = error.response.data.detail;
@@ -252,25 +254,25 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
     const isAdmin = newStaff.role === "admin";
     
     if (!trimmedUsername || !trimmedFullName) {
-      toast.error("Lütfen tüm alanları doldurun");
+      toast.error(t('staff.management.fillAllFields'));
       return;
     }
     
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedUsername)) {
-      toast.error("Lütfen geçerli bir e-posta adresi girin");
+      toast.error(t('staff.management.validEmail'));
       return;
     }
 
     // Admin için ödeme bilgisi validasyonu gerekmiyor
     if (!isAdmin) {
       if (newStaff.payment_type === "salary" && (!newStaff.payment_amount || newStaff.payment_amount <= 0)) {
-        toast.error("Lütfen aylık maaş tutarını girin");
+        toast.error(t('staff.management.salaryRequired'));
         return;
       }
       
       if (newStaff.payment_type === "commission" && (!newStaff.payment_amount || newStaff.payment_amount <= 0 || newStaff.payment_amount > 100)) {
-        toast.error("Lütfen geçerli bir komisyon oranı girin (1-100)");
+        toast.error(t('staff.management.commissionRequired'));
         return;
       }
     }
@@ -294,8 +296,8 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       
       await api.post("/staff/add", payload);
       
-      const roleText = isAdmin ? "Admin" : "Personel";
-      toast.success(`${roleText} başarıyla eklendi ve davet e-postası gönderildi`);
+      const roleText = isAdmin ? t('staff.management.adminRole') : t('staff.management.staffRole');
+      toast.success(t('staff.management.staffAdded', { role: roleText }));
       
       await loadData();
       
@@ -304,7 +306,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
     } catch (error) {
       console.error("Personel ekleme hatası:", error);
       
-      let errorMessage = "Personel eklenemedi";
+      let errorMessage = t('staff.management.staffAddError');
       if (error.response?.data?.detail) {
         if (typeof error.response.data.detail === 'string') {
           errorMessage = error.response.data.detail;
@@ -328,12 +330,12 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
   const handleDeleteStaff = async (staffId) => {
     try {
       await api.delete(`/staff/${staffId}`);
-      toast.success("Personel silindi");
+      toast.success(t('staff.management.staffDeleted'));
       setDeleteDialog(null);
       await loadData();
     } catch (error) {
       console.error("Silme hatası:", error);
-      let errorMessage = "Personel silinemedi";
+      let errorMessage = t('staff.management.staffDeleteError');
       if (error.response?.data?.detail) {
         errorMessage = typeof error.response.data.detail === 'string' 
           ? error.response.data.detail 
@@ -369,11 +371,11 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                 className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />
-                <span className="text-sm font-medium">Ayarlara Dön</span>
+                <span className="text-sm font-medium">{t('settings.backToSettings')}</span>
               </button>
         <div>
-                <h2 className="text-lg font-bold text-gray-900">Personel Yönetimi</h2>
-                <p className="text-sm text-gray-600 mt-1">Personellerinizin verebileceği hizmetleri yönetin</p>
+                <h2 className="text-lg font-bold text-gray-900">{t('staff.management.title')}</h2>
+                <p className="text-sm text-gray-600 mt-1">{t('staff.management.subtitle')}</p>
               </div>
         </div>
         
@@ -381,188 +383,203 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
           <DialogTrigger asChild>
                 <Button className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold rounded-full">
               <UserPlus className="w-4 h-4 mr-2" />
-              Yeni Personel Ekle
+              {t('staff.management.newStaff')}
             </Button>
           </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Yeni Personel Ekle</DialogTitle>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader className="flex-shrink-0">
+              <DialogTitle>{t('staff.management.addTitle')}</DialogTitle>
               <DialogDescription>
-                Yeni personel ekleyin. Personele şifresini belirlemesi için bir davet e-postası gönderilecektir.
+                {t('staff.management.addDescription')}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="full_name">Ad Soyad *</Label>
-                <Input
-                  id="full_name"
-                  value={newStaff.full_name}
-                  onChange={(e) => setNewStaff({ ...newStaff, full_name: e.target.value })}
-                  placeholder="Ahmet Yılmaz"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="username">E-posta (Kullanıcı Adı) *</Label>
-                <Input
-                  id="username"
-                  type="email"
-                  value={newStaff.username}
-                  onChange={(e) => setNewStaff({ ...newStaff, username: e.target.value })}
-                  placeholder="ahmet@isletme.com"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  ℹ️ Davet e-postası ile şifresini belirleyebilecek.
-                </p>
-              </div>
-              
-              {/* Rol Seçimi */}
-              <div className="space-y-3 pt-4 border-t">
-                <Label className="text-sm font-medium text-gray-700 mb-2 block">Kullanıcı Yetkisi</Label>
-                <div className="bg-gray-100 p-1 rounded-lg flex">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewStaff({ ...newStaff, role: "staff", payment_type: "salary", payment_amount: "" });
-                    }}
-                    className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
-                      newStaff.role === "staff"
-                        ? "bg-white text-blue-600 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    <User className="w-4 h-4 inline mr-1" /> Personel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewStaff({ ...newStaff, role: "admin", payment_type: null, payment_amount: null });
-                    }}
-                    className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
-                      newStaff.role === "admin"
-                        ? "bg-white text-purple-600 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    <ShieldCheck className="w-4 h-4 inline mr-1" /> Yönetici
-                  </button>
+            <div className="flex-1 overflow-y-auto py-4 pr-2">
+              <div className="space-y-4">
+                {/* İlk satır: İsim ve Email yan yana (masaüstünde) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="full_name">{t('staff.fields.name')} *</Label>
+                    <Input
+                      id="full_name"
+                      value={newStaff.full_name}
+                      onChange={(e) => setNewStaff({ ...newStaff, full_name: e.target.value })}
+                      placeholder={t('staff.fields.name')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="username">{t('settings.profile.fields.email')} *</Label>
+                    <Input
+                      id="username"
+                      type="email"
+                      value={newStaff.username}
+                      onChange={(e) => setNewStaff({ ...newStaff, username: e.target.value })}
+                      placeholder="ahmet@isletme.com"
+                    />
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 -mt-2 md:col-span-2">
+                  {t('staff.management.inviteEmailNote')}
+                </p>
+              
+                {/* Rol Seçimi ve Çalışma Modeli - Masaüstünde yan yana */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+                  {/* Rol Seçimi */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium text-gray-700 mb-2 block">{t('staff.management.userRole')}</Label>
+                    <div className="bg-gray-100 p-1 rounded-lg flex">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewStaff({ ...newStaff, role: "staff", payment_type: "salary", payment_amount: "" });
+                        }}
+                        className={`flex-1 py-2 px-3 rounded-md font-medium transition-all text-sm ${
+                          newStaff.role === "staff"
+                            ? "bg-white text-blue-600 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        <User className="w-4 h-4 inline mr-1" /> {t('staff.management.staffRole')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewStaff({ ...newStaff, role: "admin", payment_type: null, payment_amount: null });
+                        }}
+                        className={`flex-1 py-2 px-3 rounded-md font-medium transition-all text-sm ${
+                          newStaff.role === "admin"
+                            ? "bg-white text-purple-600 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        <ShieldCheck className="w-4 h-4 inline mr-1" /> {t('staff.management.adminRole')}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {newStaff.role === "admin" 
+                        ? t('staff.management.adminNote')
+                        : t('staff.management.staffNote')}
+                    </p>
+                  </div>
+                  
+                  {/* Çalışma Modeli - Sadece Personel için */}
+                  {newStaff.role === "staff" && (
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium text-gray-700 mb-2 block">{t('staff.management.workModel')}</Label>
+                    
+                    {/* Segmented Control */}
+                    <div className="bg-gray-100 p-1 rounded-lg flex">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewStaff({ ...newStaff, payment_type: "salary", payment_amount: "" });
+                        }}
+                        className={`flex-1 py-2 px-3 rounded-md font-medium transition-all text-sm ${
+                          newStaff.payment_type === "salary"
+                            ? "bg-white text-blue-600 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        {t('staff.management.fixedSalary')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewStaff({ ...newStaff, payment_type: "commission", payment_amount: "" });
+                        }}
+                        className={`flex-1 py-2 px-3 rounded-md font-medium transition-all text-sm ${
+                          newStaff.payment_type === "commission"
+                            ? "bg-white text-blue-600 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        {t('staff.management.commission')}
+                      </button>
+                    </div>
+                  </div>
+                  )}
+                </div>
+                
+                {/* Ödeme Bilgisi - Sadece Personel için, masaüstünde tam genişlik */}
+                {newStaff.role === "staff" && (
+                <div className="pt-4 border-t">
+                  {/* Dinamik Input Alanı */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {newStaff.payment_type === "salary" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="payment_amount" className="text-sm font-medium text-gray-700">
+                          {t('staff.management.monthlySalary')}
+                        </Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">{i18n.language === 'tr' ? '₺' : '£'}</span>
+                          <Input
+                            id="payment_amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={newStaff.payment_amount || ""}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setNewStaff({ ...newStaff, payment_amount: value === "" ? "" : value });
+                            }}
+                            placeholder="Örn: 30000"
+                            className="pl-8"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    
+                    {newStaff.payment_type === "commission" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="payment_amount" className="text-sm font-medium text-gray-700">
+                          {t('staff.management.commissionRate')}
+                        </Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">%</span>
+                          <Input
+                            id="payment_amount"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            value={newStaff.payment_amount || ""}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setNewStaff({ ...newStaff, payment_amount: value === "" ? "" : value });
+                            }}
+                            placeholder="Örn: 50"
+                            className="pl-8"
+                          />
+                        </div>
+                        <small className="text-gray-500 text-xs block">
+                          {t('staff.management.commissionNote')}
+                        </small>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                )}
+                
+                <p className="text-sm text-gray-600 pt-2">
                   {newStaff.role === "admin" 
-                    ? "⚠️ Yönetici yetkileri: Tüm randevuları, personelleri ve ayarları yönetebilir." 
-                    : "Personel sadece kendine atanan randevuları görebilir."}
+                    ? t('staff.management.adminDescription')
+                    : t('staff.management.staffDescription')}
                 </p>
               </div>
-              
-              {/* Çalışma Modeli - Sadece Personel için */}
-              {newStaff.role === "staff" && (
-              <div className="space-y-3 pt-4 border-t">
-                <Label className="text-sm font-medium text-gray-700 mb-2 block">Çalışma Modeli</Label>
-                
-                {/* Segmented Control */}
-                <div className="bg-gray-100 p-1 rounded-lg flex">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewStaff({ ...newStaff, payment_type: "salary", payment_amount: "" });
-                    }}
-                    className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
-                      newStaff.payment_type === "salary"
-                        ? "bg-white text-blue-600 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    Sabit Maaş
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewStaff({ ...newStaff, payment_type: "commission", payment_amount: "" });
-                    }}
-                    className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
-                      newStaff.payment_type === "commission"
-                        ? "bg-white text-blue-600 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    Yüzde (Prim)
-                  </button>
-                </div>
-                
-                {/* Dinamik Input Alanı */}
-                {newStaff.payment_type === "salary" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="payment_amount" className="text-sm font-medium text-gray-700">
-                      Aylık Maaş Tutarı
-                    </Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">₺</span>
-                      <Input
-                        id="payment_amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={newStaff.payment_amount || ""}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setNewStaff({ ...newStaff, payment_amount: value === "" ? "" : value });
-                        }}
-                        placeholder="Örn: 30000"
-                        className="pl-8"
-                      />
-                    </div>
-                  </div>
-                )}
-                
-                {newStaff.payment_type === "commission" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="payment_amount" className="text-sm font-medium text-gray-700">
-                      Hizmet Başına Komisyon Oranı
-                    </Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">%</span>
-                      <Input
-                        id="payment_amount"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={newStaff.payment_amount || ""}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setNewStaff({ ...newStaff, payment_amount: value === "" ? "" : value });
-                        }}
-                        placeholder="Örn: 50"
-                        className="pl-8"
-                      />
-                    </div>
-                    <small className="text-gray-500 text-xs block">
-                      Personelin tamamladığı hizmet bedelinin yüzde kaçını alacağını giriniz.
-                    </small>
-                  </div>
-                )}
-              </div>
-              )}
-              
-              <p className="text-sm text-gray-600">
-                {newStaff.role === "admin" 
-                  ? "Yönetici olarak eklenen kullanıcı tüm işletme ayarlarını yönetebilir."
-                  : "Bu bilgilerle personel giriş yapabilecek. Daha sonra \"Hizmetleri Düzenle\" ile hangi hizmetleri verebileceğini atayabilirsiniz."}
-              </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-shrink-0 pt-4 border-t">
               <Button
                 onClick={() => setShowAddDialog(false)}
                 variant="outline"
                 className="flex-1"
               >
-                İptal
+                {t('common.cancel')}
               </Button>
               <Button
                 onClick={handleAddStaff}
                 disabled={saving}
                 className={`flex-1 ${newStaff.role === "admin" ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"}`}
               >
-                {saving ? "Ekleniyor..." : (newStaff.role === "admin" ? "Yönetici Ekle" : "Personel Ekle")}
+                {saving ? t('staff.management.adding') : (newStaff.role === "admin" ? t('staff.management.addAdmin') : t('staff.management.addStaff'))}
               </Button>
             </div>
           </DialogContent>
@@ -576,18 +593,18 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
         <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
           <div className="space-y-4">
             <div>
-              <h3 className="text-base font-semibold text-gray-900 mb-1">Personel Ayarları</h3>
-              <p className="text-sm text-gray-600">Müşteri randevu oluştururken personel seçebilsin mi?</p>
+              <h3 className="text-base font-semibold text-gray-900 mb-1">{t('staff.management.settingsTitle')}</h3>
+              <p className="text-sm text-gray-600">{t('staff.management.settingsDescription')}</p>
             </div>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200">
                 <div className="flex-1">
                   <Label htmlFor="customer-can-choose-staff" className="text-sm font-semibold text-gray-900 cursor-pointer">
-                    Müşteri Personel Seçebilsin
+                    {t('staff.management.customerCanChooseStaff')}
                   </Label>
                   <p className="text-xs text-gray-600 mt-1">
-                    Müşteriler randevu oluştururken hangi personelden hizmet almak istediklerini seçebilir
+                    {t('staff.management.customerCanChooseStaffNote')}
                   </p>
                 </div>
                 <Switch
@@ -600,9 +617,9 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                         customer_can_choose_staff: checked
                       });
                       setSettings(prev => ({ ...prev, customer_can_choose_staff: checked }));
-                      toast.success("Ayar güncellendi");
+                      toast.success(t('staff.management.settingUpdated'));
                     } catch (error) {
-                      toast.error("Ayar güncellenemedi");
+                      toast.error(t('staff.management.settingUpdateError'));
                     }
                   }}
                 />
@@ -611,10 +628,10 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
               <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200">
                 <div className="flex-1">
                   <Label htmlFor="admin-provides-service" className="text-sm font-semibold text-gray-900 cursor-pointer">
-                    İşletme Sahibi Hizmet Verir
+                    {t('staff.management.adminProvidesService')}
                   </Label>
                   <p className="text-xs text-gray-600 mt-1">
-                    İşletme sahibi (admin) de randevu alabilir ve hizmet verebilir
+                    {t('staff.management.adminProvidesServiceNote')}
                   </p>
                 </div>
                 <Switch
@@ -627,9 +644,9 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                         admin_provides_service: checked
                       });
                       setSettings(prev => ({ ...prev, admin_provides_service: checked }));
-                      toast.success("Ayar güncellendi");
+                      toast.success(t('staff.management.settingUpdated'));
                     } catch (error) {
-                      toast.error("Ayar güncellenemedi");
+                      toast.error(t('staff.management.settingUpdateError'));
                     }
                   }}
                 />
@@ -638,12 +655,12 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
               {/* Mola Limiti Ayarları */}
               <div className="p-4 rounded-lg border border-gray-200 space-y-3">
                 <div>
-                  <Label className="text-sm font-semibold text-gray-900">Personel Mola Limiti</Label>
-                  <p className="text-xs text-gray-600 mt-1">Personellerin günlük mola haklarını belirleyin</p>
+                  <Label className="text-sm font-semibold text-gray-900">{t('staff.management.breakLimit')}</Label>
+                  <p className="text-xs text-gray-600 mt-1">{t('staff.management.breakLimitNote')}</p>
                 </div>
                 <div className="flex gap-4">
                   <div className="flex-1">
-                    <Label htmlFor="break-limit-minutes" className="text-xs text-gray-600">Günlük Max Süre</Label>
+                    <Label htmlFor="break-limit-minutes" className="text-xs text-gray-600">{t('staff.management.dailyMaxDuration')}</Label>
                     <div className="flex items-center gap-2 mt-1">
                       <Input
                         id="break-limit-minutes"
@@ -658,16 +675,16 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                             await api.put("/settings", { ...settings, break_limit_minutes: value });
                             setSettings(prev => ({ ...prev, break_limit_minutes: value }));
                           } catch (error) {
-                            toast.error("Ayar güncellenemedi");
+                            toast.error(t('staff.management.settingUpdateError'));
                           }
                         }}
                         className="w-20 h-9 text-center"
                       />
-                      <span className="text-sm text-gray-600">dk</span>
+                      <span className="text-sm text-gray-600">{t('staff.management.minutes')}</span>
                     </div>
                   </div>
                   <div className="flex-1">
-                    <Label htmlFor="break-limit-count" className="text-xs text-gray-600">Günlük Max Sayı</Label>
+                    <Label htmlFor="break-limit-count" className="text-xs text-gray-600">{t('staff.management.dailyMaxCount')}</Label>
                     <div className="flex items-center gap-2 mt-1">
                       <Input
                         id="break-limit-count"
@@ -681,12 +698,12 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                             await api.put("/settings", { ...settings, break_limit_count: value });
                             setSettings(prev => ({ ...prev, break_limit_count: value }));
                           } catch (error) {
-                            toast.error("Ayar güncellenemedi");
+                            toast.error(t('staff.management.settingUpdateError'));
                           }
                         }}
                         className="w-20 h-9 text-center"
                       />
-                      <span className="text-sm text-gray-600">mola</span>
+                      <span className="text-sm text-gray-600">{t('staff.management.breaks')}</span>
                     </div>
                   </div>
                 </div>
@@ -702,8 +719,8 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <div className="text-center py-8">
               <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <h3 className="text-base font-semibold text-gray-900 mb-2">Henüz Personel Yok</h3>
-              <p className="text-sm text-gray-600">Personel eklemek için "Yeni Personel Ekle" butonunu kullanın</p>
+              <h3 className="text-base font-semibold text-gray-900 mb-2">{t('staff.management.noStaffTitle')}</h3>
+              <p className="text-sm text-gray-600">{t('staff.management.noStaffDescription')}</p>
             </div>
         </Card>
         </div>
@@ -755,7 +772,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                         </h3>
                         {staffMember.role === 'admin' && (
                           <span className="px-2 py-0.5 text-xs font-semibold bg-amber-100 text-amber-800 rounded-full">
-                            SAHİBİ
+                            {t('staff.management.owner')}
                           </span>
                         )}
                       </div>
@@ -765,7 +782,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                 </div>
 
                   <div>
-                    <p className="text-sm font-semibold text-gray-900 mb-2">Verebileceği Hizmetler:</p>
+                    <p className="text-sm font-semibold text-gray-900 mb-2">{t('staff.management.assignedServices')}</p>
                   {assignedServices.length > 0 ? (
                     <div className="space-y-1">
                       {assignedServices.map(service => (
@@ -776,7 +793,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500 italic">Henüz hizmet atanmamış</p>
+                    <p className="text-sm text-gray-500 italic">{t('staff.management.noServicesAssigned')}</p>
                   )}
                 </div>
 
@@ -799,7 +816,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                             className="flex-1 w-full sm:w-auto"
                           >
                             <Edit className="w-4 h-4 mr-2" />
-                            Ödeme Ayarları
+                            {t('staff.management.editPayment')}
                           </Button>
                         </DialogTrigger>
                       
@@ -808,17 +825,17 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                         >
                           <DialogHeader>
                             <DialogTitle>
-                              {editingPaymentStaff?.full_name || editingPaymentStaff?.username} - Ödeme Ayarları
+                              {t('staff.management.editPaymentTitle', { name: editingPaymentStaff?.full_name || editingPaymentStaff?.username })}
                             </DialogTitle>
                             <DialogDescription>
-                              Personelin çalışma modelini ve ödeme ayarlarını düzenleyin.
+                              {t('staff.management.editPaymentDescription')}
                             </DialogDescription>
                           </DialogHeader>
                           
                           <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
                             {/* Çalışma Modeli */}
                             <div className="space-y-3">
-                              <Label className="text-sm font-medium text-gray-700 mb-2 block">Çalışma Modeli</Label>
+                              <Label className="text-sm font-medium text-gray-700 mb-2 block">{t('staff.management.workModel')}</Label>
                               
                               {/* Segmented Control */}
                               <div className="bg-gray-100 p-1 rounded-lg flex w-full">
@@ -836,7 +853,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                                       : "text-gray-500 hover:text-gray-700"
                                   }`}
                                 >
-                                  Sabit Maaş
+                                  {t('staff.management.fixedSalary')}
                                 </button>
                                 <button
                                   type="button"
@@ -852,7 +869,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                                       : "text-gray-500 hover:text-gray-700"
                                   }`}
                                 >
-                                  Yüzde (Prim)
+                                  {t('staff.management.commission')}
                                 </button>
                               </div>
                               
@@ -860,10 +877,10 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                               {editingPaymentStaff?.payment_type === "salary" && (
                                 <div className="space-y-2">
                                   <Label htmlFor="edit_payment_amount" className="text-sm font-medium text-gray-700">
-                                    Aylık Maaş Tutarı
+                                    {t('staff.management.monthlySalary')}
                                   </Label>
                                   <div className="relative">
-                                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">₺</span>
+                                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">{i18n.language === 'tr' ? '₺' : '£'}</span>
                                     <Input
                                       id="edit_payment_amount"
                                       type="number"
@@ -885,7 +902,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                               {editingPaymentStaff?.payment_type === "commission" && (
                                 <div className="space-y-2">
                                   <Label htmlFor="edit_payment_amount" className="text-sm font-medium text-gray-700">
-                                    Hizmet Başına Komisyon Oranı
+                                    {t('staff.management.commissionRate')}
                                   </Label>
                                   <div className="relative">
                                     <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">%</span>
@@ -906,7 +923,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                                     />
                                   </div>
                                   <small className="text-gray-500 text-xs block">
-                                    Personelin tamamladığı hizmet bedelinin yüzde kaçını alacağını giriniz.
+                                    {t('staff.management.commissionNote')}
                                   </small>
                                 </div>
                               )}
@@ -919,14 +936,14 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                               variant="outline"
                               className="flex-1"
                             >
-                              İptal
+                              {t('common.cancel')}
                             </Button>
                             <Button
                               onClick={handleSavePayment}
                               disabled={savingPayment}
                               className="flex-1 bg-blue-600 hover:bg-blue-700"
                             >
-                              {savingPayment ? "Kaydediliyor..." : "Kaydet"}
+                              {savingPayment ? t('settings.profile.buttons.saving') : t('common.save')}
                             </Button>
                           </div>
                         </DialogContent>
@@ -948,7 +965,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                             className="flex-1 w-full sm:w-auto"
                           >
                             <Calendar className="w-4 h-4 mr-2" />
-                            Tatil Günleri
+                            {t('staff.management.editDaysOff')}
                           </Button>
                         </DialogTrigger>
                         
@@ -957,23 +974,23 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                         >
                             <DialogHeader>
                               <DialogTitle>
-                                {editingDaysOffStaff?.full_name || editingDaysOffStaff?.username} - Tatil Günleri
+                                {t('staff.management.editDaysOffTitle', { name: editingDaysOffStaff?.full_name || editingDaysOffStaff?.username })}
                               </DialogTitle>
                               <DialogDescription>
-                                Personelin çalışmadığı günleri işaretleyin. Diğer günler, 'Genel İşletme Saatleri'ne uymalıdır.
+                                {t('staff.management.editDaysOffDescription')}
                               </DialogDescription>
                             </DialogHeader>
                             
                             <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
                               <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-2">
                                 {[
-                                  { key: 'monday', label: 'Pazartesi' },
-                                  { key: 'tuesday', label: 'Salı' },
-                                  { key: 'wednesday', label: 'Çarşamba' },
-                                  { key: 'thursday', label: 'Perşembe' },
-                                  { key: 'friday', label: 'Cuma' },
-                                  { key: 'saturday', label: 'Cumartesi' },
-                                  { key: 'sunday', label: 'Pazar' }
+                                  { key: 'monday', label: t('staff.management.days.monday') },
+                                  { key: 'tuesday', label: t('staff.management.days.tuesday') },
+                                  { key: 'wednesday', label: t('staff.management.days.wednesday') },
+                                  { key: 'thursday', label: t('staff.management.days.thursday') },
+                                  { key: 'friday', label: t('staff.management.days.friday') },
+                                  { key: 'saturday', label: t('staff.management.days.saturday') },
+                                  { key: 'sunday', label: t('staff.management.days.sunday') }
                                 ].map((day) => (
                                   <div key={day.key} className="flex items-center space-x-2">
                                     <Checkbox
@@ -1007,14 +1024,14 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                                 variant="outline"
                                 className="flex-1"
                               >
-                                İptal
+                                {t('common.cancel')}
                               </Button>
                               <Button
                                 onClick={handleSaveDaysOff}
                                 disabled={savingDaysOff}
                                 className="flex-1 bg-blue-600 hover:bg-blue-700"
                               >
-                                {savingDaysOff ? "Kaydediliyor..." : "Kaydet"}
+                                {savingDaysOff ? t('settings.profile.buttons.saving') : t('common.save')}
                               </Button>
                             </div>
                           </DialogContent>
@@ -1039,25 +1056,25 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                         className="flex-1 w-full sm:w-auto"
                       >
                         <Edit className="w-4 h-4 mr-2" />
-                        Hizmetleri Düzenle
+                        {t('staff.management.editServices')}
                       </Button>
                     </DialogTrigger>
                     
                     <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden">
                         <DialogHeader>
                           <DialogTitle>
-                            {editingStaff?.full_name || editingStaff?.username} - Hizmet Ataması
+                            {t('staff.management.serviceAssignmentTitle', { name: editingStaff?.full_name || editingStaff?.username })}
                           </DialogTitle>
                         </DialogHeader>
                         
                         <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
                           <p className="text-sm text-gray-600">
-                            Bu personelin verebileceği hizmetleri seçin:
+                            {t('staff.management.selectServices')}
                           </p>
                           
                           {services.length === 0 ? (
                             <p className="text-center text-gray-500 py-8">
-                              Henüz hizmet eklenmemiş. Önce "Hizmet Yönetimi" sayfasından hizmet ekleyin.
+                              {t('staff.management.noServicesYet')}
                             </p>
                           ) : (
                             <div className="grid grid-cols-1 gap-3 w-full">
@@ -1083,7 +1100,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                                         <Label className="font-semibold text-gray-900 cursor-pointer">
                                           {service.name}
                                         </Label>
-                                        <p className="text-sm text-gray-600">{service.price}₺</p>
+                                        <p className="text-sm text-gray-600">{service.price}{i18n.language === 'tr' ? '₺' : '£'}</p>
                                       </div>
                                     </div>
                                   </div>
@@ -1099,14 +1116,14 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                             variant="outline"
                             className="flex-1"
                           >
-                            İptal
+                            {t('common.cancel')}
                           </Button>
                           <Button
                             onClick={handleSaveServices}
                             disabled={saving}
                               className="flex-1 bg-blue-600 hover:bg-blue-700"
                           >
-                            {saving ? "Kaydediliyor..." : "Kaydet"}
+                            {saving ? t('settings.profile.buttons.saving') : t('common.save')}
                           </Button>
                         </div>
                       </DialogContent>
@@ -1136,19 +1153,18 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{deleteDialog?.role === 'admin' ? 'Yöneticiyi Sil' : 'Personeli Sil'}</AlertDialogTitle>
+            <AlertDialogTitle>{deleteDialog?.role === 'admin' ? t('staff.management.deleteAdmin') : t('staff.management.deleteStaff')}</AlertDialogTitle>
             <AlertDialogDescription>
-              <strong>{deleteDialog?.full_name || deleteDialog?.username}</strong> {deleteDialog?.role === 'admin' ? 'yöneticisini' : 'personelini'} silmek istediğinizden emin misiniz?
-              Bu işlem geri alınamaz.
+              <strong>{deleteDialog?.full_name || deleteDialog?.username}</strong> {deleteDialog?.role === 'admin' ? t('staff.management.adminRole').toLowerCase() : t('staff.management.staffRole').toLowerCase()} {i18n.language === 'tr' ? 'silmek istediğinizden emin misiniz?' : 'Are you sure you want to delete?'} {t('customers.deleteWarning')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => handleDeleteStaff(deleteDialog?.username)}
               className="bg-red-500 hover:bg-red-600"
             >
-              Sil
+              {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { format, addDays, isToday, isTomorrow } from "date-fns";
-import { tr } from "date-fns/locale";
+import { tr, enGB } from "date-fns/locale";
+import { useTranslation } from "react-i18next";
 import io from "socket.io-client";
 import { 
   Calendar, 
@@ -42,6 +43,8 @@ import {
 
 const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate }) => {
   const { token } = useAuth();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language === 'tr' ? tr : enGB;
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [settings, setSettings] = useState(null);
   const [staffMembers, setStaffMembers] = useState([]);
@@ -111,7 +114,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       const sessionId = urlParams.get('session_id');
       
       if (sessionId) {
-        toast.success("🎉 Ödeme başarılı! Planınız güncellendi.", {
+        toast.success(t('dashboard.toast.paymentSuccess'), {
           duration: 5000,
         });
         
@@ -246,7 +249,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   // Mola ekle
   const handleAddBreak = async () => {
     if (!newBreakStart || !newBreakEnd) {
-      toast.error("Başlangıç ve bitiş saati seçin");
+      toast.error(t('dashboard.breaks.selectTimes'));
       return;
     }
     
@@ -257,13 +260,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         start_time: newBreakStart,
         end_time: newBreakEnd
       });
-      toast.success("Mola eklendi");
+      toast.success(t('dashboard.breaks.breakAdded'));
       setShowBreakDialog(false);
       loadTodayBreaks();
       setNewBreakStart("12:00");
       setNewBreakEnd("12:30");
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Mola eklenemedi");
+      toast.error(error.response?.data?.detail || t('dashboard.breaks.addError'));
     } finally {
       setAddingBreak(false);
     }
@@ -273,10 +276,10 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const handleDeleteBreak = async (breakId) => {
     try {
       await api.delete(`/staff/breaks/${breakId}`);
-      toast.success("Mola silindi");
+      toast.success(t('dashboard.breaks.breakDeleted'));
       loadTodayBreaks();
     } catch (error) {
-      toast.error("Mola silinemedi");
+      toast.error(t('dashboard.breaks.deleteError'));
     }
   };
 
@@ -307,18 +310,21 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     }
     
     if (!staffId) {
-      return "Atanmadı";
+      return t('dashboard.appointment.unassigned');
     }
     const staff = staffMembers.find(s => s.username === staffId);
-    return staff?.full_name || staff?.username || "Bilinmiyor";
+    return staff?.full_name || staff?.username || t('dashboard.appointment.unknown');
   };
 
   const getStatusBorderColor = (status) => {
     switch (status) {
+      case t('dashboard.status.completed'):
       case "Tamamlandı":
         return "border-l-4 border-l-green-500";
+      case t('dashboard.status.cancelled'):
       case "İptal":
         return "border-l-4 border-l-red-500";
+      case t('dashboard.status.pending'):
       case "Bekliyor":
         return "border-l-4 border-l-yellow-500";
       default:
@@ -382,24 +388,24 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const handleStatusChange = async (appointmentId, newStatus) => {
     try {
       await api.put(`/appointments/${appointmentId}`, { status: newStatus });
-      toast.success("Durum güncellendi");
+      toast.success(t('dashboard.toast.statusUpdated'));
       await onRefresh();
       if (userRole === 'staff') {
         await loadPersonnelStats();
       }
     } catch (error) {
-      toast.error("Durum güncellenemedi");
+      toast.error(t('dashboard.toast.statusError'));
     }
   };
 
   const handleDelete = async (appointmentId) => {
     try {
       await api.delete(`/appointments/${appointmentId}`);
-      toast.success("Randevu silindi");
+      toast.success(t('dashboard.toast.appointmentDeleted'));
       setDeleteDialog(null);
       await onRefresh();
     } catch (error) {
-      toast.error("Randevu silinemedi");
+      toast.error(t('dashboard.toast.deleteError'));
     }
   };
 
@@ -419,11 +425,17 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   };
 
   const getStatusColor = (status) => {
+    const completed = t('dashboard.status.completed');
+    const cancelled = t('dashboard.status.cancelled');
+    const pending = t('dashboard.status.pending');
     switch (status) {
+      case completed:
       case "Tamamlandı":
         return "text-green-500";
+      case cancelled:
       case "İptal":
         return "text-red-500";
+      case pending:
       case "Bekliyor":
         return "text-yellow-500";
       default:
@@ -432,9 +444,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   };
 
   const getStatusIcon = (status) => {
+    const completed = t('dashboard.status.completed');
+    const cancelled = t('dashboard.status.cancelled');
     switch (status) {
+      case completed:
       case "Tamamlandı":
         return <Check className="w-4 h-4 text-green-500" />;
+      case cancelled:
       case "İptal":
         return <X className="w-4 h-4 text-red-500" />;
       default:
@@ -461,22 +477,22 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-gray-900">
-                    {stats.quota.is_trial ? "Ücretsiz Deneme" : stats.quota.plan_name}
+                    {stats.quota.is_trial ? t('dashboard.subscription.freeTrial') : stats.quota.plan_name}
                   </h2>
                   {stats.quota.is_yearly && (
                     <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                      Yıllık Plan
+                      {t('dashboard.subscription.yearlyPlan')}
                     </span>
                   )}
                   {!stats.quota.is_trial && !stats.quota.is_yearly && stats.quota.billing_cycle === 'monthly' && (
                     <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full">
-                      Aylık
+                      {t('dashboard.subscription.monthlyPlan')}
                     </span>
                   )}
                 </div>
                 {stats.quota.is_trial && stats.quota.trial_days_remaining !== undefined && (
                   <p className="text-sm text-gray-600 mt-1">
-                    Kalan {stats.quota.trial_days_remaining} gün
+                    {t('dashboard.subscription.daysRemaining', { days: stats.quota.trial_days_remaining })}
                   </p>
                 )}
               </div>
@@ -485,7 +501,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-600">
-                    Randevu Kotası
+                    {t('dashboard.subscription.appointmentQuota')}
                   </span>
                   <span className={`font-semibold ${
                     stats.quota.is_low_quota ? 'text-red-600' : 'text-gray-900'
@@ -501,12 +517,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               </div>
               <div className="flex items-center justify-between text-xs text-gray-600">
                 <p>
-                  Kalan: <span className="font-semibold">{stats.quota.quota_remaining}</span> randevu
-                  {stats.quota.is_yearly ? ' (Bu yıl)' : stats.quota.is_trial ? '' : ' (Bu ay)'}
+                  {t('dashboard.subscription.remaining')}: <span className="font-semibold">{stats.quota.quota_remaining}</span> {t('dashboard.subscription.appointments')}
+                  {/* Yıllık paket için de "thisMonth" göster ama yanında yeşil badge var zaten */}
+                  {stats.quota.is_trial ? '' : ` ${t('dashboard.subscription.thisMonth')}`}
                 </p>
                 {stats.quota.days_remaining !== undefined && (
                   <p className={`font-semibold ${stats.quota.days_remaining <= 3 ? 'text-red-600' : stats.quota.days_remaining <= 7 ? 'text-yellow-600' : 'text-gray-700'}`}>
-                    {stats.quota.days_remaining} gün kaldı
+                    {stats.quota.days_remaining} {i18n.language === 'tr' ? 'gün kaldı' : 'days remaining'}
                   </p>
                 )}
               </div>
@@ -516,20 +533,20 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               {stats.quota.is_low_quota && (
                 <div className="flex items-center gap-2 text-xs text-red-600 font-semibold bg-red-50 px-3 py-2 rounded-lg">
                   <AlertCircle className="w-4 h-4" />
-                  <span>Limitiniz dolmak üzere, paketinizi yükseltin</span>
+                  <span>{t('dashboard.subscription.quotaLow')}</span>
                 </div>
               )}
               {stats.quota.is_trial && stats.quota.trial_days_remaining !== undefined && stats.quota.trial_days_remaining <= 2 && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-xs text-red-600 font-semibold bg-red-50 px-3 py-2 rounded-lg">
                     <AlertCircle className="w-4 h-4" />
-                    <span>Trial süreniz bitiyor, paket seçin</span>
+                    <span>{t('dashboard.subscription.trialEnding')}</span>
                   </div>
                   <Button
                     onClick={() => onNavigate && onNavigate("subscribe")}
                     className="w-full bg-blue-600 hover:bg-blue-700 h-10 text-sm font-semibold rounded-lg"
                   >
-                    Şimdi Abone Ol
+                    {t('dashboard.subscription.subscribeNow')}
                   </Button>
                 </div>
               )}
@@ -543,19 +560,19 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         <div className="px-4 py-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <div className="space-y-4">
-              <h2 className="text-lg font-bold text-gray-900">Hızlı Bakış</h2>
+              <h2 className="text-lg font-bold text-gray-900">{t('dashboard.quickView')}</h2>
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">Bugünkü</p>
+                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.today')}</p>
                   <p className="text-xl font-bold text-gray-900">{stats.today_appointments}</p>
           </div>
                 <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">Tamamlanan</p>
+                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.completed')}</p>
                   <p className="text-xl font-bold text-green-600">{stats.today_completed}</p>
         </div>
                 <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">Bugünkü Hizmet Tutarı</p>
-                  <p className="text-xl font-bold text-blue-600">{stats.bugunku_toplam_hizmet_tutari?.toLocaleString('tr-TR') || 0} ₺</p>
+                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.todayServiceAmount')}</p>
+                  <p className="text-xl font-bold text-blue-600">{stats.bugunku_toplam_hizmet_tutari?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') || 0} {i18n.language === 'tr' ? '₺' : '£'}</p>
           </div>
       </div>
           </div>
@@ -568,19 +585,19 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         <div className="px-4 py-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <div className="space-y-4">
-              <h2 className="text-lg font-bold text-gray-900">Hızlı Bakış</h2>
+              <h2 className="text-lg font-bold text-gray-900">{t('dashboard.quickView')}</h2>
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">Bugünkü</p>
+                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.today')}</p>
                   <p className="text-xl font-bold text-gray-900">{todayAppointments.length}</p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">Tamamlanan</p>
+                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.completed')}</p>
                   <p className="text-xl font-bold text-green-600">{personnelStats.completed_appointments_count || 0}</p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">Bugünkü Hizmet Tutarı</p>
-                  <p className="text-xl font-bold text-blue-600">{personnelStats.total_revenue_generated?.toLocaleString('tr-TR') || 0} ₺</p>
+                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.todayServiceAmount')}</p>
+                  <p className="text-xl font-bold text-blue-600">{personnelStats.total_revenue_generated?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') || 0} {i18n.language === 'tr' ? '₺' : '£'}</p>
                 </div>
               </div>
             </div>
@@ -595,14 +612,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-orange-500" />
-                <h3 className="text-sm font-semibold text-gray-900">Bugünkü Molam</h3>
+                <h3 className="text-sm font-semibold text-gray-900">{t('dashboard.breaks.title')}</h3>
               </div>
               <button
                 onClick={() => setShowBreakDialog(true)}
                 disabled={todayBreaks.length >= breakLimits.count}
                 className="text-xs px-3 py-1 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                + Mola Ekle
+                {t('dashboard.breaks.addBreak')}
               </button>
             </div>
             
@@ -628,14 +645,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   );
                 })}
                 <p className="text-xs text-gray-500 mt-1">
-                  Kalan: {breakLimits.minutes - todayBreaks.reduce((sum, b) => {
+                  {t('dashboard.breaks.remaining')}: {breakLimits.minutes - todayBreaks.reduce((sum, b) => {
                     const s = b.start_time.split(":"), e = b.end_time.split(":");
                     return sum + ((parseInt(e[0]) * 60 + parseInt(e[1])) - (parseInt(s[0]) * 60 + parseInt(s[1])));
-                  }, 0)} dk / {breakLimits.count - todayBreaks.length} mola
+                  }, 0)} {t('dashboard.breaks.minutes')} / {breakLimits.count - todayBreaks.length} {t('dashboard.breaks.breaks')}
                 </p>
               </div>
             ) : (
-              <p className="text-xs text-gray-500">Henüz mola eklemediniz</p>
+              <p className="text-xs text-gray-500">{t('dashboard.breaks.noBreaks')}</p>
             )}
           </Card>
         </div>
@@ -645,10 +662,10 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       {showBreakDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <Card className="bg-white rounded-xl p-6 w-full max-w-sm">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Mola Ekle</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('dashboard.breaks.addBreakTitle')}</h3>
             <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-gray-700">Başlangıç</label>
+                <label className="text-sm font-medium text-gray-700">{t('dashboard.breaks.startTime')}</label>
                 <input
                   type="time"
                   value={newBreakStart}
@@ -657,7 +674,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700">Bitiş</label>
+                <label className="text-sm font-medium text-gray-700">{t('dashboard.breaks.endTime')}</label>
                 <input
                   type="time"
                   value={newBreakEnd}
@@ -665,21 +682,21 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                 />
               </div>
-              <p className="text-xs text-gray-500">Min: 15 dk, Max: 45 dk</p>
+              <p className="text-xs text-gray-500">{t('dashboard.breaks.minMax')}</p>
             </div>
             <div className="flex gap-2 mt-6">
               <button
                 onClick={() => setShowBreakDialog(false)}
                 className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
               >
-                İptal
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleAddBreak}
                 disabled={addingBreak}
                 className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-medium disabled:opacity-50"
               >
-                {addingBreak ? "Ekleniyor..." : "Ekle"}
+                {addingBreak ? t('dashboard.breaks.adding') : t('dashboard.breaks.add')}
               </button>
             </div>
           </Card>
@@ -693,9 +710,9 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             {/* Başlık + Personel Filtresi */}
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">Bugünün Randevuları</h2>
+                <h2 className="text-lg font-bold text-gray-900">{t('dashboard.todayFlow.title')}</h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  {format(new Date(), "d MMMM yyyy, EEEE", { locale: tr })}
+                  {format(new Date(), "d MMMM yyyy, EEEE", { locale: dateLocale })}
                 </p>
               </div>
               {userRole === 'admin' && staffMembers.length > 0 && (
@@ -704,7 +721,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   onChange={(e) => setStaffFilter(e.target.value)}
                   className="text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="all">Tüm Personel</option>
+                  <option value="all">{t('dashboard.todayFlow.allStaff')}</option>
                   {staffMembers.map((staff) => (
                     <option key={staff.username} value={staff.username}>
                       {staff.full_name}
@@ -719,14 +736,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               {sortedTodayAppointments.length === 0 ? (
                 <div className="text-center py-8">
                   <Calendar className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                  <p className="text-sm text-gray-500">Bugün randevu bulunmuyor</p>
+                  <p className="text-sm text-gray-500">{t('dashboard.todayFlow.noAppointments')}</p>
                 </div>
         ) : (
                 sortedTodayAppointments.map((appointment, index) => (
                   <div
               key={appointment.id}
                     className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
-                      appointment.status === "İptal" ? "opacity-60" : ""
+                      appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "opacity-60" : ""
                     } ${getStatusBorderColor(appointment.status)}`}
                   >
                     {/* Zaman */}
@@ -751,7 +768,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                     <div className="flex-1 min-w-0 pr-20">
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <h3 className={`text-base font-semibold text-gray-900 ${
-                          appointment.status === "İptal" ? "line-through" : ""
+                          appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "line-through" : ""
                         }`}>
                           {appointment.customer_name}
                         </h3>
@@ -764,14 +781,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                     <button
                       onClick={() => handleCall(appointment.phone)}
                           className="p-1.5 hover:bg-green-100 rounded-full transition-colors"
-                      title="Ara"
+                      title={t('dashboard.appointment.call')}
                     >
                       <Phone className="w-4 h-4 text-green-600" />
                     </button>
                     <button
                       onClick={() => handleWhatsApp(appointment.phone)}
                       className="p-1.5 hover:bg-green-100 rounded-full transition-colors"
-                      title="WhatsApp"
+                      title={t('dashboard.appointment.whatsapp')}
                     >
                       <MessageSquare className="w-4 h-4 text-green-600" />
                     </button>
@@ -791,26 +808,26 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                         <DropdownMenuTrigger asChild>
                           <button
                             className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
-                            title="Daha fazla"
+                            title={t('common.more')}
                           >
                             <MoreVertical className="w-4 h-4 text-gray-600" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48" style={{ zIndex: 1100 }}>
-                  {appointment.status === "Bekliyor" && (
+                  {(appointment.status === t('dashboard.status.pending') || appointment.status === "Bekliyor") && (
                             <DropdownMenuItem
-                              onClick={() => handleStatusChange(appointment.id, "İptal")}
+                              onClick={() => handleStatusChange(appointment.id, t('dashboard.status.cancelled'))}
                               className="text-red-600 focus:text-red-600 focus:bg-red-50"
                     >
                               <X className="w-4 h-4 mr-2" />
-                              İptal Et
+                              {t('dashboard.appointment.cancel')}
                             </DropdownMenuItem>
                   )}
                           <DropdownMenuItem
                     onClick={() => onEditAppointment(appointment)}
                   >
                             <Edit className="w-4 h-4 mr-2" />
-                    Düzenle
+                    {t('dashboard.appointment.edit')}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
@@ -818,7 +835,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                             className="text-red-600 focus:text-red-600 focus:bg-red-50"
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
-                            Sil
+                            {t('dashboard.appointment.delete')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -827,7 +844,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                     {userRole === 'admin' && appointment.staff_member_id && getStaffName(appointment.staff_member_id) && (
                       <div className="absolute bottom-3 right-3 flex items-center gap-1 text-[10px] text-gray-500 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
                         <User className="w-2.5 h-2.5 text-blue-600" />
-                        <span className="font-medium text-blue-700">Personel: {getStaffName(appointment.staff_member_id)}</span>
+                        <span className="font-medium text-blue-700">{t('dashboard.appointment.staff')}: {getStaffName(appointment.staff_member_id)}</span>
                       </div>
                     )}
                   </div>
@@ -843,13 +860,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         <div className="px-4 py-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <div className="space-y-4">
-              <h2 className="text-lg font-bold text-gray-900">Yarının Özeti</h2>
+              <h2 className="text-lg font-bold text-gray-900">{t('dashboard.tomorrowSummary.title')}</h2>
               <div className="space-y-3">
                 {filteredTomorrowAppointments.map((appointment) => (
                   <div
                     key={appointment.id}
                     className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
-                      appointment.status === "İptal" ? "opacity-60" : ""
+                      appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "opacity-60" : ""
                     } ${getStatusBorderColor(appointment.status)}`}
                   >
                     <div className="flex-shrink-0 w-16">
@@ -910,7 +927,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                         <DropdownMenuTrigger asChild>
                           <button
                             className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
-                            title="Daha fazla"
+                            title={t('common.more')}
                           >
                             <MoreVertical className="w-4 h-4 text-gray-600" />
                           </button>
@@ -946,7 +963,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                     {userRole === 'admin' && appointment.staff_member_id && getStaffName(appointment.staff_member_id) && (
                       <div className="absolute bottom-3 right-3 flex items-center gap-1 text-[10px] text-gray-500 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
                         <User className="w-2.5 h-2.5 text-blue-600" />
-                        <span className="font-medium text-blue-700">Personel: {getStaffName(appointment.staff_member_id)}</span>
+                        <span className="font-medium text-blue-700">{t('dashboard.appointment.staff')}: {getStaffName(appointment.staff_member_id)}</span>
                       </div>
                     )}
                   </div>
@@ -961,19 +978,18 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Randevuyu Sil</AlertDialogTitle>
+            <AlertDialogTitle>{t('dashboard.deleteDialog.title')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteDialog?.customer_name} için oluşturulan randevuyu silmek istediğinizden emin misiniz?
-              Bu işlem geri alınamaz.
+              {t('dashboard.deleteDialog.description', { name: deleteDialog?.customer_name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogCancel>{t('dashboard.deleteDialog.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => handleDelete(deleteDialog?.id)}
               className="bg-red-500 hover:bg-red-600"
             >
-              Sil
+              {t('dashboard.deleteDialog.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

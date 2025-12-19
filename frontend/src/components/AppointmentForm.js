@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
-import { tr } from "date-fns/locale";
+import { tr, enGB } from "date-fns/locale";
+import { useTranslation } from "react-i18next";
 import { Calendar as CalendarIcon, Clock, ArrowLeft, User } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
@@ -25,6 +26,8 @@ const publicApi = axios.create({
 
 const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
   const { userRole } = useAuth();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language === 'tr' ? tr : enGB;
   const [currentUser, setCurrentUser] = useState(null);
   const [allStaff, setAllStaff] = useState([]);
   const [formData, setFormData] = useState({
@@ -140,12 +143,12 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
       const response = await api.get("/settings");
       setSettings(response.data);
       console.log("✅ Ayarlar yüklendi:", response.data);
-    } catch (error) {
-      console.error("Ayarlar yüklenemedi:", error);
-      if (error.response?.status !== 401) {
-        toast.error("Ayarlar yüklenirken bir hata oluştu.");
+      } catch (error) {
+        console.error("Ayarlar yüklenemedi:", error);
+        if (error.response?.status !== 401) {
+          toast.error(t('appointments.form.settingsLoadError'));
+        }
       }
-    }
   };
 
   const loadAvailableSlots = async () => {
@@ -192,14 +195,14 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
     e.preventDefault();
     
     if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
-      toast.error("Lütfen tüm zorunlu alanları doldurun");
+      toast.error(t('appointments.form.fillRequiredFields'));
       return;
     }
 
     // Personel kontrolü: Sadece atanan hizmetlere randevu alabilir
     if (userRole === 'staff' && currentUser) {
       if (!currentUser.permitted_service_ids?.includes(formData.service_id)) {
-        toast.error("Bu hizmete randevu alma yetkiniz yok");
+        toast.error(t('appointments.form.noPermission'));
         return;
       }
     }
@@ -223,14 +226,14 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
 
       if (appointment) {
         await api.put(`/appointments/${appointment.id}`, payload);
-        toast.success("Randevu güncellendi");
+        toast.success(t('appointments.form.updated'));
       } else {
         await api.post("/appointments", payload);
-        toast.success("Randevu oluşturuldu");
+        toast.success(t('appointments.form.created'));
       }
       onSave();
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || "İşlem başarısız";
+      const errorMessage = error.response?.data?.detail || t('appointments.form.operationFailed');
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -247,10 +250,10 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
           className="mb-4"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Geri
+          {t('common.back')}
         </Button>
         <h2 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-          {appointment ? "Randevu Düzenle" : "Yeni Randevu"}
+          {appointment ? t('appointments.form.editAppointment') : t('appointments.form.newAppointment')}
         </h2>
       </div>
 
@@ -260,7 +263,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
           {!appointment && customers.length > 0 && (
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
               <div className="flex items-center gap-4">
-                <Label className="font-semibold text-gray-900">Müşteri Türü:</Label>
+                <Label className="font-semibold text-gray-900">{t('appointments.form.customerType')}</Label>
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -272,7 +275,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                       setFormData({ ...formData, customer_name: "", phone: "" });
                     }}
                   >
-                    Yeni Müşteri
+                    {t('appointments.form.newCustomer')}
                   </Button>
                   <Button
                     type="button"
@@ -280,7 +283,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                     variant={!isNewCustomer ? "default" : "outline"}
                     onClick={() => setIsNewCustomer(false)}
                   >
-                    Mevcut Müşteri
+                    {t('appointments.form.existingCustomer')}
                   </Button>
                 </div>
               </div>
@@ -290,12 +293,12 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
           {/* Mevcut Müşteri Seçimi */}
           {!appointment && !isNewCustomer && customers.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="existing_customer">Müşteri Seç *</Label>
+              <Label htmlFor="existing_customer">{t('appointments.form.selectCustomer')} *</Label>
               
               {/* Arama Kutusu */}
               <Input
                 type="text"
-                placeholder="Müşteri adı ara..."
+                placeholder={t('appointments.form.searchCustomer')}
                 value={customerSearchTerm}
                 onChange={(e) => setCustomerSearchTerm(e.target.value)}
                 className="mb-2"
@@ -327,7 +330,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                       <div className="flex items-center justify-between">
                         <span className="text-gray-900">{customer.name}</span>
                         <span className="text-xs text-gray-500">
-                          {customer.total_appointments} randevu
+                          {customer.total_appointments} {t('appointments.form.appointmentsCount')}
                         </span>
                       </div>
                     </button>
@@ -336,7 +339,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                   customer.name.toLowerCase().includes(customerSearchTerm.toLowerCase())
                 ).length === 0 && (
                   <div className="px-4 py-8 text-center text-gray-500">
-                    Müşteri bulunamadı
+                    {t('appointments.form.customerNotFound')}
                   </div>
                 )}
               </div>
@@ -347,26 +350,45 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
           {(isNewCustomer || appointment) && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="customer_name">Müşteri Adı</Label>
+                <Label htmlFor="customer_name">{t('customers.fields.name')}</Label>
                 <Input
                   id="customer_name"
                   data-testid="customer-name-input"
                   value={formData.customer_name}
                   onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
-                  placeholder="Ad Soyad"
+                  placeholder={t('customers.fields.name')}
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="phone">Telefon *</Label>
+                <Label htmlFor="phone">{t('customers.fields.phone')} *</Label>
                 <Input
                   id="phone"
                   data-testid="phone-input"
                   type="tel"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="05XX XXX XX XX"
+                  onChange={(e) => {
+                    let value = e.target.value;
+                    // İngilizce ise +44 ile başlamalı
+                    if (i18n.language === 'en') {
+                      if (!value.startsWith('+44')) {
+                        value = '+44' + value.replace(/^\+?[0-9]*/, '');
+                      }
+                      value = value.replace(/[^0-9+]/g, '');
+                      if (value.length > 14) {
+                        value = value.substring(0, 14);
+                      }
+                    } else {
+                      // Türkçe ise 05XX formatı
+                      value = value.replace(/[^0-9]/g, '');
+                      if (value.length > 11) {
+                        value = value.substring(0, 11);
+                      }
+                    }
+                    setFormData({ ...formData, phone: value });
+                  }}
+                  placeholder={i18n.language === 'en' ? '+44XXXXXXXXXX' : '05XX XXX XX XX'}
                   required
                 />
               </div>
@@ -377,16 +399,16 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
           {!appointment && !isNewCustomer && selectedCustomer && (
             <div className="bg-green-50 p-4 rounded-lg border border-green-200">
               <p className="text-sm text-green-800">
-                <strong>Seçili Müşteri:</strong> {formData.customer_name} - {formData.phone}
+                <strong>{t('appointments.form.selectedCustomer')}</strong> {formData.customer_name} - {formData.phone}
               </p>
             </div>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="service">Hizmet Türü *</Label>
+            <Label htmlFor="service">{t('appointments.form.serviceType')} *</Label>
             {userRole === 'staff' && filteredServices.length === 0 ? (
               <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
-                Size hiçbir hizmet atanmamış. Lütfen yöneticinizle iletişime geçin.
+                {t('appointments.form.noServicesAssigned')}
               </div>
             ) : (
               <Select
@@ -394,12 +416,12 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                 onValueChange={(value) => setFormData({ ...formData, service_id: value })}
               >
                 <SelectTrigger data-testid="service-select">
-                  <SelectValue placeholder="Hizmet seçin" />
+                  <SelectValue placeholder={t('appointments.form.selectService')} />
                 </SelectTrigger>
                 <SelectContent>
                   {filteredServices.map((service) => (
                     <SelectItem key={service.id} value={service.id}>
-                      {service.name} - {Math.round(service.price)}₺
+                      {service.name} - {Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -407,7 +429,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
             )}
             {userRole === 'staff' && filteredServices.length > 0 && (
               <p className="text-xs text-gray-600">
-                Sadece size atanan {filteredServices.length} hizmet görüntüleniyor
+                {t('appointments.form.onlyAssignedServices', { count: filteredServices.length })}
               </p>
             )}
           </div>
@@ -415,19 +437,19 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
           {/* PERSONEL SEÇİMİ (Sadece admin görür) */}
           {userRole === 'admin' && formData.service_id && qualifiedStaff.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="staff">Personel (Opsiyonel)</Label>
+              <Label htmlFor="staff">{t('appointments.form.staffOptional')}</Label>
               <Select
                 value={formData.staff_member_id || "auto"}
                 onValueChange={(value) => setFormData({ ...formData, staff_member_id: value === "auto" ? "" : value })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Personel seçin..." />
+                  <SelectValue placeholder={t('appointments.form.selectStaff')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="auto">
                     <div className="flex items-center gap-2">
                       <User className="w-4 h-4" />
-                      <span>Otomatik Atama</span>
+                      <span>{t('appointments.form.autoAssign')}</span>
                     </div>
                   </SelectItem>
                   {qualifiedStaff.map((staff) => (
@@ -441,14 +463,14 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                 </SelectContent>
               </Select>
               <p className="text-xs text-gray-600">
-                {formData.staff_member_id ? "Seçili personelin müsait saatleri gösteriliyor" : "Otomatik atama: İlk müsait personele atanacak"}
+                {formData.staff_member_id ? t('appointments.form.selectedStaffNote') : t('appointments.form.autoAssignNote')}
               </p>
             </div>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <Label>Randevu Tarihi *</Label>
+              <Label>{t('appointments.form.appointmentDate')} *</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -457,7 +479,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                     className="w-full justify-start text-left font-normal"
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formData.appointment_date ? format(formData.appointment_date, "d MMMM yyyy", { locale: tr }) : "Tarih seçin"}
+                    {formData.appointment_date ? format(formData.appointment_date, "d MMMM yyyy", { locale: dateLocale }) : t('appointments.form.selectDate')}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -465,7 +487,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                     mode="single"
                     selected={formData.appointment_date}
                     onSelect={(date) => setFormData({ ...formData, appointment_date: date })}
-                    locale={tr}
+                    locale={dateLocale}
                     disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
                   />
                 </PopoverContent>
@@ -473,12 +495,12 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="time">Randevu Saati *</Label>
+              <Label htmlFor="time">{t('appointments.form.appointmentTime')} *</Label>
               {availableSlots.length === 0 && formData.service_id && formData.appointment_date ? (
                 <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
                   {formData.staff_member_id 
-                    ? "Seçili personelin bu tarihte müsait saati yok" 
-                    : "Bu tarih için müsait saat bulunmamaktadır"}
+                    ? t('appointments.form.noAvailableSlotsForStaff')
+                    : t('appointments.form.noAvailableSlots')}
                 </div>
               ) : (
                 <Select
@@ -487,7 +509,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                   disabled={!formData.service_id || !formData.appointment_date}
                 >
                   <SelectTrigger data-testid="time-select">
-                    <SelectValue placeholder="Saat seçin" />
+                    <SelectValue placeholder={t('appointments.form.selectTime')} />
                   </SelectTrigger>
                   <SelectContent>
                     {availableSlots.map((time) => (
@@ -503,13 +525,13 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="notes">Notlar (Opsiyonel)</Label>
+            <Label htmlFor="notes">{t('appointments.form.notes')}</Label>
             <Textarea
               id="notes"
               data-testid="notes-textarea"
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              placeholder="Ek bilgiler..."
+              placeholder={t('appointments.form.notesPlaceholder')}
               rows={3}
             />
           </div>
@@ -521,7 +543,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
               onClick={onCancel}
               className="flex-1"
             >
-              İptal
+              {t('common.cancel')}
             </Button>
             <Button
               data-testid="save-button"
@@ -529,7 +551,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
               disabled={loading || (userRole === 'staff' && filteredServices.length === 0) || availableSlots.length === 0}
               className="flex-1 bg-blue-500 hover:bg-blue-600"
             >
-              {loading ? "Kaydediliyor..." : appointment ? "Güncelle" : "Kaydet"}
+              {loading ? t('appointments.form.saving') : appointment ? t('appointments.form.update') : t('appointments.form.save')}
             </Button>
           </div>
         </form>
