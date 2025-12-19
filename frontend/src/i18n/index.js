@@ -1,7 +1,10 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
-import HttpApi from 'i18next-http-backend';
+
+// Import translation files directly
+import translationTR from './locales/tr/translation.json';
+import translationEN from './locales/en/translation.json';
 
 // Helper function to detect if user should see Turkish
 const detectInitialLanguage = () => {
@@ -32,8 +35,6 @@ const detectInitialLanguage = () => {
 const detectedLang = detectInitialLanguage();
 
 i18n
-  // Load translations using http backend
-  .use(HttpApi)
   // Detect user language
   .use(LanguageDetector)
   // Pass the i18n instance to react-i18next
@@ -45,17 +46,19 @@ i18n
     fallbackLng: 'en', // British English as fallback
     debug: false, // Disable debug in production
     
+    resources: {
+      tr: {
+        translation: translationTR
+      },
+      en: {
+        translation: translationEN
+      }
+    },
+    
     detection: {
       order: ['localStorage', 'navigator', 'htmlTag'],
       caches: ['localStorage'],
       lookupLocalStorage: 'i18nextLng',
-    },
-    
-    backend: {
-      // Use absolute path from root - works with both HashRouter and BrowserRouter
-      loadPath: window.location.origin + '/locales/{{lng}}/translation.json',
-      // Add cache busting query parameter
-      queryStringParams: { v: Date.now() },
     },
     
     interpolation: {
