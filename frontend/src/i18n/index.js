@@ -23,8 +23,8 @@ i18n
     },
     
     backend: {
-      // Use relative path for production compatibility
-      loadPath: './locales/{{lng}}/translation.json',
+      // Use path relative to public folder (works with both HashRouter and BrowserRouter)
+      loadPath: process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/locales/{{lng}}/translation.json` : '/locales/{{lng}}/translation.json',
     },
     
     interpolation: {
