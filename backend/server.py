@@ -3650,19 +3650,55 @@ async def delete_transaction(request: Request, transaction_id: str, current_user
 # === DASHBOARD STATS ===
 # === PLAN ENDPOINT'LERİ ===
 @api_router.get("/plans")
-async def get_plans():
-    """Tüm planları getir (herkese açık)"""
+async def get_plans(request: Request):
+    """Tüm planları getir (herkese açık) - Para birimine göre Stripe fiyatlarını çeker"""
+    # Para birimi algılama (Accept-Language header'ından)
+    accept_language = request.headers.get('Accept-Language', 'tr')
+    currency = 'gbp' if accept_language.startswith('en') else 'try'
+    
     # İlk ay %25 indirimli fiyatları hesapla
     plans_with_discount = []
     for plan in PLANS:
         if plan['id'] == 'tier_trial':
             plans_with_discount.append(plan)
             continue
+        
         plan_copy = plan.copy()
-        plan_copy['price_monthly_original'] = plan['price_monthly']
-        plan_copy['price_monthly_discounted'] = int(plan['price_monthly'] * 0.75)  # %25 indirim
+        
+        # Stripe'dan fiyatları çek (GBP için)
+        if currency == 'gbp':
+            try:
+                # Monthly fiyat
+                monthly_lookup_key = get_stripe_lookup_key(plan['id'], 'monthly', 'gbp')
+                monthly_price = get_stripe_price_by_lookup_key(monthly_lookup_key)
+                if monthly_price:
+                    plan_copy['price_monthly'] = monthly_price.unit_amount / 100  # Stripe cent'ten çevir
+                    logger.info(f"✅ Stripe'dan GBP monthly fiyat çekildi: {plan['id']} = {plan_copy['price_monthly']} GBP")
+                else:
+                    logger.warning(f"⚠️ Stripe'dan GBP monthly fiyat bulunamadı: {plan['id']}, TRY fiyatı kullanılıyor")
+                
+                # Yearly fiyat
+                yearly_lookup_key = get_stripe_lookup_key(plan['id'], 'yearly', 'gbp')
+                yearly_price = get_stripe_price_by_lookup_key(yearly_lookup_key)
+                if yearly_price:
+                    plan_copy['price_yearly'] = yearly_price.unit_amount / 100  # Stripe cent'ten çevir
+                    logger.info(f"✅ Stripe'dan GBP yearly fiyat çekildi: {plan['id']} = {plan_copy['price_yearly']} GBP")
+                else:
+                    # Yearly bulunamazsa monthly'den hesapla (veya TRY fiyatını kullan)
+                    if 'price_monthly' in plan_copy:
+                        plan_copy['price_yearly'] = plan_copy['price_monthly'] * 10
+                    else:
+                        logger.warning(f"⚠️ Stripe'dan GBP yearly fiyat bulunamadı: {plan['id']}, TRY fiyatı kullanılıyor")
+            except Exception as e:
+                logger.warning(f"⚠️ Stripe'dan GBP fiyat çekilemedi, TRY fiyatları kullanılıyor: {e}")
+                # Hata durumunda TRY fiyatlarını kullan (plan_copy zaten plan.copy() ile oluşturuldu)
+        
+        # İlk ay indirimli fiyatları hesapla
+        plan_copy['price_monthly_original'] = plan_copy.get('price_monthly', plan['price_monthly'])
+        plan_copy['price_monthly_discounted'] = int(plan_copy['price_monthly_original'] * 0.75)  # %25 indirim
         plan_copy['discount_percentage'] = 25
         plans_with_discount.append(plan_copy)
+    
     return {"plans": plans_with_discount}
 
 @api_router.get("/plan/current")
