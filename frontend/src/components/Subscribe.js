@@ -21,7 +21,7 @@ const Subscribe = ({ onNavigate }) => {
       <div className="min-h-screen bg-gray-50 pb-20 flex items-center justify-center" style={{ fontFamily: 'Inter, sans-serif' }}>
         <div className="px-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-8 max-w-md mx-auto text-center">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">{t('subscribePage.subscriptionManagement')}</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">{t('settings.subscribePage.subscriptionManagement')}</h2>
             <p className="text-gray-600 mb-6">
               {t('appCompliance.subscriptionInfo')}
             </p>
@@ -42,7 +42,7 @@ const Subscribe = ({ onNavigate }) => {
               onClick={() => onNavigate && onNavigate("settings")}
               className="mt-4 text-sm text-gray-500 hover:text-gray-700"
             >
-              {t('subscribePage.backToSettings')}
+              {t('settings.subscribePage.backToSettings')}
             </button>
           </Card>
         </div>
@@ -63,7 +63,7 @@ const Subscribe = ({ onNavigate }) => {
     const sessionId = urlParams.get('session_id');
     
     if (sessionId) {
-      toast.success(t('subscribePage.paymentSuccess'), {
+      toast.success(t('settings.subscribePage.paymentSuccess'), {
         duration: 5000,
       });
       
@@ -106,7 +106,7 @@ const Subscribe = ({ onNavigate }) => {
       setCurrentPlan(currentPlanResponse.data);
     } catch (error) {
       console.error("Planlar yüklenemedi:", error);
-      toast.error(t('subscribePage.plansLoadError'));
+      toast.error(t('settings.subscribePage.plansLoadError'));
     } finally {
       setLoading(false);
     }
@@ -142,12 +142,12 @@ const Subscribe = ({ onNavigate }) => {
           window.location.href = checkoutUrl;
         }
       } else {
-        toast.error(t('subscribePage.paymentPageError'));
+        toast.error(t('settings.subscribePage.paymentPageError'));
         setProcessingPlanId(null);
       }
     } catch (error) {
       console.error("Ödeme işlemi başlatılamadı:", error);
-      const errorMessage = error.response?.data?.detail || error.message || t('subscribePage.paymentError');
+      const errorMessage = error.response?.data?.detail || error.message || t('settings.subscribePage.paymentError');
       toast.error(errorMessage);
       setProcessingPlanId(null);
     }
@@ -158,7 +158,7 @@ const Subscribe = ({ onNavigate }) => {
       <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
         <div className="px-4 pt-6 pb-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-            <p className="text-sm text-gray-600">{t('subscribePage.loading')}</p>
+            <p className="text-sm text-gray-600">{t('settings.subscribePage.loading')}</p>
           </Card>
         </div>
       </div>
@@ -174,15 +174,15 @@ const Subscribe = ({ onNavigate }) => {
           className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
-          <span className="text-sm font-medium">{t('subscribePage.back')}</span>
+          <span className="text-sm font-medium">{t('settings.subscribePage.back')}</span>
         </button>
-        <h1 className="text-2xl font-bold text-gray-900">{t('subscribePage.title')}</h1>
-        <p className="text-sm text-gray-600 mt-1">{t('subscribePage.subtitle')}</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t('settings.subscribePage.title')}</h1>
+        <p className="text-sm text-gray-600 mt-1">{t('settings.subscribePage.subtitle')}</p>
         
         {/* Aylık / Yıllık Toggle */}
         <div className="flex items-center justify-center gap-3 mt-6">
           <span className={`text-base font-medium ${billingCycle === 'monthly' ? 'text-gray-900' : 'text-gray-400'}`}>
-            {t('subscribePage.monthly')}
+            {t('settings.subscribePage.monthly')}
           </span>
           <button
             onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'yearly' : 'monthly')}
@@ -194,11 +194,11 @@ const Subscribe = ({ onNavigate }) => {
           </button>
           <div className="flex items-center gap-2">
             <span className={`text-base font-medium ${billingCycle === 'yearly' ? 'text-gray-900' : 'text-gray-400'}`}>
-              {t('subscribePage.yearly')}
+              {t('settings.subscribePage.yearly')}
             </span>
             {billingCycle === 'yearly' && (
               <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap">
-                {t('subscribePage.twoMonthsFree')}
+                {t('settings.subscribePage.twoMonthsFree')}
               </span>
             )}
           </div>
@@ -209,12 +209,12 @@ const Subscribe = ({ onNavigate }) => {
       {billingCycle === 'monthly' && currentPlan && currentPlan.is_first_month && (
         <div className="px-4 pb-4">
           <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl p-6 shadow-lg">
-            <h2 className="text-xl font-bold mb-2">🎉 {t('subscribePage.firstMonthDiscount')}</h2>
+            <h2 className="text-xl font-bold mb-2">🎉 {t('settings.subscribePage.firstMonthDiscount')}</h2>
             <p className="text-sm text-blue-50">
-              {t('subscribePage.firstMonthDiscountDesc')}
+              {t('settings.subscribePage.firstMonthDiscountDesc')}
             </p>
             <p className="text-sm text-blue-50 mt-2">
-              <strong>{t('subscribePage.nextMonths')}</strong>
+              <strong>{t('settings.subscribePage.nextMonths')}</strong>
             </p>
           </div>
         </div>
@@ -261,8 +261,8 @@ const Subscribe = ({ onNavigate }) => {
                           {(originalPrice * 12).toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
                         </span>
                       </div>
-                      <p className="text-xs text-green-600 font-semibold">{t('subscribePage.yearlyBadge')}</p>
-                      <p className="text-xs text-gray-500 mt-1">{t('subscribePage.monthlyEquivalent')}{monthlyEquivalent.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}</p>
+                      <p className="text-xs text-green-600 font-semibold">{t('settings.subscribePage.yearlyBadge')}</p>
+                      <p className="text-xs text-gray-500 mt-1">{t('settings.subscribePage.monthlyEquivalent')}{monthlyEquivalent.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}</p>
                     </>
                   ) : isFirstMonth ? (
                     <>
@@ -274,8 +274,8 @@ const Subscribe = ({ onNavigate }) => {
                           {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
                         </span>
                       </div>
-                      <p className="text-xs text-green-600 font-semibold">{t('subscribePage.firstMonthBadge')}</p>
-                      <p className="text-xs text-gray-500 mt-1">{t('subscribePage.nextMonthsPrice')} {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}/ay</p>
+                      <p className="text-xs text-green-600 font-semibold">{t('settings.subscribePage.firstMonthBadge')}</p>
+                      <p className="text-xs text-gray-500 mt-1">{t('settings.subscribePage.nextMonthsPrice')} {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}/ay</p>
                     </>
                   ) : (
                     <>
@@ -284,7 +284,7 @@ const Subscribe = ({ onNavigate }) => {
                           {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600 mt-1">{t('subscribePage.perMonth')}</p>
+                      <p className="text-sm text-gray-600 mt-1">{t('settings.subscribePage.perMonth')}</p>
                     </>
                   )}
                 </div>
@@ -292,7 +292,7 @@ const Subscribe = ({ onNavigate }) => {
                 {/* Ana Özellik (Randevu Limiti) */}
                 <div className="mb-4">
                   <p className="text-base font-semibold text-gray-900">
-                    {plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {t('subscribePage.appointmentsPerMonth')}
+                    {plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {t('settings.subscribePage.appointmentsPerMonth')}
                   </p>
                 </div>
 
@@ -318,7 +318,7 @@ const Subscribe = ({ onNavigate }) => {
                       : 'bg-blue-600 hover:bg-blue-700 text-white'
                   }`}
                 >
-                  {isCurrentPlan ? t('subscribePage.currentSubscription') : isProcessing ? t('subscribePage.processing') : t('subscribePage.startSubscription')}
+                  {isCurrentPlan ? t('settings.subscribePage.currentSubscription') : isProcessing ? t('settings.subscribePage.processing') : t('settings.subscribePage.startSubscription')}
                 </Button>
               </Card>
             );
