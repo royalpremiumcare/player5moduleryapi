@@ -11,6 +11,19 @@ import { useTranslation } from "react-i18next";
 const Subscribe = ({ onNavigate }) => {
   const { t, i18n } = useTranslation();
   
+  // Plan isimleri çevirisi
+  const getPlanName = (planName) => {
+    const planNameMap = {
+      'Standart': 'Standard',
+      'Profesyonel': 'Professional',
+      'Premium': 'Premium',
+      'Business': 'Business',
+      'Enterprise': 'Enterprise',
+      'Kurumsal': 'Corporate',
+    };
+    return i18n.language === 'en' && planNameMap[planName] ? planNameMap[planName] : planName;
+  };
+  
   // App Store Compliance: Mobil uygulamada (Android/iOS) ödeme sayfasını gizle
   // Sadece native platform kontrolü yap, localStorage kontrolü yapma (web'de ?mode=app ile giriş yapıldığında localStorage'a yazılıyor)
   const isAppMode = Capacitor.isNativePlatform();
@@ -258,7 +271,7 @@ const Subscribe = ({ onNavigate }) => {
                 className="bg-white shadow-md border border-gray-200 rounded-xl p-6 flex flex-col"
               >
                 {/* Paket Adı */}
-                <h3 className="text-xl font-bold text-gray-900 mb-4">{plan.name}</h3>
+                <h3 className="text-xl font-bold text-gray-900 mb-4">{getPlanName(plan.name)}</h3>
 
                 {/* Fiyat */}
                 <div className="mb-4">
@@ -286,7 +299,7 @@ const Subscribe = ({ onNavigate }) => {
                         </span>
                       </div>
                       <p className="text-xs text-green-600 font-semibold">{t('settings.subscribePage.firstMonthBadge')}</p>
-                      <p className="text-xs text-gray-500 mt-1">{t('settings.subscribePage.nextMonthsPrice')} {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}/ay</p>
+                      <p className="text-xs text-gray-500 mt-1">{t('settings.subscribePage.nextMonthsPrice')} {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol} {i18n.language === 'tr' ? '/ay' : '/month'}</p>
                     </>
                   ) : (
                     <>
