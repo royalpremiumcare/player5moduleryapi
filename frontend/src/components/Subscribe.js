@@ -227,16 +227,27 @@ const Subscribe = ({ onNavigate }) => {
             const isYearly = billingCycle === 'yearly';
             const isFirstMonth = !isYearly && currentPlan && currentPlan.is_first_month;
             
+            // Currency conversion rate: 1 TRY = 0.0175 GBP (backend'deki aynı kur)
+            const TRY_TO_GBP_RATE = 0.0175;
+            const isEnglish = i18n.language === 'en';
+            
+            // Currency symbol
+            const currencySymbol = isEnglish ? '£' : '₺';
+            
+            // Backend'den gelen fiyatlar TRY cinsinden, İngilizce için GBP'ye çevir
+            const priceMonthlyTRY = plan.price_monthly;
+            const priceYearlyTRY = plan.price_yearly || (plan.price_monthly * 10);
+            
+            const priceMonthly = isEnglish ? Math.round(priceMonthlyTRY * TRY_TO_GBP_RATE * 100) / 100 : priceMonthlyTRY;
+            const priceYearly = isEnglish ? Math.round(priceYearlyTRY * TRY_TO_GBP_RATE * 100) / 100 : priceYearlyTRY;
+            
             // Yıllık fiyat hesaplama
-            const yearlyPrice = plan.price_yearly || (plan.price_monthly * 10);
+            const yearlyPrice = priceYearly;
             const monthlyEquivalent = Math.round(yearlyPrice / 12);
             
             // Aylık fiyat hesaplama
-            const discountedPrice = isFirstMonth ? Math.round(plan.price_monthly * 0.75) : plan.price_monthly;
-            const originalPrice = plan.price_monthly;
-            
-            // Currency symbol
-            const currencySymbol = i18n.language === 'tr' ? '₺' : '£';
+            const discountedPrice = isFirstMonth ? Math.round(priceMonthly * 0.75 * 100) / 100 : priceMonthly;
+            const originalPrice = priceMonthly;
             
             const isProcessing = processingPlanId === plan.id;
             const isCurrentPlan = currentPlan && currentPlan.plan_id === plan.id;
