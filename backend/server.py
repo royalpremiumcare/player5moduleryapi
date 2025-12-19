@@ -1818,8 +1818,10 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
     service_ids = []
     
     if sector and sector != "Diğer/Boş":
-        # Dil belirleme - email'e göre
-        lang = get_email_language(user_in.username)
+        # Dil belirleme - önce Accept-Language header'ına bak, yoksa email'e göre
+        lang = get_request_language(request)
+        if lang == 'tr':  # Eğer header'dan 'tr' geldiyse, email'e de bak
+            lang = get_email_language(user_in.username)
         
         # Default services'i dil bazlı al
         services_to_add = get_sector_default_services(sector, lang)
@@ -3652,15 +3654,60 @@ async def delete_transaction(request: Request, transaction_id: str, current_user
 @api_router.get("/plans")
 async def get_plans(request: Request):
     """Tüm planları getir (herkese açık) - Para birimine göre Stripe fiyatlarını çeker"""
-    # Para birimi algılama (Accept-Language header'ından)
+    # Dil ve para birimi algılama (Accept-Language header'ından)
     accept_language = request.headers.get('Accept-Language', 'tr')
-    currency = 'gbp' if accept_language.startswith('en') else 'try'
+    lang = 'en' if accept_language.startswith('en') else 'tr'
+    currency = 'gbp' if lang == 'en' else 'try'
+    
+    # Features çeviri mapping'i
+    features_translation = {
+        'tr': {
+            '50 Randevu veya 7 Gün (Hangisi önce)': '50 Randevu veya 7 Gün (Hangisi önce)',
+            'Randevu Hatırlatma Dahil': 'Randevu Hatırlatma Dahil',
+            'Sınırsız Personel': 'Sınırsız Personel',
+            'Sınırsız Müşteri': 'Sınırsız Müşteri',
+            'Online Randevu': 'Online Randevu',
+            'İstatistikler': 'İstatistikler',
+            'Yapay Zeka Akıllı Asistan (Test)': 'Yapay Zeka Akıllı Asistan (Test)',
+            '100 Randevu/Ay': '100 Randevu/Ay',
+            '300 Randevu/Ay': '300 Randevu/Ay',
+            '600 Randevu/Ay': '600 Randevu/Ay',
+            '900 Randevu/Ay': '900 Randevu/Ay',
+            '1.200 Randevu/Ay': '1.200 Randevu/Ay',
+            '2.000 Randevu/Ay': '2.000 Randevu/Ay',
+            'Yapay Zeka Akıllı Asistan (Standart Kullanım)': 'Yapay Zeka Akıllı Asistan (Standart Kullanım)',
+            'Yapay Zeka Akıllı Asistan (Gelişmiş Kullanım)': 'Yapay Zeka Akıllı Asistan (Gelişmiş Kullanım)',
+            'Yapay Zeka Akıllı Asistan (Limitsiz)': 'Yapay Zeka Akıllı Asistan (Limitsiz)',
+        },
+        'en': {
+            '50 Randevu veya 7 Gün (Hangisi önce)': '50 Appointments or 7 Days (Whichever comes first)',
+            'Randevu Hatırlatma Dahil': 'Appointment Reminders Included',
+            'Sınırsız Personel': 'Unlimited Staff',
+            'Sınırsız Müşteri': 'Unlimited Customers',
+            'Online Randevu': 'Online Appointment',
+            'İstatistikler': 'Statistics',
+            'Yapay Zeka Akıllı Asistan (Test)': 'AI Smart Assistant (Test)',
+            '100 Randevu/Ay': '100 Appointments / Monthly',
+            '300 Randevu/Ay': '300 Appointments / Monthly',
+            '600 Randevu/Ay': '600 Appointments / Monthly',
+            '900 Randevu/Ay': '900 Appointments / Monthly',
+            '1.200 Randevu/Ay': '1,200 Appointments / Monthly',
+            '2.000 Randevu/Ay': '2,000 Appointments / Monthly',
+            'Yapay Zeka Akıllı Asistan (Standart Kullanım)': 'AI Smart Assistant (Standard Use)',
+            'Yapay Zeka Akıllı Asistan (Gelişmiş Kullanım)': 'AI Smart Assistant (Advanced Use)',
+            'Yapay Zeka Akıllı Asistan (Limitsiz)': 'AI Smart Assistant (Unlimited)',
+        }
+    }
     
     # İlk ay %25 indirimli fiyatları hesapla
     plans_with_discount = []
     for plan in PLANS:
         if plan['id'] == 'tier_trial':
-            plans_with_discount.append(plan)
+            plan_copy = plan.copy()
+            # Features'ları çevir
+            if 'features' in plan_copy and lang == 'en':
+                plan_copy['features'] = [features_translation['en'].get(f, f) for f in plan_copy['features']]
+            plans_with_discount.append(plan_copy)
             continue
         
         plan_copy = plan.copy()
@@ -3692,6 +3739,10 @@ async def get_plans(request: Request):
             except Exception as e:
                 logger.warning(f"⚠️ Stripe'dan GBP fiyat çekilemedi, TRY fiyatları kullanılıyor: {e}")
                 # Hata durumunda TRY fiyatlarını kullan (plan_copy zaten plan.copy() ile oluşturuldu)
+        
+        # Features'ları çevir
+        if 'features' in plan_copy:
+            plan_copy['features'] = [features_translation.get(lang, features_translation['tr']).get(f, f) for f in plan_copy['features']]
         
         # İlk ay indirimli fiyatları hesapla
         plan_copy['price_monthly_original'] = plan_copy.get('price_monthly', plan['price_monthly'])
