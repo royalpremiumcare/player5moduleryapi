@@ -204,7 +204,7 @@ const SettingsSubscription = ({ onNavigate }) => {
                   </p>
                   <Button
                     onClick={() => {
-                      const webUrl = window.location.origin.replace(/\/$/, '');
+                      const webUrl = 'https://plannapp.co';
                       if (Capacitor.isNativePlatform()) {
                         Browser.open({ url: webUrl });
                       } else {

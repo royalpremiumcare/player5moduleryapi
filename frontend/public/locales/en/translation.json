@@ -991,5 +991,9 @@
     "errorFillPriceDuration": "Please enter price and duration for all services",
     "staffAdded": "Staff added to list",
     "errorFillNameEmail": "Please enter name and email"
+  },
+  "appCompliance": {
+    "subscriptionInfo": "Please visit our website to manage your subscription and billing.",
+    "goToWebsite": "Go to Website"
   }
 }

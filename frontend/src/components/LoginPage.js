@@ -30,6 +30,13 @@ const LoginPage = () => {
     if (Capacitor.isNativePlatform()) {
       localStorage.setItem('is_app_mode', 'true');
       setIsAppMode(true);
+      
+      // Android/iOS'te login sayfasına ?mode=app parametresi ekle
+      const urlParams = new URLSearchParams(location.search);
+      if (!urlParams.get('mode')) {
+        const newUrl = `${location.pathname}?mode=app${location.hash}`;
+        window.history.replaceState({}, '', newUrl);
+      }
     }
 
     // App mode detection from URL (HashRouter compatible)

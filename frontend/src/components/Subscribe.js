@@ -22,11 +22,11 @@ const Subscribe = ({ onNavigate }) => {
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-8 max-w-md mx-auto text-center">
             <h2 className="text-xl font-bold text-gray-900 mb-4">{t('subscribePage.subscriptionManagement')}</h2>
             <p className="text-gray-600 mb-6">
-              {t('subscribePage.subscriptionInfo')}
+              {t('appCompliance.subscriptionInfo')}
             </p>
             <Button
               onClick={() => {
-                const webUrl = window.location.origin.replace(/\/$/, '');
+                const webUrl = 'https://plannapp.co';
                 if (Capacitor.isNativePlatform()) {
                   Browser.open({ url: webUrl });
                 } else {
@@ -35,7 +35,7 @@ const Subscribe = ({ onNavigate }) => {
               }}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {t('subscribePage.goToWebsite')}
+              {t('appCompliance.goToWebsite')}
             </Button>
             <button
               onClick={() => onNavigate && onNavigate("settings")}

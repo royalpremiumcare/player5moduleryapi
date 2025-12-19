@@ -991,5 +991,9 @@
     "errorFillPriceDuration": "Lütfen tüm hizmetler için fiyat ve süre girin",
     "staffAdded": "Personel listeye eklendi",
     "errorFillNameEmail": "Lütfen isim ve e-posta girin"
+  },
+  "appCompliance": {
+    "subscriptionInfo": "Abonelik yönetimi ve faturalandırma işlemleri için lütfen web sitemizi ziyaret edin.",
+    "goToWebsite": "Web Sitesine Git"
   }
 }
