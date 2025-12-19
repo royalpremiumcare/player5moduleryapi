@@ -4801,9 +4801,12 @@ async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends
             is_yearly = billing_cycle == 'yearly'
             
             quota_usage = plan_doc.get('quota_usage', 0)
-            # Yıllık pakette kota 12 katı
-            base_quota = plan_info.get('quota_monthly_appointments', 50)
-            quota_limit = base_quota * 12 if is_yearly else base_quota
+            # quota_limit zaten database'de aylık olarak tutuluyor (lazy quota reset mekanizması ile)
+            # Yıllık plan için de aylık gösterilecek, sadece badge'de "Yıllık Plan" yazacak
+            quota_limit = plan_doc.get('quota_limit')
+            if not quota_limit:
+                # Fallback: Eğer database'de quota_limit yoksa plan_info'dan al (aylık)
+                quota_limit = plan_info.get('quota_monthly_appointments', 50)
             quota_remaining = max(0, quota_limit - quota_usage)
             quota_percentage = (quota_usage / quota_limit * 100) if quota_limit > 0 else 0
             
