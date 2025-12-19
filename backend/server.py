@@ -3681,12 +3681,12 @@ async def get_current_plan(request: Request, current_user: UserInDB = Depends(ge
     # Datetime'ları string'e çevir
     billing_cycle = plan_doc.get('billing_cycle', 'monthly')
     
-    # Yıllık pakette kota 12 katı olmalı
-    base_quota = plan_info.get('quota_monthly_appointments', 50)
-    if billing_cycle == 'yearly':
-        quota_limit = base_quota * 12
-    else:
-        quota_limit = base_quota
+    # quota_limit zaten database'de aylık olarak tutuluyor (lazy quota reset mekanizması ile)
+    # Yıllık plan için de aylık gösterilecek, sadece badge'de "Yıllık Plan" yazacak
+    quota_limit = plan_doc.get('quota_limit')
+    if not quota_limit:
+        # Fallback: Eğer database'de quota_limit yoksa plan_info'dan al (aylık)
+        quota_limit = plan_info.get('quota_monthly_appointments', 50)
     
     result = {
         "plan_id": plan_id,
