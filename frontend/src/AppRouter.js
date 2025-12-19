@@ -48,7 +48,13 @@ const AppRouter = () => {
       />
       <Route 
         path="/login" 
-        element={shouldRedirectToHome ? <Navigate to="/" replace /> : <LoginPage />} 
+        element={
+          shouldRedirectToHome 
+            ? <Navigate to="/" replace /> 
+            : Capacitor.isNativePlatform() && !location.search.includes('mode=app')
+              ? <Navigate to="/login?mode=app" replace />
+              : <LoginPage />
+        } 
       />
       <Route 
         path="/register" 

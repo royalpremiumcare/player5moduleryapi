@@ -31,11 +31,11 @@ const LoginPage = () => {
       localStorage.setItem('is_app_mode', 'true');
       setIsAppMode(true);
       
-      // Android/iOS'te login sayfasına ?mode=app parametresi ekle
+      // Android/iOS'te login sayfasına ?mode=app parametresi ekle (HashRouter için)
       const urlParams = new URLSearchParams(location.search);
       if (!urlParams.get('mode')) {
-        const newUrl = `${location.pathname}?mode=app${location.hash}`;
-        window.history.replaceState({}, '', newUrl);
+        navigate('/login?mode=app', { replace: true });
+        return;
       }
     }
 
@@ -49,7 +49,7 @@ const LoginPage = () => {
     } else if (localStorage.getItem('is_app_mode') === 'true') {
       setIsAppMode(true);
     }
-  }, [location]);
+  }, [location, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -190,15 +190,18 @@ const LoginPage = () => {
           </CardContent>
         </Card>
 
-        <div className="text-center mt-4 md:mt-6 mb-4 md:mb-0">
-          <Button
-            variant="outline"
-            onClick={() => navigate('/')}
-            className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
-          >
-            {t('common.backToHome')}
-          </Button>
-        </div>
+        {/* Ana ekrana dön butonu - Sadece web'de göster, app mode'da gizle */}
+        {!isAppMode && (
+          <div className="text-center mt-4 md:mt-6 mb-4 md:mb-0">
+            <Button
+              variant="outline"
+              onClick={() => navigate('/')}
+              className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
+            >
+              {t('common.backToHome')}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
