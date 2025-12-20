@@ -346,31 +346,38 @@ const SettingsProfile = ({ onNavigate }) => {
                     className="text-base"
                   />
                   <p className="text-xs text-gray-600">{t('settings.profile.fields.companyNameNote')}</p>
-                  {settings.slug && (
-                    <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                      <p className="text-xs text-gray-600 mb-1">{t('settings.profile.fields.appointmentLink')}</p>
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                        <code className="flex-1 text-sm font-mono bg-white px-3 py-2 rounded border border-gray-200 text-gray-700 break-all">
-                          plannapp.co/{settings.slug}
-                        </code>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            try {
-                              const url = `plannapp.co/${settings.slug}`;
-                              navigator.clipboard.writeText(url);
-                              toast.success(t('settings.profile.linkCopied'));
-                            } catch (error) {
-                              toast.error(t('settings.profile.linkCopyError'));
-                            }
-                          }}
-                          className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs font-semibold whitespace-nowrap"
-                        >
-                          {t('settings.profile.buttons.copy')}
-                        </button>
+                  {settings.slug && (() => {
+                    // Telefon numarasına göre domain belirle (+44 ise co.uk, değilse co)
+                    const phone = settings.support_phone || "";
+                    const cleanPhone = phone.replace(/\s/g, "");
+                    const domain = (cleanPhone.startsWith('+44') || cleanPhone.startsWith('44')) ? 'plannapp.co.uk' : 'plannapp.co';
+                    const appointmentLink = `${domain}/${settings.slug}`;
+                    
+                    return (
+                      <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <p className="text-xs text-gray-600 mb-1">{t('settings.profile.fields.appointmentLink')}</p>
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                          <code className="flex-1 text-sm font-mono bg-white px-3 py-2 rounded border border-gray-200 text-gray-700 break-all">
+                            {appointmentLink}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                navigator.clipboard.writeText(appointmentLink);
+                                toast.success(t('settings.profile.linkCopied'));
+                              } catch (error) {
+                                toast.error(t('settings.profile.linkCopyError'));
+                              }
+                            }}
+                            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs font-semibold whitespace-nowrap"
+                          >
+                            {t('settings.profile.buttons.copy')}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 <div className="space-y-2">

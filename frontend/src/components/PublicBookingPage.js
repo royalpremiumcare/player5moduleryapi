@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { format } from "date-fns";
-import { tr } from "date-fns/locale";
+import { tr, enGB } from "date-fns/locale";
 import { Calendar as CalendarIcon, Clock, CheckCircle, AlertCircle, User, Calendar as CalendarComp, ChevronLeft, ChevronRight } from "lucide-react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast, Toaster } from "sonner";
+import { useTranslation } from "react-i18next";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const API = `${BACKEND_URL}/api`;
@@ -23,6 +24,25 @@ const publicApi = axios.create({
 
 const PublicBookingPage = () => {
   const { slug } = useParams();
+  const { t, i18n } = useTranslation();
+  
+  // Domain bazlı dil algılama - date-fns locale ve currency symbol
+  const currentLang = i18n.language || 'tr';
+  const dateLocale = currentLang === 'en' ? enGB : tr;
+  const currencySymbol = currentLang === 'en' ? '£' : '₺';
+  
+  // Domain bazlı telefon prefix ve validation
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isUKDomain = hostname.includes('plannapp.co.uk');
+  const phonePrefix = isUKDomain ? '+44' : '+90';
+  const phonePlaceholder = isUKDomain ? 'XXXX XXXXXX' : '5XX XXX XX XX';
+  
+  // Telefon numarası validation: prefix'ten sonra tam 10 rakam olmalı
+  const validatePhone = (phone) => {
+    // Prefix'i kaldır ve sadece rakamları kontrol et
+    const digits = phone.replace(/[^\d]/g, '');
+    return digits.length === 10;
+  };
   
   // Özel route'ları yakalamayı engelle (superadmin, dashboard, login, vb.)
   const reservedPaths = ['superadmin', 'dashboard', 'login', 'register', 'forgot-password', 'reset-password', 'setup-password'];
@@ -115,7 +135,7 @@ const PublicBookingPage = () => {
       setLoading(false);
     } catch (error) {
       console.error("❌ İşletme yüklenemedi:", error);
-      toast.error("İşletme bulunamadı");
+      toast.error(t('publicBooking.businessNotFound'));
       setLoading(false);
     }
   };
@@ -233,7 +253,17 @@ const PublicBookingPage = () => {
     e.preventDefault();
 
     if (!selectedService || !selectedDate || !selectedTime || !customerFullName || !phone) {
-      toast.error("Lütfen tüm alanları doldurun");
+      toast.error(t('publicBooking.errorFillAll'));
+      return;
+    }
+    
+    // Telefon numarası validation: tam 10 rakam olmalı
+    if (!validatePhone(phone)) {
+      toast.error(
+        isUKDomain 
+          ? t('publicBooking.phoneInvalidUK', { pattern: phonePrefix })
+          : t('publicBooking.phoneInvalidTR', { pattern: phonePrefix })
+      );
       return;
     }
 
@@ -241,9 +271,12 @@ const PublicBookingPage = () => {
     try {
       const fullName = customerFullName.trim();
       
+      // Telefon numarasına prefix ekle
+      const fullPhoneNumber = `${phonePrefix}${phone}`;
+      
       const payload = {
         customer_name: fullName,
-        phone: phone,
+        phone: fullPhoneNumber,
         service_id: selectedService.id,
         appointment_date: format(selectedDate, "yyyy-MM-dd"),
         appointment_time: selectedTime,
@@ -265,7 +298,7 @@ const PublicBookingPage = () => {
       }
       
       setSuccess(true);
-      toast.success("Randevunuz başarıyla oluşturuldu!");
+      toast.success(t('publicBooking.appointmentCreated'));
       
       // 5 saniye sonra formu resetle
       setTimeout(() => {
@@ -280,7 +313,7 @@ const PublicBookingPage = () => {
         setRememberMe(false);
       }, 5000);
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || "Randevu oluşturulamadı";
+      const errorMessage = error.response?.data?.detail || t('publicBooking.errorCreateAppointment');
       toast.error(errorMessage);
       console.error("❌ Randevu hatası:", error);
     } finally {
@@ -293,7 +326,7 @@ const PublicBookingPage = () => {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Yükleniyor...</p>
+          <p className="mt-4 text-gray-600">{t('publicBooking.loading')}</p>
         </div>
       </div>
     );
@@ -304,8 +337,8 @@ const PublicBookingPage = () => {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
         <Card className="p-8 text-center max-w-md">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">İşletme Bulunamadı</h2>
-          <p className="text-gray-600">Bu bağlantı geçersiz veya işletme artık aktif değil.</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">{t('publicBooking.businessNotFound')}</h2>
+          <p className="text-gray-600">{t('publicBooking.businessNotFoundDesc')}</p>
         </Card>
       </div>
     );
@@ -317,9 +350,9 @@ const PublicBookingPage = () => {
         <Toaster position="top-center" richColors />
         <Card className="p-8 text-center max-w-md">
           <CheckCircle className="w-20 h-20 text-green-500 mx-auto mb-4" />
-          <h2 className="text-3xl font-bold text-gray-900 mb-3">Randevunuz Oluşturuldu!</h2>
-          <p className="text-gray-600 mb-2">Randevu bilgileriniz telefonunuza SMS ile gönderildi.</p>
-          <p className="text-sm text-gray-500">Teşekkür ederiz!</p>
+          <h2 className="text-3xl font-bold text-gray-900 mb-3">{t('publicBooking.appointmentCreated')}</h2>
+          <p className="text-gray-600 mb-2">{t('publicBooking.appointmentCreatedDesc')}</p>
+          <p className="text-sm text-gray-500">{t('publicBooking.thankYou')}</p>
         </Card>
       </div>
     );
@@ -328,7 +361,7 @@ const PublicBookingPage = () => {
   const qualifiedStaff = getQualifiedStaff();
   const selectedStaffName = selectedStaff 
     ? qualifiedStaff.find(s => s.username === selectedStaff)?.full_name || selectedStaff
-    : "Farketmez (İlk Müsait)";
+    : t('publicBooking.anyStaff');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 overflow-x-hidden">
@@ -355,7 +388,7 @@ const PublicBookingPage = () => {
               <h1 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 truncate" style={{ fontFamily: 'Poppins, Inter, sans-serif' }}>
                 {business.business_name}
               </h1>
-              <p className="text-xs sm:text-sm text-gray-600">Online Randevu Sistemi</p>
+              <p className="text-xs sm:text-sm text-gray-600">{t('publicBooking.onlineBookingSystem')}</p>
             </div>
           </div>
         </div>
@@ -396,7 +429,7 @@ const PublicBookingPage = () => {
             <Card className="p-4 sm:p-6 bg-white shadow-xl">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6 flex items-center gap-2">
                 <span className="w-7 h-7 sm:w-8 sm:h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0">1</span>
-                <span className="truncate">Hizmet Seçin</span>
+                <span className="truncate">{t('publicBooking.step1')}</span>
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {services.map((service) => (
@@ -417,14 +450,14 @@ const PublicBookingPage = () => {
                     {(() => {
                       const showDuration = settings?.show_service_duration_on_public !== false;
                       if (showDuration) {
-                        return <div className="text-xs sm:text-sm text-gray-500 mb-1 sm:mb-2">{(service.duration || 30)} dakika</div>;
+                        return <div className="text-xs sm:text-sm text-gray-500 mb-1 sm:mb-2">{(service.duration || 30)} {t('publicBooking.minutes')}</div>;
                       }
                       return null;
                     })()}
                     {(() => {
                       const showPrice = settings?.show_service_price_on_public !== false;
                       if (showPrice) {
-                        return <div className="text-xl sm:text-2xl font-bold text-blue-600">{Math.round(service.price)}₺</div>;
+                        return <div className="text-xl sm:text-2xl font-bold text-blue-600">{currentLang === 'en' ? `${currencySymbol}${Math.round(service.price)}` : `${Math.round(service.price)}${currencySymbol}`}</div>;
                       }
                       return null;
                     })()}
@@ -442,7 +475,7 @@ const PublicBookingPage = () => {
             <Card className="p-4 sm:p-6 bg-white shadow-xl">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6 flex items-center gap-2">
                 <span className="w-7 h-7 sm:w-8 sm:h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0">2</span>
-                <span className="truncate">Personel Seçin</span>
+                <span className="truncate">{t('publicBooking.step2')}</span>
               </h2>
               <div className="space-y-4">
                 <Select 
@@ -450,13 +483,13 @@ const PublicBookingPage = () => {
                   onValueChange={(value) => setSelectedStaff(value === "any" ? null : value)}
                 >
                   <SelectTrigger className="w-full h-12 border-2">
-                    <SelectValue placeholder="Personel seçin..." />
+                    <SelectValue placeholder={t('publicBooking.selectStaff')} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="any">
                       <div className="flex items-center gap-2">
                         <User className="w-4 h-4" />
-                        <span>Farketmez (İlk Müsait)</span>
+                        <span>{t('publicBooking.anyStaff')}</span>
                       </div>
                     </SelectItem>
                     {qualifiedStaff.map((staff) => (
@@ -470,7 +503,7 @@ const PublicBookingPage = () => {
                   </SelectContent>
                 </Select>
                 <p className="text-sm text-gray-500 mt-2">
-                  ℹ️ "Farketmez" seçeneği ile sistem size en uygun ilk müsait saati bulacaktır.
+                  ℹ️ {t('publicBooking.anyStaffDesc')}
                 </p>
               </div>
             </Card>
@@ -481,12 +514,12 @@ const PublicBookingPage = () => {
             <Card className="p-4 sm:p-6 bg-white shadow-xl">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6 flex items-center gap-2">
                 <span className="w-7 h-7 sm:w-8 sm:h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0">3</span>
-                <span className="truncate">Tarih ve Saat Seçin</span>
+                <span className="truncate">{t('publicBooking.step3')}</span>
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                 {/* Sol: Tarih Seçici */}
                 <div>
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Tarih Seçin</h3>
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">{t('publicBooking.selectDate')}</h3>
                   <div className="flex justify-center">
                     <Calendar
                       mode="single"
@@ -497,22 +530,22 @@ const PublicBookingPage = () => {
                           setSelectedTime(""); // Tarih değişince saati sıfırla
                         }
                       }}
-                      locale={tr}
+                      locale={dateLocale}
                       disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
                       className="rounded-xl border shadow-sm w-full max-w-[280px]"
                     />
                   </div>
                   <div className="mt-3 sm:mt-4 text-center">
-                    <p className="text-xs sm:text-sm text-gray-600">Seçilen Tarih:</p>
+                    <p className="text-xs sm:text-sm text-gray-600">{t('publicBooking.selectedDate')}</p>
                     <p className="text-base sm:text-lg font-semibold text-gray-900 break-words">
-                      {selectedDate ? format(selectedDate, "d MMMM yyyy", { locale: tr }) : "-"}
+                      {selectedDate ? format(selectedDate, "d MMMM yyyy", { locale: dateLocale }) : "-"}
                     </p>
                   </div>
                 </div>
 
                 {/* Sağ: Müsait Saatler */}
                 <div>
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Müsait Saatler</h3>
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">{t('publicBooking.availableSlots')}</h3>
                   {availableSlots.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 max-h-96 overflow-y-auto">
                       {availableSlots.map((slot) => {
@@ -537,8 +570,8 @@ const PublicBookingPage = () => {
                   ) : (
                     <div className="text-center py-8">
                       <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-gray-600">Bu tarih için müsait saat bulunmamaktadır.</p>
-                      <p className="text-sm text-gray-500 mt-1">Lütfen başka bir tarih seçin.</p>
+                      <p className="text-gray-600">{t('publicBooking.noAvailableSlots')}</p>
+                      <p className="text-sm text-gray-500 mt-1">{t('publicBooking.selectAnotherDate')}</p>
                     </div>
                   )}
                 </div>
@@ -551,7 +584,7 @@ const PublicBookingPage = () => {
             <Card className="p-4 sm:p-6 bg-white shadow-xl">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6 flex items-center gap-2">
                 <span className="w-7 h-7 sm:w-8 sm:h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0">4</span>
-                <span className="truncate">Bilgilerinizi Girin</span>
+                <span className="truncate">{t('publicBooking.step4')}</span>
               </h2>
 
               {/* "Beni Hatırla" - Hoşgeldiniz Mesajı */}
@@ -559,14 +592,14 @@ const PublicBookingPage = () => {
                 <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">
-                      Hoşgeldiniz, {savedUser.fullName || (savedUser.name && savedUser.surname ? `${savedUser.name} ${savedUser.surname}` : savedUser.name || savedUser.surname || '')}!
+                      {t('publicBooking.welcome', { name: savedUser.fullName || (savedUser.name && savedUser.surname ? `${savedUser.name} ${savedUser.surname}` : savedUser.name || savedUser.surname || '') })}
                     </h3>
                     <button
                       type="button"
                       onClick={handleNotMe}
                       className="text-xs sm:text-sm text-blue-600 hover:text-blue-800 underline flex-shrink-0 whitespace-nowrap"
                     >
-                      (Bu ben değilim)
+                      {t('publicBooking.notMe')}
                     </button>
                   </div>
                 </div>
@@ -575,27 +608,47 @@ const PublicBookingPage = () => {
               {/* Form Alanları */}
               <div className="grid grid-cols-1 gap-3 sm:gap-4 mb-4 sm:mb-6">
                 <div className="space-y-2">
-                  <Label htmlFor="fullName">Ad Soyad *</Label>
+                  <Label htmlFor="fullName">{t('publicBooking.fullName')}</Label>
                   <Input
                     id="fullName"
                     value={customerFullName}
                     onChange={(e) => setCustomerFullName(e.target.value)}
-                    placeholder="Adınız Soyadınız"
+                    placeholder={t('publicBooking.fullNamePlaceholder')}
                     required
                     className="border-2"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Telefon Numaranız *</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="05XX XXX XX XX"
-                    required
-                    className="border-2"
-                  />
+                  <Label htmlFor="phone">{t('publicBooking.phone')}</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600 font-medium z-10">
+                      {phonePrefix}
+                    </span>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => {
+                        // Sadece rakamları kabul et, maksimum 10 rakam
+                        const value = e.target.value.replace(/[^\d]/g, '').slice(0, 10);
+                        setPhone(value);
+                      }}
+                      onBlur={(e) => {
+                        const value = e.target.value.trim();
+                        if (value && !validatePhone(value)) {
+                          toast.error(
+                            isUKDomain 
+                              ? t('publicBooking.phoneInvalidUK', { pattern: phonePrefix })
+                              : t('publicBooking.phoneInvalidTR', { pattern: phonePrefix })
+                          );
+                        }
+                      }}
+                      placeholder={phonePlaceholder}
+                      required
+                      className="border-2 pl-12"
+                      maxLength={10}
+                    />
+                  </div>
                 </div>
                 {!savedUser && (
                   <div className="flex items-center space-x-2">
@@ -605,7 +658,7 @@ const PublicBookingPage = () => {
                       onCheckedChange={(checked) => setRememberMe(checked)}
                     />
                     <Label htmlFor="remember" className="text-sm font-normal cursor-pointer">
-                      Beni Hatırla
+                      {t('publicBooking.rememberMe')}
                     </Label>
                   </div>
                 )}
@@ -613,30 +666,30 @@ const PublicBookingPage = () => {
 
               {/* Özet Kartı */}
               <div className="mt-4 sm:mt-6 p-4 sm:p-5 bg-blue-50 rounded-xl border border-blue-200">
-                <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 text-base sm:text-lg">Randevu Özeti</h3>
+                <h3 className="font-semibold text-gray-900 mb-3 sm:mb-4 text-base sm:text-lg">{t('publicBooking.appointmentSummary')}</h3>
                 <div className="space-y-2 text-xs sm:text-sm">
                   <div className="flex justify-between gap-2">
-                    <span className="text-gray-600 flex-shrink-0">Hizmet:</span>
+                    <span className="text-gray-600 flex-shrink-0">{t('publicBooking.service')}</span>
                     <span className="font-semibold text-gray-900 text-right break-words">{selectedService?.name}</span>
                   </div>
                   <div className="flex justify-between gap-2">
-                    <span className="text-gray-600 flex-shrink-0">Personel:</span>
+                    <span className="text-gray-600 flex-shrink-0">{t('publicBooking.staff')}</span>
                     <span className="font-semibold text-gray-900 text-right break-words">{selectedStaffName}</span>
                   </div>
                   <div className="flex justify-between gap-2">
-                    <span className="text-gray-600 flex-shrink-0">Tarih:</span>
+                    <span className="text-gray-600 flex-shrink-0">{t('publicBooking.date')}</span>
                     <span className="font-semibold text-gray-900 text-right break-words">
-                      {selectedDate ? format(selectedDate, "d MMMM yyyy", { locale: tr }) : "-"}
+                      {selectedDate ? format(selectedDate, "d MMMM yyyy", { locale: dateLocale }) : "-"}
                     </span>
                   </div>
                   <div className="flex justify-between gap-2">
-                    <span className="text-gray-600 flex-shrink-0">Saat:</span>
+                    <span className="text-gray-600 flex-shrink-0">{t('publicBooking.time')}</span>
                     <span className="font-semibold text-gray-900 text-right">{selectedTime || "-"}</span>
                   </div>
                   <div className="flex justify-between gap-2 border-t border-blue-300 pt-2 mt-2">
-                    <span className="text-gray-600 flex-shrink-0">Ücret:</span>
+                    <span className="text-gray-600 flex-shrink-0">{t('publicBooking.price')}</span>
                     <span className="font-bold text-blue-600 text-base sm:text-lg">
-                      {selectedService ? `${Math.round(selectedService.price)}₺` : "-"}
+                      {selectedService ? (currentLang === 'en' ? `${currencySymbol}${Math.round(selectedService.price)}` : `${Math.round(selectedService.price)}${currencySymbol}`) : "-"}
                     </span>
                   </div>
                 </div>
@@ -647,7 +700,7 @@ const PublicBookingPage = () => {
                 disabled={submitting || !canGoNext()}
                 className="w-full mt-4 sm:mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 sm:py-6 text-base sm:text-lg shadow-lg"
               >
-                {submitting ? "Randevu Oluşturuluyor..." : "Randevuyu Onayla"}
+                {submitting ? t('publicBooking.creatingAppointment') : t('publicBooking.confirmAppointment')}
               </Button>
             </Card>
           )}
@@ -662,7 +715,7 @@ const PublicBookingPage = () => {
               className="flex items-center gap-1 sm:gap-2 text-sm sm:text-base px-3 sm:px-4"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">Geri</span>
+              <span className="hidden sm:inline">{t('publicBooking.back')}</span>
             </Button>
             
             {currentStep < totalSteps ? (
@@ -672,7 +725,7 @@ const PublicBookingPage = () => {
                 disabled={!canGoNext()}
                 className="flex items-center gap-1 sm:gap-2 bg-blue-600 hover:bg-blue-700 text-sm sm:text-base px-3 sm:px-4"
               >
-                <span>İleri</span>
+                <span>{t('publicBooking.next')}</span>
                 <ChevronRight className="w-4 h-4" />
               </Button>
             ) : null}
@@ -683,8 +736,8 @@ const PublicBookingPage = () => {
       {/* Footer */}
       <footer className="mt-8 sm:mt-16 py-4 sm:py-8 bg-white/50 backdrop-blur-sm border-t border-gray-200">
         <div className="container mx-auto px-3 sm:px-4 text-center text-gray-600 text-xs sm:text-sm">
-          <p className="break-words">© 2025 {business.business_name} - Tüm hakları saklıdır</p>
-          <p className="mt-1">Powered by <span className="font-bold text-blue-600">PLANN</span></p>
+          <p className="break-words">{t('publicBooking.allRightsReserved', { businessName: business.business_name })}</p>
+          <p className="mt-1">{t('publicBooking.poweredBy')}</p>
         </div>
       </footer>
     </div>

@@ -1,6 +1,7 @@
 from voice_ai_service import get_voice_ai_service
-from whatsapp_service import send_whatsapp_template
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile
+from whatsapp_service import send_whatsapp_template, detect_language_from_phone
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form
+from twilio.twiml.messaging_response import MessagingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -503,18 +504,16 @@ async def lifespan(app: FastAPI):
     
     try:
         logging.info("Step 4: Starting Schedulers...")
-        # SMS Reminder Job - Her 5 dakikada bir (sadece SMS_ENABLED=true ise)
-        if SMS_ENABLED:
-            scheduler.add_job(
-                check_and_send_reminders, 
-                IntervalTrigger(minutes=5), 
-                id='sms_reminder_job',
-                replace_existing=True,
-                max_instances=1  # Aynı anda sadece bir instance çalışsın
-            )
-            logging.info("  - SMS Reminder: Enabled (Every 5 minutes)")
-        else:
-            logging.info("  - SMS Reminder: Disabled (SMS_ENABLED=false)")
+        # WhatsApp Reminder Job - Her 5 dakikada bir (WhatsApp hatırlatmaları için)
+        # NOT: Bu job WhatsApp gönderiyor, SMS değil. SMS_ENABLED kontrolü yapılmıyor.
+        scheduler.add_job(
+            check_and_send_reminders, 
+            IntervalTrigger(minutes=5), 
+            id='whatsapp_reminder_job',
+            replace_existing=True,
+            max_instances=1  # Aynı anda sadece bir instance çalışsın
+        )
+        logging.info("  - WhatsApp Reminder: Enabled (Every 5 minutes)")
         
         # Recurring Payment Job - Her gün saat 02:00'de (UTC)
         from apscheduler.triggers.cron import CronTrigger
@@ -530,10 +529,9 @@ async def lifespan(app: FastAPI):
         logging.info("Step 4 SUCCESS: Schedulers started")
         logging.info("  - Recurring Payments: Daily at 02:00 UTC")
         
-        # İlk SMS kontrolünü hemen yap (sadece SMS_ENABLED=true ise)
-        if SMS_ENABLED:
-            import asyncio
-            asyncio.create_task(check_and_send_reminders())
+        # İlk WhatsApp hatırlatma kontrolünü hemen yap
+        import asyncio
+        asyncio.create_task(check_and_send_reminders())
     except Exception as e:
         logging.error(f"ERROR during Scheduler initialization: {type(e).__name__}: {str(e)}", exc_info=True)
     
@@ -581,10 +579,10 @@ async def lifespan(app: FastAPI):
     # Global app instance'ı temizle (global değişken, direkt atama yapılabilir)
     # _app_instance zaten global scope'ta tanımlı, burada sadece None yapıyoruz
     if scheduler.running:
-        logging.info("Stopping SMS Reminder Scheduler...")
+        logging.info("Stopping WhatsApp Reminder Scheduler...")
         try: 
             scheduler.shutdown(wait=False)
-            logging.info("SMS Reminder Scheduler stopped")
+            logging.info("WhatsApp Reminder Scheduler stopped")
         except Exception as e:
             logging.error(f"Error stopping scheduler: {e}")
     if app.mongodb_client:
@@ -3389,6 +3387,21 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
     )
     
     send_sms(appointment.phone, sms_message)
+    
+    # WhatsApp ONAY mesajı gönderimi
+    try:
+        send_whatsapp_template(
+            to_number=appointment.phone,
+            template_type="CONFIRMATION",
+            customer_name=appointment.customer_name,
+            company_name=company_name,
+            appointment_date=appointment.appointment_date,
+            appointment_time=appointment.appointment_time,
+            service_name=service['name'],
+            support_phone=support_phone or "+44 7474 626 900"
+        )
+    except Exception as whatsapp_error:
+        logger.warning(f"⚠️ WhatsApp mesajı gönderilemedi: {whatsapp_error}")
     
     # Audit log
     await create_audit_log(
@@ -8275,6 +8288,48 @@ async def ai_chat_endpoint(
 
 # --- Router prefix'i buraya taşındı ---
 app.include_router(api_router, prefix="/api")
+
+# === WhatsApp Webhook (Twilio) ===
+@app.post("/webhook")
+async def whatsapp_webhook(
+    Body: str = Form(default=""),  # default="" hata almamak için önemlidir
+    From: str = Form(default="")
+):
+    """
+    Twilio'dan gelen mesajları dinler ve otomatik cevap döner.
+    """
+    # 1. Loglama (Terminalde görmen için)
+    logger.info(f"📩 WEBHOOK TETİKLENDİ! Gönderen: {From}, Mesaj: {Body}")
+    print(f"\n📩 WEBHOOK TETİKLENDİ! Gönderen: {From}, Mesaj: {Body}")
+
+    # 2. Numarayı temizle
+    incoming_msg = Body.lower()
+    clean_phone = From.replace('whatsapp:', '')
+    
+    # 3. Dil tespiti
+    lang = detect_language_from_phone(clean_phone)
+    
+    # 4. Yanıtı Hazırla
+    resp = MessagingResponse()
+    msg = resp.message()
+    
+    if lang == "TR":
+        response_text = (
+            "🤖 *Otomatik Bilgilendirme*\n\n"
+            "Bu numara sadece randevu bilgilendirmeleri içindir. "
+            "Lütfen talepleriniz için işletme ile doğrudan iletişime geçiniz."
+        )
+    else:
+        response_text = (
+            "🤖 *Automated Message*\n\n"
+            "This number is for appointment notifications only. "
+            "Please contact the business directly for any inquiries."
+        )
+    
+    msg.body(response_text)
+    
+    # 5. XML Olarak Döndür (Kritik nokta burası)
+    return Response(content=str(resp), media_type="application/xml")
 
 # === CORS Preflight için OPTIONS handler (router'dan SONRA) ===
 @app.options("/api/{path:path}")

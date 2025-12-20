@@ -172,7 +172,7 @@ def send_whatsapp_template(
     appointment_time: str,
     service_name: str,
     support_phone: str
-) -> Union[str, bool]:
+) -> str:
     """
     Twilio Content API kullanarak WhatsApp şablon mesajı gönderir.
     
@@ -187,18 +187,23 @@ def send_whatsapp_template(
         support_phone (str): İletişim numarası
     
     Returns:
-        Union[str, bool]: Başarılı ise Message SID, başarısız ise False
+        str: Message SID (başarılı ise)
+    
+    Raises:
+        TwilioException: Twilio API hatası durumunda
+        ValueError: Geçersiz parametreler durumunda
+        Exception: Diğer hatalar durumunda
     """
     try:
-        # WhatsApp devre dışı ise logla ve True döndür
+        # WhatsApp devre dışı ise logla ve skip et (bu bir hata değil, bir ayar)
         if not WHATSAPP_ENABLED:
             logger.info("WhatsApp messaging is disabled via WHATSAPP_ENABLED env. Skipping.")
-            return True
+            return "disabled"  # Placeholder değer, gerçek SID değil
         
         # API anahtarları kontrolü
         if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
             logger.error("Twilio credentials not found in environment variables")
-            return False
+            raise Exception("Twilio credentials not found in environment variables")
         
         # Dil tespiti
         language = detect_language_from_phone(to_number)
@@ -206,14 +211,16 @@ def send_whatsapp_template(
         # Şablon tipi kontrolü
         template_type_upper = template_type.upper()
         if template_type_upper not in TEMPLATES:
-            logger.error(f"Invalid template type: {template_type}. Must be one of: {list(TEMPLATES.keys())}")
-            return False
+            error_msg = f"Invalid template type: {template_type}. Must be one of: {list(TEMPLATES.keys())}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # Şablon ID'yi al
         content_sid = TEMPLATES[template_type_upper].get(language)
         if not content_sid:
-            logger.error(f"Template SID not found for type '{template_type_upper}' and language '{language}'")
-            return False
+            error_msg = f"Template SID not found for type '{template_type_upper}' and language '{language}'"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # Tarih formatını düzenle (DD.MM.YYYY formatına çevir)
         # Kullanıcı dostu format: 25.12.2025 (Gün.Ay.Yıl)
@@ -236,7 +243,12 @@ def send_whatsapp_template(
         # Twilio client oluştur
         client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
         
-        # WhatsApp mesajı gönder (Content API)
+        # DEBUG: Template SID'yi logla
+        print(f"DEBUG: Sending Template SID: {content_sid} to {formatted_to}")
+        logger.info(f"DEBUG: Sending Template SID: {content_sid} to {formatted_to}")
+        
+        # WhatsApp mesajı gönder (Content API - SADECE content_sid ve content_variables kullan)
+        # ÖNEMLİ: body parametresi KULLANILMAMALI (24 saat kuralı nedeniyle Error 63016 hatası verir)
         message = client.messages.create(
             content_sid=content_sid,
             content_variables=json.dumps(content_variables),
@@ -252,158 +264,15 @@ def send_whatsapp_template(
         
     except TwilioException as e:
         logger.error(f"Twilio WhatsApp error for {to_number}: {str(e)}")
-        return False
+        # Fallback yok - hata varsa kod patlasın, yanlış yöntem denemesin
+        raise
     except Exception as e:
         logger.error(f"Unexpected error sending WhatsApp to {to_number}: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
-        return False
+        # Fallback yok - hata varsa kod patlasın, yanlış yöntem denemesin
+        raise
 
-# ============================================================================
-# GERİYE DÖNÜK UYUMLULUK FONKSİYONLARI (DEPRECATED)
-# ============================================================================
-
-def send_whatsapp_notification(to_number: str, message_body: str) -> Union[str, bool]:
-    """
-    [DEPRECATED] Eski WhatsApp mesaj gönderme fonksiyonu.
-    Artık Content API kullanılıyor, bu fonksiyon sadece geriye dönük uyumluluk için.
-    
-    Args:
-        to_number (str): Alıcı telefon numarası
-        message_body (str): Gönderilecek mesaj içeriği (artık kullanılmıyor)
-    
-    Returns:
-        Union[str, bool]: Başarılı ise Message SID, başarısız ise False
-    """
-    logger.warning(
-        "send_whatsapp_notification is deprecated. "
-        "Please use send_whatsapp_template instead."
-    )
-    # Eski yöntemle gönder (body kullanarak)
-    try:
-        if not WHATSAPP_ENABLED:
-            logger.info("WhatsApp messaging is disabled via WHATSAPP_ENABLED env. Skipping.")
-            return True
-        
-        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
-            logger.error("Twilio credentials not found in environment variables")
-            return False
-        
-        formatted_to = format_phone_number(to_number)
-        
-        MAX_LENGTH = 1600
-        if len(message_body) > MAX_LENGTH:
-            message_body = message_body[:MAX_LENGTH] + "..."
-            logger.warning(f"Message truncated to {MAX_LENGTH} characters")
-        
-        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        
-        message = client.messages.create(
-            body=message_body,
-            from_=TWILIO_WHATSAPP_FROM,
-            to=formatted_to
-        )
-        
-        logger.info(f"WhatsApp message sent successfully to {formatted_to}. SID: {message.sid}")
-        return message.sid
-        
-    except TwilioException as e:
-        logger.error(f"Twilio WhatsApp error for {to_number}: {str(e)}")
-        return False
-    except Exception as e:
-        logger.error(f"Unexpected error sending WhatsApp to {to_number}: {str(e)}")
-        return False
-
-def build_whatsapp_message(
-    company_name: str,
-    customer_name: str,
-    service_name: str,
-    appointment_date: str,
-    appointment_time: str,
-    support_phone: str,
-    message_type: str = "confirmation"
-) -> str:
-    """
-    [DEPRECATED] Eski WhatsApp mesaj şablonu oluşturma fonksiyonu.
-    Artık Content API kullanılıyor, bu fonksiyon sadece geriye dönük uyumluluk için.
-    
-    Bu fonksiyon artık kullanılmamalı. send_whatsapp_template kullanılmalı.
-    """
-    logger.warning(
-        "build_whatsapp_message is deprecated. "
-        "Please use send_whatsapp_template instead."
-    )
-    # Eski formatı koru (geriye dönük uyumluluk için)
-    try:
-        from datetime import datetime
-        date_obj = datetime.strptime(appointment_date, "%Y-%m-%d")
-        formatted_date = date_obj.strftime("%d.%m.%Y")
-    except:
-        formatted_date = appointment_date
-    
-    if message_type == "confirmation":
-        message = f"""🎉 *{company_name}*
-
-Merhaba {customer_name},
-
-Randevunuz başarıyla oluşturuldu! ✅
-
-📅 *Tarih:* {formatted_date}
-🕐 *Saat:* {appointment_time}
-💼 *Hizmet:* {service_name}
-
-Randevunuz için hazır olun. Herhangi bir sorunuz varsa bize ulaşabilirsiniz.
-
-📞 *Bilgi/İptal:* {support_phone}
-
-Teşekkürler! 🙏"""
-
-    elif message_type == "reminder":
-        message = f"""⏰ *Randevu Hatırlatması*
-
-Merhaba {customer_name},
-
-Randevunuz yaklaşıyor! 
-
-📅 *Tarih:* {formatted_date}
-🕐 *Saat:* {appointment_time}
-💼 *Hizmet:* {service_name}
-🏢 *{company_name}*
-
-Lütfen randevunuz için hazır olun.
-
-📞 *Bilgi/İptal:* {support_phone}"""
-
-    elif message_type == "cancellation":
-        message = f"""❌ *Randevu İptali*
-
-Merhaba {customer_name},
-
-Randevunuz iptal edilmiştir.
-
-📅 *Tarih:* {formatted_date}
-🕐 *Saat:* {appointment_time}
-💼 *Hizmet:* {service_name}
-🏢 *{company_name}*
-
-Yeni randevu için bize ulaşabilirsiniz.
-
-📞 *İletişim:* {support_phone}"""
-
-    else:
-        message = f"""📋 *{company_name}*
-
-Merhaba {customer_name},
-
-Randevu bilgileriniz:
-
-📅 *Tarih:* {formatted_date}
-🕐 *Saat:* {appointment_time}
-💼 *Hizmet:* {service_name}
-
-📞 *İletişim:* {support_phone}"""
-
-    return message
 
 # ============================================================================
 # TEST FONKSİYONU
