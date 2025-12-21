@@ -147,14 +147,25 @@ const Subscribe = ({ onNavigate }) => {
       toast.success(t('settings.subscribePage.paymentSuccess'), {
         duration: 5000,
       });
+
+      // Webhook gecikmesi / misconfig durumuna karşı: backend'e confirm isteği at
+      api.post("/payments/confirm-checkout-session", { session_id: sessionId })
+        .then(() => {
+          // Planı yeniden yükle
+          setTimeout(() => {
+            loadPlans();
+          }, 1000);
+        })
+        .catch(() => {
+          // Sessiz geç - plan yine de webhook ile güncellenebilir
+          setTimeout(() => {
+            loadPlans();
+          }, 1000);
+        });
       
       // URL'den session_id'yi temizle
       window.history.replaceState({}, document.title, window.location.pathname);
       
-      // Planı yeniden yükle
-      setTimeout(() => {
-        loadPlans();
-      }, 1000);
     }
 
     // Native: Browser kapandığında processingPlanId'yi sıfırla

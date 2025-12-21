@@ -1,10 +1,10 @@
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : 'http://localhost:8001';
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : '';
 
 // BACKEND_URL kontrolü (sadece undefined ise uyar, empty string geçerli)
 if (process.env.REACT_APP_BACKEND_URL === undefined) {
-  console.warn('⚠️ REACT_APP_BACKEND_URL tanımlı değil! Varsayılan olarak http://localhost:8001 kullanılıyor.');
+  console.warn('⚠️ REACT_APP_BACKEND_URL tanımlı değil! Varsayılan olarak same-origin (/api) kullanılacak.');
   console.warn('Lütfen frontend/.env dosyasında REACT_APP_BACKEND_URL değişkenini tanımlayın.');
 }
 
@@ -43,6 +43,12 @@ api.interceptors.response.use(
   async (error) => {
     // 401 Unauthorized hatası geldiğinde otomatik logout
     if (error.response && error.response.status === 401) {
+      // Stripe confirm endpoint'i best-effort: token yoksa/expire olduysa kullanıcıyı zorla logout etme
+      const requestUrl = error.config?.url || '';
+      if (requestUrl.includes('/payments/confirm-checkout-session')) {
+        return Promise.reject(error);
+      }
+
       // App mode kontrolü - yönlendirmeden ÖNCE kontrol et
       const isAppMode = localStorage.getItem('is_app_mode') === 'true';
       

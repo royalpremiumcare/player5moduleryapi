@@ -197,6 +197,202 @@ async def send_email(to_email: str, subject: str, html_content: str, to_name: st
         logging.error(traceback.format_exc())
         return False
 
+# Subscription email helpers
+def _get_domain_from_request(request: Request) -> str:
+    try:
+        from urllib.parse import urlparse
+
+        raw_host = (request.headers.get('host') or '').strip()
+        raw_origin = (request.headers.get('origin') or '').strip()
+        raw_referer = (request.headers.get('referer') or '').strip()
+
+        def _extract_host(value: str) -> str:
+            if not value:
+                return ''
+            value = value.strip()
+            if value.startswith('http://') or value.startswith('https://'):
+                parsed = urlparse(value)
+                value = parsed.netloc
+            # strip port
+            if ':' in value:
+                value = value.split(':', 1)[0]
+            return value.lower()
+
+        # Prefer Origin/Referer (browser) to preserve www/non-www exactly, then Host
+        candidates = [
+            _extract_host(raw_origin),
+            _extract_host(raw_referer),
+            _extract_host(raw_host),
+        ]
+
+        allowed_suffixes = (
+            'plannapp.co.uk',
+            'plannapp.co',
+            'plannapp.com.tr',
+            'plannapp.com',
+        )
+
+        for c in candidates:
+            if not c:
+                continue
+            if any(c == sfx or c.endswith('.' + sfx) for sfx in allowed_suffixes):
+                return c
+
+        return 'plannapp.co'
+    except Exception:
+        return 'plannapp.co'
+
+
+def _get_lang_from_domain(domain: str) -> str:
+    domain = (domain or '').lower()
+    if 'plannapp.co.uk' in domain:
+        return 'en'
+    return 'tr'
+
+
+def _build_subscription_email(lang: str, full_name: str, plan_name: str, billing_cycle: str, dashboard_url: str) -> tuple[str, str]:
+    safe_name = full_name or ''
+    safe_plan = plan_name or ''
+    cycle = (billing_cycle or 'monthly').lower()
+    if lang == 'en':
+        subject = "Your PLANN subscription is now active"
+        cycle_label = "Yearly" if cycle == 'yearly' else "Monthly"
+        logo_url = "https://plannapp.co/api/static/logo.png"
+        html_content = f"""
+        <html>
+          <body style=\"margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;\">
+            <table width=\"100%\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\">
+              <tr>
+                <td align=\"center\" style=\"padding: 20px 0;\">
+                  <table width=\"600\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);\">
+                    <tr>
+                      <td align=\"center\" style=\"padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;\">
+                        <img src=\"{logo_url}\" alt=\"PLANN Logo\" style=\"max-width: 150px; height: auto;\">
+                      </td>
+                    </tr>
+                    <tr style=\"background-color: #ffffff;\">
+                      <td style=\"padding: 40px 30px; color: #333333; font-size: 16px;\">
+                        <h1 style=\"font-size: 24px; color: #111111; margin-top: 0; text-align: center;\">Your subscription is active!</h1>
+                        <p>Hello {safe_name or 'there'},</p>
+                        <p>Your PLANN subscription has been successfully activated.</p>
+                        <p><strong>Plan:</strong> {safe_plan}</p>
+                        <p><strong>Billing:</strong> {cycle_label}</p>
+                        <p style=\"text-align: center; margin-top: 30px; margin-bottom: 30px;\">
+                          You can now continue using PLANN with your new plan.
+                        </p>
+                      </td>
+                    </tr>
+                    <tr style=\"background-color: #ffffff;\">
+                      <td align=\"center\" style=\"padding: 0 30px 40px 30px;\">
+                        <a href=\"{dashboard_url}\" target=\"_blank\" style=\"background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;\">
+                          Go to Dashboard
+                        </a>
+                      </td>
+                    </tr>
+                    <tr style=\"background-color: #f9f9f9;\">
+                      <td align=\"center\" style=\"padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;\">
+                        <p>© 2025 PLANN. All rights reserved.</p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </body>
+        </html>
+        """
+        return subject, html_content
+
+    subject = "PLANN aboneliğiniz aktif edildi"
+    cycle_label = "Yıllık" if cycle == 'yearly' else "Aylık"
+    logo_url = "https://plannapp.co/api/static/logo.png"
+    html_content = f"""
+    <html>
+      <body style=\"margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;\">
+        <table width=\"100%\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\">
+          <tr>
+            <td align=\"center\" style=\"padding: 20px 0;\">
+              <table width=\"600\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);\">
+                <tr>
+                  <td align=\"center\" style=\"padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;\">
+                    <img src=\"{logo_url}\" alt=\"PLANN Logosu\" style=\"max-width: 150px; height: auto;\">
+                  </td>
+                </tr>
+                <tr style=\"background-color: #ffffff;\">
+                  <td style=\"padding: 40px 30px; color: #333333; font-size: 16px;\">
+                    <h1 style=\"font-size: 24px; color: #111111; margin-top: 0; text-align: center;\">Aboneliğiniz aktif edildi!</h1>
+                    <p>Merhaba {safe_name or ' '},</p>
+                    <p>Ödemeniz başarıyla alındı ve aboneliğiniz aktif edildi.</p>
+                    <p><strong>Paket:</strong> {safe_plan}</p>
+                    <p><strong>Dönem:</strong> {cycle_label}</p>
+                    <p style=\"text-align: center; margin-top: 30px; margin-bottom: 30px;\">
+                      Artık yeni paketinizle PLANN'ı kullanmaya devam edebilirsiniz.
+                    </p>
+                  </td>
+                </tr>
+                <tr style=\"background-color: #ffffff;\">
+                  <td align=\"center\" style=\"padding: 0 30px 40px 30px;\">
+                    <a href=\"{dashboard_url}\" target=\"_blank\" style=\"background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;\">
+                      Panele git
+                    </a>
+                  </td>
+                </tr>
+                <tr style=\"background-color: #f9f9f9;\">
+                  <td align=\"center\" style=\"padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;\">
+                    <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+    """
+    return subject, html_content
+
+
+async def _send_subscription_email_once(
+    db,
+    request: Request,
+    organization_id: str,
+    session_id: str,
+    plan_name: str,
+    billing_cycle: str,
+    payment_log: Optional[dict] = None,
+    admin_user: Optional[dict] = None,
+):
+    if not session_id:
+        return
+    if payment_log and payment_log.get('subscription_email_sent') is True:
+        return
+
+    if not admin_user:
+        admin_user = await db.users.find_one({"organization_id": organization_id, "role": "admin"})
+    if not admin_user:
+        logger.warning(f"Subscription email: admin user bulunamadı - org={organization_id}")
+        return
+
+    to_email = admin_user.get('username')
+    to_name = admin_user.get('full_name')
+    if not to_email:
+        logger.warning(f"Subscription email: admin email bulunamadı - org={organization_id}")
+        return
+
+    domain = _get_domain_from_request(request)
+    lang = _get_lang_from_domain(domain)
+    dashboard_url = f"https://{domain}"
+    subject, html_content = _build_subscription_email(lang, to_name, plan_name, billing_cycle, dashboard_url)
+
+    sent_ok = await send_email(to_email=to_email, subject=subject, html_content=html_content, to_name=to_name)
+    if sent_ok:
+        now = datetime.now(timezone.utc).isoformat()
+        await db.payment_logs.update_one(
+            {"session_id": session_id},
+            {"$set": {"subscription_email_sent": True, "subscription_email_sent_at": now, "subscription_email_lang": lang}},
+            upsert=True
+        )
+
 # === SMS REMINDER SCHEDULER ===
 scheduler = AsyncIOScheduler()
 _app_instance = None  # Global app instance for scheduler
@@ -4011,7 +4207,8 @@ async def update_plan(request: Request, plan_update: dict, current_user: UserInD
     
     # Yeni plana geç
     quota_reset = datetime.now(timezone.utc) + timedelta(days=30)
-    is_first_month = plan_doc.get('is_first_month', True) if new_plan_id != 'tier_trial' else False
+    # Trial dışına çıkarken is_first_month tekrar TRUE olmamalı
+    is_first_month = False if new_plan_id != 'tier_trial' else False
     
     update_data = {
         "plan_id": new_plan_id,
@@ -4172,10 +4369,15 @@ async def create_checkout_session(
             raise HTTPException(status_code=400, detail="Trial paketi satın alınamaz")
         
         db = await get_db_from_request(request)
-        
-        # 2. İndirimi uygula (İlk ay %25)
-        plan_doc = await get_organization_plan(db, current_user.organization_id)
-        is_first_month = plan_doc.get('is_first_month', True) if plan_doc else True
+
+        # 2. İndirimi uygula (organizasyon bazında sadece 1 kere)
+        # NOT: is_first_month flag'ine güvenme; direkt payment_logs geçmişine bak.
+        old_payment = await db.payment_logs.find_one({
+            "organization_id": current_user.organization_id,
+            "status": {"$in": ["completed", "active"]}
+        })
+        is_old_customer = bool(old_payment)
+        is_first_month = not is_old_customer
         
         # price_monthly değerini güvenli şekilde al
         price_monthly = plan.get('price_monthly', 0)
@@ -4276,7 +4478,7 @@ async def create_checkout_session(
             
             # COUPON_MAP'ten coupon ID al (sadece aylık planlar için)
             coupon_id = None
-            if not is_yearly:
+            if (not is_yearly) and (not is_old_customer):
                 # Explicit key check with verbose logging
                 logger.info(f"🔍 Checking COUPON_MAP for key: '{coupon_lookup_key}'")
                 logger.info(f"📋 Available Keys in COUPON_MAP: {list(COUPON_MAP.keys())}")
@@ -4296,18 +4498,11 @@ async def create_checkout_session(
             # Native app için deep link, web için normal URL
             is_native = plan_request.platform in ['android', 'ios']
             
-            # Domain algılama: Origin veya Referer header'ından domain'i çıkar
-            domain = "plannapp.co"  # Default
-            origin = request.headers.get('Origin', '')
-            referer = request.headers.get('Referer', '')
+            # Domain algılama: Host/Origin/Referer üzerinden domain'i çıkar
+            domain = _get_domain_from_request(request)
             
-            if 'plannapp.co.uk' in origin or 'plannapp.co.uk' in referer:
-                domain = "plannapp.co.uk"
-            elif 'plannapp.co' in origin or 'plannapp.co' in referer:
-                domain = "plannapp.co"
-            
-            success_url = PAYMENT_SUCCESS_URL_NATIVE if is_native else f"https://{domain}/?session_id={{CHECKOUT_SESSION_ID}}"
-            cancel_url = PAYMENT_CANCEL_URL_NATIVE if is_native else f"https://{domain}/dashboard"
+            success_url = PAYMENT_SUCCESS_URL_NATIVE if is_native else f"https://{domain}/?session_id={{CHECKOUT_SESSION_ID}}#/payment-success"
+            cancel_url = PAYMENT_CANCEL_URL_NATIVE if is_native else f"https://{domain}/#/subscribe"
             
             logger.info(f"🌐 Domain algılandı: {domain}, cancel_url: {cancel_url}, success_url: {success_url}")
             
@@ -4607,6 +4802,195 @@ async def create_checkout_session(
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
+
+class StripeConfirmCheckoutRequest(BaseModel):
+    session_id: str
+
+
+@api_router.post("/payments/confirm-checkout-session")
+async def confirm_stripe_checkout_session(
+    request: Request,
+    body: StripeConfirmCheckoutRequest,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    try:
+        if current_user.role != "admin":
+            raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+
+        if not STRIPE_SECRET_KEY:
+            logger.error("STRIPE_SECRET_KEY tanımlı değil!")
+            raise HTTPException(status_code=500, detail="Ödeme sistemi yapılandırılmamış")
+
+        session_id = (body.session_id or "").strip()
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id gerekli")
+
+        logger.info(f"🔁 Confirm checkout session requested: session_id={session_id}, org={current_user.organization_id}")
+
+        session = stripe.checkout.Session.retrieve(
+            session_id,
+            expand=['line_items.data.price.product']
+        )
+
+        payment_status = session.get('payment_status')
+        status_value = session.get('status')
+        if payment_status not in ('paid', 'no_payment_required') and status_value != 'complete':
+            raise HTTPException(status_code=400, detail=f"Ödeme tamamlanmamış (payment_status={payment_status}, status={status_value})")
+
+        metadata = session.get('metadata', {}) or {}
+        organization_id = metadata.get('organization_id') or metadata.get('user_id')
+        if organization_id and organization_id != current_user.organization_id:
+            raise HTTPException(status_code=403, detail="session organization uyumsuz")
+        organization_id = current_user.organization_id
+
+        db = await get_db_from_request(request)
+
+        payment_log = await db.payment_logs.find_one({"session_id": session_id})
+        if payment_log and payment_log.get("status") == "active":
+            try:
+                plan_id_existing = payment_log.get('plan_id') or (metadata.get('plan_id') if isinstance(metadata, dict) else None)
+                plan_data_existing = await get_plan_info(plan_id_existing) if plan_id_existing else None
+                plan_name_existing = (plan_data_existing or {}).get('name') or plan_id_existing or ''
+                billing_cycle_existing = payment_log.get('billing_cycle') or (metadata.get('billing_cycle', 'monthly') if isinstance(metadata, dict) else 'monthly')
+                await _send_subscription_email_once(
+                    db=db,
+                    request=request,
+                    organization_id=organization_id,
+                    session_id=session_id,
+                    plan_name=plan_name_existing,
+                    billing_cycle=billing_cycle_existing,
+                    payment_log=payment_log,
+                )
+            except Exception as e:
+                logger.warning(f"Subscription email (already processed) gönderilemedi: {e}")
+            return {"status": "ok", "already_processed": True}
+
+        plan_id = None
+        if payment_log:
+            plan_id = payment_log.get('plan_id')
+        if not plan_id:
+            plan_id = metadata.get('plan_id')
+        if not plan_id:
+            raise HTTPException(status_code=400, detail="Plan bilgisi bulunamadı")
+
+        plan_data = await get_plan_info(plan_id)
+        if not plan_data:
+            raise HTTPException(status_code=400, detail="Plan bulunamadı")
+
+        billing_cycle = metadata.get('billing_cycle', 'monthly')
+
+        appointment_limit = None
+        quota_limit = None
+        try:
+            line_items = session.get('line_items', {})
+            if isinstance(line_items, dict) and 'data' in line_items:
+                line_items = line_items['data']
+            elif not isinstance(line_items, list):
+                line_items = []
+
+            if line_items and len(line_items) > 0:
+                price_obj = line_items[0].get('price')
+                if price_obj:
+                    price_metadata = price_obj.get('metadata', {})
+                    appointment_limit = price_metadata.get('appointment_limit')
+                    if not appointment_limit:
+                        product_obj = price_obj.get('product')
+                        if isinstance(product_obj, dict):
+                            product_metadata = product_obj.get('metadata', {})
+                            appointment_limit = product_metadata.get('appointment_limit')
+                        elif isinstance(product_obj, str):
+                            try:
+                                product_retrieved = stripe.Product.retrieve(product_obj)
+                                product_metadata = product_retrieved.get('metadata', {})
+                                appointment_limit = product_metadata.get('appointment_limit')
+                            except Exception as e:
+                                logger.warning(f"⚠️ Product retrieve hatası: {e}")
+
+                    if appointment_limit:
+                        try:
+                            quota_limit = int(appointment_limit)
+                        except (ValueError, TypeError):
+                            quota_limit = None
+
+            if not quota_limit:
+                appointment_limit = metadata.get('appointment_limit')
+                if appointment_limit:
+                    try:
+                        quota_limit = int(appointment_limit)
+                    except (ValueError, TypeError):
+                        quota_limit = None
+            if not quota_limit:
+                quota_limit = plan_data.get('quota_monthly_appointments', 100)
+        except Exception as e:
+            logger.error(f"❌ Confirm: appointment_limit alınırken hata: {e}")
+            quota_limit = plan_data.get('quota_monthly_appointments', 100)
+
+        now = datetime.now(timezone.utc)
+        if billing_cycle == 'yearly':
+            quota_reset = now + timedelta(days=365)
+        else:
+            quota_reset = now + timedelta(days=30)
+
+        update_data = {
+            "plan_id": plan_id,
+            "quota_usage": 0,
+            "quota_limit": quota_limit,
+            "quota_reset_date": quota_reset.isoformat(),
+            "quota_last_reset_date": now.isoformat(),
+            "is_first_month": False,
+            "billing_cycle": billing_cycle,
+            "updated_at": now.isoformat(),
+            "trial_start_date": None,
+            "trial_end_date": None,
+        }
+
+        subscription_id = session.get('subscription')
+        customer_id = session.get('customer')
+        if subscription_id:
+            update_data['stripe_subscription_id'] = subscription_id
+            update_data['stripe_customer_id'] = customer_id
+            update_data['next_billing_date'] = quota_reset.isoformat()
+
+        await db.organization_plans.update_one(
+            {"organization_id": organization_id},
+            {"$set": update_data},
+            upsert=True
+        )
+
+        await db.payment_logs.update_one(
+            {"session_id": session_id},
+            {"$set": {
+                "status": "active",
+                "completed_at": now.isoformat(),
+                "subscription_id": subscription_id,
+                "stripe_customer_id": customer_id,
+                "stripe_subscription_id": subscription_id
+            }},
+            upsert=True
+        )
+
+        try:
+            updated_payment_log = await db.payment_logs.find_one({"session_id": session_id})
+            await _send_subscription_email_once(
+                db=db,
+                request=request,
+                organization_id=organization_id,
+                session_id=session_id,
+                plan_name=plan_data.get('name') if isinstance(plan_data, dict) else plan_id,
+                billing_cycle=billing_cycle,
+                payment_log=updated_payment_log,
+            )
+        except Exception as e:
+            logger.warning(f"Subscription email gönderilemedi: {e}")
+
+        return {"status": "ok", "plan_id": plan_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Confirm checkout session hatası: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Confirm işlemi başarısız")
+
 @api_router.post("/webhook/stripe")
 async def handle_stripe_webhook(request: Request):
     """Stripe webhook - Ödeme başarılı olduğunda çağrılır"""
@@ -4651,8 +5035,40 @@ async def handle_stripe_webhook(request: Request):
             payment_log = await db.payment_logs.find_one({"session_id": session_id})
             
             if not payment_log:
-                logger.error(f"Webhook hatası: session_id={session_id} bulunamadı.")
-                return Response(content="OK", status_code=200)
+                metadata = session.get('metadata', {}) or {}
+                plan_id_meta = metadata.get('plan_id')
+                organization_id_meta = metadata.get('organization_id') or metadata.get('user_id')
+                if not plan_id_meta or not organization_id_meta:
+                    logger.error(f"Webhook hatası: session_id={session_id} payment_logs kaydı yok ve metadata eksik (plan_id/org_id).")
+                    return Response(content="OK", status_code=200)
+
+                billing_cycle_meta = metadata.get('billing_cycle', 'monthly')
+                customer_email = session.get('customer_email')
+                now_iso = datetime.now(timezone.utc).isoformat()
+                await db.payment_logs.update_one(
+                    {"session_id": session_id},
+                    {
+                        "$setOnInsert": {
+                            "session_id": session_id,
+                            "organization_id": organization_id_meta,
+                            "user_id": customer_email,
+                            "plan_id": plan_id_meta,
+                            "status": "pending",
+                            "payment_provider": "stripe",
+                            "created_at": now_iso,
+                        },
+                        "$set": {
+                            "stripe_customer_id": session.get('customer'),
+                            "stripe_subscription_id": session.get('subscription'),
+                            "billing_cycle": billing_cycle_meta,
+                            "currency": (session.get('currency') or '').upper() or None,
+                            "updated_at": now_iso,
+                        }
+                    },
+                    upsert=True
+                )
+                payment_log = await db.payment_logs.find_one({"session_id": session_id})
+                logger.warning(f"Webhook: payment_logs kaydı yoktu, metadata ile upsert edildi. session_id={session_id}, org={organization_id_meta}, plan={plan_id_meta}")
             
             if payment_log.get("status") == "active":
                 logger.info(f"Webhook: {session_id} zaten işlenmiş.")
@@ -4810,6 +5226,20 @@ async def handle_stripe_webhook(request: Request):
             )
             
             logger.info(f"✅ STRIPE BAŞARILI: {session_id} - Plan güncellendi. Organization: {organization_id}, Plan: {plan_id}")
+
+            try:
+                updated_payment_log = await db.payment_logs.find_one({"session_id": session_id})
+                await _send_subscription_email_once(
+                    db=db,
+                    request=request,
+                    organization_id=organization_id,
+                    session_id=session_id,
+                    plan_name=plan_data.get('name') if isinstance(plan_data, dict) else plan_id,
+                    billing_cycle=billing_cycle,
+                    payment_log=updated_payment_log,
+                )
+            except Exception as e:
+                logger.warning(f"Subscription email (webhook) gönderilemedi: {e}")
         
         # customer.subscription.updated - Abonelik güncellendi (iptal planlandı)
         elif event['type'] == 'customer.subscription.updated':
@@ -4875,6 +5305,21 @@ async def handle_stripe_webhook(request: Request):
     except Exception as e:
         logger.error(f"Stripe webhook işleme hatası: {e}", exc_info=True)
         return Response(content="ERROR", status_code=500)
+
+
+@api_router.post("/payments/webhook/stripe")
+async def handle_stripe_webhook_compat(request: Request):
+    return await handle_stripe_webhook(request)
+
+
+@app.post("/webhook/stripe")
+async def handle_stripe_webhook_root(request: Request):
+    return await handle_stripe_webhook(request)
+
+
+@app.post("/payments/webhook/stripe")
+async def handle_stripe_webhook_payments_root(request: Request):
+    return await handle_stripe_webhook(request)
 
 @api_router.post("/payments/process-recurring")
 async def process_recurring_payment(request: Request, organization_id: str, current_user: UserInDB = Depends(get_current_user)):
@@ -5710,10 +6155,10 @@ async def upload_logo(request: Request, file: UploadFile = File(...), current_us
     if not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="Sadece resim dosyaları yüklenebilir")
     
-    # File size check (2MB)
+    # File size check (5MB)
     file_content = await file.read()
-    if len(file_content) > 2 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Dosya boyutu 2MB'dan büyük olamaz")
+    if len(file_content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Dosya boyutu 5MB'dan büyük olamaz")
     
     # Save file to static directory
     static_dir = ROOT_DIR / "static" / "logos"

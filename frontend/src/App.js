@@ -114,13 +114,55 @@ function App() {
       const hash = window.location.hash;
       const urlParams = new URLSearchParams(window.location.search);
       const paymentStatus = urlParams.get('payment');
+      const search = window.location.search;
+      const href = window.location.href;
       
-      console.log('🔍 URL Changed:', { path, hash, userRole, paymentStatus });
+      console.log('🔍 URL Changed:', { path, hash, search, href, userRole, paymentStatus });
       
-      // Hash routing ile PayTR dönüşü (authentication korunur)
-      if (hash === '#/payment-success' && userRole === 'admin') {
+      // Hash routing ile PayTR/Stripe dönüşü (authentication korunur)
+      if (hash.startsWith('#/payment-success')) {
         console.log('✅ Payment successful via hash routing');
-        setCurrentView('dashboard');
+        // Stripe success URL hash içinde session_id taşıyabilir: #/payment-success?session_id=...
+        const queryStart = hash.indexOf('?');
+        let sessionId = null;
+        if (queryStart !== -1) {
+          const queryString = hash.substring(queryStart + 1);
+          const hashParams = new URLSearchParams(queryString);
+          sessionId = hashParams.get('session_id');
+        }
+
+        // Fallback: Bazı redirect senaryolarında session_id hash içine değil query string'e düşebilir
+        if (!sessionId) {
+          sessionId = urlParams.get('session_id');
+        }
+
+        const authToken = token || localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+
+        console.log('💳 payment-success params:', {
+          hasSessionId: Boolean(sessionId),
+          hasAuthToken: Boolean(authToken),
+        });
+
+        if (sessionId && authToken) {
+          // Webhook gelmezse bile planı güncellemek için confirm endpoint
+          console.log('🔁 Sending confirm-checkout-session request:', { sessionId });
+          api.post('/payments/confirm-checkout-session', { session_id: sessionId })
+            .then(() => {
+              // Stats'ı ve ekranı tazele
+              if (typeof loadStats === 'function') loadStats();
+            })
+            .catch(() => {
+              // Sessiz geç - webhook ile güncellenebilir
+            });
+        } else if (sessionId && !authToken) {
+          console.warn('⚠️ payment-success: sessionId var ama authToken yok; confirm isteği atlanıyor. Önce login olunmalı.');
+        }
+
+        if (authToken) {
+          setCurrentView('dashboard');
+        } else if (userRole === 'admin') {
+          setCurrentView('dashboard');
+        }
         setShowForm(false);
         setShowPaymentSuccess(true);
         toast.success('🎉 Ödeme başarıyla tamamlandı! Aboneliğiniz aktif edildi.', {
@@ -132,7 +174,7 @@ function App() {
         window.location.hash = '';
         // Banner'ı 10 saniye sonra kapat
         setTimeout(() => setShowPaymentSuccess(false), 10000);
-      } else if (hash === '#/payment-failed') {
+      } else if (hash.startsWith('#/payment-failed')) {
         console.log('❌ Payment failed via hash routing');
         setCurrentView('subscribe');
         setShowForm(false);
@@ -141,6 +183,10 @@ function App() {
         });
         // Hash'i temizle
         window.location.hash = '';
+      } else if (hash.startsWith('#/subscribe') && userRole === 'admin') {
+        // Stripe cancel_url gibi durumlarda subscribe sayfasına düşür
+        setCurrentView('subscribe');
+        setShowForm(false);
       }
       // /subscribe path kontrolü (PayTR eski URL'lerle döndüğünde)
       else if (path === '/subscribe') {
