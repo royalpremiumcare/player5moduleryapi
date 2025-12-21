@@ -169,7 +169,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                       <User className="w-5 h-5 text-green-600" />
               </div>
               <div>
-                      <p className="text-base font-semibold text-gray-900">{t('settings.profile')}</p>
+                      <p className="text-base font-semibold text-gray-900">{t('settings.profile.title')}</p>
                       <p className="text-xs text-gray-600">{t('settings.profileDescription')}</p>
                     </div>
                   </div>

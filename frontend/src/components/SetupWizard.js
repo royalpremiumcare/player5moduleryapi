@@ -24,13 +24,13 @@ const SetupWizard = ({ onComplete }) => {
   const [newStaffName, setNewStaffName] = useState("");
 
   const daysOfWeek = [
-    { key: 'monday', label: t('settingsProfile.businessHours.monday', 'Monday') },
-    { key: 'tuesday', label: t('settingsProfile.businessHours.tuesday', 'Tuesday') },
-    { key: 'wednesday', label: t('settingsProfile.businessHours.wednesday', 'Wednesday') },
-    { key: 'thursday', label: t('settingsProfile.businessHours.thursday', 'Thursday') },
-    { key: 'friday', label: t('settingsProfile.businessHours.friday', 'Friday') },
-    { key: 'saturday', label: t('settingsProfile.businessHours.saturday', 'Saturday') },
-    { key: 'sunday', label: t('settingsProfile.businessHours.sunday', 'Sunday') }
+    { key: 'monday', label: t('staff.management.days.monday', 'Monday') },
+    { key: 'tuesday', label: t('staff.management.days.tuesday', 'Tuesday') },
+    { key: 'wednesday', label: t('staff.management.days.wednesday', 'Wednesday') },
+    { key: 'thursday', label: t('staff.management.days.thursday', 'Thursday') },
+    { key: 'friday', label: t('staff.management.days.friday', 'Friday') },
+    { key: 'saturday', label: t('staff.management.days.saturday', 'Saturday') },
+    { key: 'sunday', label: t('staff.management.days.sunday', 'Sunday') }
   ];
 
   useEffect(() => {
