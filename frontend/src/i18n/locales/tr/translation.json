@@ -90,8 +90,8 @@
     "features": {
       "title": "PLANN Neler Sunar?",
       "autoSms": {
-        "title": "Otomatik SMS ve Hatırlatma",
-        "description": "Randevu öncesi otomatik SMS ile hatırlatma gönderin, unutulan randevulara son verin."
+        "title": "Otomatik WhatsApp ve Hatırlatma",
+        "description": "Randevu öncesi otomatik WhatsApp ile hatırlatma gönderin, unutulan randevulara son verin."
       },
       "onlineBooking": {
         "title": "Online Randevu Sistemi",
@@ -1001,7 +1001,7 @@
     "businessNotFound": "İşletme Bulunamadı",
     "businessNotFoundDesc": "Bu bağlantı geçersiz veya işletme artık aktif değil.",
     "appointmentCreated": "Randevunuz Oluşturuldu!",
-    "appointmentCreatedDesc": "Randevu bilgileriniz telefonunuza SMS ile gönderildi.",
+    "appointmentCreatedDesc": "Randevu bilgileriniz telefonunuza WhatsApp ile gönderildi.",
     "thankYou": "Teşekkür ederiz!",
     "onlineBookingSystem": "Online Randevu Sistemi",
     "step1": "Hizmet Seçin",

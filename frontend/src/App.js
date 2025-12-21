@@ -254,16 +254,17 @@ function App() {
       const allAppointments = response.data || [];
       setAppointments(allAppointments);
       
-      // 'Bekliyor' durumundaki randevuları bildirim olarak ekle
-      // Sadece son 24 saatte oluşturulanları veya ileri tarihli olanları alabiliriz
-      // Şimdilik tüm 'Bekliyor' randevularını alalım
-      const pendingAppointments = allAppointments.filter(appt => appt.status === 'Bekliyor');
+      // 'Bekliyor' durumundaki ve sadece public_booking kaynaklı randevuları bildirim olarak ekle
+      // Adminin kendi oluşturduğu randevular bildirim olarak gösterilmez
+      const pendingAppointments = allAppointments.filter(appt => 
+        appt.status === 'Bekliyor' && appt.source === 'public_booking'
+      );
       
       // Okunmuş bildirimleri localStorage'dan al
       const readNotificationIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
       
       // Bildirim formatına dönüştür - okunmuş durumu localStorage'dan kontrol et
-      setNotifications(pendingAppointments.map(appt => ({
+      const newNotifications = pendingAppointments.map(appt => ({
         id: appt.id, // Unique ID kullan
         read: readNotificationIds.includes(appt.id), // localStorage'dan kontrol et
         type: 'new_appointment',
@@ -271,11 +272,20 @@ function App() {
         message: `${appt.customer_name} - ${appt.service_name}`,
         details: `${appt.appointment_date} ${appt.appointment_time}`,
         time: appt.created_at || new Date().toISOString()
-      })));
+      }));
+      
+      // En yeni en üstte olacak şekilde sırala (time'a göre descending)
+      newNotifications.sort((a, b) => {
+        const timeA = new Date(a.time).getTime();
+        const timeB = new Date(b.time).getTime();
+        return timeB - timeA; // En yeni en üstte
+      });
+      
+      setNotifications(newNotifications);
 
       console.log("✅ Randevular yüklendi:", allAppointments.length, "randevu");
       if (pendingAppointments.length > 0) {
-        console.log("🔔 Bekleyen randevular bildirime eklendi:", pendingAppointments.length);
+        console.log("🔔 Bekleyen public booking randevuları bildirime eklendi:", pendingAppointments.length);
       }
     } catch (error) {
       console.error("❌ Randevular yüklenemedi:", error);
@@ -476,6 +486,20 @@ function App() {
     }
   }, []);
   
+  // Token değiştiğinde push subscription'ı yenile (cross-account sorununu önlemek için)
+  const prevTokenRef = useRef(token);
+  useEffect(() => {
+    // Token değiştiğinde (yeni login) pushSubscribed state'ini false yap
+    if (prevTokenRef.current !== token) {
+      if (prevTokenRef.current !== null && token !== null) {
+        // Token değişti (yeni kullanıcı giriş yaptı), subscription'ı sıfırla
+        console.log('🔄 Token changed, resetting push subscription');
+        setPushSubscribed(false);
+      }
+      prevTokenRef.current = token;
+    }
+  }, [token]);
+
   // Token değiştiğinde push subscribe ol
   useEffect(() => {
     if (token && !pushSubscribed) {
@@ -571,20 +595,31 @@ function App() {
         if (appointment?.source === 'public_booking') {
           // In-app notification ekle
           const newNotification = {
-            id: Date.now(),
+            id: appointment.id || Date.now(),
             type: 'new_appointment',
             title: '🔔 Yeni Online Randevu!',
             message: `${appointment.customer_name} - ${appointment.service_name}`,
             details: `${appointment.appointment_date} ${appointment.appointment_time}`,
-            time: new Date(),
+            time: appointment.created_at || new Date().toISOString(),
             read: false,
             appointmentId: appointment.id
           };
           
           // notificationsRef kullanarak güncelle (closure sorunu için)
+          // En yeni en üstte olacak şekilde ekle ve sırala
           if (typeof setNotifications === 'function') {
             setNotifications(prev => {
-              const updated = [newNotification, ...prev].slice(0, 20);
+              // Mevcut bildirimlerden bu ID'yi çıkar (duplicate önlemek için)
+              const filtered = prev.filter(n => n.id !== newNotification.id);
+              const updated = [newNotification, ...filtered].slice(0, 20);
+              
+              // En yeni en üstte olacak şekilde sırala
+              updated.sort((a, b) => {
+                const timeA = new Date(a.time).getTime();
+                const timeB = new Date(b.time).getTime();
+                return timeB - timeA; // En yeni en üstte
+              });
+              
               return updated;
             });
           }
@@ -791,12 +826,13 @@ function App() {
                       )}
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-80 max-h-96 overflow-y-auto">
-                    <div className="p-3 font-semibold border-b flex items-center justify-between">
-                      <span>Bildirimler</span>
+                  <DropdownMenuContent align="end" className="w-96 max-h-[500px] overflow-y-auto p-0 shadow-lg border border-gray-200 rounded-lg bg-white">
+                    <div className="p-4 border-b border-gray-200 bg-gray-50/50 flex items-center justify-between sticky top-0 z-10">
+                      <span className="font-semibold text-gray-900 text-base">Bildirimler</span>
                       {notifications.length > 0 && (
                         <button 
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             // Tüm bildirimleri okundu olarak işaretle
                             setNotifications(prev => prev.map(n => ({...n, read: true})));
                             // localStorage'a kaydet
@@ -805,45 +841,58 @@ function App() {
                             const mergedIds = [...new Set([...existingIds, ...allIds])];
                             localStorage.setItem('readNotificationIds', JSON.stringify(mergedIds));
                           }}
-                          className="text-xs text-blue-600 hover:underline"
+                          className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
                         >
                           Tümünü okundu işaretle
                         </button>
                       )}
                     </div>
                     {notifications.length === 0 ? (
-                      <div className="p-6 text-center text-gray-500">
-                        <Bell className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                        <p>Henüz bildirim yok</p>
-                        <p className="text-xs mt-1">Online randevular burada görünecek</p>
+                      <div className="p-8 text-center">
+                        <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
+                          <Bell className="w-8 h-8 text-gray-400" />
+                        </div>
+                        <p className="text-gray-600 font-medium">Henüz bildirim yok</p>
+                        <p className="text-xs text-gray-500 mt-1">Online randevular burada görünecek</p>
                       </div>
                     ) : (
-                      notifications.map(notification => (
-                        <DropdownMenuItem 
-                          key={notification.id} 
-                          className={`flex flex-col items-start p-3 cursor-pointer border-b last:border-b-0 ${!notification.read ? 'bg-blue-50' : ''}`}
-                          onClick={() => {
-                            setNotifications(prev => prev.map(n => 
-                              n.id === notification.id ? {...n, read: true} : n
-                            ));
-                            setShowNotifications(false);
-                          }}
-                        >
-                          <div className="flex items-start gap-2 w-full">
-                            <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!notification.read ? 'bg-blue-500' : 'bg-gray-300'}`} />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm">{notification.title}</p>
-                              <p className="text-sm text-gray-600 truncate">{notification.message}</p>
-                              {notification.details && (
-                                <p className="text-xs text-gray-500 mt-0.5">{notification.details}</p>
-                              )}
-                              <p className="text-xs text-gray-400 mt-1">
-                                {new Date(notification.time).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-                              </p>
+                      <div className="divide-y divide-gray-100">
+                        {notifications.map(notification => (
+                          <DropdownMenuItem 
+                            key={notification.id} 
+                            className={`p-0 cursor-pointer focus:bg-gray-50 ${!notification.read ? 'bg-blue-50/30' : 'bg-white hover:bg-gray-50'}`}
+                            onClick={() => {
+                              setNotifications(prev => prev.map(n => 
+                                n.id === notification.id ? {...n, read: true} : n
+                              ));
+                              // localStorage'a kaydet
+                              const existingIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
+                              if (!existingIds.includes(notification.id)) {
+                                localStorage.setItem('readNotificationIds', JSON.stringify([...existingIds, notification.id]));
+                              }
+                              setShowNotifications(false);
+                            }}
+                          >
+                            <div className="flex items-start gap-3 p-4 w-full">
+                              <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!notification.read ? 'bg-blue-600' : 'bg-gray-300'}`} />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-2 mb-1">
+                                  <p className={`font-semibold text-sm ${!notification.read ? 'text-gray-900' : 'text-gray-700'}`}>
+                                    {notification.title}
+                                  </p>
+                                  <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+                                    {new Date(notification.time).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-gray-700 truncate mb-1">{notification.message}</p>
+                                {notification.details && (
+                                  <p className="text-xs text-gray-500 font-medium">{notification.details}</p>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </DropdownMenuItem>
-                      ))
+                          </DropdownMenuItem>
+                        ))}
+                      </div>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>

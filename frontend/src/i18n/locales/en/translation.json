@@ -90,8 +90,8 @@
     "features": {
       "title": "What Does PLANN Offer?",
       "autoSms": {
-        "title": "Automatic SMS & Reminders",
-        "description": "Send automatic SMS reminders before appointments, eliminate forgotten appointments."
+        "title": "Automatic WhatsApp & Reminders",
+        "description": "Send automatic WhatsApp reminders before appointments, eliminate forgotten appointments."
       },
       "onlineBooking": {
         "title": "Online Booking System",
@@ -1001,7 +1001,7 @@
     "businessNotFound": "Business Not Found",
     "businessNotFoundDesc": "This link is invalid or the business is no longer active.",
     "appointmentCreated": "Your Appointment Has Been Created!",
-    "appointmentCreatedDesc": "Your appointment details have been sent to your phone via SMS.",
+    "appointmentCreatedDesc": "Your appointment details have been sent to your phone via WhatsApp.",
     "thankYou": "Thank you!",
     "onlineBookingSystem": "Online Booking System",
     "step1": "Select Service",

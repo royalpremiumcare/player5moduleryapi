@@ -661,10 +661,19 @@ async def connect(sid, environ, *args):
             token = auth_header[7:]
             logger.info(f"🔑 [CONNECT] Token from header: {token[:20]}...")
     
+    # Public sayfa için token olmayabilir - bu durumda sadece public room'lara join edebilir
+    is_public_connection = False
     if not token:
-        logger.warning(f"✗ [CONNECT] No token provided by {sid}")
-        logger.warning(f"✗ [CONNECT] Available environ keys: {list(environ.keys())[:10]}")
-        return False  # Bağlantıyı reddet
+        logger.info(f"🌐 [CONNECT] No token provided by {sid} - treating as public connection")
+        is_public_connection = True
+        # Public connection için minimal session oluştur
+        await sio.save_session(sid, {
+            'is_public': True
+        })
+        await sio.emit('connection_established', {'status': 'connected', 'public': True}, room=sid)
+        return True  # Public bağlantıya izin ver
+    
+    # Token varsa normal authentication yap
     
     # Token'ı doğrula
     try:
@@ -773,6 +782,68 @@ async def leave_organization(sid, data):
     if organization_id:
         await sio.leave_room(sid, f"org_{organization_id}")
         logger.info(f"Client {sid} left organization room: org_{organization_id}")
+
+@sio.event
+async def join_public_organization(sid, data):
+    """Public sayfa için organization room'a katıl - slug ile doğrulama"""
+    logger.info(f"🌐 [JOIN_PUBLIC] join_public_organization event received from {sid} with data: {data}")
+    
+    try:
+        slug = data.get('slug')
+        organization_id = data.get('organization_id')
+        
+        if not slug and not organization_id:
+            logger.warning(f"✗ [JOIN_PUBLIC] join_public_organization called without slug or organization_id from {sid}")
+            await sio.emit('error', {'message': 'slug or organization_id required'}, room=sid)
+            return
+        
+        # Database connection - app instance'ından al
+        from motor.motor_asyncio import AsyncIOMotorDatabase
+        global _app_instance
+        if _app_instance is None:
+            logger.error(f"✗ [JOIN_PUBLIC] App instance not available")
+            await sio.emit('error', {'message': 'Internal server error'}, room=sid)
+            return
+        
+        db = getattr(_app_instance, 'db', None)
+        if db is None:
+            logger.error(f"✗ [JOIN_PUBLIC] Database not available")
+            await sio.emit('error', {'message': 'Internal server error'}, room=sid)
+            return
+        
+        # Slug varsa organization_id'yi bul
+        if slug and not organization_id:
+            admin_user = await db.users.find_one({"slug": slug}, {"_id": 0, "organization_id": 1})
+            if not admin_user:
+                logger.warning(f"✗ [JOIN_PUBLIC] Slug not found: {slug}")
+                await sio.emit('error', {'message': 'Invalid slug'}, room=sid)
+                return
+            organization_id = admin_user.get('organization_id')
+        
+        if not organization_id:
+            logger.warning(f"✗ [JOIN_PUBLIC] organization_id not found for slug: {slug}")
+            await sio.emit('error', {'message': 'Invalid organization'}, room=sid)
+            return
+        
+        # Slug ile organization_id doğrulaması yap (güvenlik için)
+        if slug:
+            admin_user = await db.users.find_one({"slug": slug, "organization_id": organization_id}, {"_id": 0, "organization_id": 1})
+            if not admin_user:
+                logger.warning(f"✗ [JOIN_PUBLIC] Slug and organization_id mismatch: {slug} vs {organization_id}")
+                await sio.emit('error', {'message': 'Invalid slug or organization_id'}, room=sid)
+                return
+        
+        # Public room'a katıl (org_{organization_id} - aynı room, authenticated ve public client'lar birlikte)
+        room_name = f"org_{organization_id}"
+        await sio.enter_room(sid, room_name)
+        logger.info(f"✓ [JOIN_PUBLIC] Client {sid} joined public organization room: {room_name}")
+        
+        await sio.emit('joined_public_organization', {'organization_id': organization_id}, room=sid)
+        logger.info(f"✓ [JOIN_PUBLIC] Sent joined_public_organization confirmation to {sid}")
+        
+    except Exception as e:
+        logger.error(f"✗ [JOIN_PUBLIC] Error in join_public_organization: {e}", exc_info=True)
+        await sio.emit('error', {'message': 'Internal server error'}, room=sid)
 
 # === VOICE AI WEBSOCKET HANDLERS ===
 
@@ -3082,6 +3153,52 @@ async def get_appointment(request: Request, appointment_id: str, current_user: U
     if isinstance(appointment['created_at'], str): appointment['created_at'] = datetime.fromisoformat(appointment['created_at'].replace('Z', '+00:00'))
     return appointment
 
+# Yardımcı fonksiyon: Mola çakışması kontrolü
+async def check_break_conflict(db, staff_id: str, date: str, start_time: str, end_time: str, organization_id: str) -> bool:
+    """Personelin belirtilen tarih ve saatte mola çakışması var mı kontrol eder"""
+    try:
+        # Personeli bul ve molalarını al
+        staff = await db.users.find_one(
+            {"username": staff_id, "organization_id": organization_id},
+            {"_id": 0, "breaks": 1}
+        )
+        
+        if not staff:
+            return False
+        
+        staff_breaks = staff.get('breaks', [])
+        
+        # Zamanları dakika cinsinden sayıya çevir
+        def time_to_minutes(time_str):
+            try:
+                hour, minute = map(int, time_str.split(':'))
+                return hour * 60 + minute
+            except (ValueError, AttributeError):
+                return 0
+        
+        new_start_min = time_to_minutes(start_time)
+        new_end_min = time_to_minutes(end_time)
+        
+        # O tarihteki molaları kontrol et
+        for brk in staff_breaks:
+            if brk.get('date') == date:
+                break_start = brk.get('start_time')
+                break_end = brk.get('end_time')
+                
+                if break_start and break_end:
+                    break_start_min = time_to_minutes(break_start)
+                    break_end_min = time_to_minutes(break_end)
+                    
+                    # Çakışma kontrolü: (yeni_başlangıç < mola_bitiş) VE (yeni_bitiş > mola_başlangıç)
+                    if (new_start_min < break_end_min and new_end_min > break_start_min):
+                        logging.info(f"⚠️ Break conflict detected: New {start_time}-{end_time} overlaps with break {break_start}-{break_end} for staff {staff_id}")
+                        return True
+        
+        return False
+    except Exception as e:
+        logging.error(f"Error checking break conflict: {e}", exc_info=True)
+        return False
+
 @api_router.post("/appointments", response_model=Appointment)
 async def create_appointment(request: Request, appointment: AppointmentCreate, current_user: UserInDB = Depends(get_current_user)):
     db = await get_db_from_request(request)
@@ -3114,6 +3231,41 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                     {"$inc": {"quota_usage": -1}}
                 )
             raise HTTPException(status_code=403, detail="Bu hizmete randevu alma yetkiniz yok")
+        
+        # Personel kendi adına randevu oluşturuyor, kendi molasını kontrol et
+        # Staff role olduğunda, staff_member_id belirtilmese bile personel kendine atanacak
+        service_duration = service.get('duration', 30)
+        new_start_hour, new_start_minute = map(int, appointment.appointment_time.split(':'))
+        new_end_minute = new_start_minute + service_duration
+        new_end_hour = new_start_hour + (new_end_minute // 60)
+        new_end_minute = new_end_minute % 60
+        new_end_time = f"{str(new_end_hour).zfill(2)}:{str(new_end_minute).zfill(2)}"
+        
+        # Personelin kendi molasını kontrol et
+        has_break_conflict = await check_break_conflict(
+            db, current_user.username, appointment.appointment_date,
+            appointment.appointment_time, new_end_time, current_user.organization_id
+        )
+        
+        if has_break_conflict:
+            # Kota artırıldı ama mola çakışması var, geri al
+            plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
+            if plan_doc:
+                await db.organization_plans.update_one(
+                    {"organization_id": current_user.organization_id},
+                    {"$inc": {"quota_usage": -1}}
+                )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bu saatte mola var. Lütfen başka bir saat seçin."
+            )
+        
+        # Personel kendi adına randevu oluşturuyor, otomatik olarak kendine ata
+        # Normal akışa devam et, ama staff_member_id kontrolünü atlamak için 
+        # appointment.staff_member_id'yi current_user.username olarak set et
+        # Pydantic model olduğu için object.__setattr__ kullan
+        if not appointment.staff_member_id or appointment.staff_member_id != current_user.username:
+            object.__setattr__(appointment, 'staff_member_id', current_user.username)
     
     # Otomatik atama mantığı
     assigned_staff_id = None
@@ -3192,6 +3344,26 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                 status_code=400,
                 detail=f"Bu personelin {appointment.appointment_date} tarihinde {appointment.appointment_time} saatinde zaten bir randevusu var. Lütfen başka bir saat seçin."
             )
+        
+        # Mola çakışması kontrolü
+        has_break_conflict = await check_break_conflict(
+            db, appointment.staff_member_id, appointment.appointment_date,
+            appointment.appointment_time, new_end_time, current_user.organization_id
+        )
+        
+        if has_break_conflict:
+            # Kota artırıldı ama mola çakışması var, geri al
+            plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
+            if plan_doc:
+                await db.organization_plans.update_one(
+                    {"organization_id": current_user.organization_id},
+                    {"$inc": {"quota_usage": -1}}
+                )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bu personelin {appointment.appointment_date} tarihinde {appointment.appointment_time} saatinde mola var. Lütfen başka bir saat seçin."
+            )
+        
         assigned_staff_id = appointment.staff_member_id
     else:
         # Otomatik atama: Bu hizmeti verebilen personellerden boş olanı bul
@@ -3287,8 +3459,14 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                     logging.debug(f"   ⚠️ Staff {staff['username']} has conflict: {appointment.appointment_time}-{new_end_time} overlaps with {existing_start_time}-{existing_end_time}")
                     break
             
-            if not has_conflict:
-                # Bu personel boş!
+            # Mola çakışması kontrolü
+            has_break_conflict = await check_break_conflict(
+                db, staff['username'], appointment.appointment_date,
+                appointment.appointment_time, new_end_time, current_user.organization_id
+            )
+            
+            if not has_conflict and not has_break_conflict:
+                # Bu personel boş ve mola yok!
                 assigned_staff_id = staff['username']
                 logging.info(f"✅ Auto-assigned to {staff['username']} for {appointment.appointment_time}")
                 break
@@ -5100,12 +5278,31 @@ async def subscribe_push(request: Request, subscription_data: PushSubscriptionCr
     db = await get_db_from_request(request)
     
     subscription = subscription_data.subscription
+    endpoint = subscription["endpoint"]
     
-    # Mevcut aboneliği kontrol et (aynı endpoint)
+    # ÖNEMLİ: Aynı endpoint'e sahip ama farklı kullanıcıya/organization'a ait subscription varsa temizle
+    # Bu, cross-account bildirim karışıklığını önler
+    existing_any = await db.push_subscriptions.find_one({
+        "endpoint": endpoint
+    })
+    
+    if existing_any:
+        # Eğer mevcut subscription farklı bir kullanıcıya/organization'a aitse, onu sil
+        if (existing_any.get("organization_id") != current_user.organization_id or 
+            existing_any.get("user_id") != current_user.username):
+            logger.warning(
+                f"⚠️ Found existing subscription for endpoint {endpoint[:50]}... "
+                f"belonging to different user/org: {existing_any.get('user_id')}/{existing_any.get('organization_id')} "
+                f"(current: {current_user.username}/{current_user.organization_id}). Deleting old subscription."
+            )
+            await db.push_subscriptions.delete_one({"_id": existing_any["_id"]})
+            existing_any = None
+    
+    # Mevcut aboneliği kontrol et (aynı endpoint, aynı kullanıcı, aynı organization)
     existing = await db.push_subscriptions.find_one({
         "organization_id": current_user.organization_id,
         "user_id": current_user.username,
-        "endpoint": subscription["endpoint"]
+        "endpoint": endpoint
     })
     
     if existing:
@@ -5118,7 +5315,7 @@ async def subscribe_push(request: Request, subscription_data: PushSubscriptionCr
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }}
         )
-        logger.info(f"Push subscription updated for user: {current_user.username}, platform: {subscription.get('platform', 'web')}")
+        logger.info(f"✅ Push subscription updated for user: {current_user.username}, platform: {subscription.get('platform', 'web')}")
         return {"message": "Push subscription updated"}
     
     # Yeni abonelik oluştur
@@ -5127,14 +5324,14 @@ async def subscribe_push(request: Request, subscription_data: PushSubscriptionCr
         "organization_id": current_user.organization_id,
         "user_id": current_user.username,
         "user_role": current_user.role,
-        "endpoint": subscription["endpoint"],
+        "endpoint": endpoint,
         "keys": subscription["keys"],
         "platform": subscription.get("platform", "web"),  # android, ios, web
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     await db.push_subscriptions.insert_one(push_doc)
-    logger.info(f"Push subscription created for user: {current_user.username}, platform: {subscription.get('platform', 'web')}")
+    logger.info(f"✅ Push subscription created for user: {current_user.username}, platform: {subscription.get('platform', 'web')}")
     
     return {"message": "Push subscription created"}
 
@@ -7463,6 +7660,26 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                 status_code=400,
                 detail="Seçtiğiniz personel bu saatte dolu. Lütfen başka bir saat veya personel seçin."
             )
+        
+        # Mola çakışması kontrolü
+        has_break_conflict = await check_break_conflict(
+            db, appointment.staff_member_id, appointment.appointment_date,
+            appointment.appointment_time, new_end_time, organization_id
+        )
+        
+        if has_break_conflict:
+            # Kota artırıldı ama mola çakışması var, geri al
+            plan_doc = await db.organization_plans.find_one({"organization_id": organization_id})
+            if plan_doc:
+                await db.organization_plans.update_one(
+                    {"organization_id": organization_id},
+                    {"$inc": {"quota_usage": -1}}
+                )
+            raise HTTPException(
+                status_code=400,
+                detail="Seçtiğiniz personel bu saatte mola. Lütfen başka bir saat veya personel seçin."
+            )
+        
         assigned_staff_id = appointment.staff_member_id
     else:
         # Müşteri "Farketmez" seçti veya personel seçimi yok
@@ -7569,8 +7786,14 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                         logging.debug(f"   ⚠️ Public: Staff {staff['username']} has conflict: {appointment.appointment_time}-{new_end_time} overlaps with {existing_start_time}-{existing_end_time}")
                         break
                 
-                if not has_conflict:
-                    # Bu personel boş!
+                # Mola çakışması kontrolü
+                has_break_conflict = await check_break_conflict(
+                    db, staff['username'], appointment.appointment_date,
+                    appointment.appointment_time, new_end_time, organization_id
+                )
+                
+                if not has_conflict and not has_break_conflict:
+                    # Bu personel boş ve mola yok!
                     assigned_staff_id = staff['username']
                     logging.info(f"✅ Public booking auto-assigned to {staff['username']} for {appointment.appointment_time}")
                     break

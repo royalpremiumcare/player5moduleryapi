@@ -121,11 +121,26 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
     // App mode kontrolü
     const isAppMode = localStorage.getItem('is_app_mode') === 'true';
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
                          window.navigator.standalone === true;
+    
+    // Backend'de push subscription'ları sil (FCM token'ı temizle)
+    try {
+      const currentToken = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+      if (currentToken) {
+        // Token varsa backend'e unsubscribe isteği gönder
+        await api.delete('/push/unsubscribe').catch(err => {
+          // Hata olsa bile devam et (token geçersiz olabilir)
+          console.warn('Push unsubscribe error (ignored):', err);
+        });
+      }
+    } catch (error) {
+      // Hata olsa bile devam et
+      console.warn('Push unsubscribe error (ignored):', error);
+    }
     
     // State'leri temizle
     setToken(null);

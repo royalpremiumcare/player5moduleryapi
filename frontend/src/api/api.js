@@ -40,11 +40,26 @@ api.interceptors.response.use(
   (response) => {
     return response;
   },
-  (error) => {
+  async (error) => {
     // 401 Unauthorized hatası geldiğinde otomatik logout
     if (error.response && error.response.status === 401) {
       // App mode kontrolü - yönlendirmeden ÖNCE kontrol et
       const isAppMode = localStorage.getItem('is_app_mode') === 'true';
+      
+      // Backend'de push subscription'ları sil (FCM token'ı temizle)
+      try {
+        const currentToken = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+        if (currentToken) {
+          // Token varsa backend'e unsubscribe isteği gönder
+          await api.delete('/push/unsubscribe').catch(err => {
+            // Hata olsa bile devam et (token geçersiz olabilir)
+            console.warn('Push unsubscribe error (ignored):', err);
+          });
+        }
+      } catch (unsubError) {
+        // Hata olsa bile devam et
+        console.warn('Push unsubscribe error (ignored):', unsubError);
+      }
       
       // Sadece auth bilgilerini sil - is_app_mode'u KORUYORUZ
       localStorage.removeItem('authToken');
