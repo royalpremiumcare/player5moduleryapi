@@ -445,7 +445,7 @@ const SettingsProfile = ({ onNavigate }) => {
                         onChange={(e) => {
                           const file = e.target.files[0];
                           if (file) {
-                            if (file.size > 2 * 1024 * 1024) {
+                            if (file.size > 5 * 1024 * 1024) {
                               toast.error(t('settings.profile.fileSizeError'));
                               return;
                             }
