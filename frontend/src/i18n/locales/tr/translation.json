@@ -768,7 +768,7 @@
       "settingsSaveError": "Ayarlar kaydedilemedi. Lütfen tüm alanları kontrol edin.",
       "linkCopied": "Link kopyalandı!",
       "linkCopyError": "Link kopyalanamadı",
-      "fileSizeError": "Dosya boyutu 2MB'dan küçük olmalı",
+      "fileSizeError": "Dosya boyutu 5MB'dan küçük olmalı",
       "fields": {
         "email": "E-posta (Kullanıcı Adı)",
         "emailCannotChange": "E-posta adresi değiştirilemez.",
@@ -787,7 +787,7 @@
         "whatsappReminder": "WhatsApp Hatırlatma (Saat Önce)",
         "whatsappReminderNote": "Randevudan kaç saat önce WhatsApp hatırlatması gönderilsin",
         "logo": "İşletme Logosu",
-        "logoNote": "PNG veya JPG, maksimum 2MB",
+        "logoNote": "PNG veya JPG, maksimum 5MB",
         "businessHours": "Genel Çalışma Saatleri",
         "businessHoursNote": "Müşterilerinizin online randevu alabileceği gün ve saatleri belirleyin."
       },

@@ -768,7 +768,7 @@
       "settingsSaveError": "Could not save settings. Please check all fields.",
       "linkCopied": "Link copied!",
       "linkCopyError": "Could not copy link",
-      "fileSizeError": "File size must be less than 2MB",
+      "fileSizeError": "File size must be less than 5MB",
       "fields": {
         "email": "Email (Username)",
         "emailCannotChange": "Email address cannot be changed.",
@@ -787,7 +787,7 @@
         "whatsappReminder": "WhatsApp Reminder (Hours Before)",
         "whatsappReminderNote": "How many hours before the appointment should WhatsApp reminder be sent",
         "logo": "Company Logo",
-        "logoNote": "PNG or JPG, maximum 2MB",
+        "logoNote": "PNG or JPG, maximum 5MB",
         "businessHours": "General Business Hours",
         "businessHoursNote": "Set the days and times when customers can book online appointments."
       },

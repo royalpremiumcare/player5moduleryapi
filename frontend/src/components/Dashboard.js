@@ -353,14 +353,15 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     return true;
   });
   
-  // Yarının randevuları - Personel için sadece kendi randevuları
-  const tomorrowAppointments = appointments
+  // İleri tarihli tüm randevular (bugünden sonraki) - Personel için sadece kendi randevuları
+  const futureAppointments = appointments
     .filter(apt => {
       const aptDate = apt.appointment_date || apt.date;
       if (!aptDate) {
         return false;
       }
-      if (aptDate !== tomorrow) {
+      // Bugünden sonraki tüm randevuları al (bugün hariç)
+      if (aptDate <= today) {
         return false;
       }
       if (userRole === 'staff' && currentStaffUsername) {
@@ -370,7 +371,16 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       }
       return true;
     })
-    .sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
+    .sort((a, b) => {
+      // Önce tarihe göre sırala
+      const dateA = a.appointment_date || a.date;
+      const dateB = b.appointment_date || b.date;
+      if (dateA !== dateB) {
+        return dateA.localeCompare(dateB);
+      }
+      // Aynı tarihse saate göre sırala
+      return (a.appointment_time || '').localeCompare(b.appointment_time || '');
+    });
   
   // Randevuları personele göre filtrele ve saat sırasına göre sırala
   const filteredTodayAppointments = todayAppointments.filter(apt => 
@@ -380,8 +390,8 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     a.appointment_time.localeCompare(b.appointment_time)
   );
   
-  // Yarınki randevuları da filtrele
-  const filteredTomorrowAppointments = tomorrowAppointments.filter(apt =>
+  // İleri tarihli randevuları da personele göre filtrele
+  const filteredFutureAppointments = futureAppointments.filter(apt =>
     staffFilter === "all" || apt.staff_member_id === staffFilter
   );
 
@@ -855,20 +865,41 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         </Card>
       </div>
 
-      {/* KART 4: Yaklaşan Randevular */}
-      {tomorrowAppointments.length > 0 && (
+      {/* KART 4: Yaklaşan Randevular (İleri Tarihli Tüm Randevular) */}
+      {futureAppointments.length > 0 && (
         <div className="px-4 py-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900">{t('dashboard.tomorrowSummary.title')}</h2>
-              <div className="space-y-3">
-                {filteredTomorrowAppointments.map((appointment) => (
-                  <div
-                    key={appointment.id}
-                    className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
-                      appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "opacity-60" : ""
-                    } ${getStatusBorderColor(appointment.status)}`}
-                  >
+              <div className="space-y-4">
+                {filteredFutureAppointments.map((appointment) => {
+                  const aptDate = appointment.appointment_date || appointment.date;
+                  const isTomorrow = aptDate === tomorrow;
+                  const prevApt = filteredFutureAppointments[filteredFutureAppointments.indexOf(appointment) - 1];
+                  const prevDate = prevApt ? (prevApt.appointment_date || prevApt.date) : null;
+                  const showDateHeader = !prevDate || prevDate !== aptDate;
+                  
+                  return (
+                    <div key={appointment.id} className="space-y-3">
+                      {/* Tarih başlığı - Her yeni tarih için göster */}
+                      {showDateHeader && (
+                        <div className="mb-2 mt-2 first:mt-0">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4 text-gray-500" />
+                            <h3 className="text-sm font-semibold text-gray-700">
+                              {isTomorrow 
+                                ? t('dashboard.tomorrowSummary.title')
+                                : format(new Date(aptDate + 'T00:00:00'), "d MMMM yyyy, EEEE", { locale: dateLocale })
+                              }
+                            </h3>
+                          </div>
+                        </div>
+                      )}
+                      <div
+                        className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
+                          appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "opacity-60" : ""
+                        } ${getStatusBorderColor(appointment.status)}`}
+                      >
                     <div className="flex-shrink-0 w-16">
                       <p className="text-sm font-semibold text-gray-900">
                         {appointment.appointment_time}
@@ -966,13 +997,15 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                         <span className="font-medium text-blue-700">{t('dashboard.appointment.staff')}: {getStaffName(appointment.staff_member_id)}</span>
                       </div>
                     )}
-                  </div>
-                ))}
-                </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </Card>
+            </div>
+          </Card>
         </div>
-        )}
+      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
