@@ -10,6 +10,9 @@ import { useTranslation } from "react-i18next";
 
 const Subscribe = ({ onNavigate }) => {
   const { t, i18n } = useTranslation();
+  const webUrl = i18n.language && i18n.language.toLowerCase().startsWith('en')
+    ? 'https://plannapp.co.uk'
+    : 'https://plannapp.co';
   
   // Pricing Display Configuration - Exact flat numbers matching Stripe Fixed Amount Coupons
   const PRICING_DISPLAY = {
@@ -91,7 +94,6 @@ const Subscribe = ({ onNavigate }) => {
               {/* CTA Button */}
               <Button
                 onClick={() => {
-                  const webUrl = 'https://plannapp.co';
                   if (Capacitor.isNativePlatform()) {
                     Browser.open({ url: webUrl });
                   } else {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Package, AlertTriangle, ArrowLeft } from "lucide-react";
+import { Package, AlertTriangle, ArrowLeft, Globe, ExternalLink, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -199,23 +199,45 @@ const SettingsSubscription = ({ onNavigate }) => {
               
               {/* App Mode: Bilgilendirme mesajı */}
               {isAppMode && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                  <p className="text-sm text-blue-800 mb-3">
-                    {t('appCompliance.subscriptionInfo')}
-                  </p>
-                  <Button
-                    onClick={() => {
-                      const webUrl = 'https://plannapp.co';
-                      if (Capacitor.isNativePlatform()) {
-                        Browser.open({ url: webUrl });
-                      } else {
-                        window.location.href = webUrl;
-                      }
-                    }}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    {t('appCompliance.goToWebsite')}
-                  </Button>
+                <div className="rounded-2xl p-5 border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-purple-50 overflow-hidden relative">
+                  <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
+                  <div className="relative">
+                    <div className="flex items-start gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md flex-shrink-0">
+                        <Globe className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-gray-900">
+                          {t('settings.subscribePage.subscriptionManagement')}
+                        </p>
+                        <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+                          {t('appCompliance.subscriptionInfo')}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <Button
+                        onClick={() => {
+                          const webUrl = 'https://plannapp.co';
+                          if (Capacitor.isNativePlatform()) {
+                            Browser.open({ url: webUrl });
+                          } else {
+                            window.location.href = webUrl;
+                          }
+                        }}
+                        className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold h-12 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2 group"
+                      >
+                        <ExternalLink className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
+                        {t('appCompliance.goToWebsite')}
+                      </Button>
+
+                      <div className="mt-3 flex items-center justify-center gap-2 text-gray-600 text-xs bg-white/60 backdrop-blur-sm rounded-xl py-2 px-3">
+                        <Sparkles className="w-4 h-4 text-purple-500" />
+                        <span className="font-medium">plannapp.co</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
