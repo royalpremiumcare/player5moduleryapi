@@ -1107,6 +1107,12 @@ const LandingPage = () => {
                 <Shield className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-400" />
                 <span className="leading-relaxed">{t('landing.contact.privacy')}</span>
               </div>
+
+              <div className="text-[11px] text-gray-500 leading-relaxed">
+                {(i18n.language || '').toLowerCase().startsWith('en')
+                  ? 'PLANNAPP LTD (Company No. 16886895) — Registered Address: 71-75 Shelton Street, Covent Garden, London WC2H 9JQ, United Kingdom.'
+                  : 'PLANNAPP LTD (Şirket No: 16886895) — Kayıtlı Adres: 71-75 Shelton Street, Covent Garden, London WC2H 9JQ, United Kingdom.'}
+              </div>
             </form>
           )}
         </DialogContent>
@@ -1144,11 +1150,11 @@ const LandingPage = () => {
               <ul className="space-y-2 text-sm text-gray-600">
                 <li className="flex items-start gap-2">
                   <Phone className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>0543 479 3213</span>
+                  <span>+44 7474 626900</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Mail className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>info@plann.co</span>
+                  <span>info@plannapp.co</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1156,6 +1162,12 @@ const LandingPage = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                   <span>71-75 Shelton Street Covent Garden United Kingdom<br />London WC2H 9JQ</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h10M7 11h4m-4 4h10M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <span>{(i18n.language || '').toLowerCase().startsWith('en') ? 'Company Number: 16886895' : 'Şirket Numarası: 16886895'}</span>
                 </li>
               </ul>
             </div>

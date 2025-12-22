@@ -38,8 +38,8 @@ const TermsOfService = () => {
             </h2>
             <p className="text-gray-700 leading-relaxed">
               {isEnglish 
-                ? 'PLANN is a cloud-based software service (SaaS) that simplifies appointment management for businesses. Our services include appointment tracking, customer management, staff management, financial reporting and online booking features.'
-                : 'PLANN, işletmelerin randevu yönetimini kolaylaştıran bir bulut tabanlı yazılım hizmetidir (SaaS). Hizmetlerimiz; randevu takibi, müşteri yönetimi, personel yönetimi, finansal raporlama ve online rezervasyon özelliklerini içerir.'}
+                ? 'This website is operated by PLANNAPP LTD, a company registered in England and Wales. PLANN is a cloud-based software service (SaaS) that simplifies appointment management for businesses. Our services include appointment tracking, customer management, staff management, financial reporting and online booking features.'
+                : 'Bu web sitesi, İngiltere ve Galler’de kayıtlı PLANNAPP LTD tarafından işletilmektedir. PLANN, işletmelerin randevu yönetimini kolaylaştıran bir bulut tabanlı yazılım hizmetidir (SaaS). Hizmetlerimiz; randevu takibi, müşteri yönetimi, personel yönetimi, finansal raporlama ve online rezervasyon özelliklerini içerir.'}
             </p>
           </section>
 
@@ -198,8 +198,10 @@ const TermsOfService = () => {
             </p>
             <div className="bg-gray-100 p-4 rounded-lg mt-4">
               <p className="text-gray-700"><strong>{isEnglish ? 'Email:' : 'E-posta:'}</strong> info@plannapp.co</p>
-              <p className="text-gray-700"><strong>{isEnglish ? 'Phone:' : 'Telefon:'}</strong> {isEnglish ? '+90 543 479 3213' : '0543 479 3213'}</p>
-              {!isEnglish && <p className="text-gray-700"><strong>Adres:</strong> 2000 Evler Mahallesi, Şehit Polis Murat Hamleci Sk. No:12 Kat:3 Daire:32, Nevşehir Merkez</p>}
+              <p className="text-gray-700"><strong>{isEnglish ? 'Phone:' : 'Telefon:'}</strong> +44 7474 626900</p>
+              <p className="text-gray-700"><strong>{isEnglish ? 'Company Name:' : 'Şirket Ünvanı:'}</strong> PLANNAPP LTD</p>
+              <p className="text-gray-700"><strong>{isEnglish ? 'Company Number:' : 'Şirket Numarası:'}</strong> 16886895</p>
+              <p className="text-gray-700"><strong>{isEnglish ? 'Registered Address:' : 'Kayıtlı Adres:'}</strong> 71-75 Shelton Street Covent Garden United Kingdom, London WC2H 9JQ</p>
             </div>
           </section>
         </div>

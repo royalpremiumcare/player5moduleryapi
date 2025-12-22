@@ -163,7 +163,10 @@ const RefundPolicy = () => {
             </p>
             <div className="bg-gray-100 p-4 rounded-lg mt-4">
               <p className="text-gray-700"><strong>{isEnglish ? 'Email:' : 'E-posta:'}</strong> info@plannapp.co</p>
-              <p className="text-gray-700"><strong>{isEnglish ? 'Phone:' : 'Telefon:'}</strong> {isEnglish ? '+90 543 479 3213' : '0543 479 3213'}</p>
+              <p className="text-gray-700"><strong>{isEnglish ? 'Phone:' : 'Telefon:'}</strong> +44 7474 626900</p>
+              <p className="text-gray-700"><strong>{isEnglish ? 'Company Name:' : 'Şirket Ünvanı:'}</strong> PLANNAPP LTD</p>
+              <p className="text-gray-700"><strong>{isEnglish ? 'Company Number:' : 'Şirket Numarası:'}</strong> 16886895</p>
+              <p className="text-gray-700"><strong>{isEnglish ? 'Registered Address:' : 'Kayıtlı Adres:'}</strong> 71-75 Shelton Street Covent Garden United Kingdom, London WC2H 9JQ</p>
               <p className="text-gray-700"><strong>{isEnglish ? 'Working Hours:' : 'Çalışma Saatleri:'}</strong> {isEnglish ? 'Monday - Friday, 09:00 - 18:00' : 'Pazartesi - Cuma, 09:00 - 18:00'}</p>
             </div>
           </section>

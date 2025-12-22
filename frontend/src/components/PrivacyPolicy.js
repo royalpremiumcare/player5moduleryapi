@@ -38,8 +38,8 @@ const PrivacyPolicy = () => {
             </h2>
             <p className="text-gray-700 leading-relaxed">
               {isEnglish 
-                ? 'At PLANN ("we", "our" or "Company"), we respect your privacy and are committed to protecting your personal data. This Privacy Policy explains what information we collect when you use our services, how we use it and how we protect it.'
-                : 'PLANN ("biz", "bizim" veya "Şirket") olarak, gizliliğinize saygı duyuyor ve kişisel verilerinizi korumayı taahhüt ediyoruz. Bu Gizlilik Politikası, hizmetlerimizi kullandığınızda hangi bilgileri topladığımızı, nasıl kullandığımızı ve koruduğumuzu açıklar.'}
+                ? 'This website is operated by PLANNAPP LTD, a company registered in England and Wales. At PLANN ("we", "our" or "Company"), we respect your privacy and are committed to protecting your personal data. This Privacy Policy explains what information we collect when you use our services, how we use it and how we protect it.'
+                : 'Bu web sitesi, İngiltere ve Galler’de kayıtlı PLANNAPP LTD tarafından işletilmektedir. PLANN ("biz", "bizim" veya "Şirket") olarak, gizliliğinize saygı duyuyor ve kişisel verilerinizi korumayı taahhüt ediyoruz. Bu Gizlilik Politikası, hizmetlerimizi kullandığınızda hangi bilgileri topladığımızı, nasıl kullandığımızı ve koruduğumuzu açıklar.'}
             </p>
           </section>
 
@@ -157,8 +157,10 @@ const PrivacyPolicy = () => {
             </p>
             <div className="bg-gray-100 p-4 rounded-lg mt-4">
               <p className="text-gray-700"><strong>{isEnglish ? 'Email:' : 'E-posta:'}</strong> info@plannapp.co</p>
-              <p className="text-gray-700"><strong>{isEnglish ? 'Phone:' : 'Telefon:'}</strong> {isEnglish ? '+90 543 479 3213' : '0543 479 3213'}</p>
-              {!isEnglish && <p className="text-gray-700"><strong>Adres:</strong> 2000 Evler Mahallesi, Şehit Polis Murat Hamleci Sk. No:12 Kat:3 Daire:32, Nevşehir Merkez</p>}
+              <p className="text-gray-700"><strong>{isEnglish ? 'Phone:' : 'Telefon:'}</strong> +44 7474 626900</p>
+              <p className="text-gray-700"><strong>{isEnglish ? 'Company Name:' : 'Şirket Ünvanı:'}</strong> PLANNAPP LTD</p>
+              <p className="text-gray-700"><strong>{isEnglish ? 'Company Number:' : 'Şirket Numarası:'}</strong> 16886895</p>
+              <p className="text-gray-700"><strong>{isEnglish ? 'Registered Address:' : 'Kayıtlı Adres:'}</strong> 71-75 Shelton Street Covent Garden United Kingdom, London WC2H 9JQ</p>
             </div>
           </section>
 
