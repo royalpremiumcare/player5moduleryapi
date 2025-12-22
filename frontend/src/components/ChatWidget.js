@@ -431,11 +431,11 @@ const ChatWidget = ({ user }) => {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-24 right-6 z-50 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-full p-4 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 group"
+        className="fixed bottom-24 right-6 z-50 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 group"
         aria-label="AI Asistan"
       >
-        <Sparkles className="w-6 h-6 group-hover:rotate-12 transition-transform" />
-        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
+        <Sparkles className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center animate-pulse">
           AI
         </span>
       </button>

@@ -343,15 +343,34 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
     return colors[index] || "bg-gray-100 border-gray-300 text-gray-800";
   };
 
+  const getStatusCode = (status) => {
+    if (!status) return null;
+    const s = String(status).trim().toLowerCase();
+
+    if (s === 'pending' || s === 'bekliyor' || s === 'waiting') return 'pending';
+    if (s === 'completed' || s === 'tamamlandı' || s === 'tamamlandi' || s === 'done') return 'completed';
+    if (
+      s === 'cancelled' ||
+      s === 'canceled' ||
+      s === 'iptal' ||
+      s === 'iptal edildi' ||
+      s === 'iptal edıldı'
+    ) return 'cancelled';
+
+    return null;
+  };
+
+  const getStatusLabel = (status) => {
+    const code = getStatusCode(status);
+    return code ? t(`appointments.status.${code}`) : status;
+  };
+
   const getStatusColor = (status) => {
-    const completed = t('dashboard.status.completed');
-    const cancelled = t('dashboard.status.cancelled');
-    switch (status) {
-      case completed:
-      case "Tamamlandı":
+    const code = getStatusCode(status);
+    switch (code) {
+      case 'completed':
         return "text-green-600";
-      case cancelled:
-      case "İptal":
+      case 'cancelled':
         return "text-red-600";
       default:
         return "text-gray-600";
@@ -474,7 +493,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                         )}
                       </div>
                       <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
-                        {apt.status}
+                        {getStatusLabel(apt.status)}
                       </Badge>
                     </div>
                   </Card>
@@ -731,7 +750,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                 )}
               </div>
               <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
-                {apt.status}
+                {getStatusLabel(apt.status)}
               </Badge>
             </div>
           </Card>
@@ -888,12 +907,12 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
               {/* Randevu Detayları */}
               <div className="space-y-3 pt-3 border-t border-gray-200">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">{t('appointments.service')}</span>
+                  <span className="text-sm text-gray-600">{t('appointments.fields.service')}</span>
                   <span className="text-sm font-semibold text-gray-900">{selectedAppointment.service_name}</span>
                 </div>
                 
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">{t('appointments.date')}</span>
+                  <span className="text-sm text-gray-600">{t('appointments.fields.date')}</span>
                   <span className="text-sm font-semibold text-gray-900">
                     {selectedAppointment.appointment_date || selectedAppointment.date 
                       ? format(parseISO(selectedAppointment.appointment_date || selectedAppointment.date), "d MMMM yyyy", { locale: dateLocale })
@@ -902,7 +921,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                 </div>
                 
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">{t('appointments.time')}</span>
+                  <span className="text-sm text-gray-600">{t('appointments.fields.time')}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-gray-900">
                       {selectedAppointment.appointment_time || selectedAppointment.time || '--:--'}
@@ -917,7 +936,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
 
                 {selectedAppointment.service_price && (
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">{t('appointments.price')}</span>
+                    <span className="text-sm text-gray-600">{t('appointments.fields.price')}</span>
                     <span className="text-sm font-semibold text-gray-900">
                       {selectedAppointment.service_price.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {i18n.language === 'tr' ? '₺' : '£'}
                     </span>
@@ -934,9 +953,9 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                 )}
 
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">{t('appointments.status')}</span>
+                  <span className="text-sm text-gray-600">{t('appointments.fields.status')}</span>
                   <Badge className={getStatusColor(selectedAppointment.status)}>
-                    {selectedAppointment.status}
+                    {getStatusLabel(selectedAppointment.status)}
                   </Badge>
                 </div>
 
