@@ -17,6 +17,9 @@ const SettingsSubscription = ({ onNavigate }) => {
   // App Store Compliance: Mobil uygulamada (Android/iOS) ödeme butonlarını gizle
   // Sadece native platform kontrolü yap, localStorage kontrolü yapma (web'de ?mode=app ile giriş yapıldığında localStorage'a yazılıyor)
   const isAppMode = Capacitor.isNativePlatform();
+  const webUrl = i18n.language && i18n.language.toLowerCase().startsWith('en')
+    ? 'https://plannapp.co.uk'
+    : 'https://plannapp.co';
 
   useEffect(() => {
     loadPlanInfo();
@@ -219,7 +222,6 @@ const SettingsSubscription = ({ onNavigate }) => {
                     <div className="mt-4">
                       <Button
                         onClick={() => {
-                          const webUrl = 'https://plannapp.co';
                           if (Capacitor.isNativePlatform()) {
                             Browser.open({ url: webUrl });
                           } else {
@@ -234,7 +236,7 @@ const SettingsSubscription = ({ onNavigate }) => {
 
                       <div className="mt-3 flex items-center justify-center gap-2 text-gray-600 text-xs bg-white/60 backdrop-blur-sm rounded-xl py-2 px-3">
                         <Sparkles className="w-4 h-4 text-purple-500" />
-                        <span className="font-medium">plannapp.co</span>
+                        <span className="font-medium">{webUrl.replace('https://', '')}</span>
                       </div>
                     </div>
                   </div>

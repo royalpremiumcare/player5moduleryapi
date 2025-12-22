@@ -707,12 +707,12 @@
       "currentSubscription": "Mevcut Abonelik",
       "processing": "İşleniyor...",
       "startSubscription": "Aboneliği Başlat",
-      "paymentSuccess": "🎉 Ödeme başarılı! Planınız güncellendi.",
+      "paymentSuccess": "Ödeme başarılı! Planınız güncellendi.",
       "plansLoadError": "Planlar yüklenemedi",
       "paymentPageError": "Ödeme sayfası oluşturulamadı",
       "paymentError": "Ödeme işlemi başlatılamadı",
       "subscriptionManagement": "Abonelik Yönetimi",
-      "subscriptionInfo": "Abonelik işlemleri için lütfen web sitemizi ziyaret edin.",
+      "subscriptionInfo": "Aboneliğinizi yönetmek ve faturalandırma işlemleri için lütfen web sitemize geçin.",
       "goToWebsite": "Web Sitesine Git",
       "backToSettings": "Geri Dön",
       "yearlyBadge": "Yıllık (2 ay ücretsiz)",
@@ -993,7 +993,7 @@
     "errorFillNameEmail": "Lütfen isim ve e-posta girin"
   },
   "appCompliance": {
-    "subscriptionInfo": "Abonelik yönetimi ve faturalandırma işlemleri için lütfen web sitemizi ziyaret edin.",
+    "subscriptionInfo": "Aboneliğinizi yönetmek ve faturalandırma işlemleri için lütfen web sitemize geçin.",
     "goToWebsite": "Web Sitesine Git"
   },
   "publicBooking": {
