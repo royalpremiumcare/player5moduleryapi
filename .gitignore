@@ -2,6 +2,9 @@
 *.env
 *.env.*
 
+__pycache__/
+*.pyc
+
 # Capacitor native platforms (Not ignored anymore to sync custom changes)
 # frontend/android/
 # frontend/ios/

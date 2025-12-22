@@ -8927,7 +8927,9 @@ async def ai_chat_endpoint(
         )
         
         if not result.get('success'):
-            raise HTTPException(status_code=500, detail=result.get('message', 'AI hatası'))
+            status_code = int(result.get('status', 500))
+            detail_msg = result.get('message', 'AI hatası')
+            raise HTTPException(status_code=status_code, detail=detail_msg)
         
         # Başarılı mesaj - Kullanımı artır
         await db.organization_plans.update_one(

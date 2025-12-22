@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, X, Send, Loader2, Mic, MicOff } from 'lucide-react';
 import { io } from 'socket.io-client';
+import api from '@/api/api';
 
 const ChatWidget = ({ user }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -73,38 +74,24 @@ const ChatWidget = ({ user }) => {
     setIsLoading(true);
 
     try {
-      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-      const response = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          message: userMessage,
-          history: chatHistory
-        })
+      const { data } = await api.post('/ai/chat', {
+        message: userMessage,
+        history: chatHistory
       });
 
-      if (!response.ok) {
-        throw new Error('AI yanıt veremedi');
-      }
-
-      const data = await response.json();
-      
       // AI yanıtını ekle
       setMessages([...newMessages, { 
         role: 'assistant', 
-        content: data.message 
+        content: (data && data.message) || '✅ İşlem tamamlandı.'
       }]);
 
       // Chat history'yi güncelle
-      if (data.history) {
+      if (data && data.history) {
         setChatHistory(data.history);
       }
 
       // Kullanım bilgisini güncelle
-      if (data.usage_info) {
+      if (data && data.usage_info) {
         setUsageInfo(data.usage_info);
       }
 
@@ -116,6 +103,18 @@ const ChatWidget = ({ user }) => {
         setMessages([...newMessages, { 
           role: 'assistant', 
           content: '❌ Aylık AI kullanım limitiniz doldu. Kesintisiz hizmet için paketinizi yükseltin.' 
+        }]);
+      } else if (error.response && (error.response.data?.detail || error.response.data?.message)) {
+        const serverMsg = error.response.data.detail || error.response.data.message;
+        setMessages([...newMessages, {
+          role: 'assistant',
+          content: `❌ ${serverMsg}`
+        }]);
+      } else if (error.message) {
+        // Sunucudan gelen açıklayıcı mesajı göster
+        setMessages([...newMessages, {
+          role: 'assistant',
+          content: `❌ ${error.message}`
         }]);
       } else {
         setMessages([...newMessages, { 

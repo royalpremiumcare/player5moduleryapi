@@ -1,5 +1,5 @@
 // PLANN PWA Service Worker
-const CACHE_NAME = 'plann-cache-v5';
+const CACHE_NAME = 'plann-cache-v6';
 const OFFLINE_URL = '/offline.html';
 
 // Önbelleğe alınacak statik kaynaklar
@@ -14,7 +14,7 @@ const STATIC_ASSETS = [
 ];
 
 // API istekleri için cache stratejisi (Network First)
-const API_CACHE_NAME = 'plann-api-cache-v1';
+const API_CACHE_NAME = 'plann-api-cache-v2';
 const API_ENDPOINTS = [
   '/api/appointments',
   '/api/services',

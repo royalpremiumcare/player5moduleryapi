@@ -5,11 +5,15 @@ PLANN AI Assistant Service - Google Gemini 2.5 Flash Integration
 import os
 import logging
 from typing import List, Dict, Optional, Any
+import re
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import google.generativeai as genai
 import uuid
 from dotenv import load_dotenv
+from difflib import SequenceMatcher
+from google.api_core import exceptions as google_exceptions
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -31,6 +35,9 @@ if not GOOGLE_GEMINI_KEY:
 else:
     genai.configure(api_key=GOOGLE_GEMINI_KEY)
     logger.info("✅ Google Gemini API configured")
+
+# Basit onay akışı için son teklif önbelleği (org:user -> teklif)
+PENDING_APPTS: Dict[str, Dict[str, str]] = {}
 
 # === SYSTEM DOCUMENTATION ===
 SYSTEM_DOCUMENTATION = """
@@ -141,8 +148,9 @@ DOĞRU: Telefon: 0555...
 
 # === TOOL FUNCTIONS ===
 
-async def create_appointment_tool(db, org_id: str, customer_name: str, phone: str, 
-                                 service_id: str, apt_date: str, apt_time: str,
+async def create_appointment_tool(db, org_id: str, customer_name: str, phone: str,
+                                 service_id: Optional[str] = None, service_name: Optional[str] = None,
+                                 apt_date: str = "", apt_time: str = "",
                                  staff_id: Optional[str] = None, notes: str = "") -> Dict:
     """Randevu oluştur"""
     plan_doc = None
@@ -179,7 +187,18 @@ async def create_appointment_tool(db, org_id: str, customer_name: str, phone: st
             quota_incremented = True
             logger.info(f"✅ Quota incremented for org {org_id}: {current_usage + 1}/{quota_limit}")
         
-        service = await db.services.find_one({"id": service_id, "organization_id": org_id})
+        service = None
+        if service_id:
+            service = await db.services.find_one({"id": service_id, "organization_id": org_id})
+        if not service and service_name:
+            # İsme göre (büyük/küçük harf duyarsız) ara
+            try:
+                service = await db.services.find_one({
+                    "organization_id": org_id,
+                    "name": {"$regex": f"^{re.escape(service_name)}$", "$options": "i"}
+                })
+            except Exception:
+                service = None
         if not service:
             # Kota artırıldı ama hizmet bulunamadı, geri al
             if plan_doc:
@@ -187,7 +206,15 @@ async def create_appointment_tool(db, org_id: str, customer_name: str, phone: st
                     {"organization_id": org_id},
                     {"$inc": {"quota_usage": -1}}
                 )
-            return {"success": False, "message": "❌ Hizmet bulunamadı"}
+            # Mevcut hizmetleri öner
+            try:
+                services = await db.services.find({"organization_id": org_id}).to_list(100)
+                names = ", ".join([s.get('name', '') for s in services if s.get('name')]) or "-"
+                hint = f"Mevcut hizmetler: {names}"
+            except Exception:
+                hint = ""
+            missing = service_name or service_id or "(bilinmiyor)"
+            return {"success": False, "message": f"❌ Hizmet bulunamadı: {missing}. {hint}"}
         
         # Geçmiş tarih kontrolü
         turkey_tz = ZoneInfo("Europe/Istanbul")
@@ -255,6 +282,11 @@ async def create_appointment_tool(db, org_id: str, customer_name: str, phone: st
             staff_name = staff.get('full_name', staff_id)
         
         # Randevu oluştur
+        if not service_id:
+            try:
+                service_id = service.get('id')
+            except Exception:
+                service_id = None
         apt = {
             "id": str(uuid.uuid4()), "organization_id": org_id,
             "customer_name": customer_name, "phone": phone, "address": "",
@@ -473,7 +505,11 @@ async def get_dashboard_status_tool(db, org_id: str, user_role: str, username: s
                 "status": {"$ne": "İptal Edildi"}
             }).to_list(1000)
             
-            total_revenue = sum(apt.get('price', 0) for apt in apts if apt.get('status') == 'Tamamlandı')
+            # Fiyat alanı bazı kayıtlarda 'service_price' olarak tutuluyor, ona da bak
+            total_revenue = sum(
+                (apt.get('price', apt.get('service_price', 0)) or 0)
+                for apt in apts if apt.get('status') == 'Tamamlandı'
+            )
             
             # Randevuları basitleştir (AI için kolay parse)
             appointments_simple = [
@@ -514,7 +550,7 @@ async def get_dashboard_status_tool(db, org_id: str, user_role: str, username: s
             
             completed = [a for a in apts if a.get('status') == 'Tamamlandı']
             pending = [a for a in apts if a.get('status') == 'Bekliyor']
-            total_revenue = sum(a.get('price', 0) for a in completed)
+            total_revenue = sum(a.get('price', a.get('service_price', 0)) or 0 for a in completed)
             
             # Aylık toplam
             month_start = today[:7] + "-01"
@@ -523,7 +559,7 @@ async def get_dashboard_status_tool(db, org_id: str, user_role: str, username: s
                 "appointment_date": {"$gte": month_start},
                 "status": "Tamamlandı"
             }).to_list(10000)
-            monthly_revenue = sum(a.get('price', 0) for a in monthly_apts)
+            monthly_revenue = sum(a.get('price', a.get('service_price', 0)) or 0 for a in monthly_apts)
             
             # Personel listesini al
             staff_list_raw = await db.users.find({
@@ -552,7 +588,7 @@ async def get_dashboard_status_tool(db, org_id: str, user_role: str, username: s
                 
                 # Aylık randevuları
                 monthly_staff_apts = [a for a in monthly_apts if a.get('staff_member_id') == staff_username]
-                monthly_staff_revenue = sum(a.get('price', 0) for a in monthly_staff_apts)
+                monthly_staff_revenue = sum(a.get('price', a.get('service_price', 0)) or 0 for a in monthly_staff_apts)
                 
                 staff_performance.append({
                     "username": staff_username,
@@ -607,19 +643,20 @@ def get_gemini_tools():
     
     create_appointment_func = FunctionDeclaration(
         name="create_appointment",
-        description="Yeni randevu oluştur. MUTLAKA önce get_dashboard_status çağırıp müşteri telefon numarasını ve hizmet ID'sini al. Müsaitlik kontrolü yapar, personel atar.",
+        description="Yeni randevu oluştur. MUTLAKA önce get_dashboard_status çağırıp müşteri telefon numarasını ve hizmet ADI'nı al (tercihen isim). Müsaitlik kontrolü yapar, personel atar.",
         parameters={
             "type": "object",
             "properties": {
                 "customer_name": {"type": "string", "description": "Müşteri adı"},
                 "phone": {"type": "string", "description": "Telefon numarası - get_dashboard_status'tan customers listesinden AL! Müşteri sistemde kayıtlıysa ASLA kullanıcıya sorma! (Format: 05XXXXXXXXX)"},
-                "service_id": {"type": "string", "description": "Hizmet ID'si (get_dashboard_status'tan services listesinden al)"},
+                "service_name": {"type": "string", "description": "Hizmet adı (get_dashboard_status'taki services listesinden al; isimle gönder)"},
+                "service_id": {"type": "string", "description": "(Opsiyonel) Hizmet ID'si"},
                 "appointment_date": {"type": "string", "description": "Randevu tarihi - SADECE YYYY-MM-DD formatı (örnek: 2025-11-20, ASLA 20-11-2025 yazma!)"},
                 "appointment_time": {"type": "string", "description": "Randevu saati - SADECE HH:MM formatı (örnek: 14:30)"},
                 "staff_id": {"type": "string", "description": "Personel username (opsiyonel, 'farketmez' olabilir)"},
                 "notes": {"type": "string", "description": "Randevu notları (opsiyonel)"}
             },
-            "required": ["customer_name", "phone", "service_id", "appointment_date", "appointment_time"]
+            "required": ["customer_name", "phone", "appointment_date", "appointment_time"]
         }
     )
     
@@ -733,20 +770,212 @@ async def chat_with_ai(
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
+
+        # --- Basit Onay Akışı Heuristiği ---
+        def _parts_to_text(parts_list):
+            try:
+                texts = []
+                for p in parts_list or []:
+                    if isinstance(p, dict) and 'text' in p:
+                        texts.append(str(p['text']))
+                return "\n".join(texts).strip()
+            except Exception:
+                return ""
+
+        def _last_model_text(history_list):
+            for msg in reversed(history_list or []):
+                if msg.get('role') == 'model':
+                    return _parts_to_text(msg.get('parts'))
+            return ""
+
+        def _is_confirm(text: str) -> bool:
+            if not text:
+                return False
+            t = text.lower().strip()
+            confirm_words = [
+                'evet', 'onaylıyorum', 'onayla', 'onay', 'tamam', 'olustur', 'oluştur', 'ok', 'okay', 'yes', 'confirm'
+            ]
+            return any(w == t or t.startswith(w) for w in confirm_words)
+
+        def _find_last_phone(history_list):
+            phone_pattern = re.compile(r"(\+?90|0)?5\d{9}")
+            for msg in reversed(history_list or []):
+                text = _parts_to_text(msg.get('parts'))
+                if not text:
+                    continue
+                m = phone_pattern.search(text.replace(" ", "").replace("-", ""))
+                if m:
+                    return m.group(0)
+            return None
+
+        def _guess_customer_name(history_list):
+            for msg in history_list or []:
+                if msg.get('role') == 'user':
+                    txt = _parts_to_text(msg.get('parts'))
+                    if txt and not re.search(r"\d", txt):
+                        # metin içinde sadece harf ve boşluk varsa ve çok uzun değilse isim sayalım
+                        clean = txt.strip()
+                        if 2 <= len(clean.split()) <= 4 and len(clean) <= 60:
+                            return clean
+            return "Müşteri"
+
+        async def _handle_confirmation_if_possible():
+            if not _is_confirm(user_message):
+                return None
+
+            last_text = _last_model_text(chat_history)
+            # Eğer history'de bulunamazsa, önbellekte bekleyen teklif var mı bak
+            cached_key = f"{organization_id}:{username}"
+
+            date_m = re.search(r"(\d{4}-\d{2}-\d{2})", last_text or "")
+            time_m = re.search(r"([01]\d|2[0-3]):[0-5]\d", last_text or "")
+            apt_date = date_m.group(1) if date_m else None
+            apt_time = time_m.group(0) if time_m else None
+
+            # Servis adını model metninden bulmaya çalış (fuzzy destekli)
+            service_name = None
+            try:
+                services = await db.services.find({"organization_id": organization_id}).to_list(1000)
+
+                def norm_tr(text: str) -> str:
+                    if not text:
+                        return ""
+                    t = text.lower()
+                    replacements = {
+                        'ş':'s','Ş':'s','ç':'c','Ç':'c','ı':'i','İ':'i','ğ':'g','Ğ':'g','ö':'o','Ö':'o','ü':'u','Ü':'u'
+                    }
+                    for k,v in replacements.items():
+                        t = t.replace(k,v)
+                    return re.sub(r"[^a-z0-9\s]"," ", t)
+
+                ctx_norm = norm_tr(last_text)
+                best = (0.0, None)
+                for s in services:
+                    nm = s.get('name', '') or ''
+                    nm_norm = norm_tr(nm)
+                    # hızlı kapsama
+                    overlap = 0
+                    for tok in nm_norm.split():
+                        if tok and tok in ctx_norm:
+                            overlap += 1
+                    ratio = SequenceMatcher(None, nm_norm, ctx_norm).ratio()
+                    score = overlap + ratio
+                    if score > best[0]:
+                        best = (score, nm)
+                # kabul eşiği: en az bir token eşleşmesi veya iyi oran
+                if best[0] >= 1.2 or (best[0] >= 0.6 and best[1]):
+                    service_name = best[1]
+                if not service_name:
+                    # Cümleden çıkarımsal yakalama (randevusu/randevu)
+                    m = re.search(r"saat\s+[0-2]?\d:[0-5]\d'?e?\s+(.+?)\s+randevusu?", last_text or "", flags=re.IGNORECASE)
+                    if m:
+                        service_name = m.group(1).strip()
+            except Exception:
+                service_name = service_name or None
+
+            phone = _find_last_phone(chat_history)
+            customer_name = _guess_customer_name(chat_history)
+
+            if apt_date and apt_time and service_name and phone:
+                result = await create_appointment_tool(
+                    db=db,
+                    org_id=organization_id,
+                    customer_name=customer_name,
+                    phone=phone,
+                    service_name=service_name,
+                    apt_date=apt_date,
+                    apt_time=apt_time
+                )
+                message = result.get('message', '✅ İşlem tamamlandı.')
+                # Basit history güncelle (modeli atladık)
+                serializable_history = list(chat_history or []) + [
+                    {"role": "user", "parts": [{"text": user_message}]},
+                    {"role": "model", "parts": [{"text": message}]}
+                ]
+                return {"success": True, "message": message, "history": serializable_history}
+            # Önbelleğe alınmış tekliften tamamla
+            if cached_key in PENDING_APPTS:
+                try:
+                    pending = PENDING_APPTS.pop(cached_key)
+                    result = await create_appointment_tool(
+                        db=db,
+                        org_id=organization_id,
+                        customer_name=pending.get('customer_name', 'Müşteri'),
+                        phone=pending.get('phone'),
+                        service_name=pending.get('service_name'),
+                        apt_date=pending.get('apt_date'),
+                        apt_time=pending.get('apt_time')
+                    )
+                    message = result.get('message', '✅ İşlem tamamlandı.')
+                    serializable_history = list(chat_history or []) + [
+                        {"role": "user", "parts": [{"text": user_message}]},
+                        {"role": "model", "parts": [{"text": message}]}
+                    ]
+                    return {"success": True, "message": message, "history": serializable_history}
+                except Exception:
+                    pass
+            # Eksik bilgi varsa kullanıcıyı net yönlendirme
+            missing = []
+            if not phone:
+                missing.append("telefon (05XXXXXXXXX)")
+            if not apt_date:
+                missing.append("tarih (YYYY-MM-DD)")
+            if not apt_time:
+                missing.append("saat (HH:MM)")
+            if not service_name:
+                missing.append("hizmet adı")
+            if missing:
+                msg = "Onaylamak için eksik bilgiler: " + ", ".join(missing) + ". Lütfen belirtin."
+                serializable_history = list(chat_history or []) + [
+                    {"role": "user", "parts": [{"text": user_message}]},
+                    {"role": "model", "parts": [{"text": msg}]}
+                ]
+                return {"success": True, "message": msg, "history": serializable_history}
+            return None
+
+        confirm_result = await _handle_confirmation_if_possible()
+        if confirm_result is not None:
+            return confirm_result
         
-        # Model oluştur (Tool calling ile)
-        model = genai.GenerativeModel(
-            model_name='gemini-2.5-flash',
-            system_instruction=system_instruction,
-            tools=get_gemini_tools(),
-            safety_settings=safety_settings
-        )
+        try:
+            model = genai.GenerativeModel(
+                model_name='gemini-2.5-flash',
+                system_instruction=system_instruction,
+                tools=get_gemini_tools(),
+                safety_settings=safety_settings
+            )
+        except Exception:
+            try:
+                model = genai.GenerativeModel(
+                    model_name='gemini-1.5-flash',
+                    system_instruction=system_instruction,
+                    tools=get_gemini_tools(),
+                    safety_settings=safety_settings
+                )
+            except Exception as e:
+                return {"success": False, "message": f"❌ AI servisi başlatılamadı: {str(e)}"}
         
         # Chat başlat
         chat = model.start_chat(history=chat_history)
         
         # İlk yanıt al
-        response = chat.send_message(user_message)
+        try:
+            response = chat.send_message(user_message)
+        except Exception as e:
+            msg = str(e)
+            status = 500
+            try:
+                if isinstance(e, google_exceptions.ResourceExhausted) or "429" in msg or "quota" in msg.lower() or "rate" in msg.lower():
+                    status = 429
+                elif isinstance(e, google_exceptions.PermissionDenied):
+                    status = 403
+            except Exception:
+                status = 500
+            if status == 429:
+                return {"success": False, "status": 429, "message": "❌ Google AI servis kotası aşıldı. Lütfen birkaç dakika sonra tekrar deneyin."}
+            if status == 403:
+                return {"success": False, "status": 403, "message": "❌ AI servisine erişim reddedildi. API anahtarı veya yetkiler kontrol edilmelidir."}
+            return {"success": False, "status": 500, "message": f"❌ AI hatası: {msg}"}
         
         # Debug: Response detaylarını logla
         logger.info(f"Response candidates: {len(response.candidates) if hasattr(response, 'candidates') else 0}")
@@ -783,14 +1012,16 @@ async def chat_with_ai(
                 result = None
                 if func_name == "create_appointment":
                     result = await create_appointment_tool(
-                        db, organization_id,
-                        func_args.get('customer_name'),
-                        func_args.get('phone'),
-                        func_args.get('service_id'),
-                        func_args.get('appointment_date'),
-                        func_args.get('appointment_time'),
-                        func_args.get('staff_id'),
-                        func_args.get('notes', '')
+                        db=db,
+                        org_id=organization_id,
+                        customer_name=func_args.get('customer_name'),
+                        phone=func_args.get('phone'),
+                        service_id=func_args.get('service_id'),
+                        service_name=func_args.get('service_name'),
+                        apt_date=func_args.get('appointment_date'),
+                        apt_time=func_args.get('appointment_time'),
+                        staff_id=func_args.get('staff_id'),
+                        notes=func_args.get('notes', '')
                     )
                 elif func_name == "cancel_appointment":
                     result = await cancel_appointment_tool(
@@ -890,7 +1121,52 @@ async def chat_with_ai(
                     final_text += result.get('message', '❌ İşlem başarısız') + "\n"
             final_text = final_text.strip() or "✅ İşlem tamamlandı."
         elif not final_text:
-            final_text = "✅ İşlem tamamlandı, ancak yanıt okunamadı."
+            # Kullanıcı yalnızca telefon numarası verdiyse yönlendirici mesaj üret
+            try:
+                phone_clean = user_message.replace(" ", "").replace("-", "")
+                if re.match(r"^(\+?90|0)?5\d{9}$", phone_clean):
+                    final_text = "✅ Telefon numarası alındı. Lütfen randevu için tarih (YYYY-MM-DD), saat (HH:MM) ve hizmet adını belirtin."
+                else:
+                    final_text = "✅ İşlem tamamlandı. Devam etmek için lütfen gerekli bilgileri belirtin."
+            except Exception:
+                final_text = "✅ İşlem tamamlandı. Devam etmek için lütfen gerekli bilgileri belirtin."
+        
+        # Kullanıcıdan onay beklenen teklifleri önbelleğe al (bir sonraki turda 'evet' ile tamamlayabilmek için)
+        try:
+            if final_text and re.search(r"onayla|onayliyor musunuz|onaylı?yor musunuz|onaylar mısınız", final_text, flags=re.IGNORECASE):
+                cached_key = f"{organization_id}:{username}"
+                # Tarih-saat ve servis adını yakala
+                date_m = re.search(r"(\d{4}-\d{2}-\d{2})", final_text)
+                time_m = re.search(r"([01]\d|2[0-3]):[0-5]\d", final_text)
+                apt_date = date_m.group(1) if date_m else None
+                apt_time = time_m.group(0) if time_m else None
+
+                # Servis adını cümleden çıkar
+                svc_candidate = None
+                m = re.search(r"saat\s+[0-2]?\d:[0-5]\d'?e?\s+(.+?)\s+randevusu?", final_text, flags=re.IGNORECASE)
+                if m:
+                    svc_candidate = m.group(1).strip()
+
+                # History'den telefon ve olası müşteri adı
+                phone_hint = None
+                try:
+                    phone_hint = _find_last_phone(chat_history)
+                except Exception:
+                    phone_hint = None
+                try:
+                    customer_name_hint = _guess_customer_name(chat_history)
+                except Exception:
+                    customer_name_hint = "Müşteri"
+
+                PENDING_APPTS[cached_key] = {
+                    "customer_name": customer_name_hint,
+                    "phone": phone_hint,
+                    "service_name": svc_candidate,
+                    "apt_date": apt_date,
+                    "apt_time": apt_time
+                }
+        except Exception:
+            pass
         
         # History'yi serialize edilebilir formata çevir
         serializable_history = []
