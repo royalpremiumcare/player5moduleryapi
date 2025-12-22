@@ -38,8 +38,8 @@ const PrivacyPolicy = () => {
             </h2>
             <p className="text-gray-700 leading-relaxed">
               {isEnglish 
-                ? 'This website is operated by PLANNAPP LTD, a company registered in England and Wales. At PLANN ("we", "our" or "Company"), we respect your privacy and are committed to protecting your personal data. This Privacy Policy explains what information we collect when you use our services, how we use it and how we protect it.'
-                : 'Bu web sitesi, İngiltere ve Galler’de kayıtlı PLANNAPP LTD tarafından işletilmektedir. PLANN ("biz", "bizim" veya "Şirket") olarak, gizliliğinize saygı duyuyor ve kişisel verilerinizi korumayı taahhüt ediyoruz. Bu Gizlilik Politikası, hizmetlerimizi kullandığınızda hangi bilgileri topladığımızı, nasıl kullandığımızı ve koruduğumuzu açıklar.'}
+                ? 'This website is operated by PLANNAPP LTD, a company registered in London. At PLANN ("we", "our" or "Company"), we respect your privacy and are committed to protecting your personal data. This Privacy Policy explains what information we collect when you use our services, how we use it and how we protect it.'
+                : 'Bu web sitesi, Londra’da kayıtlı PLANNAPP LTD tarafından işletilmektedir. PLANN ("biz", "bizim" veya "Şirket") olarak, gizliliğinize saygı duyuyor ve kişisel verilerinizi korumayı taahhüt ediyoruz. Bu Gizlilik Politikası, hizmetlerimizi kullandığınızda hangi bilgileri topladığımızı, nasıl kullandığımızı ve koruduğumuzu açıklar.'}
             </p>
           </section>
 

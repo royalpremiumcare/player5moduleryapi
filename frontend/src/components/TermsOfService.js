@@ -38,8 +38,8 @@ const TermsOfService = () => {
             </h2>
             <p className="text-gray-700 leading-relaxed">
               {isEnglish 
-                ? 'This website is operated by PLANNAPP LTD, a company registered in England and Wales. PLANN is a cloud-based software service (SaaS) that simplifies appointment management for businesses. Our services include appointment tracking, customer management, staff management, financial reporting and online booking features.'
-                : 'Bu web sitesi, İngiltere ve Galler’de kayıtlı PLANNAPP LTD tarafından işletilmektedir. PLANN, işletmelerin randevu yönetimini kolaylaştıran bir bulut tabanlı yazılım hizmetidir (SaaS). Hizmetlerimiz; randevu takibi, müşteri yönetimi, personel yönetimi, finansal raporlama ve online rezervasyon özelliklerini içerir.'}
+                ? 'This website is operated by PLANNAPP LTD, a company registered in London. PLANN is a cloud-based software service (SaaS) that simplifies appointment management for businesses. Our services include appointment tracking, customer management, staff management, financial reporting and online booking features.'
+                : 'Bu web sitesi, Londra’da kayıtlı PLANNAPP LTD tarafından işletilmektedir. PLANN, işletmelerin randevu yönetimini kolaylaştıran bir bulut tabanlı yazılım hizmetidir (SaaS). Hizmetlerimiz; randevu takibi, müşteri yönetimi, personel yönetimi, finansal raporlama ve online rezervasyon özelliklerini içerir.'}
             </p>
           </section>
 
