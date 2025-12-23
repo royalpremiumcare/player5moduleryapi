@@ -712,7 +712,7 @@
       "paymentPageError": "Ödeme sayfası oluşturulamadı",
       "paymentError": "Ödeme işlemi başlatılamadı",
       "subscriptionManagement": "Abonelik Yönetimi",
-      "subscriptionInfo": "Abonelik ve faturalandırma işlemleri için lütfen web sitemize geçin. Giriş yapmadıysanız önce giriş yapmanız istenir ve ardından otomatik olarak abonelik sayfasına yönlendirilirsiniz.",
+      "subscriptionInfo": "Abonelik ve faturalandırma işlemleri web sitemiz üzerinden yönetilir. Devam ettiğinizde abonelik sayfasına otomatik olarak yönlendirilirsiniz.",
       "goToWebsite": "Web Sitesine Git",
       "backToSettings": "Geri Dön",
       "yearlyBadge": "Yıllık (2 ay ücretsiz)",
@@ -993,7 +993,7 @@
     "errorFillNameEmail": "Lütfen isim ve e-posta girin"
   },
   "appCompliance": {
-    "subscriptionInfo": "Abonelik ve faturalandırma işlemleri için lütfen web sitemize geçin. Giriş yapmadıysanız önce giriş yapmanız istenir ve ardından otomatik olarak abonelik sayfasına yönlendirilirsiniz.",
+    "subscriptionInfo": "Abonelik ve faturalandırma işlemleri web sitemiz üzerinden yönetilir. Devam ettiğinizde abonelik sayfasına otomatik olarak yönlendirilirsiniz.",
     "goToWebsite": "Web Sitesine Git"
   },
   "publicBooking": {

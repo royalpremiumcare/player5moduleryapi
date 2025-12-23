@@ -712,7 +712,7 @@
       "paymentPageError": "Could not create payment page",
       "paymentError": "Could not start payment process",
       "subscriptionManagement": "Subscription Management",
-      "subscriptionInfo": "To manage your subscription and billing, please continue on our website. If you’re not logged in, you’ll be asked to sign in and then redirected to the subscription page automatically.",
+      "subscriptionInfo": "Subscription and billing are managed on our website. When you continue, you’ll be redirected to the subscription page automatically.",
       "goToWebsite": "Go to Website",
       "backToSettings": "Back",
       "yearlyBadge": "Yearly (2 months free)",
@@ -993,7 +993,7 @@
     "errorFillNameEmail": "Please enter name and email"
   },
   "appCompliance": {
-    "subscriptionInfo": "To manage your subscription and billing, please continue on our website. If you’re not logged in, you’ll be asked to sign in and then redirected to the subscription page automatically.",
+    "subscriptionInfo": "Subscription and billing are managed on our website. When you continue, you’ll be redirected to the subscription page automatically.",
     "goToWebsite": "Go to Website"
   },
   "publicBooking": {
