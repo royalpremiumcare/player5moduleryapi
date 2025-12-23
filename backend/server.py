@@ -23,6 +23,7 @@ import hashlib
 import hmac
 import base64
 import json
+import secrets
 
 from contextlib import asynccontextmanager
 from passlib.context import CryptContext
@@ -1697,6 +1698,8 @@ class Token(BaseModel): access_token: str; token_type: str
 class ForgotPasswordRequest(BaseModel): username: str
 class ResetPasswordRequest(BaseModel): token: str; new_password: str
 class SetupPasswordRequest(BaseModel): token: str; new_password: str
+class SsoCodeResponse(BaseModel): code: str; expires_in: int
+class SsoExchangeRequest(BaseModel): code: str
 class PlanUpdateRequest(BaseModel): 
     plan_id: str
     billing_cycle: str = "monthly"
@@ -2265,6 +2268,84 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
     except Exception as e:
         logging.error(f"Login error: {type(e).__name__}: {str(e)}"); import traceback; logging.error(traceback.format_exc())
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred during login. Please try again later.")
+
+@api_router.post("/sso/create", response_model=SsoCodeResponse)
+@rate_limit(LIMITS.get('sso_create', LIMITS['login']))
+async def create_sso_code(request: Request, current_user: UserInDB = Depends(get_current_user)):
+    try:
+        redis_client = getattr(request.app, 'redis_client', None)
+        if redis_client is None:
+            raise HTTPException(status_code=503, detail="SSO temporarily unavailable")
+
+        ttl_seconds = int(os.environ.get('SSO_CODE_TTL_SECONDS', '60'))
+        code = secrets.token_urlsafe(32)
+        redis_key = f"sso:{code}"
+
+        payload = {
+            "sub": current_user.username,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        await redis_client.set(redis_key, json.dumps(payload), ex=ttl_seconds)
+        return {"code": code, "expires_in": ttl_seconds}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"SSO create error: {type(e).__name__}: {str(e)}");
+        raise HTTPException(status_code=500, detail="Failed to create SSO code")
+
+@api_router.post("/sso/exchange", response_model=Token)
+@rate_limit(LIMITS.get('sso_exchange', LIMITS['login']))
+async def exchange_sso_code(request: Request, body: SsoExchangeRequest, db = Depends(get_db)):
+    try:
+        redis_client = getattr(request.app, 'redis_client', None)
+        if redis_client is None:
+            raise HTTPException(status_code=503, detail="SSO temporarily unavailable")
+
+        code = (body.code or '').strip()
+        if not code or len(code) < 10:
+            raise HTTPException(status_code=400, detail="Invalid code")
+
+        redis_key = f"sso:{code}"
+
+        raw = None
+        try:
+            raw = await redis_client.getdel(redis_key)
+        except Exception:
+            raw = await redis_client.get(redis_key)
+            if raw is not None:
+                await redis_client.delete(redis_key)
+
+        if not raw:
+            raise HTTPException(status_code=400, detail="Code expired or already used")
+
+        payload = json.loads(raw)
+        username = payload.get('sub')
+        if not username:
+            raise HTTPException(status_code=400, detail="Invalid code")
+
+        user = await get_user_from_db(request, username, db=db)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials", headers={"WWW-Authenticate": "Bearer"})
+
+        if user.status == "pending":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Hesabınız henüz aktif değil.")
+
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        token_data = {
+            "sub": user.username,
+            "org_id": user.organization_id,
+            "role": user.role,
+            "onboarding_completed": user.onboarding_completed,
+            "full_name": user.full_name or None
+        }
+        access_token = create_access_token(data=token_data, expires_delta=access_token_expires)
+        return {"access_token": access_token, "token_type": "bearer"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"SSO exchange error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail="SSO exchange failed")
 
 # === E-POSTA GÖNDERME FONKSİYONLARI ===
 def get_email_language(email: str) -> str:

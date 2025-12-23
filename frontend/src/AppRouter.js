@@ -12,6 +12,7 @@ import SuperAdmin from "./components/SuperAdmin";
 import PrivacyPolicy from "./components/PrivacyPolicy";
 import TermsOfService from "./components/TermsOfService";
 import RefundPolicy from "./components/RefundPolicy";
+import SsoPage from "./components/SsoPage";
 import App from "./App";
 
 const AppRouter = () => {
@@ -91,6 +92,8 @@ const AppRouter = () => {
         path="/subscribe" 
         element={isAuthenticated ? <App /> : <Navigate to="/login?redirect=/subscribe" replace />} 
       />
+
+      <Route path="/sso" element={<SsoPage />} />
       
       {/* Super Admin Route - Sadece superadmin rolü erişebilir */}
       <Route 

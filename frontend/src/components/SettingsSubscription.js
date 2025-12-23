@@ -220,11 +220,23 @@ const SettingsSubscription = ({ onNavigate }) => {
 
                   <div className="mt-4">
                     <Button
-                      onClick={() => {
-                        if (Capacitor.isNativePlatform()) {
-                          Browser.open({ url: websiteSubscribeUrl });
-                        } else {
-                          window.location.href = websiteSubscribeUrl;
+                      onClick={async () => {
+                        try {
+                          const resp = await api.post('/sso/create');
+                          const code = resp?.data?.code;
+                          const ssoUrl = `${webUrl}/sso?code=${encodeURIComponent(code || '')}&redirect=${encodeURIComponent('/subscribe')}`;
+
+                          if (Capacitor.isNativePlatform()) {
+                            await Browser.open({ url: ssoUrl });
+                          } else {
+                            window.location.href = ssoUrl;
+                          }
+                        } catch (e) {
+                          if (Capacitor.isNativePlatform()) {
+                            await Browser.open({ url: websiteSubscribeUrl });
+                          } else {
+                            window.location.href = websiteSubscribeUrl;
+                          }
                         }
                       }}
                       className="w-full bg-gray-900 hover:bg-gray-800 text-white font-semibold h-12 rounded-2xl shadow-md transition-colors flex items-center justify-center gap-2"

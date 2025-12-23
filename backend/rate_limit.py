@@ -95,10 +95,12 @@ def rate_limit(times: str = "10/minute", per_method: bool = True):
 # Common rate limit configurations
 LIMITS = {
     'login': "5/minute",
+    'sso_create': "10/minute",
+    'sso_exchange': "30/minute",
     'register': "10/hour",
     'forgot_password': "3/hour",
     'reset_password': "3/hour",
-    'api': "100/minute",
+    'setup_password': "3/hour",
     'stats': "20/minute",
     'sms': "100/hour",
     'ai_chat': "20/minute",  # AI chatbot için limit
