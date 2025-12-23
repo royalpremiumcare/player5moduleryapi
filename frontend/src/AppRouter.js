@@ -18,9 +18,14 @@ const AppRouter = () => {
   const { isAuthenticated, userRole } = useAuth();
   const location = useLocation();
 
+  const urlParams = new URLSearchParams(location.search);
+  const redirectParam = urlParams.get('redirect');
+  const allowedRedirectPaths = new Set(['/subscribe']);
+  const redirectTarget = redirectParam && allowedRedirectPaths.has(redirectParam) ? redirectParam : null;
+
   // Eğer kullanıcı authenticated ise ve login/register sayfalarındaysa ana sayfaya yönlendir
   const shouldRedirectToHome = isAuthenticated && 
-    (location.pathname === '/login' || 
+    ((location.pathname === '/login' && !redirectTarget) || 
      location.pathname === '/register' || 
      location.pathname === '/forgot-password' || 
      location.pathname === '/reset-password');
@@ -59,7 +64,9 @@ const AppRouter = () => {
             ? <Navigate to="/" replace /> 
             : Capacitor.isNativePlatform() && !location.search.includes('mode=app')
               ? <Navigate to="/login?mode=app" replace />
-              : <LoginPage />
+              : isAuthenticated
+                ? <Navigate to={redirectTarget || "/"} replace />
+                : <LoginPage />
         } 
       />
       <Route 
