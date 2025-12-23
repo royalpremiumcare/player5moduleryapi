@@ -4040,7 +4040,15 @@ async def create_service(request: Request, service: ServiceCreate, current_user:
     
     db = await get_db_from_request(request); service_obj = Service(**service.model_dump(), organization_id=current_user.organization_id)
     doc = service_obj.model_dump(); doc['created_at'] = doc['created_at'].isoformat()
-    await db.services.insert_one(doc); return service_obj
+    await db.services.insert_one(doc)
+    try:
+        await db.users.update_many(
+            {"organization_id": current_user.organization_id, "role": "admin"},
+            {"$addToSet": {"permitted_service_ids": service_obj.id}}
+        )
+    except Exception as e:
+        logging.error(f"Failed to auto-assign service to admins: {e}")
+    return service_obj
 
 @api_router.get("/services", response_model=List[Service])
 async def get_services(request: Request, current_user: UserInDB = Depends(get_current_user)):
