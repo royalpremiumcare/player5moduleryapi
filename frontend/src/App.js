@@ -1209,7 +1209,7 @@ function App() {
       )}
 
       {/* AI Chatbot Widget - Sadece giriş yapmış kullanıcılara göster */}
-      {token && currentUser && currentView === "dashboard" && !showForm && (
+      {token && currentUser && currentView === "dashboard" && !showForm && !showOnboarding && (
         <ChatWidget user={{
           username: currentUser.username,
           full_name: currentUser.full_name,
