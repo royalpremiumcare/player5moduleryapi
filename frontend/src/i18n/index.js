@@ -1,6 +1,7 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
+import { Capacitor } from '@capacitor/core';
 
 // Import translation files directly
 import translationTR from './locales/tr/translation.json';
@@ -9,6 +10,21 @@ import translationEN from './locales/en/translation.json';
 // Helper function to detect if user should see Turkish
 const detectInitialLanguage = () => {
   const stored = localStorage.getItem('i18nextLng');
+
+  // 1) Manual user preference (highest priority)
+  if (stored && ['en', 'tr'].includes(stored)) {
+    return stored;
+  }
+
+  // 2) Native mobile app (Capacitor): use device locale
+  //    tr* => Turkish, otherwise default to English
+  const deviceLang = (navigator.language || navigator.userLanguage || '').toLowerCase();
+  if (Capacitor.isNativePlatform()) {
+    if (deviceLang.startsWith('tr')) {
+      return 'tr';
+    }
+    return 'en';
+  }
   
   // Domain bazlı dil kontrolü
   const hostname = window.location.hostname;
@@ -18,14 +34,9 @@ const detectInitialLanguage = () => {
     // plannapp.co ve plannapp.com -> Türkçe
     return 'tr';
   }
-  
-  if (stored && ['en', 'tr'].includes(stored)) {
-    return stored; // Use stored preference
-  }
-  
-  // Check browser language
-  const browserLang = navigator.language || navigator.userLanguage || '';
-  if (browserLang.startsWith('tr')) {
+
+  // 3) Web: Check browser language
+  if (deviceLang.startsWith('tr')) {
     return 'tr';
   } else {
     return 'en';

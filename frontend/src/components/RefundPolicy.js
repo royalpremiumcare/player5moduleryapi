@@ -171,6 +171,17 @@ const RefundPolicy = () => {
             </div>
           </section>
 
+          <section>
+            <h2 className="text-xl font-semibold text-gray-900 mt-8 mb-4">
+              {isEnglish ? '9. Account and Data Deletion' : '9. Hesap ve Veri Silme'}
+            </h2>
+            <p className="text-gray-700 leading-relaxed">
+              {isEnglish
+                ? 'Users have the right to request the permanent deletion of their account and personal data. To delete your account and all your data, you can send an email to info@plannapp.co with the subject line "Account Deletion Request". Your request will be processed within 7 business days and your data will be permanently deleted from our systems.'
+                : 'Kullanıcılar, hesaplarının ve kişisel verilerinin kalıcı olarak silinmesini talep etme hakkına sahiptir. Hesabınızı ve tüm verilerinizi sildirmek için info@plannapp.co adresine konu başlığı "Hesap Silme Talebi" olan bir e-posta gönderebilirsiniz. Talebiniz 7 iş günü içinde işleme alınacak ve verileriniz sistemlerimizden kalıcı olarak silinecektir.'}
+            </p>
+          </section>
+
           <section className="mt-8 p-4 bg-gray-100 rounded-lg">
             <p className="text-gray-600 text-sm">
               {isEnglish 
