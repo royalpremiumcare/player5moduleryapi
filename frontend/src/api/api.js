@@ -1,4 +1,5 @@
 import axios from 'axios';
+import i18n from '../i18n';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : '';
 
@@ -24,7 +25,8 @@ api.interceptors.request.use(
     }
     
     // Dil bilgisini Accept-Language header'ına ekle
-    const savedLang = localStorage.getItem('i18nextLng') || 'tr';
+    const rawLang = (i18n && i18n.language) ? i18n.language : (localStorage.getItem('i18nextLng') || 'en');
+    const savedLang = String(rawLang).split('-')[0];
     config.headers['Accept-Language'] = savedLang;
     
     return config;

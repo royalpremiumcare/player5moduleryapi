@@ -1691,7 +1691,7 @@ async def create_audit_log(
 # === VERİ MODELLERİ (Aynı kaldı) ===
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    id: Optional[str] = None; username: str; full_name: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=lambda: ["sunday"]); onboarding_completed: bool = False; breaks: List[dict] = Field(default_factory=list)
+    id: Optional[str] = None; username: str; full_name: Optional[str] = None; language: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=lambda: ["sunday"]); onboarding_completed: bool = False; breaks: List[dict] = Field(default_factory=list)
 class UserInDB(User): hashed_password: Optional[str] = None
 class UserCreate(BaseModel): username: str; password: str; full_name: Optional[str] = None; organization_name: Optional[str] = None; support_phone: Optional[str] = None; sector: Optional[str] = None
 class Token(BaseModel): access_token: str; token_type: str
@@ -2044,8 +2044,13 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
             break
     
     # User kaydını oluştur
+    accept_language = request.headers.get('Accept-Language', '')
+    request_lang = get_request_language(request) if accept_language else None
+    lang = request_lang or get_email_language(user_in.username)
+    if lang not in ['tr', 'en']:
+        lang = 'tr'
     user_db_data = user_in.model_dump(exclude={"organization_name", "support_phone"})
-    user_db = UserInDB(**user_db_data, hashed_password=hashed_password, organization_id=new_org_id, role="admin", slug=unique_slug, permitted_service_ids=[], onboarding_completed=False)
+    user_db = UserInDB(**user_db_data, hashed_password=hashed_password, organization_id=new_org_id, role="admin", slug=unique_slug, permitted_service_ids=[], onboarding_completed=False, language=lang)
     await db.users.insert_one(user_db.model_dump())
     
     # Bu kullanıcı için varsayılan Settings oluştur (kayıt bilgileriyle)
@@ -2086,13 +2091,15 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
     service_ids = []
     
     if sector and sector != "Diğer/Boş":
-        # Dil belirleme - önce Accept-Language header'ına bak, yoksa email'e göre
-        lang = get_request_language(request)
-        if lang == 'tr':  # Eğer header'dan 'tr' geldiyse, email'e de bak
-            lang = get_email_language(user_in.username)
+        # Dil belirleme - önce request'den, yoksa kayıt dilinden (fallback)
+        lang_for_services = lang
+        if not lang_for_services:
+            lang_for_services = get_request_language(request)
+        if not lang_for_services:
+            lang_for_services = 'tr'
         
         # Default services'i dil bazlı al
-        services_to_add = get_sector_default_services(sector, lang)
+        services_to_add = get_sector_default_services(sector, lang_for_services)
         
         # Eğer dil bazlı bulunamazsa, Türkçe'den al
         if not services_to_add:
@@ -2134,14 +2141,16 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
     
     # Brevo ile hoş geldin e-postası gönder
     try:
-        # Dil belirleme
-        lang = get_email_language(user_in.username)
+        # Dil belirleme (kayıt sırasında belirlenen dil)
+        lang_for_email = lang or get_email_language(user_in.username)
+        if lang_for_email not in ['tr', 'en']:
+            lang_for_email = 'tr'
         
         logo_url = "https://plannapp.co/api/static/logo.png"
-        dashboard_url = "https://plannapp.co.uk" if lang == 'en' else "https://plannapp.co"
+        dashboard_url = "https://plannapp.co.uk" if lang_for_email == 'en' else "https://plannapp.co"
         user_name = user_in.full_name or user_in.username
         
-        if lang == 'en':
+        if lang_for_email == 'en':
             subject = "Welcome to PLANN! Your Free Trial Has Started."
             html_content = f"""
             <html>
@@ -2357,8 +2366,20 @@ def get_email_language(email: str) -> str:
 def get_request_language(request: Request) -> str:
     """Request header'dan dil belirler"""
     accept_language = request.headers.get('Accept-Language', '')
-    if accept_language and ('en' in accept_language.lower() and 'tr' not in accept_language.lower()):
+    if not accept_language:
+        return 'tr'
+
+    raw = accept_language.lower().strip()
+    first = raw.split(',')[0].strip()
+    if first.startswith('en'):
         return 'en'
+    if first.startswith('tr'):
+        return 'tr'
+
+    if 'en' in raw and 'tr' not in raw:
+        return 'en'
+    if 'tr' in raw:
+        return 'tr'
     return 'tr'
 
 def detect_currency(request: Request, user_phone: Optional[str] = None) -> str:
@@ -2622,11 +2643,13 @@ def get_sector_default_services(sector: str, lang: str = 'tr') -> list:
         }
         return sector_defaults.get(sector, [])
 
-async def send_personnel_invitation_email(recipient_email: str, recipient_name: str, admin_name: str, organization_name: str, invitation_token: str):
+async def send_personnel_invitation_email(recipient_email: str, recipient_name: str, admin_name: str, organization_name: str, invitation_token: str, lang: Optional[str] = None):
     """Personel davet e-postası gönderir."""
     try:
         # Dil belirleme
-        lang = get_email_language(recipient_email)
+        lang = (lang or '').strip().lower()
+        if lang not in ['tr', 'en']:
+            lang = get_email_language(recipient_email)
         
         # Invitation link oluştur (setup-password route'u kullan)
         invitation_link = f"https://plannapp.co/setup-password?token={invitation_token}" if lang == 'tr' else f"https://plannapp.co.uk/setup-password?token={invitation_token}"
@@ -2737,7 +2760,7 @@ async def send_personnel_invitation_email(recipient_email: str, recipient_name: 
         logging.error(traceback.format_exc())
         return False
 
-async def send_password_reset_email(user_email: str, user_name: str, reset_link: str):
+async def send_password_reset_email(user_email: str, user_name: str, reset_link: str, lang: Optional[str] = None):
     """Kullanıcıya şifre sıfırlama linkini içeren kurumsal e-postayı gönderir."""
     try:
         # user_name kontrolü
@@ -2748,7 +2771,9 @@ async def send_password_reset_email(user_email: str, user_name: str, reset_link:
         logging.info(f"📧 [SEND_PASSWORD_RESET_EMAIL] user_email: {user_email}, user_name: {user_name}, reset_link: {reset_link[:50]}...")
         
         # Dil belirleme
-        lang = get_email_language(user_email)
+        lang = (lang or '').strip().lower()
+        if lang not in ['tr', 'en']:
+            lang = get_email_language(user_email)
         
         logo_url = "https://plannapp.co/api/static/logo.png"
         
@@ -3116,6 +3141,13 @@ async def forgot_password(request: Request, forgot_request: ForgotPasswordReques
             return {"message": "Eğer bu e-posta adresi kayıtlıysa, şifre sıfırlama linki gönderildi."}
         
         logging.info(f"✅ [FORGOT_PASSWORD] Kullanıcı bulundu: {user.username}")
+
+        accept_language = request.headers.get('Accept-Language', '')
+        request_lang = get_request_language(request) if accept_language else None
+        user_lang = getattr(user, 'language', None)
+        lang = user_lang or request_lang or get_email_language(user.username)
+        if lang not in ['tr', 'en']:
+            lang = 'tr'
         
         # Benzersiz token oluştur
         reset_token = str(uuid.uuid4()) + str(uuid.uuid4()).replace('-', '')
@@ -3131,14 +3163,14 @@ async def forgot_password(request: Request, forgot_request: ForgotPasswordReques
         })
         
         # Reset link oluştur
-        reset_link = f"https://plannapp.co/reset-password?token={reset_token}"
+        reset_link = f"https://plannapp.co.uk/reset-password?token={reset_token}" if lang == 'en' else f"https://plannapp.co/reset-password?token={reset_token}"
         
         # E-posta gönder
         user_name = user.full_name or user.username
         logging.info(f"🔐 [FORGOT_PASSWORD] Token oluşturuldu, email gönderiliyor: {user.username}")
         logging.info(f"🔐 [FORGOT_PASSWORD] Reset link: {reset_link}")
         try:
-            email_sent = await send_password_reset_email(user.username, user_name, reset_link)
+            email_sent = await send_password_reset_email(user.username, user_name, reset_link, lang=lang)
             logging.info(f"🔐 [FORGOT_PASSWORD] send_password_reset_email çağrıldı, sonuç: {email_sent}")
         except Exception as email_error:
             logging.error(f"❌ [FORGOT_PASSWORD] Email gönderim hatası: {email_error}", exc_info=True)
@@ -6172,6 +6204,9 @@ async def complete_onboarding(request: Request, data: OnboardingComplete, curren
             staff_slug = username.split('@')[0] + '-' + str(uuid.uuid4())[:8]
             
             # Yeni staff kullanıcısı oluştur - Admin'in tatil günleriyle
+            invite_lang = getattr(current_user, 'language', None) or get_request_language(request)
+            if invite_lang not in ['tr', 'en']:
+                invite_lang = 'tr'
             staff_user = UserInDB(
                 username=username,
                 full_name=full_name,
@@ -6181,6 +6216,7 @@ async def complete_onboarding(request: Request, data: OnboardingComplete, curren
                 status="pending",
                 invitation_token=invitation_token,
                 days_off=admin_days_off,  # Admin'in tatil günlerini uygula
+                language=invite_lang,
                 hashed_password=None  # Şifre davet linkinden belirlenecek
             )
             
@@ -6194,7 +6230,8 @@ async def complete_onboarding(request: Request, data: OnboardingComplete, curren
                     recipient_name=full_name,
                     admin_name=current_user.full_name or current_user.username,
                     organization_name=organization_name,
-                    invitation_token=invitation_token
+                    invitation_token=invitation_token,
+                    lang=invite_lang
                 )
                 
                 if result:
@@ -6370,7 +6407,8 @@ async def add_staff(request: Request, staff_data: StaffCreate, current_user: Use
             payment_type=staff_data.payment_type or "salary" if invited_role == "staff" else None,
             payment_amount=payment_amount if invited_role == "staff" else None,
             status="pending",  # Bekliyor durumu
-            invitation_token=invitation_token
+            invitation_token=invitation_token,
+            language=getattr(current_user, 'language', None) or get_request_language(request)
         )
         
         user_dict = new_user.model_dump()
@@ -6388,7 +6426,8 @@ async def add_staff(request: Request, staff_data: StaffCreate, current_user: Use
             recipient_name=full_name,
             admin_name=current_user.full_name or current_user.username,
             organization_name=organization_name,
-            invitation_token=invitation_token
+            invitation_token=invitation_token,
+            lang=getattr(current_user, 'language', None) or get_request_language(request)
         )
         
         if not email_sent:
