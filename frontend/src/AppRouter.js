@@ -82,7 +82,7 @@ const AppRouter = () => {
       {/* Subscribe Route - PayTR redirect için */}
       <Route 
         path="/subscribe" 
-        element={isAuthenticated ? <App /> : <Navigate to="/login" replace />} 
+        element={isAuthenticated ? <App /> : <Navigate to="/login?redirect=/subscribe" replace />} 
       />
       
       {/* Super Admin Route - Sadece superadmin rolü erişebilir */}

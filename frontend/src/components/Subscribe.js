@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Check, Globe, ExternalLink, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Globe, ExternalLink } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import api from "../api/api";
@@ -13,6 +13,7 @@ const Subscribe = ({ onNavigate }) => {
   const webUrl = i18n.language && i18n.language.toLowerCase().startsWith('en')
     ? 'https://plannapp.co.uk'
     : 'https://plannapp.co';
+  const websiteSubscribeUrl = `${webUrl}/subscribe`;
   
   // Pricing Display Configuration - Exact flat numbers matching Stripe Fixed Amount Coupons
   const PRICING_DISPLAY = {
@@ -68,17 +69,12 @@ const Subscribe = ({ onNavigate }) => {
   // Eğer app mode ise, sadece bilgilendirme mesajı göster
   if (isAppMode) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 pb-20 flex items-center justify-center" style={{ fontFamily: 'Inter, sans-serif' }}>
+      <div className="min-h-screen bg-white pb-20 flex items-center justify-center" style={{ fontFamily: 'Inter, sans-serif' }}>
         <div className="px-4 w-full max-w-md">
-          <Card className="bg-white/80 backdrop-blur-sm shadow-2xl border-0 rounded-3xl p-8 mx-auto text-center overflow-hidden relative">
-            {/* Decorative gradient overlay */}
-            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
-            <div className="absolute bottom-0 left-0 w-64 h-64 bg-gradient-to-tr from-purple-400/10 to-pink-400/10 rounded-full blur-3xl -ml-32 -mb-32"></div>
-            
-            <div className="relative z-10">
-              {/* Icon */}
-              <div className="mx-auto mb-6 w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-                <Globe className="w-10 h-10 text-white" />
+          <Card className="bg-white shadow-xl border border-gray-200 rounded-3xl p-8 mx-auto text-center">
+            <div>
+              <div className="mx-auto mb-6 w-16 h-16 rounded-2xl border border-gray-200 flex items-center justify-center bg-white">
+                <Globe className="w-8 h-8 text-gray-900" />
               </div>
               
               {/* Title */}
@@ -95,14 +91,14 @@ const Subscribe = ({ onNavigate }) => {
               <Button
                 onClick={() => {
                   if (Capacitor.isNativePlatform()) {
-                    Browser.open({ url: webUrl });
+                    Browser.open({ url: websiteSubscribeUrl });
                   } else {
-                    window.location.href = webUrl;
+                    window.location.href = websiteSubscribeUrl;
                   }
                 }}
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02] flex items-center justify-center gap-2 group"
+                className="w-full bg-gray-900 hover:bg-gray-800 text-white font-semibold py-6 rounded-2xl shadow-md transition-colors flex items-center justify-center gap-2"
               >
-                <ExternalLink className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                <ExternalLink className="w-5 h-5" />
                 {t('appCompliance.goToWebsite')}
               </Button>
               
@@ -116,17 +112,9 @@ const Subscribe = ({ onNavigate }) => {
               </button>
             </div>
           </Card>
-          
-          {/* Additional info card */}
-          <div className="mt-4 bg-white/60 backdrop-blur-sm rounded-2xl p-4 text-center">
-            <div className="flex items-center justify-center gap-2 text-gray-600 text-sm">
-              <Sparkles className="w-4 h-4 text-purple-500" />
-              <span className="font-medium">
-                {i18n.language === 'tr' 
-                  ? 'Hızlı ve güvenli ödeme için web sitesini ziyaret edin' 
-                  : 'Visit our website for quick and secure payment'}
-              </span>
-            </div>
+
+          <div className="mt-4 text-center text-xs text-gray-500">
+            {webUrl.replace('https://', '')}
           </div>
         </div>
       </div>

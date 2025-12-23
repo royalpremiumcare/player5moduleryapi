@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Package, AlertTriangle, ArrowLeft, Globe, ExternalLink, Sparkles } from "lucide-react";
+import { Package, AlertTriangle, ArrowLeft, Globe, ExternalLink } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ const SettingsSubscription = ({ onNavigate }) => {
   const webUrl = i18n.language && i18n.language.toLowerCase().startsWith('en')
     ? 'https://plannapp.co.uk'
     : 'https://plannapp.co';
+  const websiteSubscribeUrl = `${webUrl}/subscribe`;
 
   useEffect(() => {
     loadPlanInfo();
@@ -202,42 +203,38 @@ const SettingsSubscription = ({ onNavigate }) => {
               
               {/* App Mode: Bilgilendirme mesajı */}
               {isAppMode && (
-                <div className="rounded-2xl p-5 border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-purple-50 overflow-hidden relative">
-                  <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
-                  <div className="relative">
-                    <div className="flex items-start gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md flex-shrink-0">
-                        <Globe className="w-6 h-6 text-white" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-gray-900">
-                          {t('settings.subscribePage.subscriptionManagement')}
-                        </p>
-                        <p className="text-sm text-gray-600 mt-1 leading-relaxed">
-                          {t('appCompliance.subscriptionInfo')}
-                        </p>
-                      </div>
+                <div className="rounded-2xl p-5 border border-gray-200 bg-white">
+                  <div className="flex items-start gap-3">
+                    <div className="w-12 h-12 rounded-2xl border border-gray-200 flex items-center justify-center bg-white flex-shrink-0">
+                      <Globe className="w-6 h-6 text-gray-900" />
                     </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-900">
+                        {t('settings.subscribePage.subscriptionManagement')}
+                      </p>
+                      <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+                        {t('appCompliance.subscriptionInfo')}
+                      </p>
+                    </div>
+                  </div>
 
-                    <div className="mt-4">
-                      <Button
-                        onClick={() => {
-                          if (Capacitor.isNativePlatform()) {
-                            Browser.open({ url: webUrl });
-                          } else {
-                            window.location.href = webUrl;
-                          }
-                        }}
-                        className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold h-12 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2 group"
-                      >
-                        <ExternalLink className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
-                        {t('appCompliance.goToWebsite')}
-                      </Button>
+                  <div className="mt-4">
+                    <Button
+                      onClick={() => {
+                        if (Capacitor.isNativePlatform()) {
+                          Browser.open({ url: websiteSubscribeUrl });
+                        } else {
+                          window.location.href = websiteSubscribeUrl;
+                        }
+                      }}
+                      className="w-full bg-gray-900 hover:bg-gray-800 text-white font-semibold h-12 rounded-2xl shadow-md transition-colors flex items-center justify-center gap-2"
+                    >
+                      <ExternalLink className="w-5 h-5" />
+                      {t('appCompliance.goToWebsite')}
+                    </Button>
 
-                      <div className="mt-3 flex items-center justify-center gap-2 text-gray-600 text-xs bg-white/60 backdrop-blur-sm rounded-xl py-2 px-3">
-                        <Sparkles className="w-4 h-4 text-purple-500" />
-                        <span className="font-medium">{webUrl.replace('https://', '')}</span>
-                      </div>
+                    <div className="mt-3 text-center text-gray-500 text-xs">
+                      <span className="font-medium">{webUrl.replace('https://', '')}</span>
                     </div>
                   </div>
                 </div>

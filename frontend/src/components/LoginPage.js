@@ -34,7 +34,8 @@ const LoginPage = () => {
       // Android/iOS'te login sayfasına ?mode=app parametresi ekle (HashRouter için)
       const urlParams = new URLSearchParams(location.search);
       if (!urlParams.get('mode')) {
-        navigate('/login?mode=app', { replace: true });
+        urlParams.set('mode', 'app');
+        navigate(`/login?${urlParams.toString()}`, { replace: true });
         return;
       }
     }
@@ -56,6 +57,11 @@ const LoginPage = () => {
     setError('');
     setLoading(true);
 
+    const urlParams = new URLSearchParams(location.search);
+    const redirectParam = urlParams.get('redirect');
+    const allowedRedirectPaths = new Set(['/subscribe']);
+    const redirectPath = redirectParam && allowedRedirectPaths.has(redirectParam) ? redirectParam : '/';
+
     try {
       const result = await login(username, password, rememberMe);
 
@@ -64,7 +70,7 @@ const LoginPage = () => {
         setLoading(false);
       } else {
         // Başarılı giriş
-        navigate('/', { replace: true });
+        navigate(redirectPath, { replace: true });
       }
     } catch (err) {
       setError(err.message || t('auth.login.errorGeneric'));
