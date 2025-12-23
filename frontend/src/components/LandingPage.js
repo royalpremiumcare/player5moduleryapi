@@ -59,21 +59,21 @@ const LandingPage = () => {
   // GBP Fiyatlandırma (İngilizce seçildiğinde)
   // monthly: normal fiyat, monthlyDiscounted: %25 indirimli (yuvarlanmış), yearly: yıllık fiyat
   const gbpPricing = {
-    'standart': { monthly: 15, monthlyDiscounted: 11, yearly: 150 },
-    'standard': { monthly: 15, monthlyDiscounted: 11, yearly: 150 },
-    'profesyonel': { monthly: 22, monthlyDiscounted: 17, yearly: 220 },
-    'professional': { monthly: 22, monthlyDiscounted: 17, yearly: 220 },
+    'standart': { monthly: 16, monthlyDiscounted: 12, yearly: 160 },
+    'standard': { monthly: 16, monthlyDiscounted: 12, yearly: 160 },
+    'profesyonel': { monthly: 24, monthlyDiscounted: 18, yearly: 240 },
+    'professional': { monthly: 24, monthlyDiscounted: 18, yearly: 240 },
     'premium': { monthly: 32, monthlyDiscounted: 24, yearly: 320 },
-    'business': { monthly: 42, monthlyDiscounted: 32, yearly: 420 },
-    'enterprise': { monthly: 55, monthlyDiscounted: 41, yearly: 550 },
-    'kurumsal': { monthly: 79, monthlyDiscounted: 59, yearly: 790 },
-    'corporate': { monthly: 79, monthlyDiscounted: 59, yearly: 790 },
+    'business': { monthly: 40, monthlyDiscounted: 30, yearly: 400 },
+    'enterprise': { monthly: 56, monthlyDiscounted: 42, yearly: 560 },
+    'kurumsal': { monthly: 80, monthlyDiscounted: 60, yearly: 800 },
+    'corporate': { monthly: 80, monthlyDiscounted: 60, yearly: 800 },
   };
 
   // TL İlk Ay İndirimli Fiyatlar (Türkçe seçildiğinde)
   const tlFirstMonthPricing = {
-    'standart': 530,
-    'standard': 530,
+    'standart': 550,
+    'standard': 550,
     'profesyonel': 750,
     'professional': 750,
     'premium': 1150,
@@ -81,6 +81,19 @@ const LandingPage = () => {
     'enterprise': 1750,
     'kurumsal': 2700,
     'corporate': 2700,
+  };
+
+  // TL Normal Aylık Fiyatlar (Türkçe seçildiğinde)
+  const tlMonthlyPricing = {
+    'standart': 750,
+    'standard': 750,
+    'profesyonel': 1000,
+    'professional': 1000,
+    'premium': 1550,
+    'business': 1950,
+    'enterprise': 2350,
+    'kurumsal': 3600,
+    'corporate': 3600,
   };
 
   // Para birimi ve fiyat formatlama
@@ -100,11 +113,11 @@ const LandingPage = () => {
       return { price, currency: '£', locale: 'en-GB' };
     }
     
-    // TL fiyatları (backend'den) - aylık küsüratları yuvarla
-    const monthlyPrice = Math.round(plan.price_monthly);
+    // TL fiyatları (sabit tablo) - aylık küsüratları yuvarla
+    const baseMonthlyPrice = tlMonthlyPricing[planKey] ?? Math.round(plan.price_monthly_original ?? plan.price_monthly);
     let price;
     if (isYearly) {
-      price = Math.round(monthlyPrice * 10); // yıllık = aylık * 10
+      price = Math.round(baseMonthlyPrice * 10); // yıllık = aylık * 10 (2 ay ücretsiz)
     } else if (hasDiscount) {
       // İndirimli fiyat: Önce sabit değerleri kontrol et, sonra backend, son olarak %25 indirim
       if (tlFirstMonthPricing[planKey]) {
@@ -112,10 +125,10 @@ const LandingPage = () => {
       } else if (plan.price_monthly_discounted) {
         price = Math.round(plan.price_monthly_discounted);
       } else {
-        price = Math.round(monthlyPrice * 0.75); // %25 indirim
+        price = Math.round(baseMonthlyPrice * 0.75); // %25 indirim
       }
     } else {
-      price = monthlyPrice;
+      price = baseMonthlyPrice;
     }
     return { price, currency: '₺', locale: 'tr-TR' };
   };
@@ -133,16 +146,10 @@ const LandingPage = () => {
     }
     
     // TL fiyatları - aylık küsüratları yuvarla
-    // Backend'den original price geliyorsa onu kullan, yoksa normal fiyatı göster
-    let monthlyPrice;
-    if (plan.price_monthly_original) {
-      monthlyPrice = Math.round(plan.price_monthly_original);
-    } else {
-      monthlyPrice = Math.round(plan.price_monthly);
-    }
+    const baseMonthlyPrice = tlMonthlyPricing[planKey] ?? Math.round(plan.price_monthly_original ?? plan.price_monthly);
     const price = isYearly 
-      ? Math.round(monthlyPrice * 12) 
-      : monthlyPrice;
+      ? Math.round(baseMonthlyPrice * 12) 
+      : baseMonthlyPrice;
     return { price, currency: '₺', locale: 'tr-TR' };
   };
 
