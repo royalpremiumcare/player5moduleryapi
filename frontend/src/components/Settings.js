@@ -10,6 +10,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 
 const Settings = ({ onNavigate, userRole, onLogout }) => {
   const { t } = useTranslation();
+  const isStaff = userRole === 'staff' || userRole === 'personnel';
   const [notificationStatus, setNotificationStatus] = useState('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
 
@@ -159,7 +160,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
 
             <div className="space-y-2">
               {/* Personel için sadece Profilim göster */}
-              {userRole === 'staff' && (
+              {isStaff && (
                 <button
                   onClick={() => onNavigate && onNavigate("settings-profile")}
                   className="w-full flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors text-left"
@@ -366,40 +367,40 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                     </div>
                     <ChevronRight className="w-5 h-5 text-orange-400" />
                   </button>
-
-                  <button
-                    onClick={() => onNavigate && onNavigate("help-center")}
-                    className="w-full flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
-                        <HelpCircle className="w-5 h-5 text-indigo-600" />
-              </div>
-              <div>
-                        <p className="text-base font-semibold text-gray-900">{t('settings.helpCenter')}</p>
-                        <p className="text-xs text-gray-600">{t('settings.helpCenterDescription')}</p>
-              </div>
-            </div>
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
-                  </button>
-
-                  <button
-                    onClick={onLogout}
-                    className="w-full flex items-center justify-between p-4 rounded-lg border border-red-200 hover:bg-red-50 transition-colors text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                        <LogOut className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                        <p className="text-base font-semibold text-red-600">{t('settings.logout')}</p>
-                        <p className="text-xs text-red-500">{t('settings.logoutDescription')}</p>
-              </div>
-            </div>
-                    <ChevronRight className="w-5 h-5 text-red-400" />
-                  </button>
                 </>
               )}
+
+              <button
+                onClick={() => onNavigate && onNavigate("help-center")}
+                className="w-full flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                    <HelpCircle className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-base font-semibold text-gray-900">{t('settings.helpCenter')}</p>
+                    <p className="text-xs text-gray-600">{t('settings.helpCenterDescription')}</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-gray-400" />
+              </button>
+
+              <button
+                onClick={onLogout}
+                className="w-full flex items-center justify-between p-4 rounded-lg border border-red-200 hover:bg-red-50 transition-colors text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                    <LogOut className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-base font-semibold text-red-600">{t('settings.logout')}</p>
+                    <p className="text-xs text-red-500">{t('settings.logoutDescription')}</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-red-400" />
+              </button>
 
             </div>
           </div>

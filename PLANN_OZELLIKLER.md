@@ -8,7 +8,7 @@ Müşterileriniz 7/24 online randevu alabilir, siz işinize odaklanabilirsiniz.
 
 ---
 
-## � Yaşadığınız Sorunları Biliyoruz
+## 📌 Yaşadığınız Sorunları Biliyoruz
 
 ### ❌ "Sürekli Telefon Çalıyor, İşime Odaklanamıyorum"
 
@@ -78,7 +78,7 @@ Ay sonunda kasaya baktınız, para var ama ne kadar kar ettiniz bilmiyorsunuz. P
 
 Rekabette öne çıkmak zor. Büyük markalar uygulama kullanıyor, siz hala telefon ve defter. Müşteriler modern işletmeleri tercih ediyor.
 
-**✅ PLANN Çözümü:** Kendi markanızla online randevu sayfası. Mobil uygulama olarak telefona yüklenebilir. WhatsApp'tan profesyonel bildirimler. Müşterileriniz "Vay be, sistem kurmuşlar!" der.
+**✅ PLANN Çözümü:** Kendi markanızla online randevu sayfası. Mobil uygulama olarak telefona yükleme. WhatsApp'tan profesyonel bildirimler. Müşterileriniz "Vay be, sistem kurmuşlar!" der.
 
 ---
 
@@ -116,7 +116,7 @@ PLANN, randevu sistemiyle çalışan **her sektör** için uygundur:
 
 ---
 
-## � Müşteri Deneyimi
+## 👥 Müşteri Deneyimi
 
 ### Online Randevu Sistemi
 - **7/24 Randevu Alma**: Müşterileriniz siz uyurken bile gündüz için randevu alabilir
@@ -124,6 +124,10 @@ PLANN, randevu sistemiyle çalışan **her sektör** için uygundur:
 - **Personel Seçimi**: İsteğe bağlı olarak müşteri personel seçebilir
 - **Anlık Müsaitlik**: Sadece müsait saatler gösterilir, çakışma olmaz
 - **WhatsApp Onayı**: Randevu alındığında müşteriye anında WhatsApp mesajı gider
+- **Markalı Online Sayfa (Slug)**: İşletmenize özel link ile müşteriler randevu alır (örn: `plannapp.co/isletmeniz`)
+- **Logo ve İşletme Bilgileri**: Online sayfada işletme adı ve logo gösterimi
+- **Fiyat/Süre Görünürlüğü (Opsiyonel)**: Online sayfada hizmet fiyatı ve hizmet süresini göster/gizle
+- **Konum Gösterimi**: Online sayfada işletme konumu haritada gösterilebilir
 
 ### 💬 WhatsApp Bildirim Sistemi
 
@@ -173,6 +177,17 @@ Randevu iptal edildiğinde müşteriniz anında bilgilendirilir:
 - **Android & iOS**: Tek tıkla telefona yüklenebilir uygulama
 - **Hızlı Erişim**: Tarayıcı açmadan direkt uygulamadan giriş
 - **Bildirimler**: Push notification desteği
+
+### 📍 Konum ve Yol Tarifi (Harita)
+- **İşletme Konumu**: İşletmenizin adresini kaydedin ve müşterilerinize gösterin
+- **Harita Üzerinde Gösterim**: Online randevu sayfasında işletmenizin konumu haritada görünür
+- **Tek Tıkla Yol Tarifi**: Müşteriniz “Yol tarifi al” diyerek Google Haritalar üzerinden navigasyona yönlenir
+- **Daha Kolay Ulaşım**: “Adres tarif etme” derdi biter, müşteri doğru yere daha hızlı gelir
+
+### 🔔 Push Bildirimler (Web + Mobil)
+- **Web Push**: Tarayıcı üzerinden bildirim izni ile yeni randevu bildirimleri
+- **Mobil Push (Android/iOS)**: Uygulama içinde push bildirim altyapısı (native bildirim izinleri)
+- **Uygulama İçi Bildirim Merkezi**: Üst bardaki zil ikonunda online randevular için bildirim listesi
 
 ---
 
@@ -260,6 +275,19 @@ Randevu iptal edildiğinde müşteriniz anında bilgilendirilir:
 - **Komisyon Hesabı**: Komisyonlu personel için otomatik hesaplama
 - **Bordro Raporu**: Aylık personel ödeme raporu
 
+#### Personel Ödeme Kaydı (Gider Olarak)
+- **Ödeme Yap**: Personel için ödeme kaydı oluşturma (gider olarak kaydedilir)
+- **Dönem Bazlı Bordro**: Bu ay / geçen ay personel hakediş ve ödenen takibi
+
+### 🏦 Kasa & İşlem Yönetimi
+
+Gün içi gelir hareketlerini daha net takip etmek için:
+
+- **İşlem Listesi**: Gün/hafta/ay filtreleri ile kasa hareketlerini görme
+- **Personel Filtresi**: İşlemleri personele göre filtreleme
+- **Düzeltme & Silme**: İşlem tutarını düzenleme veya hatalı işlemi silme
+- **Canlı Güncelleme**: Sayfa açıkken otomatik yenileme ile güncel verileri gösterme
+
 ### ⏰ İş Saatleri Ayarları
 
 #### Haftalık Çalışma Saatleri
@@ -292,6 +320,15 @@ Pazar:     KAPALI ❌
 - **Personel Performansı**: Kim kaç randevu yapmış
 - **Popüler Hizmetler**: En çok talep edilen hizmetler
 - **Excel Export**: Tüm verileri Excel'e aktarma
+- **CSV Dışa Aktarma**: Randevular ve müşteri listesi CSV formatında indirilebilir
+
+### 📥 Veri İçe Aktarma (Excel)
+
+Mevcut verilerinizi hızlıca sisteme taşıyın:
+
+- **Excel’den Randevu Aktarımı**: `.xlsx` dosyasından randevuları içe aktarma
+- **Hizmet Eşleştirme**: Excel’deki hizmet isimlerini sistemdeki hizmetlerle eşleştirip otomatik kayıt
+- **Hata Raporu**: Aktarılamayan satırlar için detaylı hata listesi
 
 ### ⚙️ Genel Ayarlar
 
@@ -300,6 +337,7 @@ Pazar:     KAPALI ❌
 - **Telefon Numarası**: Müşteri iletişim numarası
 - **Logo**: İşletme logosu yükleme
 - **Sektör**: Kuaför, Güzellik Merkezi, Klinik vb.
+- **Konum (Adres & Harita)**: İşletme adresini kaydetme, müşteriye haritada gösterme ve yol tarifi sunma
 
 #### Randevu Ayarları
 - **Personel Seçimi**: Müşteri personel seçebilsin mi?
@@ -317,6 +355,11 @@ Pazar:     KAPALI ❌
 - **Admin Yetkisi**: Tüm ayarlara erişim
 - **Personel Yetkisi**: Sadece kendi randevularını görme
 - **Denetim Kaydı**: Kim ne zaman ne yaptı (log tutma)
+
+#### 🧾 Denetim Günlükleri (Audit Logs)
+- **Detaylı Kayıt**: Oluşturma/Güncelleme/Silme işlemlerini kayıt altına alma
+- **Filtreleme**: İşlem tipi, kaynak tipi, kullanıcı, tarih aralığına göre filtreleme
+- **IP Kaydı**: (varsa) işlem yapan kullanıcının IP bilgisini kaydetme
 
 ---
 
@@ -359,52 +402,37 @@ Pazar:     KAPALI ❌
 - **Otomatik Yenileme**: Her ay otomatik ödeme
 - **Fatura**: Her ödeme için e-fatura
 
+### 💳 Abonelik Yönetimi (Stripe)
+- **Paket Yükseltme**: Uygulama içinden plan seçip ödeme başlatma
+- **Stripe Customer Portal**: Aboneliği web portal üzerinden yönetme (yenileme/iptal vb.)
+- **Kota Takibi**: Aylık randevu kullanımını ve kalan hakkı görüntüleme
+- **AI Kullanım Limiti**: Paket bazlı AI mesaj limitini takip etme
+
+### 🔐 SSO (Tek Tıkla Web'e Geçiş)
+- **Uygulama Modu**: Android/iOS uygulamada ödeme butonları gizlenebilir (store kuralları için)
+- **SSO Kod ile Giriş**: Web sitesindeki abonelik sayfasına tek tıkla güvenli geçiş
+
 ---
 
 ## 🌐 Teknik Özellikler
 
-### Erişilebilirlik
 - **Web Tabanlı**: Herhangi bir tarayıcıdan erişim
 - **Mobil Uyumlu**: Telefon ve tabletten tam uyum
 - **PWA Desteği**: Telefona uygulama olarak yükleme
 
-### Performans
+#### 🌗 Tema (Aydınlık/Karanlık Mod)
+- **Koyu Mod**: Uygulamada aydınlık/karanlık tema desteği
+- **Tercih Hatırlama**: Seçilen tema tarayıcıda kaydedilir
+
+#### Performans
 - **Hızlı Yükleme**: 2 saniyede açılır
 - **Gerçek Zamanlı**: Anlık güncelleme (WebSocket)
 - **7/24 Erişim**: Kesintisiz hizmet
 
-### Güvenlik
+#### Güvenlik
 - **SSL Şifreleme**: Tüm veriler şifreli
 - **Güvenli Altyapı**: Profesyonel sunucu
 - **Yedekleme**: Günlük otomatik yedek
-
----
-
-## 💡 Avantajlar
-
-### İşletme İçin
-✅ Telefon trafiği azalır  
-✅ 7/24 randevu alınabilir  
-✅ Çakışma ve hata olmaz  
-✅ Müşteri memnuniyeti artar  
-✅ Gelir takibi kolaylaşır  
-✅ Personel yönetimi düzenlenir  
-✅ WhatsApp ile profesyonel iletişim  
-✅ Randevu kaçırma oranı düşer  
-
-### Müşteri İçin
-✅ İstediği zaman randevu alır  
-✅ Müsait saatleri görür  
-✅ WhatsApp ile anında bildirim alır  
-✅ Hatırlatma mesajı ile randevuyu unutmaz  
-✅ Profesyonel hizmet deneyimi yaşar  
-
-### Personel İçin
-✅ Kendi programını görür  
-✅ Mola saatini ayarlar  
-✅ Performansını takip eder  
-
----
 
 ## 🤖 Yapay Zeka Asistanı
 
@@ -416,7 +444,7 @@ PLANN'ın yapay zeka asistanı sayesinde sistemi **konuşarak veya yazarak** yö
 
 Uzun formlar doldurmak yerine sadece söyleyin veya yazın:
 
-> � **Siz:** "Yarın Ahmet Yılmaz için saat 10:00'a traş randevusu oluştur"
+> 💬 **Siz:** "Yarın Ahmet Yılmaz için saat 10:00'a traş randevusu oluştur"
 > 
 > 🤖 **PLANN AI:** "Tamam! Ahmet Yılmaz için yarın 10:00'da traş randevusu oluşturdum. Müşteriye WhatsApp bildirimi gönderildi. ✅"
 
@@ -452,77 +480,45 @@ Uzun formlar doldurmak yerine sadece söyleyin veya yazın:
 
 > *"Artık raporlar için saatlerce uğraşmak yok. Sadece sorun, PLANN AI cevaplasın!"*
 
----
+## 💡 Avantajlar
 
-## 🚀 Nasıl Başlarım?
+### İşletme İçin
+✅ Telefon trafiği azalır  
+✅ 7/24 randevu alınabilir  
+✅ Çakışma ve hata olmaz  
+✅ Müşteri memnuniyeti artar  
+✅ Gelir takibi kolaylaşır  
+✅ Personel yönetimi düzenlenir  
+✅ WhatsApp ile profesyonel iletişim  
+✅ Randevu kaçırma oranı düşer  
+✅ Müşteriler işletmenize daha kolay ulaşır (konum & yol tarifi)  
 
-### 4 Adımda Kullanmaya Başlayın
+### Müşteri İçin
+✅ İstediği zaman randevu alır  
+✅ Müsait saatleri görür  
+✅ WhatsApp ile anında bildirim alır  
+✅ Hatırlatma mesajı ile randevuyu unutmaz  
+✅ Profesyonel hizmet deneyimi yaşar  
+✅ Haritada konumu görür, tek tıkla yol tarifi alır  
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  1️⃣ KAYIT OL        →  1 dakikada ücretsiz hesap oluştur   │
-│  2️⃣ HİZMETLERİ GİR  →  Sunduğun hizmetleri tanımla         │
-│  3️⃣ PERSONELİ EKLE  →  Çalışanlarını davet et              │
-│  4️⃣ LİNKİ PAYLAŞ    →  Müşteriler randevu almaya başlasın! │
-└─────────────────────────────────────────────────────────────┘
-```
+### Personel İçin
+✅ Kendi programını görür  
+✅ Mola saatini ayarlar  
+✅ Performansını takip eder  
 
-### ⏱️ Kurulum Süresi: Sadece 10 Dakika!
+## 🆘 Yardım Merkezi
+- **Sık Sorulan Sorular**: Admin ve personel için rol bazlı yardım içerikleri
+- **Arama**: Yardım içeriklerinde arama yapma
 
-- **Teknik bilgi gerekmez** - Her şey adım adım anlatılır
-- **Veri girişi kolay** - Hizmetlerinizi tek tek girin
-- **Destek her zaman yanınızda** - Takıldığınız yerde yardım alın
+## 👑 SuperAdmin Paneli (Platform Yönetimi)
 
----
+Bu bölüm platform sahibine yöneliktir:
 
-## ❓ Sıkça Sorulan Sorular
-
-### "Teknik bilgim yok, kullanabilir miyim?"
-**Evet!** PLANN, teknik bilgi gerektirmeyecek şekilde tasarlandı. Telefon kullanabiliyorsanız PLANN'ı da kullanabilirsiniz. Üstelik yapay zeka asistanı ile konuşarak bile işlem yapabilirsiniz.
-
-### "İnternet giderse randevularım silinir mi?"
-**Hayır!** Tüm verileriniz bulutta güvenle saklanır. İnternet geldiğinde kaldığınız yerden devam edersiniz. Hiçbir veri kaybolmaz.
-
-### "Müşteri bilgilerim güvende mi?"
-**Kesinlikle!** SSL şifreleme ile tüm veriler korunur. KVKK uyumlu altyapı. Verileriniz sadece size aittir ve üçüncü kişilerle paylaşılmaz.
-
-### "Mevcut müşterilerimi sisteme aktarabilir miyim?"
-**Evet!** Excel dosyanızı bize gönderin, müşterilerinizi ücretsiz olarak sisteme aktaralım.
-
-### "İstediğim zaman iptal edebilir miyim?"
-**Evet!** Taahhüt yok, istediğiniz zaman iptal edebilirsiniz. Yıllık plan alırsanız kalan süre için iade yapılır.
-
-### "Kaç personel ekleyebilirim?"
-**Sınırsız!** Tüm planlarda sınırsız personel ekleme hakkınız var.
-
-### "Birden fazla şubem var, kullanabilir miyim?"
-**Evet!** Her şube için ayrı hesap oluşturabilir veya kurumsal plan için bizimle iletişime geçebilirsiniz.
-
----
-
-## 🆚 Neden PLANN?
-
-### Rakiplerden Farkımız
-
-| Özellik | PLANN | Diğerleri |
-|---------|-------|-----------|
-| 🤖 Yapay Zeka Asistanı | ✅ Var | ❌ Yok |
-| 💬 WhatsApp Bildirimi | ✅ Var | ❌ Çoğunda yok |
-| 🇹🇷 Türkçe Arayüz & Destek | ✅ %100 Türkçe | ⚠️ Çeviri hatası |
-| 📱 Mobil Uygulama | ✅ Ücretsiz | 💰 Ek ücret |
-| 👥 Personel Sayısı | ✅ Sınırsız | ⚠️ Kişi başı ücret |
-| 🎓 Kullanım Kolaylığı | ✅ Çok kolay | ⚠️ Karmaşık |
-| 💰 Fiyat | ✅ Uygun | 💰 Pahalı |
-| 🆘 Destek | ✅ Hızlı Türkçe | ⚠️ Yavaş/İngilizce |
-
-### 💚 PLANN'ı Seçme Nedenleri
-
-1. **Yerli & Milli** - Türk mühendisler tarafından geliştirildi
-2. **Yapay Zeka** - Konuşarak yönetin, sorarak öğrenin
-3. **WhatsApp** - En etkili iletişim kanalı entegre
-4. **Kolay** - 10 dakikada kurulum, anında kullanım
-5. **Uygun** - Rakiplerin yarı fiyatına tam özellik
-6. **Destek** - Türkçe, hızlı, çözüm odaklı
+- **Platform İstatistikleri**: Toplam işletme, kullanım ve genel metrikler
+- **İşletme Yönetimi**: İşletme listeleme ve detay görüntüleme
+- **Paket Atama**: İşletmelere plan atama
+- **İletişim Talepleri**: Landing page üzerinden gelen talepleri görüntüleme, durum güncelleme ve silme
+- **Personel Yönetimi (Org Bazlı)**: İşletmeye bağlı personel listeleme/silme
 
 ---
 
@@ -538,8 +534,6 @@ Yeni üyelere özel, ilk ay **%25 indirimli** başlangıç fırsatı!
 │   🎉 HOŞGELDİN KAMPANYASI 🎉              │
 │                                            │
 │   İlk ay tüm planlarda %25 indirim!        │
-│                                            │
-│                         │
 │                                            │
 └────────────────────────────────────────────┘
 ```
@@ -575,7 +569,7 @@ Karar vermeden önce **7 gün boyunca tüm özellikleri ücretsiz** deneyin!
 
 ---
 
-## �📞 İletişim
+## 📞 İletişim
 
 **PLANN - Randevu Yönetim Sistemi**
 
