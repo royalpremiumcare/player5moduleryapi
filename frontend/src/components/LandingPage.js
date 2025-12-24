@@ -58,6 +58,11 @@ const LandingPage = () => {
   const [contactFormSuccess, setContactFormSuccess] = useState(false);
   const badgeAssetBase = process.env.PUBLIC_URL || '';
   const badgeAssetVersion = '4';
+  const dashboardAssetBase = process.env.PUBLIC_URL || '';
+  const dashboardAssetVersion = '1';
+  const dashboardImageSrc = i18n.language?.toLowerCase().startsWith('tr')
+    ? `${dashboardAssetBase}/screenshots/landing-dashboard-tr.png?v=${dashboardAssetVersion}`
+    : `${dashboardAssetBase}/screenshots/landing-dashboard-en.png?v=${dashboardAssetVersion}`;
   // GBP Fiyatlandırma (İngilizce seçildiğinde)
   // monthly: normal fiyat, monthlyDiscounted: %25 indirimli (yuvarlanmış), yearly: yıllık fiyat
   const gbpPricing = {
@@ -216,7 +221,7 @@ const LandingPage = () => {
     const interval = setInterval(() => {
       // Kelime değiştir (fade efekti olmadan direkt değişim)
       setWordIndex((prev) => (prev + 1) % getWords().length);
-    }, 900); // Her 0.9 saniyede bir değiş
+    }, 700); // Her 0.7 saniyede bir değiş
     
     return () => clearInterval(interval);
   }, [i18n.language]);
@@ -562,9 +567,13 @@ const LandingPage = () => {
               </div>
               <div className="bg-white rounded-2xl shadow-2xl p-4 border border-gray-200">
                 <img 
-                  src="https://customer-assets.emergentagent.com/job_16055e0a-771d-4ca0-9203-6958116f17b9/artifacts/1spiinqz_IMG_6383.jpeg" 
-                  alt="PLANN Dashboard Önizleme" 
+                  src={dashboardImageSrc}
+                  alt={i18n.language?.toLowerCase().startsWith('tr') ? 'PLANN Dashboard Önizleme' : 'PLANN Dashboard Preview'}
                   className="w-full h-auto rounded-xl"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = 'https://customer-assets.emergentagent.com/job_16055e0a-771d-4ca0-9203-6958116f17b9/artifacts/1spiinqz_IMG_6383.jpeg';
+                  }}
                 />
               </div>
             </div>

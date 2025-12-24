@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, CreditCard, ArrowLeft, DollarSign, ChartBar, Bell, BellOff } from "lucide-react"; 
+import { Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, CreditCard, ArrowLeft, DollarSign, ChartBar, Bell, BellOff, MapPin } from "lucide-react"; 
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -192,6 +192,23 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                       <div>
                         <p className="text-base font-semibold text-gray-900">{t('settings.subscription')}</p>
                         <p className="text-xs text-gray-600">{t('settings.subscriptionDescription')}</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                  </button>
+
+                  {/* Konum */}
+                  <button
+                    onClick={() => onNavigate && onNavigate("settings-location")}
+                    className="w-full flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-zinc-100 rounded-lg flex items-center justify-center">
+                        <MapPin className="w-5 h-5 text-zinc-700" />
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold text-gray-900">Konum</p>
+                        <p className="text-xs text-gray-600">Harita ve yol tarifi için adresinizi kaydedin</p>
                       </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-gray-400" />

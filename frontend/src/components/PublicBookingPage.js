@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast, Toaster } from "sonner";
 import { useTranslation } from "react-i18next";
 import { io } from "socket.io-client";
+import BusinessMap from "./BusinessMap";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const API = `${BACKEND_URL}/api`;
@@ -507,6 +508,12 @@ const PublicBookingPage = () => {
       */}
       <div className="flex-1 lg:ml-[400px] xl:ml-[480px] p-4 sm:p-6 lg:p-12 xl:p-20 bg-white min-h-screen">
         <div className="max-w-3xl mx-auto w-full">
+
+            {business?.location?.coordinates && (
+              <div className="mb-8 lg:mb-10">
+                <BusinessMap location={business.location} />
+              </div>
+            )}
             
             {/* Progress Bar (Minimalist & Language Aware) */}
             <div className="mb-8 lg:mb-12">

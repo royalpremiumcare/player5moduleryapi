@@ -1725,12 +1725,23 @@ class BusinessHoursDay(BaseModel):
     open_time: str = "09:00"
     close_time: str = "18:00"
 
+class LocationCoordinates(BaseModel):
+    lat: float
+    lng: float
+
+
+class BusinessLocation(BaseModel):
+    address: str
+    coordinates: LocationCoordinates
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); work_start_hour: int = 7; work_end_hour: int = 3; appointment_interval: int = 30
     company_name: str = "İşletmeniz"; support_phone: str = "05000000000"; slug: Optional[str] = None; customer_can_choose_staff: bool = False
     logo_url: Optional[str] = None; sms_reminder_hours: float = 1.0; sector: Optional[str] = None; admin_provides_service: bool = False
     show_service_duration_on_public: bool = True; show_service_price_on_public: bool = True
     break_limit_minutes: int = 60; break_limit_count: int = 2
+    location: Optional[BusinessLocation] = None
     business_hours: Optional[dict] = Field(default_factory=lambda: {
         "monday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
         "tuesday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
@@ -5957,11 +5968,11 @@ async def update_settings(request: Request, settings: Settings, current_user: Us
     # Mevcut ayarları al
     current_settings = await db.settings.find_one(query, {"_id": 0})
     
-    update_data = settings.model_dump()
+    update_data = settings.model_dump(exclude_unset=True)
     update_data["organization_id"] = current_user.organization_id
     
     # Eğer company_name değiştiyse, yeni slug oluştur
-    if current_settings and current_settings.get('company_name') != settings.company_name:
+    if current_settings and "company_name" in update_data and current_settings.get('company_name') != settings.company_name:
         # Yeni slug oluştur
         base_slug = slugify(settings.company_name)
         unique_slug = base_slug
@@ -5990,7 +6001,7 @@ async def update_settings(request: Request, settings: Settings, current_user: Us
     updated_settings = await db.settings.find_one(query, {"_id": 0})
     
     # business_hours değiştiyse, kapalı günleri tüm personelin days_off'una senkronize et
-    if settings.business_hours:
+    if "business_hours" in update_data and update_data.get("business_hours"):
         # Kapalı günleri bul
         closed_days = []
         day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -6032,6 +6043,46 @@ async def update_settings(request: Request, settings: Settings, current_user: Us
     )
     
     return Settings(**updated_settings)
+
+class SettingsLocationUpdate(BaseModel):
+    address: str
+    coordinates: LocationCoordinates
+
+
+@api_router.put("/settings/location")
+async def update_settings_location(request: Request, data: SettingsLocationUpdate, current_user: UserInDB = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+
+    db = await get_db_from_request(request)
+    query = {"organization_id": current_user.organization_id}
+
+    current_settings = await db.settings.find_one(query, {"_id": 0})
+    old_location = current_settings.get("location") if current_settings else None
+
+    await db.settings.update_one(
+        query,
+        {"$set": {"location": data.model_dump()}},
+        upsert=True
+    )
+
+    updated_settings = await db.settings.find_one(query, {"_id": 0})
+    new_location = updated_settings.get("location") if updated_settings else None
+
+    await create_audit_log(
+        db=db,
+        organization_id=current_user.organization_id,
+        user_id=current_user.username,
+        user_full_name=current_user.full_name or current_user.username,
+        action="UPDATE",
+        resource_type="SETTINGS_LOCATION",
+        resource_id=current_user.organization_id,
+        old_value=old_location,
+        new_value=new_location,
+        ip_address=request.client.host if request.client else None
+    )
+
+    return {"location": new_location}
 
 # === ONBOARDING ENDPOINTS ===
 @api_router.get("/onboarding/info")
@@ -7732,6 +7783,7 @@ async def get_public_business(request: Request, slug: str):
     return {
         "business_name": settings.get('company_name', admin_user.get('full_name', 'İşletme')),
         "logo_url": settings.get('logo_url'),
+        "location": settings.get('location'),
         "organization_id": organization_id,
         "services": services,
         "staff_members": staff_members,
