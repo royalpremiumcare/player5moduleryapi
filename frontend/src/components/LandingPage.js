@@ -56,6 +56,8 @@ const LandingPage = () => {
   });
   const [contactFormLoading, setContactFormLoading] = useState(false);
   const [contactFormSuccess, setContactFormSuccess] = useState(false);
+  const badgeAssetBase = process.env.PUBLIC_URL || '';
+  const badgeAssetVersion = '4';
   // GBP Fiyatlandırma (İngilizce seçildiğinde)
   // monthly: normal fiyat, monthlyDiscounted: %25 indirimli (yuvarlanmış), yearly: yıllık fiyat
   const gbpPricing = {
@@ -565,6 +567,52 @@ const LandingPage = () => {
                   className="w-full h-auto rounded-xl"
                 />
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16 bg-[#fafafa] border-t border-gray-200">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto text-center">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-8">
+              {i18n.language === 'tr' ? 'Mobil Uygulamayı İndirin' : 'Download the Mobile App'}
+            </h2>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <a
+                href="#"
+                onClick={(e) => e.preventDefault()}
+                aria-disabled="true"
+                className="inline-flex items-center justify-center cursor-not-allowed"
+                title={i18n.language === 'tr' ? 'Yakında' : 'Coming soon'}
+              >
+                <img
+                  src={i18n.language === 'tr'
+                    ? `${badgeAssetBase}/badges/app-store-tr.svg?v=${badgeAssetVersion}`
+                    : `${badgeAssetBase}/badges/app-store-en.svg?v=${badgeAssetVersion}`}
+                  alt="Download on the App Store"
+                  className="h-[3.5rem] md:h-[4.25rem] w-auto object-contain"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = 'https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg';
+                  }}
+                />
+              </a>
+              <a
+                href="#"
+                onClick={(e) => e.preventDefault()}
+                aria-disabled="true"
+                className="inline-flex items-center justify-center cursor-not-allowed"
+                title={i18n.language === 'tr' ? 'Yakında' : 'Coming soon'}
+              >
+                <img
+                  src={i18n.language === 'tr'
+                    ? `${badgeAssetBase}/badges/google-play-tr.svg?v=${badgeAssetVersion}`
+                    : `${badgeAssetBase}/badges/google-play-en.svg?v=${badgeAssetVersion}`}
+                  alt="Get it on Google Play"
+                  className="h-[3.5rem] md:h-[4.25rem] w-auto object-contain"
+                />
+              </a>
             </div>
           </div>
         </div>
