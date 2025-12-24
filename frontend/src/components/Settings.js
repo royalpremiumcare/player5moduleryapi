@@ -207,8 +207,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                         <MapPin className="w-5 h-5 text-zinc-700" />
                       </div>
                       <div>
-                        <p className="text-base font-semibold text-gray-900">Konum</p>
-                        <p className="text-xs text-gray-600">Harita ve yol tarifi için adresinizi kaydedin</p>
+                        <p className="text-base font-semibold text-gray-900">{t('settings.location')}</p>
+                        <p className="text-xs text-gray-600">{t('settings.locationDescription')}</p>
                       </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-gray-400" />

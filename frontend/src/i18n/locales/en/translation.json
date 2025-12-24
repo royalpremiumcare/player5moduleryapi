@@ -97,13 +97,13 @@
         "title": "Online Booking System",
         "description": "Allow your customers to create their own appointments online."
       },
-      "periodicSessions": {
-        "title": "Periodic Session Management",
-        "description": "Create recurring appointments for your customers and track sessions."
+      "location": {
+        "title": "Location & Directions",
+        "description": "Show your business address on a map and let customers get directions in one click."
       },
       "customerManagement": {
         "title": "Customer Management",
-        "description": "Add unlimited customers and easily create and manage their appointments."
+        "description": "Add unlimited customers, easily create and manage their next appointments."
       },
       "calendarManagement": {
         "title": "Detailed Calendar Management",
@@ -672,6 +672,26 @@
     "financeManagementDescription": "Manage Income, Expenses and Staff Payments",
     "subscription": "Subscription & Billing",
     "subscriptionDescription": "Plan information and payment settings",
+    "location": "Location",
+    "locationDescription": "Save your address for maps and directions",
+    "locationPage": {
+      "title": "Location",
+      "subtitle": "Select your address and fine-tune the pin on the map.",
+      "addressLabel": "Address",
+      "addressPlaceholder": "Search address",
+      "selected": "Selected",
+      "save": "Save",
+      "saving": "Saving...",
+      "current": "Current",
+      "apiKeyMissing": "Google Maps API key is missing. Please set REACT_APP_GOOGLE_MAPS_API_KEY in the frontend environment.",
+      "mapLoadError": "Map could not be loaded.",
+      "loadError": "Could not load location settings",
+      "placeDetailsError": "Could not fetch address details",
+      "coordinateError": "Could not fetch location coordinates",
+      "selectAddressError": "Please select an address",
+      "saved": "Location saved",
+      "saveError": "Could not save location"
+    },
     "subscriptionPage": {
       "title": "Subscription & Billing",
       "subtitle": "Your current plan and appointment quota",
@@ -1041,6 +1061,11 @@
     "errorFillAll": "Please fill in all fields",
     "errorCreateAppointment": "Failed to create appointment",
     "allRightsReserved": "© 2025 {{businessName}} - All rights reserved",
-    "poweredBy": "Powered by PLANN"
+    "poweredBy": "Powered by PLANN",
+    "map": {
+      "apiKeyRequired": "API key required for map.",
+      "loadError": "Map could not be loaded.",
+      "getDirections": "Get Directions"
+    }
   }
 }

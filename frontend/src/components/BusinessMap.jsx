@@ -1,5 +1,7 @@
 import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
 import { Button } from "@/components/ui/button";
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 const mapContainerStyle = {
   width: "100%",
@@ -8,11 +10,14 @@ const mapContainerStyle = {
 };
 
 const BusinessMap = ({ location }) => {
+  const { t } = useTranslation();
   const apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
 
-  const { isLoaded, loadError } = useLoadScript({
+  const loadScriptOptions = useMemo(() => ({
     googleMapsApiKey: apiKey || "",
-  });
+  }), [apiKey]);
+
+  const { isLoaded, loadError } = useLoadScript(loadScriptOptions);
 
   if (!location?.coordinates?.lat || !location?.coordinates?.lng) return null;
 
@@ -26,12 +31,12 @@ const BusinessMap = ({ location }) => {
     return (
       <div className="w-full">
         <div className="w-full h-[260px] rounded-xl bg-zinc-100 border border-zinc-200 flex items-center justify-center">
-          <div className="text-sm text-zinc-600">Harita için API anahtarı gerekli.</div>
+          <div className="text-sm text-zinc-600">{t('publicBooking.map.apiKeyRequired')}</div>
         </div>
         <div className="mt-3 flex justify-end">
           <Button asChild className="bg-zinc-900 hover:bg-black text-white">
             <a href={directionsUrl} target="_blank" rel="noreferrer">
-              Yol Tarifi Al
+              {t('publicBooking.map.getDirections')}
             </a>
           </Button>
         </div>
@@ -43,12 +48,12 @@ const BusinessMap = ({ location }) => {
     return (
       <div className="w-full">
         <div className="w-full h-[260px] rounded-xl bg-zinc-100 border border-zinc-200 flex items-center justify-center">
-          <div className="text-sm text-zinc-600">Harita yüklenemedi.</div>
+          <div className="text-sm text-zinc-600">{t('publicBooking.map.loadError')}</div>
         </div>
         <div className="mt-3 flex justify-end">
           <Button asChild className="bg-zinc-900 hover:bg-black text-white">
             <a href={directionsUrl} target="_blank" rel="noreferrer">
-              Yol Tarifi Al
+              {t('publicBooking.map.getDirections')}
             </a>
           </Button>
         </div>
@@ -82,7 +87,7 @@ const BusinessMap = ({ location }) => {
         <div className="text-xs text-zinc-500 truncate pr-3">{location?.address || ""}</div>
         <Button asChild className="bg-zinc-900 hover:bg-black text-white">
           <a href={directionsUrl} target="_blank" rel="noreferrer">
-            Yol Tarifi Al
+            {t('publicBooking.map.getDirections')}
           </a>
         </Button>
       </div>

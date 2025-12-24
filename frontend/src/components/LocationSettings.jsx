@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
 import usePlacesAutocomplete, { getDetails } from "use-places-autocomplete";
 import { ArrowLeft } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import api from "../api/api";
 
 const MAP_LIBRARIES = ["places"];
 const DEFAULT_CENTER = { lat: 41.0082, lng: 28.9784 }; // Istanbul default
+const DEFAULT_CENTER_LONDON = { lat: 51.5074, lng: -0.1278 };
 const PREDICTIONS_DEBOUNCE_MS = 500;
 
 const MAP_OPTIONS = {
@@ -49,6 +51,7 @@ const LocationMap = memo(function LocationMap({ isLoaded, center, markerPos, zoo
 });
 
 const LocationSettings = ({ onNavigate }) => {
+  const { t, i18n } = useTranslation();
   const apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
 
   const loadScriptOptions = useMemo(() => ({
@@ -70,7 +73,17 @@ const LocationSettings = ({ onNavigate }) => {
   const [address, setAddress] = useState("");
   const [markerPos, setMarkerPos] = useState(null);
 
+  const isEnglish = (i18n.language || "").toLowerCase().startsWith("en");
+  const countryCode = isEnglish ? "gb" : "tr";
+  const fallbackCenter = isEnglish ? DEFAULT_CENTER_LONDON : DEFAULT_CENTER;
+
   const canUseMaps = Boolean(apiKey) && isLoaded && !loadError;
+
+  const placesRequestOptions = useMemo(() => (
+    sessionToken
+      ? { sessionToken, componentRestrictions: { country: countryCode } }
+      : undefined
+  ), [sessionToken, countryCode]);
 
   const {
     ready,
@@ -82,10 +95,10 @@ const LocationSettings = ({ onNavigate }) => {
   } = usePlacesAutocomplete({
     initOnMount: false,
     debounce: PREDICTIONS_DEBOUNCE_MS,
-    requestOptions: sessionToken ? { sessionToken, componentRestrictions: { country: "tr" } } : undefined,
+    requestOptions: placesRequestOptions,
   });
 
-  const center = useMemo(() => markerPos || DEFAULT_CENTER, [markerPos]);
+  const center = useMemo(() => markerPos || fallbackCenter, [markerPos, fallbackCenter]);
 
   const refreshSessionToken = useCallback(() => {
     if (!window.google?.maps?.places) return;
@@ -113,11 +126,11 @@ const LocationSettings = ({ onNavigate }) => {
         });
       }
     } catch (err) {
-      toast.error("Konum ayarları yüklenemedi");
+      toast.error(t('settings.locationPage.loadError'));
     } finally {
       setLoadingSettings(false);
     }
-  }, [setValue]);
+  }, [setValue, t]);
 
   useEffect(() => {
     loadSettings();
@@ -148,14 +161,14 @@ const LocationSettings = ({ onNavigate }) => {
       });
 
       if (!place) {
-        toast.error("Adres bilgisi alınamadı");
+        toast.error(t('settings.locationPage.placeDetailsError'));
         return;
       }
 
       const lat = place.geometry?.location?.lat?.();
       const lng = place.geometry?.location?.lng?.();
       if (lat == null || lng == null) {
-        toast.error("Konum koordinatları alınamadı");
+        toast.error(t('settings.locationPage.coordinateError'));
         return;
       }
 
@@ -170,9 +183,9 @@ const LocationSettings = ({ onNavigate }) => {
       // IMPORTANT: Refresh token after a selection to start a new billing session next time
       refreshSessionToken();
     } catch (err) {
-      toast.error("Adres bilgisi alınamadı");
+      toast.error(t('settings.locationPage.placeDetailsError'));
     }
-  }, [canUseMaps, clearSuggestions, refreshSessionToken, setValue]);
+  }, [canUseMaps, clearSuggestions, refreshSessionToken, setValue, t]);
 
   const handleInputChange = (e) => {
     const value = e.target.value;
@@ -227,7 +240,7 @@ const LocationSettings = ({ onNavigate }) => {
 
   const handleSave = async () => {
     if (!address || !markerPos) {
-      toast.error("Lütfen bir adres seçin");
+      toast.error(t('settings.locationPage.selectAddressError'));
       return;
     }
 
@@ -240,10 +253,10 @@ const LocationSettings = ({ onNavigate }) => {
           lng: markerPos.lng,
         },
       });
-      toast.success("Konum kaydedildi");
+      toast.success(t('settings.locationPage.saved'));
       await loadSettings();
     } catch (err) {
-      const msg = err?.response?.data?.detail || "Konum kaydedilemedi";
+      const msg = err?.response?.data?.detail || t('settings.locationPage.saveError');
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -255,14 +268,13 @@ const LocationSettings = ({ onNavigate }) => {
       <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "Inter, sans-serif" }}>
         <div className="px-4 pt-6 pb-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-            <h2 className="text-lg font-bold text-gray-900">Konum</h2>
+            <h2 className="text-lg font-bold text-gray-900">{t('settings.locationPage.title')}</h2>
             <p className="text-sm text-gray-600 mt-2">
-              Google Maps API anahtarı bulunamadı. Lütfen frontend ortam değişkenine
-              <code className="mx-1">REACT_APP_GOOGLE_MAPS_API_KEY</code> ekleyin.
+              {t('settings.locationPage.apiKeyMissing')}
             </p>
             <div className="mt-6">
               <Button onClick={() => onNavigate && onNavigate("settings")} variant="ghost">
-                Geri
+                {t('settings.backToSettings')}
               </Button>
             </div>
           </Card>
@@ -276,11 +288,11 @@ const LocationSettings = ({ onNavigate }) => {
       <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "Inter, sans-serif" }}>
         <div className="px-4 pt-6 pb-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-            <h2 className="text-lg font-bold text-gray-900">Konum</h2>
-            <p className="text-sm text-gray-600 mt-2">Harita yüklenemedi.</p>
+            <h2 className="text-lg font-bold text-gray-900">{t('settings.locationPage.title')}</h2>
+            <p className="text-sm text-gray-600 mt-2">{t('settings.locationPage.mapLoadError')}</p>
             <div className="mt-6">
               <Button onClick={() => onNavigate && onNavigate("settings")} variant="ghost">
-                Geri
+                {t('settings.backToSettings')}
               </Button>
             </div>
           </Card>
@@ -299,18 +311,18 @@ const LocationSettings = ({ onNavigate }) => {
               className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span className="text-sm font-medium">Geri</span>
+              <span className="text-sm font-medium">{t('settings.backToSettings')}</span>
             </button>
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Konum</h2>
-              <p className="text-sm text-gray-600 mt-1">Adresinizi seçin ve haritada pini ayarlayın.</p>
+              <h2 className="text-lg font-bold text-gray-900">{t('settings.locationPage.title')}</h2>
+              <p className="text-sm text-gray-600 mt-1">{t('settings.locationPage.subtitle')}</p>
             </div>
           </div>
 
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="location-search" className="text-sm font-semibold text-gray-900">
-                Adres
+                {t('settings.locationPage.addressLabel')}
               </Label>
               <div className="relative">
                 <Input
@@ -319,7 +331,7 @@ const LocationSettings = ({ onNavigate }) => {
                   value={value}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
-                  placeholder="Adres arayın"
+                  placeholder={t('settings.locationPage.addressPlaceholder')}
                   className="text-base"
                   disabled={!isLoaded || !ready}
                 />
@@ -345,7 +357,7 @@ const LocationSettings = ({ onNavigate }) => {
                 )}
               </div>
               {address && (
-                <p className="text-xs text-gray-600">Seçilen: {address}</p>
+                <p className="text-xs text-gray-600">{t('settings.locationPage.selected')}: {address}</p>
               )}
             </div>
 
@@ -361,13 +373,13 @@ const LocationSettings = ({ onNavigate }) => {
 
             <div className="flex items-center justify-end">
               <Button onClick={handleSave} disabled={saving || loadingSettings} className="bg-blue-600 hover:bg-blue-700">
-                {saving ? "Kaydediliyor..." : "Kaydet"}
+                {saving ? t('settings.locationPage.saving') : t('settings.locationPage.save')}
               </Button>
             </div>
 
             {settings?.location?.coordinates && (
               <div className="text-xs text-gray-500">
-                Mevcut: {Number(settings.location.coordinates.lat).toFixed(6)}, {Number(settings.location.coordinates.lng).toFixed(6)}
+                {t('settings.locationPage.current')}: {Number(settings.location.coordinates.lat).toFixed(6)}, {Number(settings.location.coordinates.lng).toFixed(6)}
               </div>
             )}
           </div>

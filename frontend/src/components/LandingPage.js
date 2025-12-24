@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Calendar, Check, Menu, X, Clock, Users, Smartphone, BarChart3, Bell, Shield, Zap, TrendingUp, Star, MessageSquare, FileText, UserCheck, CircleDollarSign, ChevronDown, Phone, Mail, Globe } from "lucide-react";
+import { Calendar, Check, Menu, X, Clock, Users, Smartphone, BarChart3, Bell, Shield, Zap, TrendingUp, Star, MessageSquare, FileText, UserCheck, CircleDollarSign, ChevronDown, Phone, Mail, Globe, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -319,9 +319,9 @@ const LandingPage = () => {
       description: t('landing.features.onlineBooking.description')
     },
     {
-      icon: Clock,
-      title: t('landing.features.periodicSessions.title'),
-      description: t('landing.features.periodicSessions.description')
+      icon: MapPin,
+      title: t('landing.features.location.title'),
+      description: t('landing.features.location.description')
     },
     {
       icon: Users,

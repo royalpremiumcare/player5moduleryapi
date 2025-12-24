@@ -97,9 +97,9 @@
         "title": "Online Randevu Sistemi",
         "description": "Müşterilerinizin randevularını online olarak kendilerinin oluşturmasını sağlayın."
       },
-      "periodicSessions": {
-        "title": "Periyodik Seans Yönetimi",
-        "description": "Müşterilerinize periyodik olarak tekrar eden randevular oluşturup seansları takip edin."
+      "location": {
+        "title": "Konum ve Yol Tarifi",
+        "description": "İşletmenizin adresini haritada gösterin ve müşterilerinizin tek tıkla yol tarifi almasını sağlayın."
       },
       "customerManagement": {
         "title": "Müşteri Yönetimi",
@@ -672,6 +672,26 @@
     "financeManagementDescription": "Gelir, Gider ve Personel Ödemelerini Yönetin",
     "subscription": "Abonelik ve Faturalandırma",
     "subscriptionDescription": "Paket bilgileri ve ödeme ayarları",
+    "location": "Konum",
+    "locationDescription": "Harita ve yol tarifi için adresinizi kaydedin",
+    "locationPage": {
+      "title": "Konum",
+      "subtitle": "Adresinizi seçin ve haritada pini ayarlayın.",
+      "addressLabel": "Adres",
+      "addressPlaceholder": "Adres arayın",
+      "selected": "Seçilen",
+      "save": "Kaydet",
+      "saving": "Kaydediliyor...",
+      "current": "Mevcut",
+      "apiKeyMissing": "Google Maps API anahtarı bulunamadı. Lütfen frontend ortam değişkenine REACT_APP_GOOGLE_MAPS_API_KEY ekleyin.",
+      "mapLoadError": "Harita yüklenemedi.",
+      "loadError": "Konum ayarları yüklenemedi",
+      "placeDetailsError": "Adres bilgisi alınamadı",
+      "coordinateError": "Konum koordinatları alınamadı",
+      "selectAddressError": "Lütfen bir adres seçin",
+      "saved": "Konum kaydedildi",
+      "saveError": "Konum kaydedilemedi"
+    },
     "subscriptionPage": {
       "title": "Abonelik ve Faturalandırma",
       "subtitle": "Mevcut paketiniz ve randevu kotanız",
@@ -1041,6 +1061,11 @@
     "errorFillAll": "Lütfen tüm alanları doldurun",
     "errorCreateAppointment": "Randevu oluşturulamadı",
     "allRightsReserved": "© 2025 {{businessName}} - Tüm hakları saklıdır",
-    "poweredBy": "Powered by PLANN"
+    "poweredBy": "Powered by PLANN",
+    "map": {
+      "apiKeyRequired": "Harita için API anahtarı gerekli.",
+      "loadError": "Harita yüklenemedi.",
+      "getDirections": "Yol Tarifi Al"
+    }
   }
 }
