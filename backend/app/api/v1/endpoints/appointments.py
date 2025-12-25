@@ -327,11 +327,7 @@ async def delete_appointment(
     if result.deleted_count == 0:
         raise NotFoundException(detail="Appointment not found")
     
-    # Decrement quota
-    await db.organization_plans.update_one(
-        {"organization_id": current_user.organization_id},
-        {"$inc": {"quota_usage": -1}}
-    )
+    # Quota is not decremented on delete (prevents abuse)
     
     logger.info(f"🗑️ Appointment deleted: {appointment_id}")
     

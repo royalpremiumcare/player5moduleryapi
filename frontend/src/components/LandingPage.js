@@ -32,6 +32,12 @@ const LandingPage = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
+
+  useEffect(() => {
+    document.title = i18n.language?.toLowerCase().startsWith('tr')
+      ? 'PLANN | Randevu Sistemi'
+      : 'PLANN | Appointment System';
+  }, [i18n.language]);
   
   // PWA/APK kontrolü - Uygulama modundaysa login'e yönlendir
   useEffect(() => {
@@ -162,6 +168,15 @@ const LandingPage = () => {
 
   // Backend'den gelen özellikleri çevir
   const translateFeature = (feature) => {
+    const normalizedFeature = (feature || '').trim();
+    const lowerFeature = normalizedFeature.toLowerCase();
+    if (lowerFeature.startsWith('yapay zeka akıllı asistan')) {
+      if (lowerFeature.includes('limitsiz')) {
+        return t('landing.pricing.features.aiAssistantUnlimited');
+      }
+      return t('landing.pricing.features.aiAssistant');
+    }
+
     const featureMap = {
       // WhatsApp
       'WhatsApp hatırlatma': t('landing.pricing.features.whatsappReminder'),
@@ -207,7 +222,7 @@ const LandingPage = () => {
       'Randevu hatırlatma dahil': t('landing.pricing.features.appointmentReminder'),
       'Randevu Hatırlatma Dahil': t('landing.pricing.features.appointmentReminder'),
     };
-    return featureMap[feature] || feature;
+    return featureMap[normalizedFeature] || feature;
   };
 
   // Animasyonlu kelimeler - dil değişince güncellenir

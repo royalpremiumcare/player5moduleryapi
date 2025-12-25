@@ -44,7 +44,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 function App() {
   const { logout, userRole, token } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const bottomNavRef = useRef(null);
   
   const [currentView, setCurrentView] = useState("dashboard");
@@ -64,6 +64,12 @@ function App() {
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const notificationsRef = useRef([]);
   const location = useLocation();
+
+  useEffect(() => {
+    document.title = i18n.language?.toLowerCase().startsWith('tr')
+      ? 'PLANN | Yönetim Paneli'
+      : 'PLANN | Dashboard';
+  }, [i18n.language]);
 
   // App mode detection - PWA/APK olarak açıldığında is_app_mode set et
   useEffect(() => {

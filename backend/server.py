@@ -3314,19 +3314,6 @@ async def delete_appointment(request: Request, appointment_id: str, current_user
     if not appointment:
         raise HTTPException(status_code=404, detail="Randevu bulunamadı")
     
-    # Randevu silinmeden önce, eğer iptal edilmemişse kotayı azalt
-    # (İptal edilmiş randevular zaten kota'dan düşülmüştür)
-    if appointment.get('status') != 'İptal':
-        try:
-            plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
-            if plan_doc and plan_doc.get('quota_usage', 0) > 0:
-                await db.organization_plans.update_one(
-                    {"organization_id": current_user.organization_id},
-                    {"$inc": {"quota_usage": -1}, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
-                )
-        except Exception as e:
-            logging.error(f"Kota azaltma hatası (delete): {e}")
-    
     result = await db.appointments.delete_one(query)
     
     # Randevuyla ilişkili transaction'ları da sil
@@ -3408,17 +3395,7 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
         await db.transactions.insert_one(trans_doc)
         # Tamamlanma SMS'i kaldırıldı (maliyet nedeniyle)
     elif new_status == 'İptal' and old_status != 'İptal':
-        # Randevu iptal edildiğinde kotayı azalt
-        try:
-            plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
-            if plan_doc and plan_doc.get('quota_usage', 0) > 0:
-                await db.organization_plans.update_one(
-                    {"organization_id": current_user.organization_id},
-                    {"$inc": {"quota_usage": -1}, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
-                )
-        except Exception as e:
-            logging.error(f"Kota azaltma hatası: {e}")
-        
+        # Randevu iptal edildiğinde
         try:
             # İptal SMS'i - Default mesaj kullan
             sms_message = build_sms_message(
