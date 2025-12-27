@@ -623,11 +623,10 @@ const LandingPage = () => {
                 />
               </a>
               <a
-                href="#"
-                onClick={(e) => e.preventDefault()}
-                aria-disabled="true"
-                className="inline-flex items-center justify-center cursor-not-allowed"
-                title={i18n.language === 'tr' ? 'Yakında' : 'Coming soon'}
+                href="https://play.google.com/store/apps/details?id=co.plannapp.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center"
               >
                 <img
                   src={i18n.language === 'tr'

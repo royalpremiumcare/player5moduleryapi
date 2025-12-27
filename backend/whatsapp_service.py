@@ -30,11 +30,11 @@ logger = logging.getLogger(__name__)
 
 TEMPLATES = {
     "CONFIRMATION": {
-        "TR": "HXc9d5674a770f66306b6b68ca0ecc3e34",  # randevu_onay_v1
+        "TR": "HXdb5b18b2e4b59d9498176217da791091",  # randevu_onay_v1
         "EN": "HX09627707c0333f6d4cbea400a73b5d04"   # randevu_onay_v1_ingilizce
     },
     "REMINDER": {
-        "TR": "HX0d3fca96d6e7546d4029c136b66ebdb9",  # randevu_hatirlatma_v1
+        "TR": "HX807f1d58779d6fd7bab54b325fce7e21",  # randevu_hatirlatma_v1
         "EN": "HXc95f6ee596484b410bd68089bbeecdd8"   # randevu_hatirlatma_v1_ingilizce
     },
     "CANCELLATION": {
@@ -171,7 +171,9 @@ def send_whatsapp_template(
     appointment_date: str,
     appointment_time: str,
     service_name: str,
-    support_phone: str
+    support_phone: str,
+    business_lat: Optional[Union[float, int, str]] = None,
+    business_lng: Optional[Union[float, int, str]] = None
 ) -> str:
     """
     Twilio Content API kullanarak WhatsApp şablon mesajı gönderir.
@@ -225,17 +227,37 @@ def send_whatsapp_template(
         # Tarih formatını düzenle (DD.MM.YYYY formatına çevir)
         # Kullanıcı dostu format: 25.12.2025 (Gün.Ay.Yıl)
         formatted_date = format_date_for_display(appointment_date)
+
+        map_link = ""
+        try:
+            if business_lat is not None and business_lng is not None:
+                lat = float(business_lat)
+                lng = float(business_lng)
+                map_link = f"https://maps.google.com/?q={lat},{lng}"
+        except Exception:
+            map_link = ""
         
         # Content Variables oluştur (Twilio Content API formatı)
-        # Sıralama: 1=Müşteri Adı, 2=İşletme Adı, 3=Tarih, 4=Saat, 5=Hizmet Adı, 6=İletişim Numarası
-        content_variables = {
-            "1": customer_name,      # Müşteri Adı
-            "2": company_name,        # İşletme Adı
-            "3": formatted_date,       # Tarih
-            "4": appointment_time,    # Saat
-            "5": service_name,        # Hizmet Adı
-            "6": support_phone        # İletişim Numarası
-        }
+        # Sıralama: 1=İşletme Adı, 2=Müşteri Adı, 3=Tarih, 4=Saat, 5=Hizmet Adı, 6=İletişim Numarası, 7=Konum Linki
+        if language == "TR" and template_type_upper in ("CONFIRMATION", "REMINDER"):
+            content_variables = {
+                "1": customer_name,
+                "2": company_name,
+                "3": formatted_date,
+                "4": appointment_time,
+                "5": service_name,
+                "6": support_phone,
+                "7": map_link
+            }
+        else:
+            content_variables = {
+                "1": company_name,        # İşletme Adı
+                "2": customer_name,      # Müşteri Adı
+                "3": formatted_date,       # Tarih
+                "4": appointment_time,    # Saat
+                "5": service_name,        # Hizmet Adı
+                "6": support_phone       # İletişim Numarası
+            }
         
         # Telefon numarasını formatla
         formatted_to = format_phone_number(to_number)

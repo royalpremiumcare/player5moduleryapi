@@ -457,6 +457,12 @@ async def check_and_send_reminders():
                         logging.info(f"  ✓ Appointment {apt.get('id')} is in reminder window! Sending WhatsApp...")
                         # WhatsApp hatırlatma mesajı gönder (Content API)
                         import asyncio
+                        business = setting or {}
+                        settings = business.get('settings') if isinstance(business.get('settings'), dict) else business
+                        location = (settings or {}).get('location', {})
+                        coords = (location or {}).get('coordinates', {})
+                        lat = coords.get('lat')
+                        lng = coords.get('lng')
                         wa_result = await asyncio.to_thread(
                             send_whatsapp_template,
                             apt['phone'],
@@ -466,7 +472,9 @@ async def check_and_send_reminders():
                             apt['appointment_date'],
                             apt['appointment_time'],
                             apt['service_name'],
-                            support_phone
+                            support_phone,
+                            business_lat=lat,
+                            business_lng=lng
                         )
                         
                         if wa_result:
@@ -3853,6 +3861,12 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
         default_settings = Settings(organization_id=current_user.organization_id); settings_data = default_settings.model_dump()
     company_name = settings_data.get("company_name", "İşletmeniz")
     support_phone = settings_data.get("support_phone", "Destek Hattı")
+    business = settings_data or {}
+    settings = business.get('settings') if isinstance(business.get('settings'), dict) else business
+    location = (settings or {}).get('location', {})
+    coordinates = (location or {}).get('coordinates', {})
+    lat = coordinates.get('lat')
+    lng = coordinates.get('lng')
     
     # SMS gönder - Default mesaj kullan
     sms_message = build_sms_message(
@@ -3873,7 +3887,9 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             appointment_date=appointment.appointment_date,
             appointment_time=appointment.appointment_time,
             service_name=service['name'],
-            support_phone=support_phone or "+44 7474 626 900"
+            support_phone=support_phone or "+44 7474 626 900",
+            business_lat=lat,
+            business_lng=lng
         )
     except Exception as whatsapp_error:
         logger.warning(f"⚠️ WhatsApp mesajı gönderilemedi: {whatsapp_error}")
@@ -8505,6 +8521,12 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             if settings_data:
                 company_name = settings_data.get("company_name", "İşletmeniz")
                 support_phone = settings_data.get("support_phone", "Destek Hattı")
+                business = settings_data or {}
+                settings = business.get('settings') if isinstance(business.get('settings'), dict) else business
+                location = (settings or {}).get('location', {})
+                coordinates = (location or {}).get('coordinates', {})
+                lat = coordinates.get('lat')
+                lng = coordinates.get('lng')
                 
                 # WhatsApp onay mesajı gönder (Content API)
                 try:
@@ -8517,7 +8539,9 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                         appointment.appointment_date,
                         appointment.appointment_time,
                         service['name'],
-                        support_phone
+                        support_phone,
+                        business_lat=lat,
+                        business_lng=lng
                     )
                     logging.info(f"✓ WhatsApp confirmation sent to {appointment.phone}")
                 except Exception as wa_error:
