@@ -81,6 +81,8 @@ const PublicBookingPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  const resetTimeoutRef = useRef(null);
+
   // WebSocket için ref
   const socketRef = useRef(null);
 
@@ -362,18 +364,23 @@ const PublicBookingPage = () => {
       setSuccess(true);
       toast.success(t('publicBooking.appointmentCreated'));
       
-      // 5 saniye sonra formu resetle
-      setTimeout(() => {
+      // Başarı ekranında bir süre kal, sonra otomatik başa dön
+      if (resetTimeoutRef.current) {
+        clearTimeout(resetTimeoutRef.current);
+      }
+      resetTimeoutRef.current = setTimeout(() => {
+        resetTimeoutRef.current = null;
         setSuccess(false);
         setCurrentStep(1);
         setSelectedService(null);
         setSelectedStaff(null);
         setSelectedDate(new Date());
         setSelectedTime("");
-        setCustomerFullName("");
-        setPhone("");
+        setAvailableSlots([]);
+        setBusySlots([]);
+        setAllSlots([]);
         setRememberMe(false);
-      }, 5000);
+      }, 20000);
     } catch (error) {
       const errorMessage = error.response?.data?.detail || t('publicBooking.errorCreateAppointment');
       toast.error(errorMessage);
@@ -393,6 +400,28 @@ const PublicBookingPage = () => {
     );
   }
 
+  const qualifiedStaff = getQualifiedStaff();
+  const selectedStaffName = selectedStaff
+    ? qualifiedStaff.find(s => s.username === selectedStaff)?.full_name || selectedStaff
+    : t('publicBooking.anyStaff');
+
+  const resetToStart = () => {
+    if (resetTimeoutRef.current) {
+      clearTimeout(resetTimeoutRef.current);
+      resetTimeoutRef.current = null;
+    }
+    setSuccess(false);
+    setCurrentStep(1);
+    setSelectedService(null);
+    setSelectedStaff(null);
+    setSelectedDate(new Date());
+    setSelectedTime("");
+    setAvailableSlots([]);
+    setBusySlots([]);
+    setAllSlots([]);
+    setRememberMe(false);
+  };
+
   // --- BUSINESS NOT FOUND STATE ---
   if (!business) {
     return (
@@ -411,24 +440,61 @@ const PublicBookingPage = () => {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
         <Toaster position="top-center" richColors theme="light" />
-        <div className="text-center max-w-md w-full animate-in fade-in zoom-in duration-300">
+        <div className="text-center max-w-2xl w-full animate-in fade-in zoom-in duration-300">
           <div className="w-20 h-20 bg-zinc-900 text-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl">
             <Check className="w-10 h-10" />
           </div>
           <h2 className="text-3xl font-bold text-zinc-900 mb-3 tracking-tight">{t('publicBooking.appointmentCreated')}</h2>
           <p className="text-zinc-500 text-lg mb-8">{t('publicBooking.appointmentCreatedDesc')}</p>
+
+          <div className="mb-8 p-6 bg-zinc-50 rounded-xl border border-zinc-200 text-left">
+            <div className="font-bold text-zinc-900 text-lg">{business.business_name}</div>
+            {(business?.location?.address || settings?.address) && (
+              <div className="text-sm text-zinc-500 mt-1">{business?.location?.address || settings?.address}</div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-sm">
+              <div className="flex justify-between bg-white border border-zinc-200 rounded-lg px-3 py-2">
+                <span className="text-zinc-500">{t('publicBooking.service')}</span>
+                <span className="font-semibold text-zinc-900">{selectedService?.name || '-'}</span>
+              </div>
+              <div className="flex justify-between bg-white border border-zinc-200 rounded-lg px-3 py-2">
+                <span className="text-zinc-500">{t('publicBooking.time')}</span>
+                <span className="font-semibold text-zinc-900">{selectedTime || '-'}</span>
+              </div>
+              <div className="flex justify-between bg-white border border-zinc-200 rounded-lg px-3 py-2">
+                <span className="text-zinc-500">{t('publicBooking.date')}</span>
+                <span className="font-semibold text-zinc-900">{selectedDate ? format(selectedDate, "d MMMM yyyy", { locale: dateLocale }) : '-'}</span>
+              </div>
+              <div className="flex justify-between bg-white border border-zinc-200 rounded-lg px-3 py-2">
+                <span className="text-zinc-500">{t('publicBooking.staff')}</span>
+                <span className="font-semibold text-zinc-900">{selectedStaffName}</span>
+              </div>
+            </div>
+          </div>
+
+          {business?.location?.coordinates && (
+            <div className="mb-8 text-left">
+              <BusinessMap location={business.location} />
+            </div>
+          )}
+
           <div className="p-4 bg-zinc-50 rounded-lg border border-zinc-100 text-sm text-zinc-400">
              {t('publicBooking.thankYou')}
+          </div>
+
+          <div className="mt-6">
+            <Button
+              type="button"
+              onClick={resetToStart}
+              className="bg-zinc-900 hover:bg-black text-white font-bold h-12 px-6 rounded-lg"
+            >
+              {currentLang === 'en' ? 'Back to start' : 'Anasayfaya Dön'}
+            </Button>
           </div>
         </div>
       </div>
     );
   }
-
-  const qualifiedStaff = getQualifiedStaff();
-  const selectedStaffName = selectedStaff 
-    ? qualifiedStaff.find(s => s.username === selectedStaff)?.full_name || selectedStaff
-    : t('publicBooking.anyStaff');
 
   // --- MAIN LAYOUT (SPLIT VIEW) ---
   return (
@@ -508,12 +574,6 @@ const PublicBookingPage = () => {
       */}
       <div className="flex-1 lg:ml-[400px] xl:ml-[480px] p-4 sm:p-6 lg:p-12 xl:p-20 bg-white min-h-screen">
         <div className="max-w-3xl mx-auto w-full">
-
-            {business?.location?.coordinates && (
-              <div className="mb-8 lg:mb-10">
-                <BusinessMap location={business.location} />
-              </div>
-            )}
             
             {/* Progress Bar (Minimalist & Language Aware) */}
             <div className="mb-8 lg:mb-12">

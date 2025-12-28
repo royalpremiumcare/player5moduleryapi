@@ -6179,6 +6179,14 @@ async def add_onboarding_service(request: Request, data: OnboardingNewService, c
     )
     
     await db.services.insert_one(new_service.model_dump())
+
+    try:
+        await db.users.update_many(
+            {"organization_id": current_user.organization_id, "role": "admin"},
+            {"$addToSet": {"permitted_service_ids": service_id}}
+        )
+    except Exception as e:
+        logging.error(f"Failed to auto-assign service to admins (onboarding): {e}")
     
     return {"message": "Hizmet eklendi", "service": new_service.model_dump()}
 

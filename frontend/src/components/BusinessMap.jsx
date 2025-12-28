@@ -1,6 +1,6 @@
 import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
 import { Button } from "@/components/ui/button";
-import { useMemo } from "react";
+import { useMemo, memo } from "react";
 import { useTranslation } from "react-i18next";
 
 const mapContainerStyle = {
@@ -95,4 +95,4 @@ const BusinessMap = ({ location }) => {
   );
 };
 
-export default BusinessMap;
+export default memo(BusinessMap);
