@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import SeoLinks from "./SeoLinks";
 import {
   Dialog,
   DialogContent,
@@ -1250,6 +1251,9 @@ const LandingPage = () => {
               </ul>
             </div>
           </div>
+
+          <SeoLinks />
+
           <div className="border-t border-gray-300 mt-8 pt-8">
             {/* Ödeme Logoları */}
             <div className="flex flex-wrap items-center justify-center gap-2 mb-6">

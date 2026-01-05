@@ -1,0 +1,7 @@
+{
+  "name": "plann-root",
+  "private": true,
+  "scripts": {
+    "build:sitemap": "node scripts/generate-sitemap.js"
+  }
+}

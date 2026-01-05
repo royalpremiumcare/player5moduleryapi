@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
 import { HashRouter, BrowserRouter } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
+import { HelmetProvider } from 'react-helmet-async';
 import './index.css';
 import './i18n'; // i18n configuration
 import AppRouter from './AppRouter';
@@ -48,13 +49,15 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <Suspense fallback={<LoadingFallback />}>
-      <Router>
-        <ThemeProvider>
-          <AuthProvider>
-            <AppRouter />
-          </AuthProvider>
-        </ThemeProvider>
-      </Router>
+      <HelmetProvider>
+        <Router>
+          <ThemeProvider>
+            <AuthProvider>
+              <AppRouter />
+            </AuthProvider>
+          </ThemeProvider>
+        </Router>
+      </HelmetProvider>
     </Suspense>
   </React.StrictMode>
 );
