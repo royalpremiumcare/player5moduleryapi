@@ -43,7 +43,7 @@
     "faq": "FAQ",
     "login": "Login",
     "register": "Get Started",
-    "dashboard": "Dashboard",
+    "dashboard": "Home",
     "customers": "Customers",
     "appointments": "Appointments",
     "calendar": "Calendar",
@@ -95,11 +95,11 @@
       },
       "onlineBooking": {
         "title": "Online Booking System",
-        "description": "Allow your customers to create their own appointments online."
+        "description": "Create a booking page tailored to your business. Share your link on WhatsApp or Instagram so customers can see live availability and book 24/7 without the back-and-forth."
       },
       "location": {
         "title": "Location & Directions",
-        "description": "Show your business address on a map and let customers get directions in one click."
+        "description": "Show your business address on a map and automatically send it to customers via WhatsApp, so they can get directions in one tap."
       },
       "customerManagement": {
         "title": "Customer Management",
@@ -340,6 +340,9 @@
     },
     "tomorrowSummary": {
       "title": "Tomorrow's Summary"
+    },
+    "upcomingAppointments": {
+      "title": "Upcoming Appointments"
     },
     "breaks": {
       "title": "Today's Break",
@@ -662,7 +665,7 @@
     "general": "General",
     "business": "Business Settings",
     "businessDescription": "Business information and general settings",
-    "profile": "My Profile",
+    "profileMenu": "My Profile",
     "profileDescription": "Personal information and account settings",
     "staffManagement": "Staff Management",
     "staffManagementDescription": "Add and manage staff",

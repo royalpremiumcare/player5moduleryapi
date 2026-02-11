@@ -43,7 +43,7 @@
     "faq": "SSS",
     "login": "Giriş Yap",
     "register": "Hemen Başla",
-    "dashboard": "Panel",
+    "dashboard": "Anasayfa",
     "customers": "Müşteriler",
     "appointments": "Randevular",
     "calendar": "Takvim",
@@ -95,11 +95,11 @@
       },
       "onlineBooking": {
         "title": "Online Randevu Sistemi",
-        "description": "Müşterilerinizin randevularını online olarak kendilerinin oluşturmasını sağlayın."
+        "description": "İşletmenize özel online randevu sayfanızı oluşturun. Linkinizi WhatsApp/Instagram’dan paylaşın; müşteriler uygun saatleri görüp 7/24 kendi randevusunu alsın."
       },
       "location": {
         "title": "Konum ve Yol Tarifi",
-        "description": "İşletmenizin adresini haritada gösterin ve müşterilerinizin tek tıkla yol tarifi almasını sağlayın."
+        "description": "İşletmenizin adresini haritada gösterin; konum müşterinize WhatsApp’tan otomatik gitsin ve tek tıkla yol tarifi alabilsin."
       },
       "customerManagement": {
         "title": "Müşteri Yönetimi",
@@ -340,6 +340,9 @@
     },
     "tomorrowSummary": {
       "title": "Yarının Özeti"
+    },
+    "upcomingAppointments": {
+      "title": "Gelecek Randevular"
     },
     "breaks": {
       "title": "Bugünkü Molam",
@@ -662,7 +665,7 @@
     "general": "Genel",
     "business": "İşletme Ayarları",
     "businessDescription": "İşletme bilgileri ve genel ayarlar",
-    "profile": "Profilim",
+    "profileMenu": "Profilim",
     "profileDescription": "Kişisel bilgiler ve hesap ayarları",
     "staffManagement": "Personel Yönetimi",
     "staffManagementDescription": "Personel ekleme ve yönetimi",

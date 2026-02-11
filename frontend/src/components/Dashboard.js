@@ -395,6 +395,16 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     staffFilter === "all" || apt.staff_member_id === staffFilter
   );
 
+  const tomorrowAppointments = filteredFutureAppointments.filter(apt => {
+    const aptDate = apt.appointment_date || apt.date;
+    return aptDate === tomorrow;
+  });
+
+  const upcomingAppointments = filteredFutureAppointments.filter(apt => {
+    const aptDate = apt.appointment_date || apt.date;
+    return aptDate && aptDate > tomorrow;
+  });
+
   const handleStatusChange = async (appointmentId, newStatus) => {
     try {
       await api.put(`/appointments/${appointmentId}`, { status: newStatus });
@@ -865,41 +875,20 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         </Card>
       </div>
 
-      {/* KART 4: Yaklaşan Randevular (İleri Tarihli Tüm Randevular) */}
-      {futureAppointments.length > 0 && (
+      {/* KART 4A: Yarının Özeti */}
+      {tomorrowAppointments.length > 0 && (
         <div className="px-4 py-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900">{t('dashboard.tomorrowSummary.title')}</h2>
               <div className="space-y-4">
-                {filteredFutureAppointments.map((appointment) => {
-                  const aptDate = appointment.appointment_date || appointment.date;
-                  const isTomorrow = aptDate === tomorrow;
-                  const prevApt = filteredFutureAppointments[filteredFutureAppointments.indexOf(appointment) - 1];
-                  const prevDate = prevApt ? (prevApt.appointment_date || prevApt.date) : null;
-                  const showDateHeader = !prevDate || prevDate !== aptDate;
-                  
-                  return (
-                    <div key={appointment.id} className="space-y-3">
-                      {/* Tarih başlığı - Her yeni tarih için göster */}
-                      {showDateHeader && (
-                        <div className="mb-2 mt-2 first:mt-0">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-gray-500" />
-                            <h3 className="text-sm font-semibold text-gray-700">
-                              {isTomorrow 
-                                ? t('dashboard.tomorrowSummary.title')
-                                : format(new Date(aptDate + 'T00:00:00'), "d MMMM yyyy, EEEE", { locale: dateLocale })
-                              }
-                            </h3>
-                          </div>
-                        </div>
-                      )}
-                      <div
-                        className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
-                          appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "opacity-60" : ""
-                        } ${getStatusBorderColor(appointment.status)}`}
-                      >
+                {tomorrowAppointments.map((appointment) => (
+                  <div
+                    key={appointment.id}
+                    className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
+                      appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "opacity-60" : ""
+                    } ${getStatusBorderColor(appointment.status)}`}
+                  >
                     <div className="flex-shrink-0 w-16">
                       <p className="text-sm font-semibold text-gray-900">
                         {appointment.appointment_time}
@@ -997,6 +986,138 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                         <span className="font-medium text-blue-700">{t('dashboard.appointment.staff')}: {getStaffName(appointment.staff_member_id)}</span>
                       </div>
                     )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* KART 4B: Gelecek Randevular (Yarından Sonra) */}
+      {upcomingAppointments.length > 0 && (
+        <div className="px-4 py-4">
+          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
+            <div className="space-y-4">
+              <h2 className="text-lg font-bold text-gray-900">{t('dashboard.upcomingAppointments.title')}</h2>
+              <div className="space-y-4">
+                {upcomingAppointments.map((appointment, idx) => {
+                  const aptDate = appointment.appointment_date || appointment.date;
+                  const prevApt = idx > 0 ? upcomingAppointments[idx - 1] : null;
+                  const prevDate = prevApt ? (prevApt.appointment_date || prevApt.date) : null;
+                  const showDateHeader = !prevDate || prevDate !== aptDate;
+
+                  return (
+                    <div key={appointment.id} className="space-y-3">
+                      {showDateHeader && (
+                        <div className="mb-2 mt-2 first:mt-0">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4 text-gray-500" />
+                            <h3 className="text-sm font-semibold text-gray-700">
+                              {format(new Date(aptDate + 'T00:00:00'), "d MMMM yyyy, EEEE", { locale: dateLocale })}
+                            </h3>
+                          </div>
+                        </div>
+                      )}
+                      <div
+                        className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
+                          appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "opacity-60" : ""
+                        } ${getStatusBorderColor(appointment.status)}`}
+                      >
+                        <div className="flex-shrink-0 w-16">
+                          <p className="text-sm font-semibold text-gray-900">
+                            {appointment.appointment_time}
+                          </p>
+                          {(() => {
+                            const endTime = calculateEndTime(appointment.appointment_time, appointment.service_duration);
+                            if (endTime) {
+                              return (
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  {endTime}
+                                </p>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
+                        <div className="flex-1 min-w-0 pr-20">
+                          <div className="flex items-start justify-between gap-2 mb-1">
+                            <h3 className={`text-sm font-semibold text-gray-900 ${
+                              appointment.status === "İptal" ? "line-through" : ""
+                            }`}>
+                              {appointment.customer_name}
+                            </h3>
+                            {getStatusIcon(appointment.status)}
+                          </div>
+                          <p className="text-xs text-gray-600 mb-1">
+                            {appointment.service_name}
+                          </p>
+                          <div className="flex items-center gap-2 mb-2">
+                            <button
+                              onClick={() => handleCall(appointment.phone)}
+                              className="p-1.5 hover:bg-green-100 rounded-full transition-colors"
+                              title="Ara"
+                            >
+                              <Phone className="w-4 h-4 text-green-600" />
+                            </button>
+                            <button
+                              onClick={() => handleWhatsApp(appointment.phone)}
+                              className="p-1.5 hover:bg-green-100 rounded-full transition-colors"
+                              title="WhatsApp"
+                            >
+                              <MessageSquare className="w-4 h-4 text-green-600" />
+                            </button>
+                          </div>
+                          {appointment.notes && appointment.notes.trim() && (
+                            <div className="flex items-start gap-1.5 text-xs text-gray-600 bg-amber-50 border border-amber-200 px-2 py-1.5 rounded-md">
+                              <FileText className="w-3 h-3 text-amber-600 flex-shrink-0 mt-0.5" />
+                              <span className="font-medium text-amber-800">{appointment.notes}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="absolute top-3 right-3">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
+                                title={t('common.more')}
+                              >
+                                <MoreVertical className="w-4 h-4 text-gray-600" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48" style={{ zIndex: 1100 }}>
+                              {appointment.status === "Bekliyor" && (
+                                <DropdownMenuItem
+                                  onClick={() => handleStatusChange(appointment.id, "İptal")}
+                                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                                >
+                                  <X className="w-4 h-4 mr-2" />
+                                  İptal Et
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                onClick={() => onEditAppointment(appointment)}
+                              >
+                                <Edit className="w-4 h-4 mr-2" />
+                                Düzenle
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => setDeleteDialog(appointment)}
+                                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Sil
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        {userRole === 'admin' && appointment.staff_member_id && getStaffName(appointment.staff_member_id) && (
+                          <div className="absolute bottom-3 right-3 flex items-center gap-1 text-[10px] text-gray-500 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
+                            <User className="w-2.5 h-2.5 text-blue-600" />
+                            <span className="font-medium text-blue-700">{t('dashboard.appointment.staff')}: {getStaffName(appointment.staff_member_id)}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

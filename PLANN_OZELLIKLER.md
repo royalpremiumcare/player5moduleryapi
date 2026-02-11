@@ -391,11 +391,13 @@ Mevcut verilerinizi hızlıca sisteme taşıyın:
 ### Ücretli Planlar
 | Plan | Aylık Randevu | Fiyat |
 |------|---------------|-------|
-| Başlangıç | 100 randevu | ₺XXX |
-| Profesyonel | 300 randevu | ₺XXX |
-| İşletme | 600 randevu | ₺XXX |
-| Kurumsal | 1000 randevu | ₺XXX |
-| Sınırsız | Limitsiz | ₺XXX |
+| Standart | 100 randevu | ₺750 |
+| Profesyonel | 300 randevu | ₺1000 |
+| Premium | 600 randevu | ₺1550 |
+| Business | 900 randevu | ₺1950 |
+| Enterprise | 1200| ₺2350 |
+| Kurumsal | 2000 | ₺3600 |
+
 
 ### Ödeme
 - **Kredi Kartı**: Güvenli online ödeme

@@ -163,6 +163,16 @@ def format_date_for_display(date_input: str) -> str:
 # CONTENT API İLE MESAJ GÖNDERME
 # ============================================================================
 
+def _normalise_template_var(value: object, fallback: str = "-") -> str:
+    """Twilio Content API content_variables must contain non-null string values."""
+    if value is None:
+        return fallback
+    try:
+        text = str(value).strip()
+    except Exception:
+        return fallback
+    return text if text else fallback
+
 def send_whatsapp_template(
     to_number: str,
     template_type: str,
@@ -228,35 +238,40 @@ def send_whatsapp_template(
         # Kullanıcı dostu format: 25.12.2025 (Gün.Ay.Yıl)
         formatted_date = format_date_for_display(appointment_date)
 
-        map_link = ""
+        map_link: Optional[str] = None
         try:
             if business_lat is not None and business_lng is not None:
                 lat = float(business_lat)
                 lng = float(business_lng)
                 map_link = f"https://maps.google.com/?q={lat},{lng}"
         except Exception:
-            map_link = ""
+            map_link = None
+
+        # Location placeholder: Twilio rejects null/undefined variables.
+        # If there is no pin, send a safe default text.
+        map_link_fallback = "Konum girilmedi" if language == "TR" else "-"
+        map_link_value = _normalise_template_var(map_link, fallback=map_link_fallback)
         
         # Content Variables oluştur (Twilio Content API formatı)
         # Sıralama: 1=İşletme Adı, 2=Müşteri Adı, 3=Tarih, 4=Saat, 5=Hizmet Adı, 6=İletişim Numarası, 7=Konum Linki
         if language == "TR" and template_type_upper in ("CONFIRMATION", "REMINDER"):
             content_variables = {
-                "1": customer_name,
-                "2": company_name,
-                "3": formatted_date,
-                "4": appointment_time,
-                "5": service_name,
-                "6": support_phone,
-                "7": map_link
+                "1": _normalise_template_var(customer_name),
+                "2": _normalise_template_var(company_name),
+                "3": _normalise_template_var(formatted_date),
+                "4": _normalise_template_var(appointment_time),
+                "5": _normalise_template_var(service_name),
+                "6": _normalise_template_var(support_phone),
+                "7": map_link_value
             }
         else:
             content_variables = {
-                "1": company_name,        # İşletme Adı
-                "2": customer_name,      # Müşteri Adı
-                "3": formatted_date,       # Tarih
-                "4": appointment_time,    # Saat
-                "5": service_name,        # Hizmet Adı
-                "6": support_phone       # İletişim Numarası
+                "1": _normalise_template_var(company_name),        # İşletme Adı
+                "2": _normalise_template_var(customer_name),      # Müşteri Adı
+                "3": _normalise_template_var(formatted_date),       # Tarih
+                "4": _normalise_template_var(appointment_time),    # Saat
+                "5": _normalise_template_var(service_name),        # Hizmet Adı
+                "6": _normalise_template_var(support_phone)       # İletişim Numarası
             }
         
         # Telefon numarasını formatla

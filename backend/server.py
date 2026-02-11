@@ -94,6 +94,7 @@ ILETIMERKEZI_API_KEY = os.environ.get('ILETIMERKEZI_API_KEY')
 ILETIMERKEZI_HASH = os.environ.get('ILETIMERKEZI_HASH')
 ILETIMERKEZI_SENDER = os.environ.get('ILETIMERKEZI_SENDER', 'FatihSenyuz') 
 SMS_ENABLED = os.environ.get('SMS_ENABLED', 'false').lower() in ('1', 'true', 'yes')
+AUDIT_LOGS_ENABLED = os.environ.get('AUDIT_LOGS_ENABLED', 'false').lower() in ('1', 'true', 'yes')
 
 # --- STRIPE ÖDEME AYARLARI ---
 import stripe
@@ -1673,6 +1674,8 @@ async def create_audit_log(
     ip_address: Optional[str] = None
 ):
     """Denetim günlüğü kaydı oluştur"""
+    if not AUDIT_LOGS_ENABLED:
+        return
     try:
         # Clean values
         cleaned_old = clean_dict_for_audit(old_value)
@@ -7076,6 +7079,8 @@ async def get_audit_logs(
     current_user: UserInDB = Depends(get_current_user)
 ):
     """Denetim günlüklerini getir - Sadece admin"""
+    if not AUDIT_LOGS_ENABLED:
+        raise HTTPException(status_code=404, detail="Not Found")
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
     
