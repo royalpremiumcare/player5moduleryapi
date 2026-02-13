@@ -3737,10 +3737,6 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
         settings_data = await db.settings.find_one({"organization_id": current_user.organization_id})
         admin_provides_service = settings_data.get('admin_provides_service', True) if settings_data else True
         no_assignable_staff = False
-        staff_count = await db.users.count_documents({
-            "organization_id": current_user.organization_id,
-            "role": {"$nin": ["admin"]}
-        })
         
         # Bu hizmeti verebilen personelleri bul
         qualified_staff_query = {
@@ -3772,21 +3768,9 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             # Admin panelinde personel hiç yoksa (ve admin de hizmet vermiyorsa),
             # randevuyu personelsiz (unassigned) kaydetmeye izin ver.
             if current_user.role == "admin":
-                if staff_count == 0:
-                    no_assignable_staff = True
-                    assigned_staff_id = None
-                    logging.info("ℹ️ No staff users exist; creating appointment as unassigned (admin)")
-                else:
-                    plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
-                    if plan_doc:
-                        await db.organization_plans.update_one(
-                            {"organization_id": current_user.organization_id},
-                            {"$inc": {"quota_usage": -1}}
-                        )
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Bu hizmeti verebilen personel yok"
-                    )
+                no_assignable_staff = True
+                assigned_staff_id = None
+                logging.info("ℹ️ No assignable staff found; creating appointment as unassigned (admin)")
             else:
                 # Kota artırıldı ama personel bulunamadı, geri al
                 plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
@@ -3800,9 +3784,68 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                     detail="Bu hizmet için uygun personel bulunamadı"
                 )
 
-        # Personelsiz kayıt (admin) durumunda çakışma kontrolü yapılmaz
+        # Personelsiz kayıt (admin) durumunda, organizasyon bazlı çakışma kontrolü yapılır
+        # (personel seçilmediği için herhangi bir randevu ile çakışmayı engelle)
         if no_assignable_staff:
-            pass
+            service_duration = service.get('duration', 30)
+
+            new_start_hour, new_start_minute = map(int, appointment.appointment_time.split(':'))
+            new_end_minute = new_start_minute + service_duration
+            new_end_hour = new_start_hour + (new_end_minute // 60)
+            new_end_minute = new_end_minute % 60
+            new_end_time = f"{str(new_end_hour).zfill(2)}:{str(new_end_minute).zfill(2)}"
+
+            org_appointments = await db.appointments.find(
+                {
+                    "organization_id": current_user.organization_id,
+                    "appointment_date": appointment.appointment_date,
+                    "status": {"$ne": "İptal"}
+                },
+                {"_id": 0, "appointment_time": 1, "service_id": 1}
+            ).to_list(1000)
+
+            def time_to_minutes(time_str):
+                try:
+                    hour, minute = map(int, time_str.split(':'))
+                    return hour * 60 + minute
+                except (ValueError, AttributeError):
+                    return 0
+
+            new_start_min = time_to_minutes(appointment.appointment_time)
+            new_end_min = time_to_minutes(new_end_time)
+
+            for existing_appt in org_appointments:
+                existing_start_time = existing_appt.get('appointment_time')
+                if not existing_start_time:
+                    continue
+                existing_service_id = existing_appt.get('service_id')
+
+                if existing_service_id:
+                    existing_service = await db.services.find_one({"id": existing_service_id}, {"_id": 0, "duration": 1})
+                    existing_duration = existing_service.get('duration', 30) if existing_service else 30
+                else:
+                    existing_duration = 30
+
+                existing_start_hour, existing_start_minute = map(int, existing_start_time.split(':'))
+                existing_end_minute = existing_start_minute + existing_duration
+                existing_end_hour = existing_start_hour + (existing_end_minute // 60)
+                existing_end_minute = existing_end_minute % 60
+                existing_end_time = f"{str(existing_end_hour).zfill(2)}:{str(existing_end_minute).zfill(2)}"
+
+                existing_start_min = time_to_minutes(existing_start_time)
+                existing_end_min = time_to_minutes(existing_end_time)
+
+                if new_start_min < existing_end_min and new_end_min > existing_start_min:
+                    plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
+                    if plan_doc:
+                        await db.organization_plans.update_one(
+                            {"organization_id": current_user.organization_id},
+                            {"$inc": {"quota_usage": -1}}
+                        )
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Bu saat dilimi doludur. Lütfen başka bir saat seçin."
+                    )
         else:
             # Boş personel bul (duration'a göre çakışma kontrolü ile)
             service_duration = service.get('duration', 30)
@@ -8519,20 +8562,11 @@ async def get_internal_availability(
         ).to_list(1000)
 
         if not staff_members:
-            # Admin panelinde hiç personel yoksa (ve staff_id seçilmemişse),
-            # randevu personelsiz (unassigned) oluşturulabilsin diye slotları işletme saatlerinden üret.
+            # Admin panelinde hiç uygun personel yoksa (ve staff_id seçilmemişse),
+            # admin unassigned randevu yazabilsin diye slotları işletme saatlerinden üret.
             # Not: staff_id seçilmişse zaten yukarıda "Seçilen personel..." mesajı dönüyoruz.
             if current_user.role != "admin":
                 return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Bu hizmet için uygun personel bulunamadı"}
-
-            staff_count = await db.users.count_documents({
-                "organization_id": organization_id,
-                "role": {"$nin": ["admin"]}
-            })
-
-            # Personel var ama bu hizmeti verebilen personel yoksa: slot gösterme.
-            if staff_count > 0:
-                return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Bu hizmeti verebilen personel yok"}
 
             # business_hours'dan o günün saatlerini al
             day_hours = business_hours.get(day_name, {})
@@ -8563,23 +8597,18 @@ async def get_internal_availability(
 
             service_duration = service.get('duration', 30)
 
-            # Unassigned randevular: aynı gün/saatte daha önce personelsiz randevu varsa slotu "busy" say.
-            unassigned_appointments = await db.appointments.find(
+            # Organizasyondaki tüm randevular: aynı gün/saatte çakışma varsa slotu "busy" say.
+            org_appointments = await db.appointments.find(
                 {
                     "organization_id": organization_id,
                     "appointment_date": date,
                     "status": {"$ne": "İptal"},
-                    "$or": [
-                        {"staff_member_id": None},
-                        {"staff_member_id": {"$exists": False}},
-                        {"staff_member_id": ""}
-                    ]
                 },
                 {"_id": 0, "appointment_time": 1, "service_id": 1}
             ).to_list(1000)
 
             appointments_with_end_time = []
-            for appt in unassigned_appointments:
+            for appt in org_appointments:
                 appt_service_id = appt.get('service_id')
                 if appt_service_id:
                     appt_service = await db.services.find_one(
