@@ -8395,13 +8395,270 @@ async def get_availability(request: Request, organization_id: str, service_id: s
     logging.info(f"📅 Total appointments: {len(appointments_with_end_time)}")
     logging.info(f"✅ Available slots: {len(final_available_slots)}")
     logging.info(f"🚫 Busy slots: {len(busy_slots)}")
-    
-    # Tüm saatleri de döndür (frontend'de dolu saatleri göstermek için)
-    # busy_slots: Dolu saatler (tüm personeller dolu VEYA seçili personel dolu) - kırmızı çizgi gösterilecek
     return {
         "available_slots": final_available_slots,
+        "busy_slots": busy_slots,
         "all_slots": potential_slots,
-        "busy_slots": busy_slots  # Dolu saatler (kırmızı çizgi gösterilecek)
+        "message": "OK"
+    }
+
+
+@api_router.get("/availability")
+async def get_internal_availability(
+    request: Request,
+    service_id: str,
+    date: str,
+    staff_id: Optional[str] = None,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """İç kullanım müsaitlik endpoint'i.
+
+    Admin panelindeki randevu oluşturma akışında, personel seçilmediyse (auto-assign)
+    slotlar personelin haftalık izin günlerine (days_off) bağlı olmamalıdır.
+    staff_id verilirse, seçilen personelin days_off kontrolü uygulanır.
+    """
+    db = await get_db_from_request(request)
+    organization_id = current_user.organization_id
+
+    settings = await db.settings.find_one({"organization_id": organization_id}, {"_id": 0})
+    if not settings:
+        settings = {
+            "work_start_hour": 9,
+            "work_end_hour": 18,
+            "appointment_interval": 30,
+            "admin_provides_service": True,
+            "business_hours": {
+                "monday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "tuesday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "wednesday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "thursday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "friday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "saturday": {"is_open": False, "open_time": "09:00", "close_time": "18:00"},
+                "sunday": {"is_open": False, "open_time": "09:00", "close_time": "18:00"}
+            }
+        }
+
+    admin_provides_service = settings.get('admin_provides_service', True)
+    business_hours = settings.get('business_hours', {})
+
+    # Tarihin hangi güne denk geldiğini bul (0=Monday, 6=Sunday)
+    try:
+        date_obj = datetime.strptime(date, "%Y-%m-%d")
+        weekday = date_obj.weekday()  # 0=Monday, 6=Sunday
+        day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        day_name = day_names[weekday]
+    except (ValueError, TypeError):
+        day_name = "monday"  # Varsayılan
+
+    if staff_id:
+        staff_query = {
+            "organization_id": organization_id,
+            "username": staff_id,
+            "permitted_service_ids": {"$in": [service_id]}
+        }
+
+        if not admin_provides_service:
+            staff_query["role"] = {"$ne": "admin"}
+
+        staff_members = await db.users.find(
+            staff_query,
+            {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
+        ).to_list(1000)
+
+        if not staff_members:
+            return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Seçilen personel bu hizmeti veremiyor"}
+
+        selected_staff = staff_members[0]
+        staff_days_off = selected_staff.get('days_off') or []
+        if day_name in staff_days_off:
+            return {
+                "available_slots": [],
+                "all_slots": [],
+                "busy_slots": [],
+                "message": "Seçili personel bu gün izinli"
+            }
+    else:
+        staff_query = {
+            "organization_id": organization_id,
+            "permitted_service_ids": {"$in": [service_id]}
+        }
+
+        if not admin_provides_service:
+            staff_query["role"] = {"$ne": "admin"}
+
+        staff_members = await db.users.find(
+            staff_query,
+            {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
+        ).to_list(1000)
+
+        if not staff_members:
+            return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Bu hizmet için uygun personel bulunamadı"}
+
+    # business_hours'dan o günün saatlerini al
+    day_hours = business_hours.get(day_name, {})
+    is_open_value = day_hours.get('is_open', True)
+    if not is_open_value:
+        return {
+            "available_slots": [],
+            "all_slots": [],
+            "busy_slots": [],
+            "message": "İşletme bu gün kapalı"
+        }
+
+    open_time_str = day_hours.get('open_time', '09:00')
+    close_time_str = day_hours.get('close_time', '18:00')
+    try:
+        open_hour, open_minute = map(int, open_time_str.split(':'))
+        close_hour, close_minute = map(int, close_time_str.split(':'))
+    except (ValueError, AttributeError):
+        open_hour, open_minute = 9, 0
+        close_hour, close_minute = 18, 0
+
+    service = await db.services.find_one(
+        {"id": service_id, "organization_id": organization_id},
+        {"_id": 0, "duration": 1}
+    )
+    if not service:
+        return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Hizmet bulunamadı"}
+
+    service_duration = service.get('duration', 30)
+
+    staff_ids = [staff['username'] for staff in staff_members]
+    all_staff_appointments = await db.appointments.find(
+        {
+            "organization_id": organization_id,
+            "appointment_date": date,
+            "status": {"$ne": "İptal"},
+            "staff_member_id": {"$in": staff_ids}
+        },
+        {"_id": 0, "appointment_time": 1, "staff_member_id": 1, "service_id": 1}
+    ).to_list(1000)
+
+    appointments_with_end_time = []
+    for appt in all_staff_appointments:
+        appt_service_id = appt.get('service_id')
+        if appt_service_id:
+            appt_service = await db.services.find_one(
+                {"id": appt_service_id, "organization_id": organization_id},
+                {"_id": 0, "duration": 1}
+            )
+            appt_duration = appt_service.get('duration', 30) if appt_service else 30
+        else:
+            appt_duration = 30
+
+        start_time_str = appt['appointment_time']
+        start_hour, start_minute = map(int, start_time_str.split(':'))
+        end_minute = start_minute + appt_duration
+        end_hour = start_hour + (end_minute // 60)
+        end_minute = end_minute % 60
+        end_time_str = f"{str(end_hour).zfill(2)}:{str(end_minute).zfill(2)}"
+
+        appointments_with_end_time.append({
+            "start_time": start_time_str,
+            "end_time": end_time_str,
+            "staff_member_id": appt['staff_member_id']
+        })
+
+    for staff in staff_members:
+        staff_breaks = staff.get('breaks', [])
+        for brk in staff_breaks:
+            if brk.get('date') == date:
+                appointments_with_end_time.append({
+                    "start_time": brk['start_time'],
+                    "end_time": brk['end_time'],
+                    "staff_member_id": staff['username'],
+                    "is_break": True
+                })
+
+    STEP_INTERVAL = 15
+
+    now = datetime.now(timezone.utc)
+    turkey_tz = timezone(timedelta(hours=3))
+    now_turkey = now.astimezone(turkey_tz)
+    is_today = date == now_turkey.strftime("%Y-%m-%d")
+    current_hour_now = now_turkey.hour
+    current_minute_now = now_turkey.minute
+
+    potential_slots = []
+    current_hour = open_hour
+    current_minute = open_minute
+    while True:
+        if current_hour > close_hour or (current_hour == close_hour and current_minute >= close_minute):
+            break
+        potential_slots.append(f"{str(current_hour).zfill(2)}:{str(current_minute).zfill(2)}")
+        current_minute += STEP_INTERVAL
+        if current_minute >= 60:
+            current_minute = current_minute % 60
+            current_hour += 1
+
+    final_available_slots = []
+    busy_slots = []
+
+    def time_to_minutes(time_str):
+        try:
+            hour, minute = map(int, time_str.split(':'))
+            return hour * 60 + minute
+        except (ValueError, AttributeError):
+            return 0
+
+    for potential_start_time in potential_slots:
+        start_hour, start_minute = map(int, potential_start_time.split(':'))
+        end_minute_total = start_minute + service_duration
+        end_hour = start_hour + (end_minute_total // 60)
+        end_minute = end_minute_total % 60
+        potential_end_time = f"{str(end_hour).zfill(2)}:{str(end_minute).zfill(2)}"
+
+        if is_today:
+            if start_hour < current_hour_now or (start_hour == current_hour_now and start_minute < current_minute_now):
+                busy_slots.append(potential_start_time)
+                continue
+
+        if end_hour > close_hour or (end_hour == close_hour and end_minute > close_minute):
+            continue
+
+        potential_start_min = time_to_minutes(potential_start_time)
+        potential_end_min = time_to_minutes(potential_end_time)
+
+        if staff_id:
+            has_conflict = False
+            for appt in appointments_with_end_time:
+                if appt['staff_member_id'] != staff_id:
+                    continue
+                appt_start_min = time_to_minutes(appt['start_time'])
+                appt_end_min = time_to_minutes(appt['end_time'])
+                if (potential_start_min < appt_end_min and potential_end_min > appt_start_min):
+                    has_conflict = True
+                    break
+            if has_conflict:
+                busy_slots.append(potential_start_time)
+                continue
+            final_available_slots.append(potential_start_time)
+        else:
+            # Auto-assign: en az bir personelde çakışma olmamalı (days_off dikkate alınmaz)
+            any_available = False
+            for staff_username in staff_ids:
+                has_conflict = False
+                for appt in appointments_with_end_time:
+                    if appt['staff_member_id'] != staff_username:
+                        continue
+                    appt_start_min = time_to_minutes(appt['start_time'])
+                    appt_end_min = time_to_minutes(appt['end_time'])
+                    if (potential_start_min < appt_end_min and potential_end_min > appt_start_min):
+                        has_conflict = True
+                        break
+                if not has_conflict:
+                    any_available = True
+                    break
+            if any_available:
+                final_available_slots.append(potential_start_time)
+            else:
+                busy_slots.append(potential_start_time)
+
+    return {
+        "available_slots": final_available_slots,
+        "busy_slots": busy_slots,
+        "all_slots": potential_slots,
+        "message": "OK"
     }
 
 @api_router.post("/public/appointments")

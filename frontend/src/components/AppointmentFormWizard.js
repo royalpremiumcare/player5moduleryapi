@@ -129,14 +129,18 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     if (!formData.service_id || !formData.appointment_date || !settings) return;
     try {
       const dateStr = format(formData.appointment_date, "yyyy-MM-dd");
-      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-      if (!token) return;
-      const orgId = JSON.parse(atob(token.split('.')[1])).org_id;
-
       const params = { service_id: formData.service_id, date: dateStr };
       if (formData.staff_member_id) params.staff_id = formData.staff_member_id;
 
-      const res = await publicApi.get(`/public/availability/${orgId}`, { params });
+      let res;
+      if (userRole === 'admin') {
+        res = await api.get('/availability', { params });
+      } else {
+        const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+        if (!token) return;
+        const orgId = JSON.parse(atob(token.split('.')[1])).org_id;
+        res = await publicApi.get(`/public/availability/${orgId}`, { params });
+      }
       setAvailableSlots(res.data.available_slots || []);
       setBusySlots(res.data.busy_slots || []);
     } catch (e) {
