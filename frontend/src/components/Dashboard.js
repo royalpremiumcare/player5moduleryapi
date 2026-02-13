@@ -387,7 +387,20 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                       <p className="text-sm text-gray-500">{apt.service_name} • {apt.appointment_time}</p>
                     </div>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 text-gray-400" /></Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm"><MoreVertical className="w-4 h-4 text-gray-400" /></Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem onClick={() => onEditAppointment(apt)}>
+                        <Edit className="w-4 h-4 mr-2" /> Düzenle
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600">
+                        <Trash2 className="w-4 h-4 mr-2" /> Sil
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               ))}
               {upcoming.length > 5 && <div className="p-3 text-center bg-gray-50 text-xs md:text-sm font-medium text-gray-500 md:col-span-2">+ {upcoming.length - 5} daha</div>}
