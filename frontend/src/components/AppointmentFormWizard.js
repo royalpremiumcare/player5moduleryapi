@@ -223,9 +223,19 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // ADIM 2: MÜŞTERİ SEÇİMİ (Hibrit Arama)
   const renderStep2 = () => {
-    const filteredCustomers = customers.filter(c => 
-      c.name.toLowerCase().includes(customerSearchTerm.toLowerCase()) || c.phone.includes(customerSearchTerm)
-    );
+    const search = (customerSearchTerm || "").toLowerCase();
+    const filteredCustomers = (customers || [])
+      .filter(c => {
+        const name = (c?.name || "").toLowerCase();
+        const phone = String(c?.phone || "");
+        return name.includes(search) || phone.includes(customerSearchTerm || "");
+      })
+      .sort((a, b) => {
+        const aName = String(a?.name || "");
+        const bName = String(b?.name || "");
+        const locale = i18n.language === 'tr' ? 'tr-TR' : 'en-GB';
+        return aName.localeCompare(bName, locale, { sensitivity: 'base' });
+      });
 
     return (
       <div className="space-y-6 animate-in slide-in-from-right duration-300 pb-20">
@@ -281,8 +291,8 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         )}
 
         {!isNewCustomerMode && (
-          <div className="space-y-2">
-            {filteredCustomers.slice(0, 5).map(c => (
+          <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+            {filteredCustomers.map(c => (
               <div 
                 key={c.phone}
                 onClick={() => {
