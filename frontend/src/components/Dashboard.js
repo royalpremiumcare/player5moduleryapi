@@ -1,61 +1,49 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { format, addDays, isToday, isTomorrow } from "date-fns";
+import { format, addDays } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import io from "socket.io-client";
 import { 
-  Calendar, 
-  Clock, 
-  Phone, 
-  MessageSquare, 
-  Edit, 
-  Trash2, 
-  Check, 
-  X, 
-  AlertCircle,
-  MoreVertical,
-  User,
-  FileText
+  Calendar, Clock, Phone, Edit, Trash2, Check, X, 
+  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
+// --- WHATSAPP ICON ---
+const WhatsAppIcon = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2ZM12.05 20.16C10.56 20.16 9.11 19.76 7.83 19L7.51 18.81L4.4 19.62L5.23 16.58L5.02 16.25C4.21 14.96 3.79 13.45 3.8 11.91C3.8 7.37 7.5 3.67 12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.16 12.05 20.16ZM16.61 14.39C16.36 14.27 15.14 13.67 14.91 13.59C14.68 13.5 14.51 13.46 14.34 13.71C14.18 13.96 13.71 14.5 13.54 14.71C13.38 14.92 13.21 14.96 12.96 14.83C12.71 14.71 11.9 14.44 10.94 13.59C10.19 12.92 9.68 12.1 9.43 11.67C9.18 11.42 9.41 11.19 9.53 11.07C9.64 10.96 9.77 10.8 9.89 10.65C10.01 10.5 10.06 10.39 10.14 10.23C10.22 10.06 10.18 9.92 10.12 9.8C10.06 9.67 9.63 8.63 9.46 8.21C9.28 7.79 9.11 7.85 8.96 7.85C8.81 7.85 8.64 7.84 8.46 7.84C8.28 7.84 7.99 7.91 7.74 8.18C7.49 8.45 6.79 9.11 6.79 10.44C6.79 11.77 7.76 13.06 7.9 13.25C8.04 13.44 9.82 16.19 12.55 17.36C13.2 17.64 13.71 17.81 14.11 17.93C14.76 18.14 15.36 18.11 15.83 18.04C16.36 17.96 17.45 17.38 17.68 16.73C17.91 16.08 17.91 15.52 17.84 15.39C17.78 15.27 17.61 15.19 16.36 14.57L16.61 14.39Z" />
+  </svg>
+);
 
 const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate }) => {
   const { token } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
+  
+  // State
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [settings, setSettings] = useState(null);
   const [staffMembers, setStaffMembers] = useState([]);
   const [currentStaffUsername, setCurrentStaffUsername] = useState(null);
+  const [currentUserName, setCurrentUserName] = useState("");
   const [personnelStats, setPersonnelStats] = useState(null);
   const [staffFilter, setStaffFilter] = useState("all");
   const socketRef = useRef(null);
+  const [expandedNoteId, setExpandedNoteId] = useState(null);
   
-  // Mola state'leri
+  // Break States
   const [todayBreaks, setTodayBreaks] = useState([]);
-  const [breakLimits, setBreakLimits] = useState({ minutes: 60, count: 2 });
   const [showBreakDialog, setShowBreakDialog] = useState(false);
   const [newBreakStart, setNewBreakStart] = useState("12:00");
   const [newBreakEnd, setNewBreakEnd] = useState("12:30");
@@ -64,1090 +52,369 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const today = format(new Date(), "yyyy-MM-dd");
   const tomorrow = format(addDays(new Date(), 1), "yyyy-MM-dd");
 
-  // Randevu bitiş saatini hesapla
+  // --- HELPERS ---
   const calculateEndTime = (startTime, duration) => {
-    if (!startTime || !duration) {
-      console.log("⚠️ calculateEndTime: startTime veya duration yok", { startTime, duration });
-      return null;
-    }
+    if (!startTime || !duration) return null;
     try {
       const [hours, minutes] = startTime.split(':').map(Number);
-      const totalMinutes = hours * 60 + minutes + (typeof duration === 'number' ? duration : parseInt(duration, 10));
+      const totalMinutes = hours * 60 + minutes + parseInt(duration, 10);
       const endHours = Math.floor(totalMinutes / 60);
       const endMinutes = totalMinutes % 60;
-      const result = `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
-      console.log(`✅ calculateEndTime: ${startTime} + ${duration}dk = ${result}`);
-      return result;
-    } catch (error) {
-      console.error("❌ calculateEndTime hatası:", error, { startTime, duration });
-      return null;
-    }
+      return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
+    } catch (e) { return null; }
   };
-  
+
+  const getLeftBorderClass = (status) => {
+    if (status === "Bekliyor" || status === t('dashboard.status.pending')) return "border-l-4 border-l-orange-500"; 
+    if (status === "Tamamlandı" || status === t('dashboard.status.completed')) return "border-l-4 border-l-green-500";
+    if (status === "İptal" || status === t('dashboard.status.cancelled')) return "border-l-4 border-l-red-500";
+    return "border-l-4 border-l-gray-300";
+  };
+
+  const toggleNote = (id) => setExpandedNoteId(prev => prev === id ? null : id);
+
+  // Dinamik Selamlama
+  const getTimeBasedGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return "Günaydın";
+    if (hour >= 12 && hour < 18) return "Tünaydın";
+    if (hour >= 18) return "İyi Akşamlar";
+    return "İyi Geceler";
+  };
+
+  // --- LOADERS ---
   const loadPersonnelStats = useCallback(async () => {
-    try {
-      const response = await api.get("/stats/personnel");
-      setPersonnelStats(response.data);
-    } catch (error) {
-      console.error("Personel istatistikleri yüklenemedi:", error);
-    }
+    try { const res = await api.get("/stats/personnel"); setPersonnelStats(res.data); } catch (e) { console.error(e); }
   }, []);
-
-  useEffect(() => {
-    loadSettings();
-    loadTodayBreaks();
-    if (userRole === 'staff') {
-      loadCurrentStaffUsername();
-      loadPersonnelStats();
-    }
-  }, [userRole, loadPersonnelStats]);
-
-  // Stripe ödeme başarılı mesajı
-  useEffect(() => {
-    // Hash routing için URL'den session_id'yi al
-    const hash = window.location.hash;
-    const queryStart = hash.indexOf('?');
-    
-    if (queryStart !== -1) {
-      const queryString = hash.substring(queryStart + 1);
-      const urlParams = new URLSearchParams(queryString);
-      const sessionId = urlParams.get('session_id');
-      
-      if (sessionId) {
-        toast.success(t('dashboard.toast.paymentSuccess'), {
-          duration: 5000,
-        });
-        
-        // URL'den session_id'yi temizle (hash routing için)
-        const cleanHash = hash.substring(0, queryStart);
-        window.history.replaceState({}, document.title, window.location.pathname + cleanHash);
-        
-        // Stats'ı yenile
-        if (onRefresh) {
-          setTimeout(() => {
-            onRefresh();
-          }, 1000);
-        }
-      }
-    }
-  }, [onRefresh]);
-
-  useEffect(() => {
-    if (settings !== null) {
-      loadStaffMembers();
-    }
-  }, [settings, userRole]);
-
-  // Randevular güncellendiğinde personel stats'ını yenile
-  useEffect(() => {
-    if (userRole === 'staff') {
-      loadPersonnelStats();
-    }
-  }, [appointments.length, userRole, loadPersonnelStats]);
-
-  // WebSocket bağlantısı - real-time güncellemeler için
-  useEffect(() => {
-    if (!socketRef.current && token) {
-      const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-      const socketUrl = BACKEND_URL || window.location.origin;
-      const authToken = token || localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-      
-      const socket = io(socketUrl, {
-        path: '/api/socket.io',
-        transports: ['websocket', 'polling'],
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        auth: {
-          token: authToken || ''
-        }
-      });
-
-      socketRef.current = socket;
-
-      socket.on('connect', () => {
-        console.log('✅ Dashboard: WebSocket connected');
-        const authToken = token || localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-        if (authToken) {
-          try {
-            const payload = JSON.parse(atob(authToken.split('.')[1]));
-            const organizationId = payload.org_id;
-            if (organizationId) {
-              console.log('📤 Dashboard: Joining organization room:', organizationId);
-              socket.emit('join_organization', { organization_id: organizationId });
-            }
-          } catch (error) {
-            console.error('Dashboard - Token parse error:', error);
-          }
-        }
-      });
-
-      socket.on('joined_organization', (data) => {
-        console.log('✅ Dashboard: Joined organization room successfully', data);
-      });
-
-      socket.on('appointment_created', (data) => {
-        console.log('🔔 Dashboard: appointment_created event alındı', data);
-        if (onRefresh) onRefresh();
-        if (userRole === 'staff') loadPersonnelStats();
-      });
-
-      socket.on('appointment_updated', () => {
-        if (onRefresh) onRefresh();
-        if (userRole === 'staff') loadPersonnelStats();
-      });
-
-      socket.on('appointment_deleted', () => {
-        if (onRefresh) onRefresh();
-        if (userRole === 'staff') loadPersonnelStats();
-      });
-    }
-
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-    };
-  }, []);
-
-  const loadCurrentStaffUsername = async () => {
-    try {
-      if (token) {
-        // Token'dan username'i çıkar
-        const tokenPayload = JSON.parse(atob(token.split('.')[1]));
-        setCurrentStaffUsername(tokenPayload.sub || tokenPayload.username);
-      }
-    } catch (error) {
-      console.error("Kullanıcı bilgisi alınamadı:", error);
-    }
-  };
 
   const loadSettings = async () => {
-    try {
-      const response = await api.get("/settings");
-      setSettings(response.data);
-      // Mola limitlerini ayarla
-      setBreakLimits({
-        minutes: response.data?.break_limit_minutes || 60,
-        count: response.data?.break_limit_count || 2
-      });
-    } catch (error) {
-      console.error("Ayarlar yüklenemedi:", error);
-    }
+    try { const res = await api.get("/settings"); setSettings(res.data); } catch (e) { console.error(e); }
   };
 
-  // Molaları yükle
   const loadTodayBreaks = async () => {
-    try {
-      const response = await api.get(`/staff/breaks?date=${today}`);
-      setTodayBreaks(response.data?.breaks || []);
-    } catch (error) {
-      console.error("Molalar yüklenemedi:", error);
-    }
-  };
-
-  // Mola ekle
-  const handleAddBreak = async () => {
-    if (!newBreakStart || !newBreakEnd) {
-      toast.error(t('dashboard.breaks.selectTimes'));
-      return;
-    }
-    
-    setAddingBreak(true);
-    try {
-      await api.post("/staff/breaks", {
-        date: today,
-        start_time: newBreakStart,
-        end_time: newBreakEnd
-      });
-      toast.success(t('dashboard.breaks.breakAdded'));
-      setShowBreakDialog(false);
-      loadTodayBreaks();
-      setNewBreakStart("12:00");
-      setNewBreakEnd("12:30");
-    } catch (error) {
-      toast.error(error.response?.data?.detail || t('dashboard.breaks.addError'));
-    } finally {
-      setAddingBreak(false);
-    }
-  };
-
-  // Mola sil
-  const handleDeleteBreak = async (breakId) => {
-    try {
-      await api.delete(`/staff/breaks/${breakId}`);
-      toast.success(t('dashboard.breaks.breakDeleted'));
-      loadTodayBreaks();
-    } catch (error) {
-      toast.error(t('dashboard.breaks.deleteError'));
-    }
+    try { const res = await api.get(`/staff/breaks?date=${today}`); setTodayBreaks(res.data?.breaks || []); } catch (e) { console.error(e); }
   };
 
   const loadStaffMembers = async () => {
     if (userRole !== 'admin') return;
     try {
-      const response = await api.get("/users");
-      let staff = (response.data || []).filter(u => u.role === 'staff');
-      
-      // Admin'in "hizmet verir" ayarı açıksa admin'i de ekle
+      const res = await api.get("/users");
+      let staff = (res.data || []).filter(u => u.role === 'staff');
       if (settings?.admin_provides_service !== false) {
-        const admin = (response.data || []).find(u => u.role === 'admin');
-        if (admin) {
-          staff = [...staff, admin];
-        }
+        const admin = (res.data || []).find(u => u.role === 'admin');
+        if (admin) staff = [...staff, admin];
       }
-      
       setStaffMembers(staff);
-    } catch (error) {
-      console.error("Personeller yüklenemedi:", error);
-    }
-  };
-  
-  const getStaffName = (staffId) => {
-    // Eğer ayarlar kapalıysa (customer_can_choose_staff ve admin_provides_service kapalı), personel bilgisi gösterilmemeli
-    if (settings && !settings.customer_can_choose_staff && !settings.admin_provides_service) {
-      return null; // null döndür, böylece gösterilmez
-    }
-    
-    if (!staffId) {
-      return t('dashboard.appointment.unassigned');
-    }
-    const staff = staffMembers.find(s => s.username === staffId);
-    return staff?.full_name || staff?.username || t('dashboard.appointment.unknown');
+    } catch (e) { console.error(e); }
   };
 
-  const getStatusBorderColor = (status) => {
-    switch (status) {
-      case t('dashboard.status.completed'):
-      case "Tamamlandı":
-        return "border-l-4 border-l-green-500";
-      case t('dashboard.status.cancelled'):
-      case "İptal":
-        return "border-l-4 border-l-red-500";
-      case t('dashboard.status.pending'):
-      case "Bekliyor":
-        return "border-l-4 border-l-yellow-500";
-      default:
-        return "border-l-4 border-l-gray-300";
+  const loadCurrentStaffUsername = async () => {
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const username = payload.sub || payload.username;
+        const fullName = payload.full_name || payload.name;
+        
+        setCurrentStaffUsername(username);
+        setCurrentUserName(fullName || username || "Kullanıcı");
+      } catch (e) { console.error(e); }
     }
   };
 
-  // Bugünün randevuları - Personel için sadece kendi randevuları
+  // --- EFFECTS ---
+  useEffect(() => {
+    loadSettings();
+    loadTodayBreaks();
+    loadCurrentStaffUsername();
+    if (userRole === 'staff') {
+      loadPersonnelStats();
+    }
+  }, [userRole, loadPersonnelStats]);
+
+  useEffect(() => { if (settings !== null) loadStaffMembers(); }, [settings, userRole]);
+  useEffect(() => { if (userRole === 'staff') loadPersonnelStats(); }, [appointments.length, userRole, loadPersonnelStats]);
+
+  useEffect(() => {
+    if (!socketRef.current && token) {
+      const socketUrl = process.env.REACT_APP_BACKEND_URL || window.location.origin;
+      const socket = io(socketUrl, { path: '/api/socket.io', transports: ['websocket', 'polling'], auth: { token: token } });
+      socketRef.current = socket;
+      socket.on('connect', () => { try { const p = JSON.parse(atob(token.split('.')[1])); if (p.org_id) socket.emit('join_organization', { organization_id: p.org_id }); } catch (e) {} });
+      socket.on('appointment_created', () => { if (onRefresh) onRefresh(); if (userRole === 'staff') loadPersonnelStats(); });
+      socket.on('appointment_updated', () => { if (onRefresh) onRefresh(); if (userRole === 'staff') loadPersonnelStats(); });
+      socket.on('appointment_deleted', () => { if (onRefresh) onRefresh(); if (userRole === 'staff') loadPersonnelStats(); });
+    }
+    return () => { if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; } };
+  }, [token, onRefresh, userRole, loadPersonnelStats]);
+
+  // --- HANDLERS ---
+  const handleStatusChange = async (id, status) => { try { await api.put(`/appointments/${id}`, { status }); toast.success(t('dashboard.toast.statusUpdated')); onRefresh(); } catch (e) { toast.error(t('dashboard.toast.statusError')); } };
+  const handleDelete = async (id) => { try { await api.delete(`/appointments/${id}`); toast.success(t('dashboard.toast.appointmentDeleted')); setDeleteDialog(null); onRefresh(); } catch (e) { toast.error(t('dashboard.toast.deleteError')); } };
+  const handleAddBreak = async () => { if (!newBreakStart || !newBreakEnd) return; setAddingBreak(true); try { await api.post("/staff/breaks", { date: today, start_time: newBreakStart, end_time: newBreakEnd }); setShowBreakDialog(false); loadTodayBreaks(); } catch (e) { toast.error(e.response?.data?.detail); } finally { setAddingBreak(false); } };
+  const handleDeleteBreak = async (id) => { try { await api.delete(`/staff/breaks/${id}`); toast.success(t('dashboard.breaks.breakDeleted')); loadTodayBreaks(); } catch (e) { toast.error(t('dashboard.breaks.deleteError')); } };
+  const handleCall = (phone) => window.location.href = `tel:${phone}`;
+  const handleWhatsApp = (phone) => { let clean = phone.replace(/\D/g, ""); if (clean.startsWith("0")) clean = clean.substring(1); if (!clean.startsWith("90")) clean = "90" + clean; window.open(`https://wa.me/${clean}`, "_blank"); };
+
+  // --- DATA FILTERING ---
   const todayAppointments = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
-    if (!aptDate) {
-      console.log("⚠️ Randevu tarihi yok:", apt);
-      return false;
-    }
-    if (aptDate !== today) {
-      console.log(`⚠️ Randevu bugün değil: ${aptDate} !== ${today}`, apt);
-      return false;
-    }
-    if (userRole === 'staff' && currentStaffUsername) {
-      if (apt.staff_member_id !== currentStaffUsername) {
-        console.log(`⚠️ Randevu bu personele ait değil: ${apt.staff_member_id} !== ${currentStaffUsername}`, apt);
-        return false;
-      }
-    }
-    console.log("✅ Randevu bugün ve görüntüleniyor:", apt);
+    if (!aptDate || aptDate !== today) return false;
+    if (userRole === 'staff' && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
     return true;
   });
-  
-  // İleri tarihli tüm randevular (bugünden sonraki) - Personel için sadece kendi randevuları
-  const futureAppointments = appointments
-    .filter(apt => {
-      const aptDate = apt.appointment_date || apt.date;
-      if (!aptDate) {
-        return false;
-      }
-      // Bugünden sonraki tüm randevuları al (bugün hariç)
-      if (aptDate <= today) {
-        return false;
-      }
-      if (userRole === 'staff' && currentStaffUsername) {
-        if (apt.staff_member_id !== currentStaffUsername) {
-          return false;
-        }
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      // Önce tarihe göre sırala
-      const dateA = a.appointment_date || a.date;
-      const dateB = b.appointment_date || b.date;
-      if (dateA !== dateB) {
-        return dateA.localeCompare(dateB);
-      }
-      // Aynı tarihse saate göre sırala
-      return (a.appointment_time || '').localeCompare(b.appointment_time || '');
-    });
-  
-  // Randevuları personele göre filtrele ve saat sırasına göre sırala
-  const filteredTodayAppointments = todayAppointments.filter(apt => 
-    staffFilter === "all" || apt.staff_member_id === staffFilter
-  );
-  const sortedTodayAppointments = [...filteredTodayAppointments].sort((a, b) => 
-    a.appointment_time.localeCompare(b.appointment_time)
-  );
-  
-  // İleri tarihli randevuları da personele göre filtrele
-  const filteredFutureAppointments = futureAppointments.filter(apt =>
-    staffFilter === "all" || apt.staff_member_id === staffFilter
-  );
 
-  const tomorrowAppointments = filteredFutureAppointments.filter(apt => {
+  const filteredToday = todayAppointments.filter(apt => staffFilter === "all" || apt.staff_member_id === staffFilter)
+    .sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
+
+  const morningAppointments = filteredToday.filter(apt => apt.appointment_time < "12:00");
+  const afternoonAppointments = filteredToday.filter(apt => apt.appointment_time >= "12:00");
+
+  // yeni: akıllı bölümleme kontrolü
+  const shouldSplit = morningAppointments.length > 0 && afternoonAppointments.length > 0;
+
+  const filteredTomorrow = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
-    return aptDate === tomorrow;
-  });
-
-  const upcomingAppointments = filteredFutureAppointments.filter(apt => {
+    if (!aptDate || aptDate !== tomorrow) return false;
+    if (userRole === 'staff' && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
+    return true;
+  }).filter(apt => staffFilter === "all" || apt.staff_member_id === staffFilter).sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
+  
+  const upcoming = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
-    return aptDate && aptDate > tomorrow;
-  });
+    if (!aptDate || aptDate <= tomorrow) return false;
+    if (userRole === 'staff' && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
+    return true;
+  }).filter(apt => staffFilter === "all" || apt.staff_member_id === staffFilter).sort((a, b) => (a.appointment_date || a.date).localeCompare(b.appointment_date || b.date));
 
-  const handleStatusChange = async (appointmentId, newStatus) => {
-    try {
-      await api.put(`/appointments/${appointmentId}`, { status: newStatus });
-      toast.success(t('dashboard.toast.statusUpdated'));
-      await onRefresh();
-      if (userRole === 'staff') {
-        await loadPersonnelStats();
-      }
-    } catch (error) {
-      toast.error(t('dashboard.toast.statusError'));
-    }
-  };
+  const getStaffName = (id) => { const staff = staffMembers.find(s => s.username === id); return staff?.full_name || staff?.username; };
 
-  const handleDelete = async (appointmentId) => {
-    try {
-      await api.delete(`/appointments/${appointmentId}`);
-      toast.success(t('dashboard.toast.appointmentDeleted'));
-      setDeleteDialog(null);
-      await onRefresh();
-    } catch (error) {
-      toast.error(t('dashboard.toast.deleteError'));
-    }
-  };
+  // --- ÖZET METNİ HESAPLAMALARI ---
+  const displayCount = userRole === 'admin' ? stats?.today_appointments || 0 : todayAppointments.length;
+  const displayRevenue = userRole === 'admin' 
+    ? stats?.bugunku_toplam_hizmet_tutari || 0 
+    : personnelStats?.total_revenue_generated || 0;
 
-  const handleCall = (phone) => {
-    window.location.href = `tel:${phone}`;
-  };
-
-  const handleWhatsApp = (phone) => {
-    let cleanPhone = phone.replace(/\D/g, "");
-    if (cleanPhone.startsWith("0")) {
-      cleanPhone = cleanPhone.substring(1);
-    }
-    if (!cleanPhone.startsWith("90")) {
-      cleanPhone = "90" + cleanPhone;
-    }
-    window.open(`https://wa.me/${cleanPhone}`, "_blank");
-  };
-
-  const getStatusColor = (status) => {
-    const completed = t('dashboard.status.completed');
-    const cancelled = t('dashboard.status.cancelled');
-    const pending = t('dashboard.status.pending');
-    switch (status) {
-      case completed:
-      case "Tamamlandı":
-        return "text-green-500";
-      case cancelled:
-      case "İptal":
-        return "text-red-500";
-      case pending:
-      case "Bekliyor":
-        return "text-yellow-500";
-      default:
-        return "text-gray-500";
-    }
-  };
-
-  const getStatusIcon = (status) => {
-    const completed = t('dashboard.status.completed');
-    const cancelled = t('dashboard.status.cancelled');
-    switch (status) {
-      case completed:
-      case "Tamamlandı":
-        return <Check className="w-4 h-4 text-green-500" />;
-      case cancelled:
-      case "İptal":
-        return <X className="w-4 h-4 text-red-500" />;
-      default:
-        return <Clock className="w-4 h-4 text-yellow-500" />;
-    }
-  };
-
-  // Progress bar rengi - %90'dan fazla ise uyarı rengi
-  const getProgressColor = (percentage) => {
-    if (percentage >= 90) {
-      return "bg-gradient-to-r from-yellow-400 to-red-500";
-    }
-    return "bg-blue-600";
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif', position: 'relative' }}>
-      {/* KART 1: Abonelik / Kota Durumu */}
-      {stats?.quota && userRole === 'admin' && (
-        <div className="px-4 pt-6 pb-4">
-          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-            <div className="space-y-4">
-              {/* Başlık */}
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-gray-900">
-                    {stats.quota.is_trial ? t('dashboard.subscription.freeTrial') : stats.quota.plan_name}
-                  </h2>
-                  {stats.quota.is_yearly && (
-                    <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                      {t('dashboard.subscription.yearlyPlan')}
-                    </span>
-                  )}
-                  {!stats.quota.is_trial && !stats.quota.is_yearly && stats.quota.billing_cycle === 'monthly' && (
-                    <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full">
-                      {t('dashboard.subscription.monthlyPlan')}
-                    </span>
-                  )}
-                </div>
-                {stats.quota.is_trial && stats.quota.trial_days_remaining !== undefined && (
-                  <p className="text-sm text-gray-600 mt-1">
-                    {t('dashboard.subscription.daysRemaining', { days: stats.quota.trial_days_remaining })}
-                  </p>
-                )}
-              </div>
-
-              {/* Kota Bilgisi */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">
-                    {t('dashboard.subscription.appointmentQuota')}
-                  </span>
-                  <span className={`font-semibold ${
-                    stats.quota.is_low_quota ? 'text-red-600' : 'text-gray-900'
-                  }`}>
-                    {stats.quota.quota_usage} / {stats.quota.quota_limit}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div
-                    className={`h-2.5 rounded-full ${getProgressColor(stats.quota.quota_percentage)}`}
-                    style={{ width: `${Math.min(stats.quota.quota_percentage, 100)}%` }}
-                  ></div>
-              </div>
-              <div className="flex items-center justify-between text-xs text-gray-600">
-                <p>
-                  {t('dashboard.subscription.remaining')}: <span className="font-semibold">{stats.quota.quota_remaining}</span> {t('dashboard.subscription.appointments')}
-                  {/* Yıllık paket için de "thisMonth" göster ama yanında yeşil badge var zaten */}
-                  {stats.quota.is_trial ? '' : ` ${t('dashboard.subscription.thisMonth')}`}
-                </p>
-                {stats.quota.days_remaining !== undefined && (
-                  <p className={`font-semibold ${stats.quota.days_remaining <= 3 ? 'text-red-600' : stats.quota.days_remaining <= 7 ? 'text-yellow-600' : 'text-gray-700'}`}>
-                    {stats.quota.days_remaining} {i18n.language === 'tr' ? 'gün kaldı' : 'days remaining'}
-                  </p>
-                )}
-              </div>
-              </div>
-
-              {/* Uyarı Mesajları */}
-              {stats.quota.is_low_quota && (
-                <div className="flex items-center gap-2 text-xs text-red-600 font-semibold bg-red-50 px-3 py-2 rounded-lg">
-                  <AlertCircle className="w-4 h-4" />
-                  <span>{t('dashboard.subscription.quotaLow')}</span>
-                </div>
-              )}
-              {stats.quota.is_trial && stats.quota.trial_days_remaining !== undefined && stats.quota.trial_days_remaining <= 2 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-xs text-red-600 font-semibold bg-red-50 px-3 py-2 rounded-lg">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>{t('dashboard.subscription.trialEnding')}</span>
-                  </div>
-                  <Button
-                    onClick={() => onNavigate && onNavigate("subscribe")}
-                    className="w-full bg-blue-600 hover:bg-blue-700 h-10 text-sm font-semibold rounded-lg"
-                  >
-                    {t('dashboard.subscription.subscribeNow')}
-                  </Button>
-                </div>
-              )}
+  // --- CARD RENDERER ---
+  const renderAppointmentCard = (apt) => {
+    const isCancelled = apt.status === "İptal" || apt.status === t('dashboard.status.cancelled');
+    const isCompleted = apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed');
+    const hasNote = apt.notes && apt.notes.trim().length > 0;
+    const isExpanded = expandedNoteId === apt.id;
+    
+    return (
+      <div 
+        key={apt.id} 
+        onClick={() => hasNote && toggleNote(apt.id)}
+        className={`bg-white rounded-xl p-4 border border-gray-200 shadow-sm transition-all hover:shadow-md ${getLeftBorderClass(apt.status)} ${isCancelled ? 'opacity-60' : ''} ${hasNote ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+      >
+        <div className="flex gap-4">
+          <div className="flex flex-col items-center justify-center min-w-[60px] border-r border-gray-100 pr-4">
+            <span className="text-xl font-black text-gray-900">{apt.appointment_time}</span>
+            <span className="text-xs text-gray-500 font-medium">{calculateEndTime(apt.appointment_time, apt.service_duration)}</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex justify-between items-start mb-1">
+              <h3 className={`text-base font-bold text-gray-900 truncate ${isCancelled ? 'line-through text-gray-400' : ''}`}>{apt.customer_name}</h3>
+              {isCompleted ? <Check className="w-5 h-5 text-green-500" /> : isCancelled ? <X className="w-5 h-5 text-red-500" /> : <Clock className="w-5 h-5 text-orange-400" />}
             </div>
-            </Card>
-        </div>
-      )}
-
-      {/* KART 2: Hızlı İstatistikler */}
-      {stats && userRole === 'admin' && (
-        <div className="px-4 py-4">
-          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-gray-900">{t('dashboard.quickView')}</h2>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.today')}</p>
-                  <p className="text-xl font-bold text-gray-900">{stats.today_appointments}</p>
-          </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.completed')}</p>
-                  <p className="text-xl font-bold text-green-600">{stats.today_completed}</p>
-        </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.todayServiceAmount')}</p>
-                  <p className="text-xl font-bold text-blue-600">{stats.bugunku_toplam_hizmet_tutari?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') || 0} {i18n.language === 'tr' ? '₺' : '£'}</p>
-          </div>
-      </div>
-          </div>
-        </Card>
-        </div>
-      )}
-
-      {/* KART: Personel Hızlı Bakış (Sadece personel görür) */}
-      {personnelStats && userRole === 'staff' && (
-        <div className="px-4 py-4">
-          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-gray-900">{t('dashboard.quickView')}</h2>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.today')}</p>
-                  <p className="text-xl font-bold text-gray-900">{todayAppointments.length}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.completed')}</p>
-                  <p className="text-xl font-bold text-green-600">{personnelStats.completed_appointments_count || 0}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-gray-600 mb-1">{t('dashboard.todayStats.todayServiceAmount')}</p>
-                  <p className="text-xl font-bold text-blue-600">{personnelStats.total_revenue_generated?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') || 0} {i18n.language === 'tr' ? '₺' : '£'}</p>
-                </div>
-              </div>
+            <div className="flex items-center gap-2 mb-3">
+               <p className="text-sm text-gray-600 truncate">{apt.service_name}</p>
+               {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
             </div>
-          </Card>
-        </div>
-      )}
-
-      {/* KART: Bugünkü Molam (Sadece Personel için) */}
-      {userRole === 'staff' && (
-        <div className="px-4 py-2">
-          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mt-auto">
+              <div className="flex gap-2">
+                <button onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-colors"><Phone className="w-4 h-4" /></button>
+                <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-colors"><WhatsAppIcon className="w-4 h-4" /></button>
+              </div>
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-orange-500" />
-                <h3 className="text-sm font-semibold text-gray-900">{t('dashboard.breaks.title')}</h3>
-              </div>
-              <button
-                onClick={() => setShowBreakDialog(true)}
-                disabled={todayBreaks.length >= breakLimits.count}
-                className="text-xs px-3 py-1 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {t('dashboard.breaks.addBreak')}
-              </button>
-            </div>
-            
-            {todayBreaks.length > 0 ? (
-              <div className="space-y-2">
-                {todayBreaks.map((brk) => {
-                  const startParts = brk.start_time.split(":");
-                  const endParts = brk.end_time.split(":");
-                  const duration = (parseInt(endParts[0]) * 60 + parseInt(endParts[1])) - (parseInt(startParts[0]) * 60 + parseInt(startParts[1]));
-                  return (
-                    <div key={brk.id} className="flex items-center justify-between p-2 bg-orange-50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900">{brk.start_time} - {brk.end_time}</span>
-                        <span className="text-xs text-gray-500">({duration} dk)</span>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteBreak(brk.id)}
-                        className="text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                 {/* Personel İsmi (güncellendi: text-xs) */}
+                 {userRole === 'admin' && getStaffName(apt.staff_member_id) && (
+                    <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded text-gray-600 border border-gray-100">
+                       <User className="w-3 h-3" />
+                       <span className="text-xs font-bold">{getStaffName(apt.staff_member_id)}</span>
                     </div>
-                  );
-                })}
-                <p className="text-xs text-gray-500 mt-1">
-                  {t('dashboard.breaks.remaining')}: {breakLimits.minutes - todayBreaks.reduce((sum, b) => {
-                    const s = b.start_time.split(":"), e = b.end_time.split(":");
-                    return sum + ((parseInt(e[0]) * 60 + parseInt(e[1])) - (parseInt(s[0]) * 60 + parseInt(s[1])));
-                  }, 0)} {t('dashboard.breaks.minutes')} / {breakLimits.count - todayBreaks.length} {t('dashboard.breaks.breaks')}
-                </p>
+                 )}
+                 <DropdownMenu>
+                    <DropdownMenuTrigger asChild><button onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400"><MoreVertical className="w-5 h-5" /></button></DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      {!isCancelled && !isCompleted && <DropdownMenuItem onClick={() => handleStatusChange(apt.id, "İptal")} className="text-red-600"><X className="w-4 h-4 mr-2"/> İptal Et</DropdownMenuItem>}
+                      <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> Düzenle</DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> Sil</DropdownMenuItem>
+                    </DropdownMenuContent>
+                 </DropdownMenu>
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* Not Açılır Alanı */}
+        {isExpanded && hasNote && (
+           <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200">
+              <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm">
+                 <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                 <p className="font-medium">{apt.notes}</p>
+              </div>
+           </div>
+        )}
+      </div>
+    );
+  };
+
+  // --- MAIN RENDER ---
+  return (
+    <div className="min-h-screen bg-gray-50/50 pb-24 font-sans selection:bg-gray-200">
+      
+      {/* 1. HEADER & SUMMARY */}
+      <div className="px-5 pt-8 pb-4 bg-white border-b border-gray-100 sticky top-0 z-10">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-2">
+          {/* Sol Taraf: Karşılama ve Akıllı Özet */}
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">
+              {getTimeBasedGreeting()}, <span className="text-gray-700">{currentUserName}</span> 👋
+            </h1>
+            <p className="text-sm md:text-base text-gray-500 font-medium mt-1 leading-relaxed">
+              {format(new Date(), "d MMMM EEEE", { locale: dateLocale })}, Bugün <span className="font-bold text-gray-900">{displayCount}</span> randevunuz var ve <span className="font-bold text-green-600">{displayRevenue?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')}₺</span> ciro yaptınız.
+            </p>
+          </div>
+
+          {/* Sağ Taraf: PERSONEL MOLA ALANI (Admin için kota kartı kaldırıldı) */}
+          {userRole === 'staff' && (
+            <div className="mt-4 md:mt-0 w-full md:w-auto md:min-w-[280px]">
+               <div className="bg-white border border-orange-100 rounded-2xl p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                     <div className="flex items-center gap-2">
+                        <div className="bg-orange-50 p-2 rounded-lg text-orange-600"><Coffee className="w-4 h-4" /></div>
+                        <span className="text-sm font-bold text-gray-900">Molalarım</span>
+                     </div>
+                     <Button size="sm" variant="ghost" onClick={() => setShowBreakDialog(true)} className="h-7 text-xs text-orange-600 hover:bg-orange-50 hover:text-orange-700 font-medium">+ Ekle</Button>
+                  </div>
+                  {todayBreaks.length > 0 ? (
+                     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                        {todayBreaks.map((brk) => (
+                           <div key={brk.id} className="flex items-center gap-1.5 bg-orange-50 px-2 py-1 rounded-md shrink-0 border border-orange-100">
+                              <span className="text-xs font-bold text-orange-800">{brk.start_time}-{brk.end_time}</span>
+                              <button onClick={() => handleDeleteBreak(brk.id)} className="text-orange-400 hover:text-red-500"><X className="w-3 h-3" /></button>
+                           </div>
+                        ))}
+                     </div>
+                  ) : (
+                     <p className="text-xs text-gray-400 italic">Henüz mola yok.</p>
+                  )}
+               </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4 md:p-6 space-y-6">
+        
+        {/* 2. STAFF FILTER */}
+        {userRole === 'admin' && staffMembers.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <button onClick={() => setStaffFilter("all")} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all border ${staffFilter === "all" ? "bg-black text-white border-black" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}>{t('dashboard.todayFlow.allStaff')}</button>
+            {staffMembers.map((staff) => (
+              <button key={staff.username} onClick={() => setStaffFilter(staff.username)} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 border ${staffFilter === staff.username ? "bg-black text-white border-black" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}>
+                {staffFilter === staff.username && <User className="w-3.5 h-3.5" />} {staff.full_name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 3. BUGÜNÜN AKIŞI */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base md:text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+              {t('dashboard.todayFlow.title')}
+            </h2>
+            <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full">{filteredToday.length} Randevu</span>
+          </div>
+
+          {filteredToday.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 bg-white rounded-2xl border border-dashed border-gray-200">
+              <p className="text-sm text-gray-400 font-medium">{t('dashboard.todayFlow.noAppointments')}</p>
+            </div>
+          ) : (
+            // Akıllı davranış: sadece her iki dönemde de randevu varsa split göster; aksi halde tek liste
+            shouldSplit ? (
+              <div className="space-y-6 md:space-y-0 md:grid md:grid-cols-2 md:gap-6">
+                {/* SOL SÜTUN (ÖĞLEDEN ÖNCE) */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm font-bold text-orange-600 uppercase tracking-wider md:mb-4"><Sun className="w-4 h-4" /> Öğleden Önce</div>
+                  {morningAppointments.length > 0 ? morningAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic">Randevu yok</div>}
+                </div>
+                {/* SAĞ SÜTUN (ÖĞLEDEN SONRA) */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase tracking-wider md:mb-4"><Moon className="w-4 h-4" /> Öğleden Sonra</div>
+                  {afternoonAppointments.length > 0 ? afternoonAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic">Randevu yok</div>}
+                </div>
               </div>
             ) : (
-              <p className="text-xs text-gray-500">{t('dashboard.breaks.noBreaks')}</p>
-            )}
-          </Card>
+              // Tek liste görünümü (varsayılan): tüm bugünkü randevuları zaman sırasına göre tek sütunda göster
+              <div className="space-y-4">
+                {filteredToday.map(apt => renderAppointmentCard(apt))}
+              </div>
+            )
+          )}
         </div>
-      )}
 
-      {/* Mola Ekleme Dialog */}
-      {showBreakDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="bg-white rounded-xl p-6 w-full max-w-sm">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('dashboard.breaks.addBreakTitle')}</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700">{t('dashboard.breaks.startTime')}</label>
-                <input
-                  type="time"
-                  value={newBreakStart}
-                  onChange={(e) => setNewBreakStart(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">{t('dashboard.breaks.endTime')}</label>
-                <input
-                  type="time"
-                  value={newBreakEnd}
-                  onChange={(e) => setNewBreakEnd(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                />
-              </div>
-              <p className="text-xs text-gray-500">{t('dashboard.breaks.minMax')}</p>
+        {/* 4. YARININ RANDEVULARI */}
+        {filteredTomorrow.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-4 mt-8">
+              <h2 className="text-base md:text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">YARININ RANDEVULARI</h2>
+              <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full">{filteredTomorrow.length} Randevu</span>
             </div>
-            <div className="flex gap-2 mt-6">
-              <button
-                onClick={() => setShowBreakDialog(false)}
-                className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                onClick={handleAddBreak}
-                disabled={addingBreak}
-                className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-medium disabled:opacity-50"
-              >
-                {addingBreak ? t('dashboard.breaks.adding') : t('dashboard.breaks.add')}
-              </button>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* KART 3: Bugünün Akışı (En Önemli Kart) */}
-      <div className="px-4 py-4">
-        <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-          <div className="space-y-4">
-            {/* Başlık + Personel Filtresi */}
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">{t('dashboard.todayFlow.title')}</h2>
-                <p className="text-sm text-gray-600 mt-1">
-                  {format(new Date(), "d MMMM yyyy, EEEE", { locale: dateLocale })}
-                </p>
-              </div>
-              {userRole === 'admin' && staffMembers.length > 0 && (
-                <select
-                  value={staffFilter}
-                  onChange={(e) => setStaffFilter(e.target.value)}
-                  className="text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="all">{t('dashboard.todayFlow.allStaff')}</option>
-                  {staffMembers.map((staff) => (
-                    <option key={staff.username} value={staff.username}>
-                      {staff.full_name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            {/* Timeline Görünümü */}
-            <div className="space-y-3">
-              {sortedTodayAppointments.length === 0 ? (
-                <div className="text-center py-8">
-                  <Calendar className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                  <p className="text-sm text-gray-500">{t('dashboard.todayFlow.noAppointments')}</p>
-                </div>
-        ) : (
-                sortedTodayAppointments.map((appointment, index) => (
-                  <div
-              key={appointment.id}
-                    className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
-                      appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "opacity-60" : ""
-                    } ${getStatusBorderColor(appointment.status)}`}
-                  >
-                    {/* Zaman */}
-                    <div className="flex-shrink-0 w-16">
-                      <p className="text-base font-semibold text-gray-900">
-                        {appointment.appointment_time}
-                      </p>
-                      {(() => {
-                        const endTime = calculateEndTime(appointment.appointment_time, appointment.service_duration);
-                        if (endTime) {
-                          return (
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {endTime}
-                            </p>
-                          );
-                        }
-                        return null;
-                      })()}
-                  </div>
-
-                    {/* İçerik */}
-                    <div className="flex-1 min-w-0 pr-20">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <h3 className={`text-base font-semibold text-gray-900 ${
-                          appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "line-through" : ""
-                        }`}>
-                          {appointment.customer_name}
-                        </h3>
-                        {getStatusIcon(appointment.status)}
-                    </div>
-                      <p className="text-sm text-gray-600 mb-1">
-                        {appointment.service_name}
-                      </p>
-                      <div className="flex items-center gap-2 mb-2">
-                    <button
-                      onClick={() => handleCall(appointment.phone)}
-                          className="p-1.5 hover:bg-green-100 rounded-full transition-colors"
-                      title={t('dashboard.appointment.call')}
-                    >
-                      <Phone className="w-4 h-4 text-green-600" />
-                    </button>
-                    <button
-                      onClick={() => handleWhatsApp(appointment.phone)}
-                      className="p-1.5 hover:bg-green-100 rounded-full transition-colors"
-                      title={t('dashboard.appointment.whatsapp')}
-                    >
-                      <MessageSquare className="w-4 h-4 text-green-600" />
-                    </button>
-                  </div>
-                      {/* Not Bilgisi - Varsa göster */}
-                      {appointment.notes && appointment.notes.trim() && (
-                        <div className="flex items-start gap-1.5 text-xs text-gray-600 bg-amber-50 border border-amber-200 px-2 py-1.5 rounded-md">
-                          <FileText className="w-3 h-3 text-amber-600 flex-shrink-0 mt-0.5" />
-                          <span className="font-medium text-amber-800">{appointment.notes}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Sağ Üst Köşe: Üç Nokta Menüsü */}
-                    <div className="absolute top-3 right-3">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
-                            title={t('common.more')}
-                          >
-                            <MoreVertical className="w-4 h-4 text-gray-600" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48" style={{ zIndex: 1100 }}>
-                  {(appointment.status === t('dashboard.status.pending') || appointment.status === "Bekliyor") && (
-                            <DropdownMenuItem
-                              onClick={() => handleStatusChange(appointment.id, t('dashboard.status.cancelled'))}
-                              className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                    >
-                              <X className="w-4 h-4 mr-2" />
-                              {t('dashboard.appointment.cancel')}
-                            </DropdownMenuItem>
-                  )}
-                          <DropdownMenuItem
-                    onClick={() => onEditAppointment(appointment)}
-                  >
-                            <Edit className="w-4 h-4 mr-2" />
-                    {t('dashboard.appointment.edit')}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => setDeleteDialog(appointment)}
-                            className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            {t('dashboard.appointment.delete')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                    {/* Sağ Alt Köşe: Personel Etiketi (Admin için) */}
-                    {userRole === 'admin' && appointment.staff_member_id && getStaffName(appointment.staff_member_id) && (
-                      <div className="absolute bottom-3 right-3 flex items-center gap-1 text-[10px] text-gray-500 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
-                        <User className="w-2.5 h-2.5 text-blue-600" />
-                        <span className="font-medium text-blue-700">{t('dashboard.appointment.staff')}: {getStaffName(appointment.staff_member_id)}</span>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
+            <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4">
+              {filteredTomorrow.map(apt => renderAppointmentCard(apt))}
             </div>
           </div>
-        </Card>
+        )}
+
+        {/* 5. GELECEK RANDEVULAR */}
+        {upcoming.length > 0 && (
+          <div>
+            <h2 className="text-base md:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2 uppercase tracking-wider mt-8">{t('dashboard.upcomingAppointments.title')}</h2>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100 overflow-hidden md:grid md:grid-cols-2 md:divide-y-0 md:gap-4 md:bg-transparent md:border-0 md:shadow-none">
+              {upcoming.slice(0, 5).map((apt) => (
+                <div key={apt.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors md:bg-white md:rounded-xl md:border md:border-gray-200 md:shadow-sm">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-gray-100 rounded-lg p-2 text-center min-w-[50px]">
+                      <span className="block text-xs text-gray-500 font-bold uppercase">{format(new Date(apt.appointment_date || apt.date), "MMM", { locale: dateLocale })}</span>
+                      <span className="block text-lg font-bold text-gray-900">{format(new Date(apt.appointment_date || apt.date), "d")}</span>
+                    </div>
+                    <div>
+                      <h4 className="text-base font-bold text-gray-900">{apt.customer_name}</h4>
+                      <p className="text-sm text-gray-500">{apt.service_name} • {apt.appointment_time}</p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 text-gray-400" /></Button>
+                </div>
+              ))}
+              {upcoming.length > 5 && <div className="p-3 text-center bg-gray-50 text-xs md:text-sm font-medium text-gray-500 md:col-span-2">+ {upcoming.length - 5} daha</div>}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* KART 4A: Yarının Özeti */}
-      {tomorrowAppointments.length > 0 && (
-        <div className="px-4 py-4">
-          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-gray-900">{t('dashboard.tomorrowSummary.title')}</h2>
-              <div className="space-y-4">
-                {tomorrowAppointments.map((appointment) => (
-                  <div
-                    key={appointment.id}
-                    className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
-                      appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "opacity-60" : ""
-                    } ${getStatusBorderColor(appointment.status)}`}
-                  >
-                    <div className="flex-shrink-0 w-16">
-                      <p className="text-sm font-semibold text-gray-900">
-                        {appointment.appointment_time}
-                      </p>
-                      {(() => {
-                        const endTime = calculateEndTime(appointment.appointment_time, appointment.service_duration);
-                        if (endTime) {
-                          return (
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {endTime}
-                            </p>
-                          );
-                        }
-                        return null;
-                      })()}
-                    </div>
-                    <div className="flex-1 min-w-0 pr-20">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <h3 className={`text-sm font-semibold text-gray-900 ${
-                          appointment.status === "İptal" ? "line-through" : ""
-                        }`}>
-                          {appointment.customer_name}
-                        </h3>
-                        {getStatusIcon(appointment.status)}
-                      </div>
-                      <p className="text-xs text-gray-600 mb-1">
-                        {appointment.service_name}
-                      </p>
-                      <div className="flex items-center gap-2 mb-2">
-                        <button
-                          onClick={() => handleCall(appointment.phone)}
-                          className="p-1.5 hover:bg-green-100 rounded-full transition-colors"
-                          title="Ara"
-                        >
-                          <Phone className="w-4 h-4 text-green-600" />
-                        </button>
-                        <button
-                          onClick={() => handleWhatsApp(appointment.phone)}
-                          className="p-1.5 hover:bg-green-100 rounded-full transition-colors"
-                          title="WhatsApp"
-                        >
-                          <MessageSquare className="w-4 h-4 text-green-600" />
-                        </button>
-                      </div>
-                      {/* Not Bilgisi - Varsa göster */}
-                      {appointment.notes && appointment.notes.trim() && (
-                        <div className="flex items-start gap-1.5 text-xs text-gray-600 bg-amber-50 border border-amber-200 px-2 py-1.5 rounded-md">
-                          <FileText className="w-3 h-3 text-amber-600 flex-shrink-0 mt-0.5" />
-                          <span className="font-medium text-amber-800">{appointment.notes}</span>
-                        </div>
-                      )}
-                    </div>
-                    {/* Sağ Üst Köşe: Üç Nokta Menüsü */}
-                    <div className="absolute top-3 right-3">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
-                            title={t('common.more')}
-                          >
-                            <MoreVertical className="w-4 h-4 text-gray-600" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48" style={{ zIndex: 1100 }}>
-                          {appointment.status === "Bekliyor" && (
-                            <DropdownMenuItem
-                              onClick={() => handleStatusChange(appointment.id, "İptal")}
-                              className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                            >
-                              <X className="w-4 h-4 mr-2" />
-                              İptal Et
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            onClick={() => onEditAppointment(appointment)}
-                          >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Düzenle
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => setDeleteDialog(appointment)}
-                            className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Sil
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                    {/* Sağ Alt Köşe: Personel Etiketi (Admin için) */}
-                    {userRole === 'admin' && appointment.staff_member_id && getStaffName(appointment.staff_member_id) && (
-                      <div className="absolute bottom-3 right-3 flex items-center gap-1 text-[10px] text-gray-500 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
-                        <User className="w-2.5 h-2.5 text-blue-600" />
-                        <span className="font-medium text-blue-700">{t('dashboard.appointment.staff')}: {getStaffName(appointment.staff_member_id)}</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* KART 4B: Gelecek Randevular (Yarından Sonra) */}
-      {upcomingAppointments.length > 0 && (
-        <div className="px-4 py-4">
-          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-gray-900">{t('dashboard.upcomingAppointments.title')}</h2>
-              <div className="space-y-4">
-                {upcomingAppointments.map((appointment, idx) => {
-                  const aptDate = appointment.appointment_date || appointment.date;
-                  const prevApt = idx > 0 ? upcomingAppointments[idx - 1] : null;
-                  const prevDate = prevApt ? (prevApt.appointment_date || prevApt.date) : null;
-                  const showDateHeader = !prevDate || prevDate !== aptDate;
-
-                  return (
-                    <div key={appointment.id} className="space-y-3">
-                      {showDateHeader && (
-                        <div className="mb-2 mt-2 first:mt-0">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-gray-500" />
-                            <h3 className="text-sm font-semibold text-gray-700">
-                              {format(new Date(aptDate + 'T00:00:00'), "d MMMM yyyy, EEEE", { locale: dateLocale })}
-                            </h3>
-                          </div>
-                        </div>
-                      )}
-                      <div
-                        className={`relative flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
-                          appointment.status === t('dashboard.status.cancelled') || appointment.status === "İptal" ? "opacity-60" : ""
-                        } ${getStatusBorderColor(appointment.status)}`}
-                      >
-                        <div className="flex-shrink-0 w-16">
-                          <p className="text-sm font-semibold text-gray-900">
-                            {appointment.appointment_time}
-                          </p>
-                          {(() => {
-                            const endTime = calculateEndTime(appointment.appointment_time, appointment.service_duration);
-                            if (endTime) {
-                              return (
-                                <p className="text-xs text-gray-500 mt-0.5">
-                                  {endTime}
-                                </p>
-                              );
-                            }
-                            return null;
-                          })()}
-                        </div>
-                        <div className="flex-1 min-w-0 pr-20">
-                          <div className="flex items-start justify-between gap-2 mb-1">
-                            <h3 className={`text-sm font-semibold text-gray-900 ${
-                              appointment.status === "İptal" ? "line-through" : ""
-                            }`}>
-                              {appointment.customer_name}
-                            </h3>
-                            {getStatusIcon(appointment.status)}
-                          </div>
-                          <p className="text-xs text-gray-600 mb-1">
-                            {appointment.service_name}
-                          </p>
-                          <div className="flex items-center gap-2 mb-2">
-                            <button
-                              onClick={() => handleCall(appointment.phone)}
-                              className="p-1.5 hover:bg-green-100 rounded-full transition-colors"
-                              title="Ara"
-                            >
-                              <Phone className="w-4 h-4 text-green-600" />
-                            </button>
-                            <button
-                              onClick={() => handleWhatsApp(appointment.phone)}
-                              className="p-1.5 hover:bg-green-100 rounded-full transition-colors"
-                              title="WhatsApp"
-                            >
-                              <MessageSquare className="w-4 h-4 text-green-600" />
-                            </button>
-                          </div>
-                          {appointment.notes && appointment.notes.trim() && (
-                            <div className="flex items-start gap-1.5 text-xs text-gray-600 bg-amber-50 border border-amber-200 px-2 py-1.5 rounded-md">
-                              <FileText className="w-3 h-3 text-amber-600 flex-shrink-0 mt-0.5" />
-                              <span className="font-medium text-amber-800">{appointment.notes}</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="absolute top-3 right-3">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
-                                title={t('common.more')}
-                              >
-                                <MoreVertical className="w-4 h-4 text-gray-600" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48" style={{ zIndex: 1100 }}>
-                              {appointment.status === "Bekliyor" && (
-                                <DropdownMenuItem
-                                  onClick={() => handleStatusChange(appointment.id, "İptal")}
-                                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                                >
-                                  <X className="w-4 h-4 mr-2" />
-                                  İptal Et
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                onClick={() => onEditAppointment(appointment)}
-                              >
-                                <Edit className="w-4 h-4 mr-2" />
-                                Düzenle
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => setDeleteDialog(appointment)}
-                                className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Sil
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                        {userRole === 'admin' && appointment.staff_member_id && getStaffName(appointment.staff_member_id) && (
-                          <div className="absolute bottom-3 right-3 flex items-center gap-1 text-[10px] text-gray-500 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
-                            <User className="w-2.5 h-2.5 text-blue-600" />
-                            <span className="font-medium text-blue-700">{t('dashboard.appointment.staff')}: {getStaffName(appointment.staff_member_id)}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('dashboard.deleteDialog.title')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('dashboard.deleteDialog.description', { name: deleteDialog?.customer_name })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('dashboard.deleteDialog.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => handleDelete(deleteDialog?.id)}
-              className="bg-red-500 hover:bg-red-600"
-            >
-              {t('dashboard.deleteDialog.delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
+        <AlertDialogContent className="rounded-2xl max-w-xs">
+          <AlertDialogHeader><AlertDialogTitle>{t('dashboard.deleteDialog.title')}</AlertDialogTitle><AlertDialogDescription>{t('dashboard.deleteDialog.description', { name: deleteDialog?.customer_name })}</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel className="rounded-xl">{t('dashboard.deleteDialog.cancel')}</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete(deleteDialog?.id)} className="bg-red-600 hover:bg-red-700 rounded-xl">{t('dashboard.deleteDialog.delete')}</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {showBreakDialog && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+          <Card className="w-full max-w-xs rounded-2xl shadow-2xl p-5">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">{t('dashboard.breaks.addBreakTitle')}</h3>
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <div><label className="text-xs font-bold text-gray-500 mb-1 block">BAŞLANGIÇ</label><input type="time" value={newBreakStart} onChange={e => setNewBreakStart(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-lg p-2 text-sm font-bold text-gray-900 focus:ring-black" /></div>
+              <div><label className="text-xs font-bold text-gray-500 mb-1 block">BİTİŞ</label><input type="time" value={newBreakEnd} onChange={e => setNewBreakEnd(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-lg p-2 text-sm font-bold text-gray-900 focus:ring-black" /></div>
+            </div>
+            <div className="flex gap-2"><Button variant="outline" onClick={() => setShowBreakDialog(false)} className="flex-1 rounded-lg h-10 text-xs">İptal</Button><Button onClick={handleAddBreak} disabled={addingBreak} className="flex-1 rounded-lg h-10 bg-black hover:bg-gray-800 text-white text-xs">{addingBreak ? "..." : "Ekle"}</Button></div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };

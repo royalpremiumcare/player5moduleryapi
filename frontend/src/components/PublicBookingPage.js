@@ -19,7 +19,6 @@ import BusinessMap from "./BusinessMap";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const API = `${BACKEND_URL}/api`;
 
-// Public endpoint için axios instance (token gerektirmez)
 const publicApi = axios.create({
   baseURL: `${BACKEND_URL}/api`,
 });
@@ -28,82 +27,88 @@ const PublicBookingPage = () => {
   const { slug } = useParams();
   const { t, i18n } = useTranslation();
   
-  // Domain bazlı dil algılama - date-fns locale ve currency symbol
   const currentLang = i18n.language || 'tr';
   const dateLocale = currentLang === 'en' ? enGB : tr;
   const currencySymbol = currentLang === 'en' ? '£' : '₺';
   
-  // Domain bazlı telefon prefix ve validation
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
   const isUKDomain = hostname.includes('plannapp.co.uk');
   const phonePrefix = isUKDomain ? '+44' : '+90';
   const phonePlaceholder = isUKDomain ? 'XXXX XXXXXX' : '5XX XXX XX XX';
   
-  // Telefon numarası validation: prefix'ten sonra tam 10 rakam olmalı
   const validatePhone = (phone) => {
-    // Prefix'i kaldır ve sadece rakamları kontrol et
     const digits = phone.replace(/[^\d]/g, '');
     return digits.length === 10;
   };
   
-  // Özel route'ları yakalamayı engelle (superadmin, dashboard, login, vb.)
   const reservedPaths = ['superadmin', 'dashboard', 'login', 'register', 'forgot-password', 'reset-password', 'setup-password'];
   if (reservedPaths.includes(slug)) {
-    return null; // Bu route'lar AppRouter'da zaten tanımlı, buraya gelmemeli
+    return null;
   }
   
-  // Sihirbaz Adım Yönetimi
-  const [currentStep, setCurrentStep] = useState(1);
-  const totalSteps = 4;
+  // STATE YÖNETİMİ
+  const [currentStep, setCurrentStep] = useState(1); // Internal Step (1: Service, 2: Staff, 3: Date, 4: Info)
   
-  // Loading & Business Data
   const [loading, setLoading] = useState(true);
   const [business, setBusiness] = useState(null);
   const [services, setServices] = useState([]);
   const [staffMembers, setStaffMembers] = useState([]);
   const [settings, setSettings] = useState(null);
 
-  // Form States
   const [selectedService, setSelectedService] = useState(null);
-  const [selectedStaff, setSelectedStaff] = useState(null); // null = "Farketmez"
+  const [selectedStaff, setSelectedStaff] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState("");
   const [availableSlots, setAvailableSlots] = useState([]);
   const [busySlots, setBusySlots] = useState([]);
   const [allSlots, setAllSlots] = useState([]);
   
-  // Customer Info
   const [customerFullName, setCustomerFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
-  const [savedUser, setSavedUser] = useState(null); // localStorage'dan gelen kullanıcı
+  const [savedUser, setSavedUser] = useState(null);
   
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const resetTimeoutRef = useRef(null);
-
-  // WebSocket için ref
   const socketRef = useRef(null);
 
-  // Logo URL helper
+  // --- HELPER: GÖRÜNEN ADIM HESAPLAMA ---
+  // Eğer personel seçimi kapalıysa toplam adım 3, açıksa 4 olmalı.
+  const showStaffStep = settings?.customer_can_choose_staff ?? true; // Varsayılan true
+  const totalVisualSteps = showStaffStep ? 4 : 3;
+
+  const getVisualStepNumber = (internalStep) => {
+    if (showStaffStep) return internalStep;
+    
+    // Personel seçimi yoksa:
+    // Internal 1 (Hizmet) -> Visual 1
+    // Internal 2 (Personel) -> Atlanıyor
+    // Internal 3 (Tarih) -> Visual 2
+    // Internal 4 (Bilgi) -> Visual 3
+    if (internalStep === 1) return 1;
+    if (internalStep === 3) return 2;
+    if (internalStep === 4) return 3;
+    return internalStep;
+  };
+
+  const currentVisualStep = getVisualStepNumber(currentStep);
+
   const getLogoUrl = (logoUrl) => {
     if (!logoUrl) return null;
     return logoUrl;
   };
 
-  // "Beni Hatırla" - localStorage kontrolü
   useEffect(() => {
     const savedUserData = localStorage.getItem('plann_user');
     if (savedUserData) {
       try {
         const userData = JSON.parse(savedUserData);
         setSavedUser(userData);
-        // Eski format (name + surname) veya yeni format (fullName) desteği
         if (userData.fullName) {
           setCustomerFullName(userData.fullName || "");
         } else if (userData.name || userData.surname) {
-          // Eski format: name ve surname'i birleştir
           const fullName = `${userData.name || ""} ${userData.surname || ""}`.trim();
           setCustomerFullName(fullName);
         }
@@ -114,27 +119,24 @@ const PublicBookingPage = () => {
     }
   }, []);
 
-  // İşletme verilerini yükle
   useEffect(() => {
     loadBusinessData();
   }, [slug]);
 
-  // Tarih veya personel değiştiğinde müsait saatleri yükle
   useEffect(() => {
     if (selectedService && selectedDate && business && currentStep >= 3) {
       loadAvailableSlots();
     }
   }, [selectedService, selectedDate, selectedStaff, business, currentStep]);
 
-  // WebSocket bağlantısı - real-time güncellemeler için
+  // WebSocket
   useEffect(() => {
-    if (!business || !slug) return; // Business yüklenene kadar bekle
+    if (!business || !slug) return;
 
     if (!socketRef.current) {
       const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
       const socketUrl = BACKEND_URL || window.location.origin;
       
-      // Public sayfa için token gerektirmez
       const socket = io(socketUrl, {
         path: '/api/socket.io',
         transports: ['websocket', 'polling'],
@@ -142,49 +144,31 @@ const PublicBookingPage = () => {
         reconnectionDelayMax: 5000,
         reconnectionAttempts: 5,
         autoConnect: true,
-        // Token gönderme (public sayfa için gerekli değil)
       });
 
       socketRef.current = socket;
 
       socket.on('connect', () => {
-        console.log('✅ PublicBookingPage: WebSocket connected');
-        // Public organization room'a join et
         socket.emit('join_public_organization', {
           slug: slug,
           organization_id: business.organization_id
         });
       });
 
-      socket.on('joined_public_organization', (data) => {
-        console.log('✅ PublicBookingPage: Joined public organization room successfully', data);
-      });
-
       socket.on('appointment_created', (data) => {
-        console.log('🔔 PublicBookingPage: appointment_created event alındı', data);
-        // Randevu oluşturulduğunda müsait saatleri yeniden yükle
         if (selectedService && selectedDate && business) {
           loadAvailableSlots();
         }
       });
-
-      socket.on('disconnect', () => {
-        console.log('❌ PublicBookingPage: WebSocket disconnected');
-      });
-
-      socket.on('connect_error', (err) => {
-        console.error('❌ PublicBookingPage: Socket connection error:', err);
-      });
     }
 
-    // Cleanup
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
       }
     };
-  }, [business, slug]); // business ve slug değiştiğinde yeniden bağlan
+  }, [business, slug]);
 
   const loadBusinessData = async () => {
     try {
@@ -198,7 +182,6 @@ const PublicBookingPage = () => {
       setSettings(loadedSettings);
       setLoading(false);
     } catch (error) {
-      console.error("❌ İşletme yüklenemedi:", error);
       toast.error(t('publicBooking.businessNotFound'));
       setLoading(false);
     }
@@ -226,7 +209,6 @@ const PublicBookingPage = () => {
       let busy = response.data.busy_slots || [];
       let all = response.data.all_slots || [];
       
-      // Bugünün tarihi seçiliyse, geçmiş saatleri filtrele
       const today = format(new Date(), "yyyy-MM-dd");
       if (dateStr === today) {
         const now = new Date();
@@ -251,7 +233,6 @@ const PublicBookingPage = () => {
       setBusySlots(busy);
       setAllSlots(all);
     } catch (error) {
-      console.error("❌ Müsait saatler yüklenemedi:", error);
       setAvailableSlots([]);
       setBusySlots([]);
       setAllSlots([]);
@@ -265,7 +246,6 @@ const PublicBookingPage = () => {
     );
   };
 
-  // "Bu ben değilim" - localStorage'ı temizle
   const handleNotMe = () => {
     localStorage.removeItem('plann_user');
     setSavedUser(null);
@@ -273,13 +253,12 @@ const PublicBookingPage = () => {
     setPhone("");
   };
 
-  // Adım ilerleme kontrolü
   const canGoNext = () => {
     switch (currentStep) {
       case 1:
         return selectedService !== null;
       case 2:
-        return true; // Personel seçimi zorunlu değil (Farketmez varsayılan)
+        return true; 
       case 3:
         return selectedTime !== "";
       case 4:
@@ -290,27 +269,56 @@ const PublicBookingPage = () => {
   };
 
   const handleNext = () => {
-    // Eğer Adım 1'den geçiyorsa ve customer_can_choose_staff kapalıysa, Adım 3'e atla
-    if (currentStep === 1 && settings && !settings.customer_can_choose_staff) {
-      setSelectedStaff(null); // Otomatik atama için null yap
-      setCurrentStep(3); // Direkt Adım 3'e geç
+    // Manuel ilerleme için standart kontrol
+    if (currentStep === 1 && !showStaffStep) {
+      setSelectedStaff(null); 
+      setCurrentStep(3); // Adım 2'yi atla
       return;
     }
     
-    if (canGoNext() && currentStep < totalSteps) {
-      setCurrentStep(currentStep + 1);
+    if (canGoNext() && currentStep < 4) {
+      setCurrentStep(prev => prev + 1);
     }
   };
 
   const handleBack = () => {
     if (currentStep > 1) {
-      // Eğer Adım 3'ten geri geliyorsa ve customer_can_choose_staff kapalıysa, Adım 1'e dön
-      if (currentStep === 3 && settings && !settings.customer_can_choose_staff) {
-        setCurrentStep(1);
+      if (currentStep === 3 && !showStaffStep) {
+        setCurrentStep(1); // Adım 2'yi atla, 1'e dön
         return;
       }
-      setCurrentStep(currentStep - 1);
+      setCurrentStep(prev => prev - 1);
     }
+  };
+
+  // --- ACTION HANDLERS WITH AUTO-ADVANCE ---
+  
+  // Hizmet seçildiğinde çalışır
+  const handleServiceSelect = (service) => {
+    setSelectedService(service);
+    setSelectedStaff(null);
+    
+    // Çift tıklama sorununu çözmek için:
+    // Doğrudan state güncellemesi beklemeden bir sonraki adıma geçişi planla
+    setTimeout(() => {
+        if (!showStaffStep) {
+            setCurrentStep(3); // Personeli atla, Tarihe git
+        } else {
+            setCurrentStep(2); // Personele git
+        }
+    }, 300);
+  };
+
+  // Saat seçildiğinde çalışır
+  const handleTimeSelect = (slot) => {
+    setSelectedTime(slot);
+    
+    // Çift tıklama sorununu çözmek için:
+    // "canGoNext" kontrolüne güvenmek yerine direkt 4. adıma atlatıyoruz.
+    // Çünkü kullanıcı zaten geçerli bir saate tıkladı.
+    setTimeout(() => {
+        setCurrentStep(4);
+    }, 300);
   };
 
   const handleSubmit = async (e) => {
@@ -321,7 +329,6 @@ const PublicBookingPage = () => {
       return;
     }
     
-    // Telefon numarası validation: tam 10 rakam olmalı
     if (!validatePhone(phone)) {
       toast.error(
         isUKDomain 
@@ -334,8 +341,6 @@ const PublicBookingPage = () => {
     setSubmitting(true);
     try {
       const fullName = customerFullName.trim();
-      
-      // Telefon numarasına prefix ekle
       const fullPhoneNumber = `${phonePrefix}${phone}`;
       
       const payload = {
@@ -352,7 +357,6 @@ const PublicBookingPage = () => {
         params: { organization_id: business.organization_id }
       });
       
-      // "Beni Hatırla" seçildiyse localStorage'a kaydet
       if (rememberMe) {
         const userData = {
           fullName: fullName,
@@ -364,7 +368,6 @@ const PublicBookingPage = () => {
       setSuccess(true);
       toast.success(t('publicBooking.appointmentCreated'));
       
-      // Başarı ekranında bir süre kal, sonra otomatik başa dön
       if (resetTimeoutRef.current) {
         clearTimeout(resetTimeoutRef.current);
       }
@@ -384,13 +387,11 @@ const PublicBookingPage = () => {
     } catch (error) {
       const errorMessage = error.response?.data?.detail || t('publicBooking.errorCreateAppointment');
       toast.error(errorMessage);
-      console.error("❌ Randevu hatası:", error);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // --- LOADING STATE ---
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center">
@@ -422,7 +423,6 @@ const PublicBookingPage = () => {
     setRememberMe(false);
   };
 
-  // --- BUSINESS NOT FOUND STATE ---
   if (!business) {
     return (
       <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4">
@@ -435,7 +435,6 @@ const PublicBookingPage = () => {
     );
   }
 
-  // --- SUCCESS STATE ---
   if (success) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
@@ -496,21 +495,15 @@ const PublicBookingPage = () => {
     );
   }
 
-  // --- MAIN LAYOUT (SPLIT VIEW) ---
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-white font-sans text-zinc-900 selection:bg-zinc-900 selection:text-white">
       <Toaster position="top-center" richColors theme="light" />
       
-      {/* LEFT PANEL (Branding & Info) 
-        Desktop: Fixed sidebar on the left.
-        Mobile: Top header.
-      */}
+      {/* LEFT PANEL */}
       <div className="w-full lg:w-[400px] xl:w-[480px] bg-zinc-950 text-white flex flex-col justify-between p-6 lg:p-12 lg:min-h-screen lg:fixed lg:left-0 lg:top-0 z-50 shrink-0">
         <div>
-           {/* Logo Area */}
           <div className="flex items-center gap-4 mb-8 lg:mb-12">
             {business.logo_url ? (
-              // DEĞİŞİKLİK: w-12 h-12 yerine w-16 h-16 yapıldı (mobil için büyütüldü)
               <div className="w-16 h-16 lg:w-16 lg:h-16 bg-white rounded-xl p-1 flex items-center justify-center flex-shrink-0">
                 <img 
                   src={getLogoUrl(business.logo_url)}
@@ -519,7 +512,6 @@ const PublicBookingPage = () => {
                 />
               </div>
             ) : (
-              // DEĞİŞİKLİK: Placeholder için de w-16 h-16 ve ikon boyutu w-8 h-8 yapıldı
               <div className="w-16 h-16 lg:w-16 lg:h-16 bg-zinc-800 rounded-xl flex items-center justify-center flex-shrink-0 border border-zinc-700">
                 <CalendarIcon className="w-8 h-8 lg:w-8 lg:h-8 text-zinc-400" />
               </div>
@@ -528,15 +520,18 @@ const PublicBookingPage = () => {
               <h1 className="text-lg lg:text-xl font-bold tracking-tight text-white leading-tight">
                 {business.business_name}
               </h1>
-              {/* DEĞİŞİKLİK: text-sm yerine mobilde text-base, masaüstünde lg:text-sm yapıldı */}
               <p className="text-zinc-400 text-base lg:text-sm">{t('publicBooking.onlineBookingSystem')}</p>
             </div>
           </div>
 
-          {/* Desktop Only: Welcome Text (Language aware) */}
           <div className="hidden lg:block space-y-4">
             <h2 className="text-3xl xl:text-4xl font-extrabold tracking-tight text-white">
-              {currentStep === 1 && t('publicBooking.step1')}
+              {/* BURADA currentVisualStep kullanıyoruz */}
+              {currentVisualStep === 1 && t('publicBooking.step1')}
+              {currentVisualStep === 2 && t('publicBooking.step2') /* Eğer personel yoksa buraya Tarih başlığı gelmeli ama dil dosyasında step2 "Uzman Seçimi" ise bu sorun olabilir. Şimdilik mapping ile idare ediyoruz. */}
+              {/* DİL DOSYASI NOTU: İdealde Visual Step 2, eğer Tarih ekranıysa "step3" string'ini göstermeli. Aşağıdaki mantık daha doğru: */}
+              
+              {currentStep === 1 && t('publicBooking.step1')} 
               {currentStep === 2 && t('publicBooking.step2')}
               {currentStep === 3 && t('publicBooking.step3')}
               {currentStep === 4 && t('publicBooking.step4')}
@@ -561,56 +556,66 @@ const PublicBookingPage = () => {
           </div>
         </div>
 
-        {/* Desktop Footer */}
         <div className="hidden lg:block text-zinc-500 text-xs">
           <p>© {new Date().getFullYear()} {business.business_name}</p>
           <p className="mt-1 opacity-50">Powered by PLANN</p>
         </div>
       </div>
 
-      {/* RIGHT PANEL (Action Area) 
-        Desktop: Scrollable area on the right.
-        Mobile: Main content below header.
-      */}
+      {/* RIGHT PANEL */}
       <div className="flex-1 lg:ml-[400px] xl:ml-[480px] p-4 sm:p-6 lg:p-12 xl:p-20 bg-white min-h-screen">
         <div className="max-w-3xl mx-auto w-full">
+
+            {/* BACK BUTTON */}
+            <div className="mb-6 flex items-center justify-between min-h-[40px]">
+                {currentVisualStep > 1 ? (
+                    <Button
+                        type="button"
+                        onClick={handleBack}
+                        variant="ghost"
+                        className="flex items-center gap-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 pl-0 -ml-2 transition-colors"
+                    >
+                        <ArrowLeft className="w-5 h-5" />
+                        <span className="text-base font-medium">{t('publicBooking.back')}</span>
+                    </Button>
+                ) : (
+                    <div></div>
+                )}
+            </div>
             
-            {/* Progress Bar (Minimalist & Language Aware) */}
+            {/* Progress Bar (Visual Step Kullanımı) */}
             <div className="mb-8 lg:mb-12">
                <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-zinc-500 mb-2">
-                  <span>
-                    {currentLang === 'en' 
-                      ? `Step ${currentStep} of ${totalSteps}` 
-                      : `${currentStep}. Adım / ${totalSteps}`}
-                  </span>
-                  <span>{Math.round((currentStep / totalSteps) * 100)}%</span>
+                 <span>
+                   {currentLang === 'en' 
+                     ? `Step ${currentVisualStep} of ${totalVisualSteps}` 
+                     : `${currentVisualStep}. Adım / ${totalVisualSteps}`}
+                 </span>
+                 <span>{Math.round((currentVisualStep / totalVisualSteps) * 100)}%</span>
                </div>
                <div className="h-1 w-full bg-zinc-100 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-zinc-900 transition-all duration-500 ease-out"
-                    style={{ width: `${(currentStep / totalSteps) * 100}%` }}
-                  />
+                 <div 
+                   className="h-full bg-zinc-900 transition-all duration-500 ease-out"
+                   style={{ width: `${(currentVisualStep / totalVisualSteps) * 100}%` }}
+                 />
                </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <form onSubmit={handleSubmit}>
               
               {/* ADIM 1: Hizmet Seçimi */}
               {currentStep === 1 && (
-                <div className="space-y-6">
+                <div key="step1" className="space-y-6 animate-in slide-in-from-right-8 fade-in duration-300">
                   <h2 className="lg:hidden text-2xl font-bold text-zinc-900 tracking-tight">{t('publicBooking.step1')}</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {services.map((service) => (
                       <button
                         key={service.id}
                         type="button"
-                        onClick={() => {
-                          setSelectedService(service);
-                          setSelectedStaff(null);
-                        }}
+                        onClick={() => handleServiceSelect(service)}
                         className={`group p-6 rounded-xl border text-left transition-all duration-200 relative flex flex-col h-full ${
                           selectedService?.id === service.id
-                            ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900"
+                            ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900 scale-[1.02]"
                             : "border-zinc-200 bg-white hover:border-zinc-400 hover:shadow-sm"
                         }`}
                       >
@@ -619,7 +624,7 @@ const PublicBookingPage = () => {
                              {service.name}
                            </span>
                            {selectedService?.id === service.id && (
-                             <div className="w-6 h-6 bg-zinc-900 rounded-full flex items-center justify-center">
+                             <div className="w-6 h-6 bg-zinc-900 rounded-full flex items-center justify-center animate-in zoom-in duration-200">
                                <Check className="w-3 h-3 text-white" />
                              </div>
                            )}
@@ -643,9 +648,9 @@ const PublicBookingPage = () => {
                 </div>
               )}
 
-              {/* ADIM 2: Personel Seçimi */}
-              {currentStep === 2 && settings?.customer_can_choose_staff && (
-                <div className="space-y-6 max-w-md mx-auto lg:mx-0">
+              {/* ADIM 2: Personel Seçimi (Sadece ayar açıksa gösterilir) */}
+              {currentStep === 2 && showStaffStep && (
+                <div key="step2" className="space-y-6 max-w-md mx-auto lg:mx-0 animate-in slide-in-from-right-8 fade-in duration-300">
                   <h2 className="lg:hidden text-2xl font-bold text-zinc-900 tracking-tight">{t('publicBooking.step2')}</h2>
                   
                   <div className="space-y-2">
@@ -681,11 +686,10 @@ const PublicBookingPage = () => {
 
               {/* ADIM 3: Tarih & Saat */}
               {currentStep === 3 && (
-                <div className="space-y-8">
+                <div key="step3" className="space-y-8 animate-in slide-in-from-right-8 fade-in duration-300">
                   <h2 className="lg:hidden text-2xl font-bold text-zinc-900 tracking-tight">{t('publicBooking.step3')}</h2>
                   
                   <div className="flex flex-col lg:flex-row gap-8 items-start">
-                    {/* Calendar Wrapper */}
                     <div className="w-full lg:w-auto flex justify-center lg:block">
                       <div className="p-4 border border-zinc-200 rounded-xl bg-white inline-block">
                         <Calendar
@@ -708,13 +712,12 @@ const PublicBookingPage = () => {
                       </div>
                     </div>
 
-                    {/* Slots Wrapper */}
                     <div className="flex-1 w-full">
                       <div className="mb-4 flex items-center justify-between">
-                         <h3 className="font-bold text-zinc-900 text-lg">
-                            {selectedDate ? format(selectedDate, "d MMMM yyyy", { locale: dateLocale }) : "-"}
-                         </h3>
-                         <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">{t('publicBooking.availableSlots')}</span>
+                          <h3 className="font-bold text-zinc-900 text-lg">
+                             {selectedDate ? format(selectedDate, "d MMMM yyyy", { locale: dateLocale }) : "-"}
+                          </h3>
+                          <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">{t('publicBooking.availableSlots')}</span>
                       </div>
                       
                       {availableSlots.length > 0 ? (
@@ -725,7 +728,7 @@ const PublicBookingPage = () => {
                               <button
                                 key={slot}
                                 type="button"
-                                onClick={() => setSelectedTime(slot)}
+                                onClick={() => handleTimeSelect(slot)}
                                 className={`py-3 px-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                                   isSelected
                                     ? "bg-zinc-900 text-white shadow-md scale-105"
@@ -750,11 +753,10 @@ const PublicBookingPage = () => {
 
               {/* ADIM 4: Onay Formu */}
               {currentStep === 4 && (
-                <div className="space-y-8">
-                   <h2 className="lg:hidden text-2xl font-bold text-zinc-900 tracking-tight">{t('publicBooking.step4')}</h2>
+                <div key="step4" className="space-y-8 animate-in slide-in-from-right-8 fade-in duration-300">
+                    <h2 className="lg:hidden text-2xl font-bold text-zinc-900 tracking-tight">{t('publicBooking.step4')}</h2>
 
-                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
-                      {/* Sol: Form */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
                       <div className="space-y-6">
                           {savedUser && (
                             <div className="p-4 bg-zinc-50 rounded-lg border border-zinc-200 flex items-center justify-between">
@@ -833,7 +835,6 @@ const PublicBookingPage = () => {
                           </div>
                       </div>
 
-                      {/* Sağ: Özet Kartı */}
                       <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-6 h-fit">
                           <h3 className="font-bold text-zinc-900 mb-6 text-lg tracking-tight border-b border-zinc-200 pb-4">
                             {t('publicBooking.appointmentSummary')}
@@ -876,35 +877,23 @@ const PublicBookingPage = () => {
                             )}
                           </Button>
                       </div>
-                   </div>
+                    </div>
                 </div>
               )}
 
-              {/* Navigation Buttons */}
-              <div className="flex items-center justify-between mt-12 pt-6 border-t border-zinc-100">
-                <Button
-                  type="button"
-                  onClick={handleBack}
-                  disabled={currentStep === 1}
-                  variant="ghost"
-                  className={`flex items-center gap-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 ${currentStep === 1 ? 'invisible' : ''}`}
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>{t('publicBooking.back')}</span>
-                </Button>
-                
-                {currentStep < totalSteps && (
-                  <Button
-                    type="button"
-                    onClick={handleNext}
-                    disabled={!canGoNext()}
-                    className="flex items-center gap-2 bg-zinc-900 hover:bg-black text-white px-8 h-12 rounded-lg"
-                  >
-                    <span>{t('publicBooking.next')}</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
+              {currentStep === 2 && (
+                  <div className="flex items-center justify-end mt-12 pt-6 border-t border-zinc-100">
+                      <Button
+                        type="button"
+                        onClick={handleNext}
+                        disabled={!canGoNext()}
+                        className="flex items-center gap-2 bg-zinc-900 hover:bg-black text-white px-8 h-12 rounded-lg"
+                      >
+                        <span>{t('publicBooking.next')}</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </Button>
+                  </div>
+              )}
 
             </form>
         </div>

@@ -37,6 +37,17 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [settings, setSettings] = useState(null);
   const paymentDialogRef = useRef(null);
+
+  const [timeBlocksStaff, setTimeBlocksStaff] = useState(null);
+  const [timeBlocksDate, setTimeBlocksDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  });
+  const [timeBlocks, setTimeBlocks] = useState([]);
+  const [loadingTimeBlocks, setLoadingTimeBlocks] = useState(false);
+  const [newBlockStart, setNewBlockStart] = useState("12:00");
+  const [newBlockEnd, setNewBlockEnd] = useState("13:00");
+  const [savingTimeBlock, setSavingTimeBlock] = useState(false);
   
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newStaff, setNewStaff] = useState({
@@ -68,6 +79,57 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       console.error("Veri yüklenemedi:", error);
       toast.error(t('staff.management.loadingError'));
       setLoading(false);
+    }
+  };
+
+  const loadTimeBlocks = async (staffMemberUsername, date) => {
+    setLoadingTimeBlocks(true);
+    try {
+      const response = await api.get(`/admin/staff/${staffMemberUsername}/breaks?date=${date}`);
+      setTimeBlocks(response.data?.breaks || []);
+    } catch (error) {
+      console.error("Zaman blokları yüklenemedi:", error);
+      toast.error(t('staff.management.loadingError'));
+    } finally {
+      setLoadingTimeBlocks(false);
+    }
+  };
+
+  const openTimeBlocksDialog = async (staffMember) => {
+    setTimeBlocksStaff(staffMember);
+    await loadTimeBlocks(staffMember.username, timeBlocksDate);
+  };
+
+  const handleAddTimeBlock = async () => {
+    if (!timeBlocksStaff) return;
+    if (!timeBlocksDate || !newBlockStart || !newBlockEnd) {
+      toast.error(t('dashboard.breaks.selectTimes'));
+      return;
+    }
+    setSavingTimeBlock(true);
+    try {
+      await api.post(`/admin/staff/${timeBlocksStaff.username}/breaks`, {
+        date: timeBlocksDate,
+        start_time: newBlockStart,
+        end_time: newBlockEnd
+      });
+      toast.success(t('dashboard.breaks.breakAdded'));
+      await loadTimeBlocks(timeBlocksStaff.username, timeBlocksDate);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || t('dashboard.breaks.addError'));
+    } finally {
+      setSavingTimeBlock(false);
+    }
+  };
+
+  const handleDeleteTimeBlock = async (breakId) => {
+    if (!timeBlocksStaff) return;
+    try {
+      await api.delete(`/admin/staff/${timeBlocksStaff.username}/breaks/${breakId}`);
+      toast.success(t('dashboard.breaks.breakDeleted'));
+      await loadTimeBlocks(timeBlocksStaff.username, timeBlocksDate);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || t('dashboard.breaks.deleteError'));
     }
   };
 
@@ -652,62 +714,6 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                 />
               </div>
 
-              {/* Mola Limiti Ayarları */}
-              <div className="p-4 rounded-lg border border-gray-200 space-y-3">
-                <div>
-                  <Label className="text-sm font-semibold text-gray-900">{t('staff.management.breakLimit')}</Label>
-                  <p className="text-xs text-gray-600 mt-1">{t('staff.management.breakLimitNote')}</p>
-                </div>
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <Label htmlFor="break-limit-minutes" className="text-xs text-gray-600">{t('staff.management.dailyMaxDuration')}</Label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Input
-                        id="break-limit-minutes"
-                        type="number"
-                        min="15"
-                        max="180"
-                        step="15"
-                        value={settings?.break_limit_minutes || 60}
-                        onChange={async (e) => {
-                          const value = parseInt(e.target.value) || 60;
-                          try {
-                            await api.put("/settings", { ...settings, break_limit_minutes: value });
-                            setSettings(prev => ({ ...prev, break_limit_minutes: value }));
-                          } catch (error) {
-                            toast.error(t('staff.management.settingUpdateError'));
-                          }
-                        }}
-                        className="w-20 h-9 text-center"
-                      />
-                      <span className="text-sm text-gray-600">{t('staff.management.minutes')}</span>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <Label htmlFor="break-limit-count" className="text-xs text-gray-600">{t('staff.management.dailyMaxCount')}</Label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Input
-                        id="break-limit-count"
-                        type="number"
-                        min="1"
-                        max="5"
-                        value={settings?.break_limit_count || 2}
-                        onChange={async (e) => {
-                          const value = parseInt(e.target.value) || 2;
-                          try {
-                            await api.put("/settings", { ...settings, break_limit_count: value });
-                            setSettings(prev => ({ ...prev, break_limit_count: value }));
-                          } catch (error) {
-                            toast.error(t('staff.management.settingUpdateError'));
-                          }
-                        }}
-                        className="w-20 h-9 text-center"
-                      />
-                      <span className="text-sm text-gray-600">{t('staff.management.breaks')}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </Card>
@@ -944,6 +950,122 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                               className="flex-1 bg-blue-600 hover:bg-blue-700"
                             >
                               {savingPayment ? t('settings.profile.buttons.saving') : t('common.save')}
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+
+                      <Dialog
+                        open={timeBlocksStaff?.username === staffMember.username}
+                        onOpenChange={async (open) => {
+                          if (!open) {
+                            setTimeBlocksStaff(null);
+                            setTimeBlocks([]);
+                          } else {
+                            await openTimeBlocksDialog(staffMember);
+                          }
+                        }}
+                      >
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="flex-1 w-full sm:w-auto"
+                          >
+                            <Calendar className="w-4 h-4 mr-2" />
+                            {t('staff.management.manageTimeBlocks')}
+                          </Button>
+                        </DialogTrigger>
+
+                        <DialogContent className="max-w-md max-h-[90vh] overflow-hidden">
+                          <DialogHeader>
+                            <DialogTitle>
+                              {t('staff.management.blockTimeTitle')}
+                            </DialogTitle>
+                            <DialogDescription>
+                              {t('staff.management.blockTimeNote')}
+                            </DialogDescription>
+                          </DialogHeader>
+
+                          <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-700">{t('common.date')}</Label>
+                              <Input
+                                type="date"
+                                value={timeBlocksDate}
+                                onChange={async (e) => {
+                                  const next = e.target.value;
+                                  setTimeBlocksDate(next);
+                                  if (timeBlocksStaff?.username) {
+                                    await loadTimeBlocks(timeBlocksStaff.username, next);
+                                  }
+                                }}
+                              />
+                            </div>
+
+                            <div className="p-3 rounded-lg border border-gray-200 space-y-3">
+                              <p className="text-sm font-semibold text-gray-900">{t('staff.management.blockedTimesForDate')}</p>
+                              {loadingTimeBlocks ? (
+                                <p className="text-sm text-gray-500">{t('common.loading')}</p>
+                              ) : timeBlocks.length === 0 ? (
+                                <p className="text-sm text-gray-500">{t('staff.management.noBlockedTimes')}</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {timeBlocks
+                                    .slice()
+                                    .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
+                                    .map((b) => (
+                                      <div key={b.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                                        <span className="text-sm font-medium text-gray-900">{b.start_time} - {b.end_time}</span>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleDeleteTimeBlock(b.id)}
+                                        >
+                                          {t('staff.management.unblock')}
+                                        </Button>
+                                      </div>
+                                    ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="p-3 rounded-lg border border-gray-200 space-y-3">
+                              <p className="text-sm font-semibold text-gray-900">{t('staff.management.timeBlocks')}</p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <Label className="text-xs text-gray-600">{t('dashboard.breaks.startTime')}</Label>
+                                  <Input
+                                    type="time"
+                                    value={newBlockStart}
+                                    onChange={(e) => setNewBlockStart(e.target.value)}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs text-gray-600">{t('dashboard.breaks.endTime')}</Label>
+                                  <Input
+                                    type="time"
+                                    value={newBlockEnd}
+                                    onChange={(e) => setNewBlockEnd(e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                              <Button
+                                onClick={handleAddTimeBlock}
+                                disabled={savingTimeBlock}
+                                className="w-full bg-blue-600 hover:bg-blue-700"
+                              >
+                                {savingTimeBlock ? t('settings.profile.buttons.saving') : t('common.add')}
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => setTimeBlocksStaff(null)}
+                              variant="outline"
+                              className="flex-1"
+                            >
+                              {t('common.close')}
                             </Button>
                           </div>
                         </DialogContent>

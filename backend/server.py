@@ -3380,20 +3380,78 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
         check_date = update_data.get('appointment_date', appointment['appointment_date'])
         check_time = update_data.get('appointment_time', appointment['appointment_time'])
         check_staff = update_data.get('staff_member_id', appointment.get('staff_member_id'))
-        
-        existing_query = {
-            "organization_id": current_user.organization_id,
-            "id": {"$ne": appointment_id},
-            "staff_member_id": check_staff,
-            "appointment_date": check_date,
-            "appointment_time": check_time,
-            "status": {"$ne": "İptal"}
-        }
-        existing = await db.appointments.find_one(existing_query)
-        if existing:
+
+        # Hizmet süresini bul (güncelleniyorsa yeni hizmet, değilse mevcut)
+        check_service_id = update_data.get('service_id', appointment.get('service_id'))
+        service_duration = appointment.get('service_duration') or 30
+        if check_service_id:
+            service_doc = await db.services.find_one(
+                {"id": check_service_id, "organization_id": current_user.organization_id},
+                {"_id": 0, "duration": 1}
+            )
+            if service_doc and service_doc.get('duration'):
+                service_duration = service_doc.get('duration')
+
+        # Yeni randevunun bitiş saatini hesapla
+        new_start_hour, new_start_minute = map(int, check_time.split(':'))
+        new_end_minute = new_start_minute + int(service_duration)
+        new_end_hour = new_start_hour + (new_end_minute // 60)
+        new_end_minute = new_end_minute % 60
+        new_end_time = f"{str(new_end_hour).zfill(2)}:{str(new_end_minute).zfill(2)}"
+
+        # Aynı personelin aynı günkü randevularında overlap kontrolü
+        existing_appointments = await db.appointments.find(
+            {
+                "organization_id": current_user.organization_id,
+                "id": {"$ne": appointment_id},
+                "staff_member_id": check_staff,
+                "appointment_date": check_date,
+                "status": {"$ne": "İptal"}
+            },
+            {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1}
+        ).to_list(200)
+
+        def time_to_minutes(time_str: str) -> int:
+            try:
+                hour, minute = map(int, time_str.split(':'))
+                return hour * 60 + minute
+            except Exception:
+                return 0
+
+        new_start_min = time_to_minutes(check_time)
+        new_end_min = time_to_minutes(new_end_time)
+
+        for existing_appt in existing_appointments:
+            existing_start_time = existing_appt.get('appointment_time')
+            if not existing_start_time:
+                continue
+            existing_duration = existing_appt.get('service_duration')
+            if not existing_duration and existing_appt.get('service_id'):
+                existing_service = await db.services.find_one(
+                    {"id": existing_appt.get('service_id'), "organization_id": current_user.organization_id},
+                    {"_id": 0, "duration": 1}
+                )
+                existing_duration = existing_service.get('duration') if existing_service else 30
+            existing_duration = int(existing_duration or 30)
+
+            existing_start_min = time_to_minutes(existing_start_time)
+            existing_end_min = existing_start_min + existing_duration
+
+            # overlap: new_start < existing_end AND new_end > existing_start
+            if (new_start_min < existing_end_min and new_end_min > existing_start_min):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Bu personelin {check_date} tarihinde seçilen saat aralığında zaten randevusu var. Lütfen başka bir saat seçin."
+                )
+
+        # Time block (break) çakışması kontrolü
+        has_break_conflict = await check_break_conflict(
+            db, check_staff, check_date, check_time, new_end_time, current_user.organization_id
+        )
+        if has_break_conflict:
             raise HTTPException(
                 status_code=400,
-                detail=f"Bu personelin {check_date} tarihinde {check_time} saatinde zaten bir randevusu var. Lütfen başka bir saat seçin."
+                detail=f"Bu personelin {check_date} tarihinde {check_time} saatinde mola var. Lütfen başka bir saat seçin."
             )
     if 'service_id' in update_data:
         service_query = {"id": update_data['service_id'], "organization_id": current_user.organization_id}; service = await db.services.find_one(service_query, {"_id": 0})
@@ -6726,7 +6784,10 @@ class BreakCreate(BaseModel):
 async def get_my_breaks(request: Request, date: Optional[str] = None, current_user: UserInDB = Depends(get_current_user)):
     """Personel kendi molalarını listeler"""
     db = await get_db_from_request(request)
-    user = await db.users.find_one({"username": current_user.username}, {"_id": 0, "breaks": 1})
+    user = await db.users.find_one(
+        {"username": current_user.username, "organization_id": current_user.organization_id},
+        {"_id": 0, "breaks": 1}
+    )
     breaks = user.get("breaks", []) if user else []
     
     # Tarih filtresi varsa uygula
@@ -6739,22 +6800,13 @@ async def get_my_breaks(request: Request, date: Optional[str] = None, current_us
 async def add_break(request: Request, break_data: BreakCreate, current_user: UserInDB = Depends(get_current_user)):
     """Personel mola ekler"""
     db = await get_db_from_request(request)
-    
-    # Ayarlardan limitleri al
-    settings = await db.settings.find_one({"organization_id": current_user.organization_id}, {"_id": 0})
-    break_limit_minutes = settings.get("break_limit_minutes", 60) if settings else 60
-    break_limit_count = settings.get("break_limit_count", 2) if settings else 2
-    
+
     # Mevcut molaları al
-    user = await db.users.find_one({"username": current_user.username}, {"_id": 0, "breaks": 1})
+    user = await db.users.find_one(
+        {"username": current_user.username, "organization_id": current_user.organization_id},
+        {"_id": 0, "breaks": 1}
+    )
     breaks = user.get("breaks", []) if user else []
-    
-    # Bugünkü molaları filtrele
-    today_breaks = [b for b in breaks if b.get("date") == break_data.date]
-    
-    # Mola sayısı kontrolü
-    if len(today_breaks) >= break_limit_count:
-        raise HTTPException(status_code=400, detail=f"Günlük maksimum {break_limit_count} mola hakkınız var")
     
     # Yeni mola süresini hesapla
     start_parts = break_data.start_time.split(":")
@@ -6768,20 +6820,6 @@ async def add_break(request: Request, break_data: BreakCreate, current_user: Use
     
     if new_break_duration < 15:
         raise HTTPException(status_code=400, detail="Mola en az 15 dakika olmalı")
-    
-    if new_break_duration > 45:
-        raise HTTPException(status_code=400, detail="Tek mola en fazla 45 dakika olabilir")
-    
-    # Toplam süre kontrolü
-    total_today_minutes = sum(
-        (int(b["end_time"].split(":")[0]) * 60 + int(b["end_time"].split(":")[1])) -
-        (int(b["start_time"].split(":")[0]) * 60 + int(b["start_time"].split(":")[1]))
-        for b in today_breaks
-    )
-    
-    if total_today_minutes + new_break_duration > break_limit_minutes:
-        remaining = break_limit_minutes - total_today_minutes
-        raise HTTPException(status_code=400, detail=f"Günlük maksimum {break_limit_minutes} dakika mola hakkınız var. Kalan: {remaining} dk")
     
     # Randevu çakışması kontrolü
     appointments = await db.appointments.find(
@@ -6834,7 +6872,7 @@ async def add_break(request: Request, break_data: BreakCreate, current_user: Use
     
     # Veritabanına ekle
     await db.users.update_one(
-        {"username": current_user.username},
+        {"username": current_user.username, "organization_id": current_user.organization_id},
         {"$push": {"breaks": new_break}}
     )
     
@@ -6846,13 +6884,141 @@ async def delete_break(request: Request, break_id: str, current_user: UserInDB =
     db = await get_db_from_request(request)
     
     result = await db.users.update_one(
-        {"username": current_user.username},
+        {"username": current_user.username, "organization_id": current_user.organization_id},
         {"$pull": {"breaks": {"id": break_id}}}
     )
     
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Mola bulunamadı")
     
+    return {"message": "Mola silindi"}
+
+
+# === ADMIN TIME BLOCK ROUTES ===
+@api_router.get("/admin/staff/{staff_id}/breaks")
+async def admin_get_staff_breaks(
+    request: Request,
+    staff_id: str,
+    date: Optional[str] = None,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """Admin, personelin zaman bloklarını listeler"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    db = await get_db_from_request(request)
+    user = await db.users.find_one(
+        {"username": staff_id, "organization_id": current_user.organization_id},
+        {"_id": 0, "breaks": 1}
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    breaks = user.get("breaks", [])
+    if date:
+        breaks = [b for b in breaks if b.get("date") == date]
+    return {"breaks": breaks}
+
+
+@api_router.post("/admin/staff/{staff_id}/breaks")
+async def admin_add_staff_break(
+    request: Request,
+    staff_id: str,
+    break_data: BreakCreate,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """Admin, personel için zaman kapatma (blok) ekler"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    db = await get_db_from_request(request)
+
+    staff_user = await db.users.find_one(
+        {"username": staff_id, "organization_id": current_user.organization_id},
+        {"_id": 0, "username": 1}
+    )
+    if not staff_user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+
+    # Süre hesapla
+    start_parts = break_data.start_time.split(":")
+    end_parts = break_data.end_time.split(":")
+    start_minutes = int(start_parts[0]) * 60 + int(start_parts[1])
+    end_minutes = int(end_parts[0]) * 60 + int(end_parts[1])
+    new_break_duration = end_minutes - start_minutes
+
+    if new_break_duration <= 0:
+        raise HTTPException(status_code=400, detail="Bitiş saati başlangıç saatinden sonra olmalı")
+    if new_break_duration < 15:
+        raise HTTPException(status_code=400, detail="Mola en az 15 dakika olmalı")
+
+    # Randevu çakışması kontrolü
+    appointments = await db.appointments.find(
+        {
+            "organization_id": current_user.organization_id,
+            "appointment_date": break_data.date,
+            "staff_member_id": staff_id,
+            "status": {"$ne": "İptal"}
+        },
+        {"_id": 0, "appointment_time": 1, "service_id": 1, "customer_name": 1}
+    ).to_list(100)
+
+    conflicting_appointments = []
+    for appt in appointments:
+        appt_service = await db.services.find_one({"id": appt.get("service_id")}, {"_id": 0, "duration": 1})
+        appt_duration = appt_service.get("duration", 30) if appt_service else 30
+
+        appt_start_time = appt["appointment_time"]
+        appt_start_parts = appt_start_time.split(":")
+        appt_start_minutes = int(appt_start_parts[0]) * 60 + int(appt_start_parts[1])
+        appt_end_minutes = appt_start_minutes + appt_duration
+
+        if not (end_minutes <= appt_start_minutes or start_minutes >= appt_end_minutes):
+            appt_end_hour = appt_end_minutes // 60
+            appt_end_minute = appt_end_minutes % 60
+            appt_end_time = f"{str(appt_end_hour).zfill(2)}:{str(appt_end_minute).zfill(2)}"
+            conflicting_appointments.append({
+                "customer_name": appt.get("customer_name", ""),
+                "time": f"{appt_start_time} - {appt_end_time}"
+            })
+
+    if conflicting_appointments:
+        conflict_details = ", ".join([f"{a['customer_name']} ({a['time']})" for a in conflicting_appointments])
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu saatte randevunuz var: {conflict_details}. Lütfen farklı bir saat seçin."
+        )
+
+    new_break = {
+        "id": str(uuid.uuid4()),
+        "date": break_data.date,
+        "start_time": break_data.start_time,
+        "end_time": break_data.end_time,
+        "created_at": datetime.utcnow().isoformat()
+    }
+
+    await db.users.update_one(
+        {"username": staff_id, "organization_id": current_user.organization_id},
+        {"$push": {"breaks": new_break}}
+    )
+
+    return {"message": "Mola eklendi", "break": new_break}
+
+
+@api_router.delete("/admin/staff/{staff_id}/breaks/{break_id}")
+async def admin_delete_staff_break(
+    request: Request,
+    staff_id: str,
+    break_id: str,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """Admin, personelin zaman bloğunu siler"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    db = await get_db_from_request(request)
+    result = await db.users.update_one(
+        {"username": staff_id, "organization_id": current_user.organization_id},
+        {"$pull": {"breaks": {"id": break_id}}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Mola bulunamadı")
     return {"message": "Mola silindi"}
 
 # === CUSTOMERS ROUTES ===

@@ -30,6 +30,7 @@ const publicApi = axios.create({
 const LandingPage = () => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
+  const whatsappUrl = "https://wa.me/905405953250";
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
@@ -573,6 +574,14 @@ const LandingPage = () => {
               >
                 {t('landing.hero.callButton')}
               </Button>
+              <Button 
+                variant="outline"
+                onClick={() => window.open(whatsappUrl, '_blank', 'noopener,noreferrer')}
+                className="bg-transparent border-2 border-gray-900 text-gray-900 hover:bg-gray-100 px-10 py-6 text-lg font-semibold rounded-full"
+              >
+                <MessageSquare className="w-5 h-5 mr-2" />
+                {t('landing.hero.whatsappButton')}
+              </Button>
             </div>
 
             {/* Demo Image */}
@@ -820,7 +829,6 @@ const LandingPage = () => {
                 // Aylık faturalamada her zaman indirim var (ilk ay için)
                 const hasDiscount = !isYearly;
                 const displayPrice = isYearly ? monthlyEquivalent : discountedPrice;
-                const savingsPercent = isYearly ? 17 : 25;
                 
                 return (
                   <div 
@@ -848,18 +856,6 @@ const LandingPage = () => {
                               <path d="M10 2l2.5 5.5L18 8.5l-4 4.5 1 6-5-3-5 3 1-6-4-4.5 5.5-1z"/>
                             </svg>
                             {t('landing.pricing.mostPopular')}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Savings Badge */}
-                      {savingsPercent > 0 && (
-                        <div className={`absolute -top-3 -right-3 w-16 h-16 flex items-center justify-center rounded-full shadow-lg ${
-                          isPopular ? 'bg-amber-400 text-gray-900' : 'bg-green-500 text-white'
-                        }`}>
-                          <div className="text-center">
-                            <div className="text-xs font-bold">%{savingsPercent}</div>
-                            <div className="text-[10px] font-semibold">{t('landing.pricing.savings')}</div>
                           </div>
                         </div>
                       )}
