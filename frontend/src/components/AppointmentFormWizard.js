@@ -472,7 +472,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                       ${isSelected 
                         ? 'bg-blue-600 border-blue-600 text-white shadow-lg scale-105' 
                         : isBusy 
-                          ? 'bg-zinc-200/80 border-zinc-300/80 text-zinc-400 cursor-not-allowed line-through'
+                          ? 'bg-zinc-200/80 border-zinc-300/80 text-zinc-400 cursor-not-allowed'
                           : 'backdrop-blur-xl bg-white/40 border-white/30 text-zinc-700 hover:bg-white/60 hover:border-white/40 hover:shadow-md'}
                     `}
                   >
