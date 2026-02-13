@@ -6056,6 +6056,15 @@ async def update_settings(request: Request, settings: Settings, current_user: Us
     
     # business_hours değiştiyse, kapalı günleri tüm personelin days_off'una senkronize et
     if "business_hours" in update_data and update_data.get("business_hours"):
+        # Eski (update öncesi) kapalı günleri bul (fallback olarak kullanılacak)
+        prev_closed_days = []
+        prev_business_hours = (current_settings or {}).get('business_hours', {}) or {}
+        prev_day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        for day in prev_day_names:
+            prev_day_settings = prev_business_hours.get(day, {}) or {}
+            if not prev_day_settings.get('is_open', True):
+                prev_closed_days.append(day)
+
         # Kapalı günleri bul
         closed_days = []
         day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -6063,24 +6072,38 @@ async def update_settings(request: Request, settings: Settings, current_user: Us
             day_settings = settings.business_hours.get(day, {})
             if not day_settings.get('is_open', True):
                 closed_days.append(day)
-        
-        # Tüm personelin days_off'unu güncelle (kapalı günleri ekle)
-        if closed_days:
-            # Organizasyondaki tüm kullanıcıları al
-            all_users = await db.users.find(
-                {"organization_id": current_user.organization_id}
-            ).to_list(1000)
-            
-            for user in all_users:
-                current_days_off = user.get('days_off', [])
-                # Kapalı günleri ekle (zaten yoksa)
-                updated_days_off = list(set(current_days_off + closed_days))
-                await db.users.update_one(
-                    {"username": user['username']},
-                    {"$set": {"days_off": updated_days_off}}
-                )
-            
-            logging.info(f"✅ Synced closed days {closed_days} to all staff days_off for org {current_user.organization_id}")
+
+        # Tüm personelin days_off'unu güncelle:
+        # - Kapalı günleri days_off'a ekle
+        # - Daha önce otomatik senkronize edilip artık açık olan günleri days_off'tan çıkar
+        # Not: Bilinçli olarak eklenmiş days_off değerlerini silmemek için, kullanıcı bazında synced_closed_days takip edilir.
+        all_users = await db.users.find(
+            {"organization_id": current_user.organization_id}
+        ).to_list(1000)
+
+        for user in all_users:
+            current_days_off = user.get('days_off', []) or []
+            # Eğer eski sistemde synced_closed_days alanı yoksa, previous business_hours'tan gelen kapalı günleri fallback olarak kullan
+            previously_synced = user.get('synced_closed_days')
+            if previously_synced is None:
+                previously_synced = prev_closed_days
+            previously_synced = previously_synced or []
+
+            # Önceden otomatik eklenmiş ama artık kapalı olmayan günleri kaldır
+            to_remove = set(previously_synced) - set(closed_days)
+            updated_days_off_set = set(current_days_off) - to_remove
+
+            # Kapalı günleri ekle
+            updated_days_off_set |= set(closed_days)
+
+            await db.users.update_one(
+                {"username": user['username']},
+                {"$set": {"days_off": list(updated_days_off_set), "synced_closed_days": closed_days}}
+            )
+
+        logging.info(
+            f"✅ Synced business closed days to all staff days_off for org {current_user.organization_id}. closed_days={closed_days}"
+        )
     
     # Audit log
     await create_audit_log(

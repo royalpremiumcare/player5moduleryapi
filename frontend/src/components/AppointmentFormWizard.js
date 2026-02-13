@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { format, addDays, isSameDay } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -19,6 +19,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   const { userRole } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
+  const dateScrollerRef = useRef(null);
   
   // State Yönetimi
   const [step, setStep] = useState(1);
@@ -307,6 +308,20 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   // ADIM 3: TARİH VE SAAT (Modern Görünüm)
   const renderStep3 = () => {
     const days = Array.from({ length: 14 }, (_, i) => addDays(new Date(), i));
+    const scrollDatesBy = (delta) => {
+      const el = dateScrollerRef.current;
+      if (!el) return;
+      el.scrollBy({ left: delta, behavior: 'smooth' });
+    };
+
+    const handleDateScrollerWheel = (e) => {
+      const el = dateScrollerRef.current;
+      if (!el) return;
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
 
     return (
       <div className="space-y-8 animate-in slide-in-from-right duration-300 pb-24">
@@ -344,7 +359,29 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
            <div className="flex justify-between items-center mb-2">
              <h3 className="font-semibold text-zinc-900">{format(formData.appointment_date, "MMMM yyyy", { locale: dateLocale })}</h3>
            </div>
-           <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-2 px-2">
+           <div className="relative">
+             <button
+               type="button"
+               onClick={() => scrollDatesBy(-320)}
+               className="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 items-center justify-center rounded-full bg-white border border-zinc-200 shadow-sm hover:bg-zinc-50"
+               aria-label="Scroll dates left"
+             >
+               <ChevronLeft className="w-5 h-5 text-zinc-700" />
+             </button>
+             <button
+               type="button"
+               onClick={() => scrollDatesBy(320)}
+               className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 items-center justify-center rounded-full bg-white border border-zinc-200 shadow-sm hover:bg-zinc-50"
+               aria-label="Scroll dates right"
+             >
+               <ChevronLeft className="w-5 h-5 text-zinc-700 rotate-180" />
+             </button>
+
+             <div
+               ref={dateScrollerRef}
+               onWheel={handleDateScrollerWheel}
+               className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-2 px-2 md:mx-0 md:px-12"
+             >
              {days.map((date, i) => {
                const isSelected = isSameDay(date, formData.appointment_date);
                return (
@@ -364,6 +401,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                  </button>
                )
              })}
+             </div>
            </div>
         </div>
 
