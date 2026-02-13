@@ -310,13 +310,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               <button
                 key={c.phone}
                 type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  handleSelectCustomer(c);
-                }}
-                onClick={(e) => {
-                  e.preventDefault();
-                }}
+                onClick={() => handleSelectCustomer(c)}
                 className="w-full text-left flex items-center justify-between p-4 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl hover:bg-white/60 hover:border-white/40 hover:shadow-lg cursor-pointer group transition-all duration-300"
               >
                 <div className="flex items-center gap-3">

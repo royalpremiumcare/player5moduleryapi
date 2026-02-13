@@ -3,9 +3,9 @@ import { format, addDays } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import io from "socket.io-client";
-import { 
-  Calendar, Clock, Phone, Edit, Trash2, Check, X, 
-  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee
+import {
+  Calendar, Clock, Phone, Edit, Trash2, Check, X,
+  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee, TrendingUp, CalendarDays
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
@@ -30,7 +30,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const { token } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
-  
   // State
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [settings, setSettings] = useState(null);
@@ -41,7 +40,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const [staffFilter, setStaffFilter] = useState("all");
   const socketRef = useRef(null);
   const [expandedNoteId, setExpandedNoteId] = useState(null);
-  
   // Break States
   const [todayBreaks, setTodayBreaks] = useState([]);
   const [showBreakDialog, setShowBreakDialog] = useState(false);
@@ -64,22 +62,15 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     } catch (e) { return null; }
   };
 
-  const getLeftBorderClass = (status) => {
-    if (status === "Bekliyor" || status === t('dashboard.status.pending')) return "border-l-4 border-l-orange-500"; 
-    if (status === "Tamamlandı" || status === t('dashboard.status.completed')) return "border-l-4 border-l-green-500";
-    if (status === "İptal" || status === t('dashboard.status.cancelled')) return "border-l-4 border-l-red-500";
-    return "border-l-4 border-l-gray-300";
-  };
-
   const toggleNote = (id) => setExpandedNoteId(prev => prev === id ? null : id);
 
-  // Dinamik Selamlama
+  // Dinamik Selamlama + Emoji
   const getTimeBasedGreeting = () => {
     const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return "Günaydın";
-    if (hour >= 12 && hour < 18) return "Tünaydın";
-    if (hour >= 18) return "İyi Akşamlar";
-    return "İyi Geceler";
+    if (hour >= 5 && hour < 12) return { text: "Günaydın", emoji: "☀️" };
+    if (hour >= 12 && hour < 18) return { text: "Tünaydın", emoji: "🌤️" };
+    if (hour >= 18 && hour < 22) return { text: "İyi Akşamlar", emoji: "🌙" };
+    return { text: "İyi Geceler", emoji: "✨" };
   };
 
   // --- LOADERS ---
@@ -114,7 +105,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         const payload = JSON.parse(atob(token.split('.')[1]));
         const username = payload.sub || payload.username;
         const fullName = payload.full_name || payload.name;
-        
         setCurrentStaffUsername(username);
         setCurrentUserName(fullName || username || "Kullanıcı");
       } catch (e) { console.error(e); }
@@ -178,7 +168,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     if (userRole === 'staff' && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
     return true;
   }).filter(apt => staffFilter === "all" || apt.staff_member_id === staffFilter).sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
-  
   const upcoming = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
     if (!aptDate || aptDate <= tomorrow) return false;
@@ -190,9 +179,12 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
   // --- ÖZET METNİ HESAPLAMALARI ---
   const displayCount = userRole === 'admin' ? stats?.today_appointments || 0 : todayAppointments.length;
-  const displayRevenue = userRole === 'admin' 
-    ? stats?.bugunku_toplam_hizmet_tutari || 0 
+  const displayRevenue = userRole === 'admin'
+    ? stats?.bugunku_toplam_hizmet_tutari || 0
     : personnelStats?.total_revenue_generated || 0;
+
+  // Zamana göre selamlama
+  const greeting = getTimeBasedGreeting();
 
   // --- CARD RENDERER ---
   const renderAppointmentCard = (apt) => {
@@ -200,12 +192,11 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     const isCompleted = apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed');
     const hasNote = apt.notes && apt.notes.trim().length > 0;
     const isExpanded = expandedNoteId === apt.id;
-    
     return (
-      <div 
-        key={apt.id} 
+      <div
+        key={apt.id}
         onClick={() => hasNote && toggleNote(apt.id)}
-        className={`bg-white rounded-xl p-4 border border-gray-200 shadow-sm transition-all hover:shadow-md ${getLeftBorderClass(apt.status)} ${isCancelled ? 'opacity-60' : ''} ${hasNote ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+        className={`bg-white rounded-xl p-4 border border-gray-200 border-l-4 shadow-sm hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 ${isCancelled ? 'opacity-60' : ''} ${hasNote ? 'cursor-pointer' : ''} ${apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'border-l-orange-500' : apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed') ? 'border-l-green-500' : apt.status === "İptal" || apt.status === t('dashboard.status.cancelled') ? 'border-l-red-500' : 'border-l-gray-300'}`}
       >
         <div className="flex gap-4">
           <div className="flex flex-col items-center justify-center min-w-[60px] border-r border-gray-100 pr-4">
@@ -215,46 +206,58 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-start mb-1">
               <h3 className={`text-base font-bold text-gray-900 truncate ${isCancelled ? 'line-through text-gray-400' : ''}`}>{apt.customer_name}</h3>
-              {isCompleted ? <Check className="w-5 h-5 text-green-500" /> : isCancelled ? <X className="w-5 h-5 text-red-500" /> : <Clock className="w-5 h-5 text-orange-400" />}
+              {isCompleted ? (
+                <div className="bg-green-100 p-1.5 rounded-full shadow-sm">
+                  <Check className="w-4 h-4 text-green-600" />
+                </div>
+              ) : isCancelled ? (
+                <div className="bg-red-100 p-1.5 rounded-full shadow-sm">
+                  <X className="w-4 h-4 text-red-600" />
+                </div>
+              ) : (
+                <div className="bg-orange-100 p-1.5 rounded-full shadow-sm animate-pulse">
+                  <Clock className="w-4 h-4 text-orange-600" />
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2 mb-3">
-               <p className="text-sm text-gray-600 truncate">{apt.service_name}</p>
-               {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
+              <p className="text-sm text-gray-600 truncate">{apt.service_name}</p>
+              {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
             </div>
             <div className="flex items-center justify-between mt-auto">
               <div className="flex gap-2">
-                <button onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-colors"><Phone className="w-4 h-4" /></button>
-                <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-colors"><WhatsAppIcon className="w-4 h-4" /></button>
+                <button onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><Phone className="w-4 h-4" /></button>
+                <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><WhatsAppIcon className="w-4 h-4" /></button>
               </div>
               <div className="flex items-center gap-2">
-                 {/* Personel İsmi (güncellendi: text-xs) */}
-                 {userRole === 'admin' && getStaffName(apt.staff_member_id) && (
-                    <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded text-gray-600 border border-gray-100">
-                       <User className="w-3 h-3" />
-                       <span className="text-xs font-bold">{getStaffName(apt.staff_member_id)}</span>
-                    </div>
-                 )}
-                 <DropdownMenu>
-                    <DropdownMenuTrigger asChild><button onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400"><MoreVertical className="w-5 h-5" /></button></DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
-                      {!isCancelled && !isCompleted && <DropdownMenuItem onClick={() => handleStatusChange(apt.id, "İptal")} className="text-red-600"><X className="w-4 h-4 mr-2"/> İptal Et</DropdownMenuItem>}
-                      <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> Düzenle</DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> Sil</DropdownMenuItem>
-                    </DropdownMenuContent>
-                 </DropdownMenu>
+                {/* Personel İsmi */}
+                {userRole === 'admin' && getStaffName(apt.staff_member_id) && (
+                  <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded text-gray-600 border border-gray-100 shadow-sm">
+                    <User className="w-3 h-3" />
+                    <span className="text-xs font-bold">{getStaffName(apt.staff_member_id)}</span>
+                  </div>
+                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild><button onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95"><MoreVertical className="w-5 h-5" /></button></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {!isCancelled && !isCompleted && <DropdownMenuItem onClick={() => handleStatusChange(apt.id, "İptal")} className="text-red-600"><X className="w-4 h-4 mr-2"/> İptal Et</DropdownMenuItem>}
+                    <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> Düzenle</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> Sil</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </div>
         </div>
         {/* Not Açılır Alanı */}
         {isExpanded && hasNote && (
-           <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200">
-              <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm">
-                 <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
-                 <p className="font-medium">{apt.notes}</p>
-              </div>
-           </div>
+          <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200">
+            <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm shadow-sm">
+              <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+              <p className="font-medium">{apt.notes}</p>
+            </div>
+          </div>
         )}
       </div>
     );
@@ -263,57 +266,76 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   // --- MAIN RENDER ---
   return (
     <div className="min-h-screen bg-gray-50/50 pb-24 font-sans selection:bg-gray-200">
-      
       {/* 1. HEADER & SUMMARY */}
-      <div className="px-5 pt-8 pb-4 bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-2">
-          {/* Sol Taraf: Karşılama ve Akıllı Özet */}
+      <div className="px-5 pt-8 pb-4 bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
+          {/* Sol Taraf: Karşılama */}
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">
-              {getTimeBasedGreeting()}, <span className="text-gray-700">{currentUserName}</span> 👋
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+              {greeting.text}, <span className="text-gray-700">{currentUserName}</span> <span className="text-2xl">{greeting.emoji}</span>
             </h1>
-            <p className="text-sm md:text-base text-gray-500 font-medium mt-1 leading-relaxed">
-              {format(new Date(), "d MMMM EEEE", { locale: dateLocale })}, Bugün <span className="font-bold text-gray-900">{displayCount}</span> randevunuz var ve <span className="font-bold text-green-600">{displayRevenue?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')}₺</span> ciro yaptınız.
+            <p className="text-base md:text-lg text-gray-600 font-medium mt-1.5 leading-relaxed">
+              {format(new Date(), "d MMMM EEEE", { locale: dateLocale })}
             </p>
           </div>
 
-          {/* Sağ Taraf: PERSONEL MOLA ALANI (Admin için kota kartı kaldırıldı) */}
+          {/* Sağ Taraf: PERSONEL MOLA ALANI (sadece staff için) */}
           {userRole === 'staff' && (
             <div className="mt-4 md:mt-0 w-full md:w-auto md:min-w-[280px]">
-               <div className="bg-white border border-orange-100 rounded-2xl p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                     <div className="flex items-center gap-2">
-                        <div className="bg-orange-50 p-2 rounded-lg text-orange-600"><Coffee className="w-4 h-4" /></div>
-                        <span className="text-sm font-bold text-gray-900">Molalarım</span>
-                     </div>
-                     <Button size="sm" variant="ghost" onClick={() => setShowBreakDialog(true)} className="h-7 text-xs text-orange-600 hover:bg-orange-50 hover:text-orange-700 font-medium">+ Ekle</Button>
+              <div className="bg-white border border-orange-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-orange-50 p-2 rounded-lg text-orange-600"><Coffee className="w-4 h-4" /></div>
+                    <span className="text-sm font-bold text-gray-900">Molalarım</span>
                   </div>
-                  {todayBreaks.length > 0 ? (
-                     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                        {todayBreaks.map((brk) => (
-                           <div key={brk.id} className="flex items-center gap-1.5 bg-orange-50 px-2 py-1 rounded-md shrink-0 border border-orange-100">
-                              <span className="text-xs font-bold text-orange-800">{brk.start_time}-{brk.end_time}</span>
-                              <button onClick={() => handleDeleteBreak(brk.id)} className="text-orange-400 hover:text-red-500"><X className="w-3 h-3" /></button>
-                           </div>
-                        ))}
-                     </div>
-                  ) : (
-                     <p className="text-xs text-gray-400 italic">Henüz mola yok.</p>
-                  )}
-               </div>
+                  <Button size="sm" variant="ghost" onClick={() => setShowBreakDialog(true)} className="h-7 text-xs text-orange-600 hover:bg-orange-50 hover:text-orange-700 font-medium transition-all hover:scale-105 active:scale-95">+ Ekle</Button>
+                </div>
+                {todayBreaks.length > 0 ? (
+                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide py-2 px-1">
+                    {todayBreaks.map((brk) => (
+                      <div key={brk.id} className="flex items-center gap-1.5 bg-orange-50 px-2 py-1 rounded-md shrink-0 border border-orange-100 shadow-sm">
+                        <span className="text-xs font-bold text-orange-800">{brk.start_time}-{brk.end_time}</span>
+                        <button onClick={() => handleDeleteBreak(brk.id)} className="text-orange-400 hover:text-red-500 transition-all hover:scale-105 active:scale-95"><X className="w-3 h-3" /></button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">Henüz mola yok.</p>
+                )}
+              </div>
             </div>
           )}
+        </div>
+
+        {/* İstatistik Kartları */}
+        <div className="grid grid-cols-2 gap-2.5 mt-4 px-2 py-1">
+          {/* Randevu Sayısı */}
+          <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all hover:scale-105 active:scale-95 cursor-default">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <CalendarDays className="w-3 h-3 text-gray-400" />
+              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Bugünkü Randevu</span>
+            </div>
+            <p className="text-xl font-bold text-gray-900">{displayCount}</p>
+          </div>
+
+          {/* Ciro */}
+          <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all hover:scale-105 active:scale-95 cursor-default">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <TrendingUp className="w-3 h-3 text-gray-400" />
+              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Bugünkü Ciro</span>
+            </div>
+            <p className="text-xl font-bold text-gray-900">{displayRevenue?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')}₺</p>
+          </div>
         </div>
       </div>
 
       <div className="p-4 md:p-6 space-y-6">
-        
         {/* 2. STAFF FILTER */}
         {userRole === 'admin' && staffMembers.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            <button onClick={() => setStaffFilter("all")} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all border ${staffFilter === "all" ? "bg-black text-white border-black" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}>{t('dashboard.todayFlow.allStaff')}</button>
+          <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide py-3 px-1">
+            <button onClick={() => setStaffFilter("all")} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all border shadow-sm hover:shadow-md hover:scale-105 active:scale-95 ${staffFilter === "all" ? "bg-black text-white border-black" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}>{t('dashboard.todayFlow.allStaff')}</button>
             {staffMembers.map((staff) => (
-              <button key={staff.username} onClick={() => setStaffFilter(staff.username)} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 border ${staffFilter === staff.username ? "bg-black text-white border-black" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}>
+              <button key={staff.username} onClick={() => setStaffFilter(staff.username)} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 border shadow-sm hover:shadow-md hover:scale-105 active:scale-95 ${staffFilter === staff.username ? "bg-black text-white border-black" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}>
                 {staffFilter === staff.username && <User className="w-3.5 h-3.5" />} {staff.full_name}
               </button>
             ))}
@@ -326,11 +348,11 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             <h2 className="text-base md:text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
               {t('dashboard.todayFlow.title')}
             </h2>
-            <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full">{filteredToday.length} Randevu</span>
+            <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full shadow-sm">{filteredToday.length} Randevu</span>
           </div>
 
           {filteredToday.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 bg-white rounded-2xl border border-dashed border-gray-200">
+            <div className="flex flex-col items-center justify-center py-16 bg-white rounded-2xl border border-dashed border-gray-200 shadow-sm">
               <p className="text-sm text-gray-400 font-medium">{t('dashboard.todayFlow.noAppointments')}</p>
             </div>
           ) : (
@@ -340,12 +362,12 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 {/* SOL SÜTUN (ÖĞLEDEN ÖNCE) */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-sm font-bold text-orange-600 uppercase tracking-wider md:mb-4"><Sun className="w-4 h-4" /> Öğleden Önce</div>
-                  {morningAppointments.length > 0 ? morningAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic">Randevu yok</div>}
+                  {morningAppointments.length > 0 ? morningAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">Randevu yok</div>}
                 </div>
                 {/* SAĞ SÜTUN (ÖĞLEDEN SONRA) */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase tracking-wider md:mb-4"><Moon className="w-4 h-4" /> Öğleden Sonra</div>
-                  {afternoonAppointments.length > 0 ? afternoonAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic">Randevu yok</div>}
+                  {afternoonAppointments.length > 0 ? afternoonAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">Randevu yok</div>}
                 </div>
               </div>
             ) : (
@@ -359,15 +381,26 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
         {/* 4. YARININ RANDEVULARI */}
         {filteredTomorrow.length > 0 && (
-          <div>
-            <div className="flex items-center justify-between mb-4 mt-8">
+          <>
+            {/* Ayırıcı Çizgi - Sadece bugün de randevu varsa göster */}
+            {filteredToday.length > 0 && (
+              <div className="flex items-center gap-4 my-8">
+                <div className="flex-1 h-[2px] bg-gradient-to-r from-transparent via-gray-400 to-transparent"></div>
+                <div className="text-sm font-black text-gray-500 uppercase tracking-wider">•</div>
+                <div className="flex-1 h-[2px] bg-gradient-to-r from-transparent via-gray-400 to-transparent"></div>
+              </div>
+            )}
+            
+            <div>
+              <div className={`flex items-center justify-between mb-4 ${filteredToday.length === 0 ? 'mt-8' : ''}`}>
               <h2 className="text-base md:text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">YARININ RANDEVULARI</h2>
-              <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full">{filteredTomorrow.length} Randevu</span>
+              <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full shadow-sm">{filteredTomorrow.length} Randevu</span>
             </div>
             <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4">
               {filteredTomorrow.map(apt => renderAppointmentCard(apt))}
             </div>
           </div>
+          </>
         )}
 
         {/* 5. GELECEK RANDEVULAR */}
@@ -383,41 +416,41 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                     <div
                       key={apt.id}
                       onClick={() => hasNote && toggleNote(apt.id)}
-                      className={`p-4 hover:bg-gray-50 transition-colors md:bg-white md:rounded-xl md:border md:border-gray-200 md:shadow-sm ${hasNote ? 'cursor-pointer' : ''}`}
+                      className={`p-4 hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 md:bg-white md:rounded-xl md:border md:border-gray-200 md:shadow-sm ${hasNote ? 'cursor-pointer' : ''}`}
                     >
                       <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-gray-100 rounded-lg p-2 text-center min-w-[50px]">
-                      <span className="block text-xs text-gray-500 font-bold uppercase">{format(new Date(apt.appointment_date || apt.date), "MMM", { locale: dateLocale })}</span>
-                      <span className="block text-lg font-bold text-gray-900">{format(new Date(apt.appointment_date || apt.date), "d")}</span>
-                    </div>
-                    <div>
-                      <h4 className="text-base font-bold text-gray-900">{apt.customer_name}</h4>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-gray-500">{apt.service_name} • {apt.appointment_time}</p>
-                        {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
+                        <div className="flex items-center gap-4">
+                          <div className="bg-gray-100 rounded-lg p-2 text-center min-w-[50px] shadow-sm">
+                            <span className="block text-xs text-gray-500 font-bold uppercase">{format(new Date(apt.appointment_date || apt.date), "MMM", { locale: dateLocale })}</span>
+                            <span className="block text-lg font-bold text-gray-900">{format(new Date(apt.appointment_date || apt.date), "d")}</span>
+                          </div>
+                          <div>
+                            <h4 className="text-base font-bold text-gray-900">{apt.customer_name}</h4>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm text-gray-500">{apt.service_name} • {apt.appointment_time}</p>
+                              {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
+                            </div>
+                          </div>
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()} className="transition-all hover:scale-105 active:scale-95"><MoreVertical className="w-4 h-4 text-gray-400" /></Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}>
+                              <Edit className="w-4 h-4 mr-2" /> Düzenle
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDeleteDialog(apt); }} className="text-red-600">
+                              <Trash2 className="w-4 h-4 mr-2" /> Sil
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
-                    </div>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}><MoreVertical className="w-4 h-4 text-gray-400" /></Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}>
-                        <Edit className="w-4 h-4 mr-2" /> Düzenle
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDeleteDialog(apt); }} className="text-red-600">
-                        <Trash2 className="w-4 h-4 mr-2" /> Sil
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
 
                       {isExpanded && hasNote && (
                         <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200">
-                          <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm">
+                          <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm shadow-sm">
                             <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
                             <p className="font-medium">{apt.notes}</p>
                           </div>
@@ -427,16 +460,16 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   );
                 })()
               ))}
-              {upcoming.length > 5 && <div className="p-3 text-center bg-gray-50 text-xs md:text-sm font-medium text-gray-500 md:col-span-2">+ {upcoming.length - 5} daha</div>}
+              {upcoming.length > 5 && <div className="p-3 text-center bg-gray-50 text-xs md:text-sm font-medium text-gray-500 md:col-span-2 shadow-sm">+ {upcoming.length - 5} daha</div>}
             </div>
           </div>
         )}
       </div>
 
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
-        <AlertDialogContent className="rounded-2xl max-w-xs">
+        <AlertDialogContent className="rounded-2xl max-w-xs shadow-lg">
           <AlertDialogHeader><AlertDialogTitle>{t('dashboard.deleteDialog.title')}</AlertDialogTitle><AlertDialogDescription>{t('dashboard.deleteDialog.description', { name: deleteDialog?.customer_name })}</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel className="rounded-xl">{t('dashboard.deleteDialog.cancel')}</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete(deleteDialog?.id)} className="bg-red-600 hover:bg-red-700 rounded-xl">{t('dashboard.deleteDialog.delete')}</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogFooter><AlertDialogCancel className="rounded-xl transition-all hover:scale-105 active:scale-95">{t('dashboard.deleteDialog.cancel')}</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete(deleteDialog?.id)} className="bg-red-600 hover:bg-red-700 rounded-xl transition-all hover:scale-105 active:scale-95">{t('dashboard.deleteDialog.delete')}</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
@@ -445,10 +478,10 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <Card className="w-full max-w-xs rounded-2xl shadow-2xl p-5">
             <h3 className="text-lg font-bold text-gray-900 mb-4">{t('dashboard.breaks.addBreakTitle')}</h3>
             <div className="grid grid-cols-2 gap-3 mb-5">
-              <div><label className="text-xs font-bold text-gray-500 mb-1 block">BAŞLANGIÇ</label><input type="time" value={newBreakStart} onChange={e => setNewBreakStart(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-lg p-2 text-sm font-bold text-gray-900 focus:ring-black" /></div>
-              <div><label className="text-xs font-bold text-gray-500 mb-1 block">BİTİŞ</label><input type="time" value={newBreakEnd} onChange={e => setNewBreakEnd(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-lg p-2 text-sm font-bold text-gray-900 focus:ring-black" /></div>
+              <div><label className="text-xs font-bold text-gray-500 mb-1 block">BAŞLANGIÇ</label><input type="time" value={newBreakStart} onChange={e => setNewBreakStart(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-lg p-2 text-sm font-bold text-gray-900 focus:ring-black shadow-sm" /></div>
+              <div><label className="text-xs font-bold text-gray-500 mb-1 block">BİTİŞ</label><input type="time" value={newBreakEnd} onChange={e => setNewBreakEnd(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-lg p-2 text-sm font-bold text-gray-900 focus:ring-black shadow-sm" /></div>
             </div>
-            <div className="flex gap-2"><Button variant="outline" onClick={() => setShowBreakDialog(false)} className="flex-1 rounded-lg h-10 text-xs">İptal</Button><Button onClick={handleAddBreak} disabled={addingBreak} className="flex-1 rounded-lg h-10 bg-black hover:bg-gray-800 text-white text-xs">{addingBreak ? "..." : "Ekle"}</Button></div>
+            <div className="flex gap-2"><Button variant="outline" onClick={() => setShowBreakDialog(false)} className="flex-1 rounded-lg h-10 text-xs transition-all hover:scale-105 active:scale-95">İptal</Button><Button onClick={handleAddBreak} disabled={addingBreak} className="flex-1 rounded-lg h-10 bg-black hover:bg-gray-800 text-white text-xs transition-all hover:scale-105 active:scale-95">{addingBreak ? "..." : "Ekle"}</Button></div>
           </Card>
         </div>
       )}

@@ -59,57 +59,60 @@ const SortableServiceCard = ({ service, i18n, t, onEdit, onDelete }) => {
 
   return (
     <div ref={setNodeRef} style={style}>
-      <Card
+      <div
         data-testid={`service-card-${service.id}`}
-        className={`bg-white shadow-md border border-gray-200 rounded-xl p-6 ${isDragging ? 'opacity-80 ring-2 ring-blue-400' : ''}`}
+        className={`backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg transition-all duration-300 ${
+          isDragging ? 'opacity-80 ring-2 ring-blue-500 shadow-2xl scale-105' : 'hover:shadow-xl hover:bg-white/50'
+        }`}
       >
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3 flex-1">
+        <div className="flex items-start justify-between gap-3 min-w-0">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
             <button
               type="button"
               {...attributes}
               {...listeners}
-              className="p-2 -ml-2 rounded-lg text-gray-400 active:bg-gray-100 touch-none"
+              className="p-2 -ml-2 rounded-xl text-zinc-400 hover:text-zinc-600 active:bg-white/50 touch-none transition-colors"
               aria-label={t('services.management.dragToReorder', 'Sürükleyerek sırala')}
             >
               <GripVertical className="w-5 h-5" />
             </button>
 
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Briefcase className="w-5 h-5 text-blue-600" />
+            <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md">
+              <Briefcase className="w-5 h-5 text-white" />
             </div>
 
             <div className="flex-1 min-w-0">
-              <h3 className="text-base font-semibold text-gray-900 mb-1">{service.name}</h3>
+              <h3 className="text-base font-black text-zinc-900 mb-1 break-words leading-tight line-clamp-2">{service.name}</h3>
               <div className="flex items-center gap-3">
-                <p className="text-lg font-bold text-blue-600">{Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}</p>
-                <p className="text-sm text-gray-500">{(service.duration || 30)} {t('services.management.minutes')}</p>
+                <p className="text-lg font-black text-blue-600">{Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}</p>
+                <p className="text-sm text-zinc-600 font-bold">{(service.duration || 30)} {t('services.management.minutes')}</p>
               </div>
             </div>
           </div>
 
-          <div className="flex gap-2 flex-shrink-0">
+          <div className="flex gap-2 flex-shrink-0 self-start">
             <Button
               data-testid={`edit-service-${service.id}`}
               onClick={() => onEdit(service)}
               size="sm"
               variant="outline"
+              className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold shadow-sm"
             >
               <Edit className="w-4 h-4 mr-1" />
-              {t('common.edit')}
+              <span className="hidden sm:inline">{t('common.edit')}</span>
             </Button>
             <Button
               data-testid={`delete-service-${service.id}`}
               onClick={() => onDelete(service)}
               size="sm"
               variant="outline"
-              className="text-red-600 hover:bg-red-50"
+              className="text-red-600 hover:bg-red-50 backdrop-blur-md bg-white/60 border-white/40 hover:border-red-300 rounded-xl font-bold shadow-sm"
             >
               <Trash2 className="w-4 h-4" />
             </Button>
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 };
@@ -265,53 +268,53 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 pb-20">
       {/* KART 1: Başlık ve Yeni Hizmet Ekle */}
       <div className="px-4 pt-6 pb-4">
-        <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
+        <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
           <div className="space-y-4">
             <div className="mb-4">
               <button
                 onClick={() => onNavigate && onNavigate("settings")}
-                className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
+                className="flex items-center gap-2 text-zinc-700 hover:text-zinc-900 mb-4 transition-colors p-2 -ml-2 hover:bg-white/50 rounded-xl"
               >
                 <ArrowLeft className="w-5 h-5" />
-                <span className="text-sm font-medium">{t('settings.backToSettings')}</span>
+                <span className="text-sm font-bold">{t('settings.backToSettings')}</span>
               </button>
-        <div>
-                <h2 className="text-lg font-bold text-gray-900">{t('services.management.title')}</h2>
-          <p className="text-sm text-gray-600 mt-1">{t('services.management.subtitle')}</p>
-        </div>
+              <div>
+                <h2 className="text-xl font-black text-zinc-900">{t('services.management.title')}</h2>
+                <p className="text-sm text-zinc-600 mt-1 font-medium">{t('services.management.subtitle')}</p>
+              </div>
             </div>
 
-        <Button
-          data-testid="add-service-button"
-          onClick={handleNew}
-              className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold rounded-full"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          {t('services.management.newService')}
-        </Button>
+            <Button
+              data-testid="add-service-button"
+              onClick={handleNew}
+              className="w-full bg-zinc-900 hover:bg-black h-12 text-base font-bold rounded-xl shadow-lg transition-all"
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              {t('services.management.newService')}
+            </Button>
           </div>
-        </Card>
+        </div>
       </div>
 
       {/* KART: Online Randevu Ayarları */}
       <div className="px-4 pt-4 pb-4">
-        <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
+        <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
           <div className="space-y-4">
             <div>
-              <h3 className="text-base font-bold text-gray-900 mb-1">{t('services.management.onlineSettings')}</h3>
-              <p className="text-sm text-gray-600">{t('services.management.onlineSettingsDescription')}</p>
+              <h3 className="text-base font-black text-zinc-900 mb-1">{t('services.management.onlineSettings')}</h3>
+              <p className="text-sm text-zinc-600 font-medium">{t('services.management.onlineSettingsDescription')}</p>
             </div>
             
-            <div className="space-y-4 pt-2">
-              <div className="flex items-center justify-between">
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 shadow-sm">
                 <div className="flex-1">
-                  <Label htmlFor="show-duration" className="text-sm font-medium text-gray-900 cursor-pointer">
+                  <Label htmlFor="show-duration" className="text-sm font-bold text-zinc-900 cursor-pointer">
                     {t('services.management.showDuration')}
                   </Label>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('services.management.showDurationNote')}</p>
+                  <p className="text-xs text-zinc-600 mt-1 font-medium">{t('services.management.showDurationNote')}</p>
                 </div>
                 <Switch
                   id="show-duration"
@@ -321,12 +324,12 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 />
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 shadow-sm">
                 <div className="flex-1">
-                  <Label htmlFor="show-price" className="text-sm font-medium text-gray-900 cursor-pointer">
+                  <Label htmlFor="show-price" className="text-sm font-bold text-zinc-900 cursor-pointer">
                     {t('services.management.showPrice')}
                   </Label>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('services.management.showPriceNote')}</p>
+                  <p className="text-xs text-zinc-600 mt-1 font-medium">{t('services.management.showPriceNote')}</p>
                 </div>
                 <Switch
                   id="show-price"
@@ -337,19 +340,19 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               </div>
             </div>
           </div>
-        </Card>
+        </div>
       </div>
 
       {/* KART 2: Hizmet Listesi */}
       {services.length === 0 ? (
         <div className="px-4 py-4">
-          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
+          <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
             <div className="text-center py-8">
-              <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <h3 className="text-base font-semibold text-gray-900 mb-2">{t('services.management.noServicesTitle')}</h3>
-              <p className="text-sm text-gray-600">{t('services.management.noServicesDescription')}</p>
+              <Briefcase className="w-12 h-12 text-zinc-300 mx-auto mb-3" />
+              <h3 className="text-base font-black text-zinc-900 mb-2">{t('services.management.noServicesTitle')}</h3>
+              <p className="text-sm text-zinc-600 font-medium">{t('services.management.noServicesDescription')}</p>
             </div>
-          </Card>
+          </div>
         </div>
       ) : (
         <div className="px-4 py-4 space-y-3">
@@ -371,25 +374,27 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
           </DndContext>
 
           {reordering && (
-            <div className="text-center text-xs text-gray-400 pt-2">
+            <div className="text-center text-xs text-zinc-500 pt-2 font-bold animate-pulse">
               {t('common.saving', 'Kaydediliyor...')}
             </div>
           )}
-      </div>
+        </div>
       )}
 
       {/* Service Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent>
+        <DialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
           <DialogHeader>
-            <DialogTitle>{editingService ? t('services.management.editTitle') : t('services.management.addTitle')}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-xl font-black text-zinc-900">
+              {editingService ? t('services.management.editTitle') : t('services.management.addTitle')}
+            </DialogTitle>
+            <DialogDescription className="text-zinc-600 font-medium">
               {t('services.management.dialogDescription')}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="service-name">{t('services.fields.name')}</Label>
+              <Label htmlFor="service-name" className="text-sm font-bold text-zinc-700">{t('services.fields.name')}</Label>
               <Input
                 id="service-name"
                 data-testid="service-name-input"
@@ -397,10 +402,13 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder={t('services.management.pricePlaceholder')}
                 required
+                className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="service-price">{t('services.fields.price')} ({i18n.language === 'tr' ? '₺' : '£'})</Label>
+              <Label htmlFor="service-price" className="text-sm font-bold text-zinc-700">
+                {t('services.fields.price')} ({i18n.language === 'tr' ? '₺' : '£'})
+              </Label>
               <Input
                 id="service-price"
                 data-testid="service-price-input"
@@ -410,10 +418,11 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                 placeholder="0.00"
                 required
+                className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="service-duration">{t('services.fields.duration')}</Label>
+              <Label htmlFor="service-duration" className="text-sm font-bold text-zinc-700">{t('services.fields.duration')}</Label>
               <Input
                 id="service-duration"
                 data-testid="service-duration-input"
@@ -424,18 +433,24 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
                 placeholder="30"
                 required
+                className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
               />
-              <p className="text-xs text-gray-500">{t('services.management.durationNote')}</p>
+              <p className="text-xs text-zinc-500 font-medium">{t('services.management.durationNote')}</p>
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowDialog(false)}>
+            <DialogFooter className="border-t border-white/30 pt-4">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setShowDialog(false)}
+                className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-11 font-bold"
+              >
                 {t('common.cancel')}
               </Button>
               <Button
                 data-testid="save-service-button"
                 type="submit"
                 disabled={loading}
-                className="bg-blue-600 hover:bg-blue-700"
+                className="bg-zinc-900 hover:bg-black rounded-xl h-11 font-bold shadow-lg"
               >
                 {loading ? t('settings.profile.buttons.saving') : t('common.save')}
               </Button>
@@ -446,19 +461,21 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('services.management.deleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-xl font-black text-zinc-900">{t('services.management.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-600 font-medium">
               {t('services.management.deleteDescription', { name: deleteDialog?.name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogCancel className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">
+              {t('common.cancel')}
+            </AlertDialogCancel>
             <AlertDialogAction
               data-testid="confirm-delete-service"
               onClick={() => handleDelete(deleteDialog?.id)}
-              className="bg-red-500 hover:bg-red-600"
+              className="bg-red-500 hover:bg-red-600 rounded-xl font-bold shadow-lg"
             >
               {t('common.delete')}
             </AlertDialogAction>

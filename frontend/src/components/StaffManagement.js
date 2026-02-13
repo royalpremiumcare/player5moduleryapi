@@ -55,7 +55,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
     full_name: "",
     payment_type: "salary",
     payment_amount: 0,
-    role: "staff"  // "staff" veya "admin"
+    role: "staff"
   });
 
   useEffect(() => {
@@ -202,7 +202,6 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
     setSelectedDaysOff(staffMember.days_off || ["sunday"]);
   };
 
-
   const handleSaveDaysOff = async () => {
     if (!editingDaysOffStaff) return;
     
@@ -217,7 +216,6 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       
       toast.success(t('staff.management.daysOffUpdated'));
       
-      // Local state'i güncelle
       setStaff(prev => prev.map(s => 
         s.username === editingDaysOffStaff.username 
           ? { 
@@ -248,7 +246,6 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
   const handleSavePayment = async () => {
     if (!editingPaymentStaff) return;
     
-    // payment_amount'u number'a çevir
     let paymentAmount = 0;
     if (editingPaymentStaff.payment_amount) {
       if (typeof editingPaymentStaff.payment_amount === 'string') {
@@ -259,7 +256,6 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       }
     }
     
-    // Validation
     if (editingPaymentStaff.payment_type === "salary" && (!paymentAmount || paymentAmount <= 0)) {
       toast.error(t('staff.management.salaryRequired'));
       return;
@@ -282,7 +278,6 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       
       toast.success(t('staff.management.paymentUpdated'));
       
-      // Local state'i güncelle
       setStaff(prev => prev.map(s => 
         s.username === editingPaymentStaff.username 
           ? { 
@@ -326,7 +321,6 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       return;
     }
 
-    // Admin için ödeme bilgisi validasyonu gerekmiyor
     if (!isAdmin) {
       if (newStaff.payment_type === "salary" && (!newStaff.payment_amount || newStaff.payment_amount <= 0)) {
         toast.error(t('staff.management.salaryRequired'));
@@ -341,7 +335,6 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
 
     setSaving(true);
     try {
-      // payment_amount'u number'a çevir
       const paymentAmount = newStaff.payment_amount 
         ? (typeof newStaff.payment_amount === 'string' ? parseFloat(newStaff.payment_amount) : newStaff.payment_amount)
         : 0;
@@ -353,8 +346,6 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
         payment_type: isAdmin ? null : (newStaff.payment_type || "salary"),
         payment_amount: isAdmin ? null : paymentAmount
       };
-      
-      console.log("Sending payload:", payload); // Debug için
       
       await api.post("/staff/add", payload);
       
@@ -409,263 +400,257 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 pb-20">
         <div className="px-4 pt-6 pb-4">
-          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
+          <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
             <div className="flex items-center justify-center h-32">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900"></div>
             </div>
-          </Card>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 pb-20">
       {/* KART 1: Başlık ve Yeni Personel Ekle */}
       <div className="px-4 pt-6 pb-4">
-        <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
+        <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
           <div className="space-y-4">
             <div className="mb-4">
               <button
                 onClick={() => onNavigate && onNavigate("settings")}
-                className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
+                className="flex items-center gap-2 text-zinc-700 hover:text-zinc-900 mb-4 transition-colors p-2 -ml-2 hover:bg-white/50 rounded-xl"
               >
                 <ArrowLeft className="w-5 h-5" />
-                <span className="text-sm font-medium">{t('settings.backToSettings')}</span>
+                <span className="text-sm font-bold">{t('settings.backToSettings')}</span>
               </button>
-        <div>
-                <h2 className="text-lg font-bold text-gray-900">{t('staff.management.title')}</h2>
-                <p className="text-sm text-gray-600 mt-1">{t('staff.management.subtitle')}</p>
+              <div>
+                <h2 className="text-xl font-black text-zinc-900">{t('staff.management.title')}</h2>
+                <p className="text-sm text-zinc-600 mt-1 font-medium">{t('staff.management.subtitle')}</p>
               </div>
-        </div>
+            </div>
         
-        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-          <DialogTrigger asChild>
-                <Button className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold rounded-full">
-              <UserPlus className="w-4 h-4 mr-2" />
-              {t('staff.management.newStaff')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            <DialogHeader className="flex-shrink-0">
-              <DialogTitle>{t('staff.management.addTitle')}</DialogTitle>
-              <DialogDescription>
-                {t('staff.management.addDescription')}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex-1 overflow-y-auto py-4 pr-2">
-              <div className="space-y-4">
-                {/* İlk satır: İsim ve Email yan yana (masaüstünde) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="full_name">{t('staff.fields.name')} *</Label>
-                    <Input
-                      id="full_name"
-                      value={newStaff.full_name}
-                      onChange={(e) => setNewStaff({ ...newStaff, full_name: e.target.value })}
-                      placeholder={t('staff.fields.name')}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="username">{t('settings.profile.fields.email')} *</Label>
-                    <Input
-                      id="username"
-                      type="email"
-                      value={newStaff.username}
-                      onChange={(e) => setNewStaff({ ...newStaff, username: e.target.value })}
-                      placeholder="ahmet@isletme.com"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-gray-500 -mt-2 md:col-span-2">
-                  {t('staff.management.inviteEmailNote')}
-                </p>
-              
-                {/* Rol Seçimi ve Çalışma Modeli - Masaüstünde yan yana */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
-                  {/* Rol Seçimi */}
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium text-gray-700 mb-2 block">{t('staff.management.userRole')}</Label>
-                    <div className="bg-gray-100 p-1 rounded-lg flex">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewStaff({ ...newStaff, role: "staff", payment_type: "salary", payment_amount: "" });
-                        }}
-                        className={`flex-1 py-2 px-3 rounded-md font-medium transition-all text-sm ${
-                          newStaff.role === "staff"
-                            ? "bg-white text-blue-600 shadow-sm"
-                            : "text-gray-500 hover:text-gray-700"
-                        }`}
-                      >
-                        <User className="w-4 h-4 inline mr-1" /> {t('staff.management.staffRole')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewStaff({ ...newStaff, role: "admin", payment_type: null, payment_amount: null });
-                        }}
-                        className={`flex-1 py-2 px-3 rounded-md font-medium transition-all text-sm ${
-                          newStaff.role === "admin"
-                            ? "bg-white text-purple-600 shadow-sm"
-                            : "text-gray-500 hover:text-gray-700"
-                        }`}
-                      >
-                        <ShieldCheck className="w-4 h-4 inline mr-1" /> {t('staff.management.adminRole')}
-                      </button>
+            <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+              <DialogTrigger asChild>
+                <Button className="w-full bg-zinc-900 hover:bg-black h-12 text-base font-bold rounded-xl shadow-lg transition-all">
+                  <UserPlus className="w-5 h-5 mr-2" />
+                  {t('staff.management.newStaff')}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+                <DialogHeader className="flex-shrink-0">
+                  <DialogTitle className="text-xl font-black text-zinc-900">{t('staff.management.addTitle')}</DialogTitle>
+                  <DialogDescription className="text-zinc-600 font-medium">
+                    {t('staff.management.addDescription')}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex-1 overflow-y-auto py-4 pr-2">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="full_name" className="text-sm font-bold text-zinc-700">{t('staff.fields.name')} *</Label>
+                        <Input
+                          id="full_name"
+                          value={newStaff.full_name}
+                          onChange={(e) => setNewStaff({ ...newStaff, full_name: e.target.value })}
+                          placeholder={t('staff.fields.name')}
+                          className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="username" className="text-sm font-bold text-zinc-700">{t('settings.profile.fields.email')} *</Label>
+                        <Input
+                          id="username"
+                          type="email"
+                          value={newStaff.username}
+                          onChange={(e) => setNewStaff({ ...newStaff, username: e.target.value })}
+                          placeholder="ahmet@isletme.com"
+                          className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                        />
+                      </div>
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-zinc-500 -mt-2 md:col-span-2 font-medium">
+                      {t('staff.management.inviteEmailNote')}
+                    </p>
+              
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-white/30">
+                      <div className="space-y-3">
+                        <Label className="text-sm font-bold text-zinc-700 mb-2 block">{t('staff.management.userRole')}</Label>
+                        <div className="backdrop-blur-md bg-zinc-100/60 p-1 rounded-xl flex border border-white/30 shadow-sm">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewStaff({ ...newStaff, role: "staff", payment_type: "salary", payment_amount: "" });
+                            }}
+                            className={`flex-1 py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${
+                              newStaff.role === "staff"
+                                ? "bg-white text-blue-600 shadow-md"
+                                : "text-zinc-600 hover:text-zinc-900"
+                            }`}
+                          >
+                            <User className="w-4 h-4 inline mr-1" /> {t('staff.management.staffRole')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewStaff({ ...newStaff, role: "admin", payment_type: null, payment_amount: null });
+                            }}
+                            className={`flex-1 py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${
+                              newStaff.role === "admin"
+                                ? "bg-white text-purple-600 shadow-md"
+                                : "text-zinc-600 hover:text-zinc-900"
+                            }`}
+                          >
+                            <ShieldCheck className="w-4 h-4 inline mr-1" /> {t('staff.management.adminRole')}
+                          </button>
+                        </div>
+                        <p className="text-xs text-zinc-500 font-medium">
+                          {newStaff.role === "admin" 
+                            ? t('staff.management.adminNote')
+                            : t('staff.management.staffNote')}
+                        </p>
+                      </div>
+                  
+                      {newStaff.role === "staff" && (
+                        <div className="space-y-3">
+                          <Label className="text-sm font-bold text-zinc-700 mb-2 block">{t('staff.management.workModel')}</Label>
+                          <div className="backdrop-blur-md bg-zinc-100/60 p-1 rounded-xl flex border border-white/30 shadow-sm">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewStaff({ ...newStaff, payment_type: "salary", payment_amount: "" });
+                              }}
+                              className={`flex-1 py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${
+                                newStaff.payment_type === "salary"
+                                  ? "bg-white text-blue-600 shadow-md"
+                                  : "text-zinc-600 hover:text-zinc-900"
+                              }`}
+                            >
+                              {t('staff.management.fixedSalary')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewStaff({ ...newStaff, payment_type: "commission", payment_amount: "" });
+                              }}
+                              className={`flex-1 py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${
+                                newStaff.payment_type === "commission"
+                                  ? "bg-white text-blue-600 shadow-md"
+                                  : "text-zinc-600 hover:text-zinc-900"
+                              }`}
+                            >
+                              {t('staff.management.commission')}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                
+                    {newStaff.role === "staff" && (
+                      <div className="pt-4 border-t border-white/30">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {newStaff.payment_type === "salary" && (
+                            <div className="space-y-2">
+                              <Label htmlFor="payment_amount" className="text-sm font-bold text-zinc-700">
+                                {t('staff.management.monthlySalary')}
+                              </Label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-600 font-bold">{i18n.language === 'tr' ? '₺' : '£'}</span>
+                                <Input
+                                  id="payment_amount"
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={newStaff.payment_amount || ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setNewStaff({ ...newStaff, payment_amount: value === "" ? "" : value });
+                                  }}
+                                  placeholder="Örn: 30000"
+                                  className="pl-8 backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                                />
+                              </div>
+                            </div>
+                          )}
+                    
+                          {newStaff.payment_type === "commission" && (
+                            <div className="space-y-2">
+                              <Label htmlFor="payment_amount" className="text-sm font-bold text-zinc-700">
+                                {t('staff.management.commissionRate')}
+                              </Label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-600 font-bold">%</span>
+                                <Input
+                                  id="payment_amount"
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.1"
+                                  value={newStaff.payment_amount || ""}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setNewStaff({ ...newStaff, payment_amount: value === "" ? "" : value });
+                                  }}
+                                  placeholder="Örn: 50"
+                                  className="pl-8 backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                                />
+                              </div>
+                              <small className="text-zinc-500 text-xs block font-medium">
+                                {t('staff.management.commissionNote')}
+                              </small>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                
+                    <p className="text-sm text-zinc-600 pt-2 font-medium">
                       {newStaff.role === "admin" 
-                        ? t('staff.management.adminNote')
-                        : t('staff.management.staffNote')}
+                        ? t('staff.management.adminDescription')
+                        : t('staff.management.staffDescription')}
                     </p>
                   </div>
-                  
-                  {/* Çalışma Modeli - Sadece Personel için */}
-                  {newStaff.role === "staff" && (
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium text-gray-700 mb-2 block">{t('staff.management.workModel')}</Label>
-                    
-                    {/* Segmented Control */}
-                    <div className="bg-gray-100 p-1 rounded-lg flex">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewStaff({ ...newStaff, payment_type: "salary", payment_amount: "" });
-                        }}
-                        className={`flex-1 py-2 px-3 rounded-md font-medium transition-all text-sm ${
-                          newStaff.payment_type === "salary"
-                            ? "bg-white text-blue-600 shadow-sm"
-                            : "text-gray-500 hover:text-gray-700"
-                        }`}
-                      >
-                        {t('staff.management.fixedSalary')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewStaff({ ...newStaff, payment_type: "commission", payment_amount: "" });
-                        }}
-                        className={`flex-1 py-2 px-3 rounded-md font-medium transition-all text-sm ${
-                          newStaff.payment_type === "commission"
-                            ? "bg-white text-blue-600 shadow-sm"
-                            : "text-gray-500 hover:text-gray-700"
-                        }`}
-                      >
-                        {t('staff.management.commission')}
-                      </button>
-                    </div>
-                  </div>
-                  )}
                 </div>
-                
-                {/* Ödeme Bilgisi - Sadece Personel için, masaüstünde tam genişlik */}
-                {newStaff.role === "staff" && (
-                <div className="pt-4 border-t">
-                  {/* Dinamik Input Alanı */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {newStaff.payment_type === "salary" && (
-                      <div className="space-y-2">
-                        <Label htmlFor="payment_amount" className="text-sm font-medium text-gray-700">
-                          {t('staff.management.monthlySalary')}
-                        </Label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">{i18n.language === 'tr' ? '₺' : '£'}</span>
-                          <Input
-                            id="payment_amount"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={newStaff.payment_amount || ""}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setNewStaff({ ...newStaff, payment_amount: value === "" ? "" : value });
-                            }}
-                            placeholder="Örn: 30000"
-                            className="pl-8"
-                          />
-                        </div>
-                      </div>
-                    )}
-                    
-                    {newStaff.payment_type === "commission" && (
-                      <div className="space-y-2">
-                        <Label htmlFor="payment_amount" className="text-sm font-medium text-gray-700">
-                          {t('staff.management.commissionRate')}
-                        </Label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">%</span>
-                          <Input
-                            id="payment_amount"
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            value={newStaff.payment_amount || ""}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setNewStaff({ ...newStaff, payment_amount: value === "" ? "" : value });
-                            }}
-                            placeholder="Örn: 50"
-                            className="pl-8"
-                          />
-                        </div>
-                        <small className="text-gray-500 text-xs block">
-                          {t('staff.management.commissionNote')}
-                        </small>
-                      </div>
-                    )}
-                  </div>
+                <div className="flex gap-2 flex-shrink-0 pt-4 border-t border-white/30">
+                  <Button
+                    onClick={() => setShowAddDialog(false)}
+                    variant="outline"
+                    className="flex-1 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-12 font-bold"
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    onClick={handleAddStaff}
+                    disabled={saving}
+                    className={`flex-1 h-12 rounded-xl font-bold shadow-lg ${newStaff.role === "admin" ? "bg-purple-600 hover:bg-purple-700" : "bg-zinc-900 hover:bg-black"}`}
+                  >
+                    {saving ? t('staff.management.adding') : (newStaff.role === "admin" ? t('staff.management.addAdmin') : t('staff.management.addStaff'))}
+                  </Button>
                 </div>
-                )}
-                
-                <p className="text-sm text-gray-600 pt-2">
-                  {newStaff.role === "admin" 
-                    ? t('staff.management.adminDescription')
-                    : t('staff.management.staffDescription')}
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2 flex-shrink-0 pt-4 border-t">
-              <Button
-                onClick={() => setShowAddDialog(false)}
-                variant="outline"
-                className="flex-1"
-              >
-                {t('common.cancel')}
-              </Button>
-              <Button
-                onClick={handleAddStaff}
-                disabled={saving}
-                className={`flex-1 ${newStaff.role === "admin" ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"}`}
-              >
-                {saving ? t('staff.management.adding') : (newStaff.role === "admin" ? t('staff.management.addAdmin') : t('staff.management.addStaff'))}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+              </DialogContent>
+            </Dialog>
           </div>
-        </Card>
+        </div>
       </div>
 
       {/* KART 2: Personel Ayarları */}
       <div className="px-4 py-4">
-        <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
+        <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
           <div className="space-y-4">
             <div>
-              <h3 className="text-base font-semibold text-gray-900 mb-1">{t('staff.management.settingsTitle')}</h3>
-              <p className="text-sm text-gray-600">{t('staff.management.settingsDescription')}</p>
+              <h3 className="text-base font-black text-zinc-900 mb-1">{t('staff.management.settingsTitle')}</h3>
+              <p className="text-sm text-zinc-600 font-medium">{t('staff.management.settingsDescription')}</p>
             </div>
 
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 shadow-sm">
                 <div className="flex-1">
-                  <Label htmlFor="customer-can-choose-staff" className="text-sm font-semibold text-gray-900 cursor-pointer">
+                  <Label htmlFor="customer-can-choose-staff" className="text-sm font-bold text-zinc-900 cursor-pointer">
                     {t('staff.management.customerCanChooseStaff')}
                   </Label>
-                  <p className="text-xs text-gray-600 mt-1">
+                  <p className="text-xs text-zinc-600 mt-1 font-medium">
                     {t('staff.management.customerCanChooseStaffNote')}
                   </p>
                 </div>
@@ -687,12 +672,12 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                 />
               </div>
 
-              <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200">
+              <div className="flex items-center justify-between p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 shadow-sm">
                 <div className="flex-1">
-                  <Label htmlFor="admin-provides-service" className="text-sm font-semibold text-gray-900 cursor-pointer">
+                  <Label htmlFor="admin-provides-service" className="text-sm font-bold text-zinc-900 cursor-pointer">
                     {t('staff.management.adminProvidesService')}
                   </Label>
-                  <p className="text-xs text-gray-600 mt-1">
+                  <p className="text-xs text-zinc-600 mt-1 font-medium">
                     {t('staff.management.adminProvidesServiceNote')}
                   </p>
                 </div>
@@ -713,578 +698,569 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                   }}
                 />
               </div>
-
             </div>
           </div>
-        </Card>
+        </div>
       </div>
 
       {/* KART 3: Personel Listesi */}
       {staff.length === 0 ? (
         <div className="px-4 py-4">
-          <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
+          <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
             <div className="text-center py-8">
-              <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <h3 className="text-base font-semibold text-gray-900 mb-2">{t('staff.management.noStaffTitle')}</h3>
-              <p className="text-sm text-gray-600">{t('staff.management.noStaffDescription')}</p>
+              <Users className="w-12 h-12 text-zinc-300 mx-auto mb-3" />
+              <h3 className="text-base font-black text-zinc-900 mb-2">{t('staff.management.noStaffTitle')}</h3>
+              <p className="text-sm text-zinc-600 font-medium">{t('staff.management.noStaffDescription')}</p>
             </div>
-        </Card>
+          </div>
         </div>
       ) : (
         <div className="px-4 py-4 space-y-3">
           {(() => {
-            // Kurucu admin'i bul (is_founder flag'i olan veya ilk admin)
             const founderAdmin = staff.find(s => s.is_founder && s.role === 'admin') 
               || staff.find(s => s.role === 'admin');
             
-            // Mevcut kullanıcı kurucu mu?
             const isCurrentUserFounder = founderAdmin?.username === currentUser?.username;
             
             return staff.map((staffMember) => {
-            const assignedServices = services.filter(s => 
-              staffMember.permitted_service_ids?.includes(s.id)
-            );
-            const isFounder = founderAdmin?.username === staffMember.username;
-            const isSelf = staffMember.username === currentUser?.username;
-            const isTargetAdmin = staffMember.role === 'admin';
+              const assignedServices = services.filter(s => 
+                staffMember.permitted_service_ids?.includes(s.id)
+              );
+              const isFounder = founderAdmin?.username === staffMember.username;
+              const isSelf = staffMember.username === currentUser?.username;
+              const isTargetAdmin = staffMember.role === 'admin';
+              
+              const canEdit = isTargetAdmin ? (isCurrentUserFounder || isSelf) : true;
+              const canDelete = !isSelf && !isFounder && (isTargetAdmin ? isCurrentUserFounder : true);
             
-            // Düzenleme butonu gösterilsin mi?
-            // - Kendi hizmetlerini herkes düzenleyebilir
-            // - Diğer admin'lerin hizmetlerini sadece kurucu admin düzenleyebilir
-            const canEdit = isTargetAdmin ? (isCurrentUserFounder || isSelf) : true;
-            
-            // Silme butonu gösterilsin mi?
-            // - Kendi üzerinde gösterme
-            // - Kurucu admin silinemez
-            // - Admin'leri sadece kurucu admin silebilir
-            const canDelete = !isSelf && !isFounder && (isTargetAdmin ? isCurrentUserFounder : true);
-            
-            return (
-              <Card key={staffMember.username} className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-                <div className="space-y-4">
-                  <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${
-                      staffMember.role === 'admin' 
-                        ? 'bg-gradient-to-br from-amber-500 to-orange-600' 
-                        : 'bg-gradient-to-br from-blue-500 to-indigo-600'
-                    }`}>
-                      {staffMember.full_name?.charAt(0) || staffMember.username?.charAt(0) || "?"}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                          <h3 className="text-base font-semibold text-gray-900">
-                          {staffMember.full_name || staffMember.username}
-                        </h3>
-                        {staffMember.role === 'admin' && (
-                          <span className="px-2 py-0.5 text-xs font-semibold bg-amber-100 text-amber-800 rounded-full">
-                            {t('staff.management.owner')}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-600">{staffMember.username}</p>
-                    </div>
-                  </div>
-                </div>
-
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900 mb-2">{t('staff.management.assignedServices')}</p>
-                  {assignedServices.length > 0 ? (
-                    <div className="space-y-1">
-                      {assignedServices.map(service => (
-                          <div key={service.id} className="flex items-center gap-2 text-sm text-gray-700">
-                          <CheckSquare className="w-4 h-4 text-green-500" />
-                            <span>{service.name}</span>
+              return (
+                <div key={staffMember.username} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-md ${
+                          staffMember.role === 'admin' 
+                            ? 'bg-gradient-to-br from-amber-500 to-orange-600' 
+                            : 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                        }`}>
+                          {staffMember.full_name?.charAt(0) || staffMember.username?.charAt(0) || "?"}
                         </div>
-                      ))}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-base font-black text-zinc-900">
+                              {staffMember.full_name || staffMember.username}
+                            </h3>
+                            {staffMember.role === 'admin' && (
+                              <span className="px-2.5 py-0.5 text-xs font-bold bg-amber-100 text-amber-800 rounded-full shadow-sm">
+                                {t('staff.management.owner')}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-zinc-600 font-medium">{staffMember.username}</p>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-sm text-gray-500 italic">{t('staff.management.noServicesAssigned')}</p>
-                  )}
-                </div>
 
-                <div className="flex flex-col sm:flex-row gap-2">
-                  {staffMember.role !== 'admin' && (
-                    <>
-                      <Dialog 
-                        open={editingPaymentStaff?.username === staffMember.username}
-                        onOpenChange={(open) => {
-                          if (!open) {
-                            setEditingPaymentStaff(null);
-                          } else {
-                            openEditPaymentModal(staffMember);
-                          }
-                        }}
-                      >
-                        <DialogTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            className="flex-1 w-full sm:w-auto"
+                    <div>
+                      <p className="text-sm font-bold text-zinc-900 mb-2 uppercase tracking-wider">{t('staff.management.assignedServices')}</p>
+                      {assignedServices.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {assignedServices.map(service => (
+                            <div key={service.id} className="flex items-center gap-2 text-sm text-zinc-700 font-medium">
+                              <CheckSquare className="w-4 h-4 text-green-500" />
+                              <span>{service.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-zinc-500 italic font-medium">{t('staff.management.noServicesAssigned')}</p>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      {staffMember.role !== 'admin' && (
+                        <>
+                          {/* Payment Edit Dialog */}
+                          <Dialog 
+                            open={editingPaymentStaff?.username === staffMember.username}
+                            onOpenChange={(open) => {
+                              if (!open) {
+                                setEditingPaymentStaff(null);
+                              } else {
+                                openEditPaymentModal(staffMember);
+                              }
+                            }}
                           >
-                            <Edit className="w-4 h-4 mr-2" />
-                            {t('staff.management.editPayment')}
-                          </Button>
-                        </DialogTrigger>
-                      
-                        <DialogContent 
-                          className="max-w-md max-h-[90vh] overflow-hidden"
-                        >
-                          <DialogHeader>
-                            <DialogTitle>
-                              {t('staff.management.editPaymentTitle', { name: editingPaymentStaff?.full_name || editingPaymentStaff?.username })}
-                            </DialogTitle>
-                            <DialogDescription>
-                              {t('staff.management.editPaymentDescription')}
-                            </DialogDescription>
-                          </DialogHeader>
-                          
-                          <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
-                            {/* Çalışma Modeli */}
-                            <div className="space-y-3">
-                              <Label className="text-sm font-medium text-gray-700 mb-2 block">{t('staff.management.workModel')}</Label>
-                              
-                              {/* Segmented Control */}
-                              <div className="bg-gray-100 p-1 rounded-lg flex w-full">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!editingPaymentStaff) return;
-                                    // payment_type değiştiğinde payment_amount'u temizle (sadece commission'dan salary'ye geçerken)
-                                    const newAmount = editingPaymentStaff.payment_type === "commission" ? "" : (editingPaymentStaff.payment_amount || "");
-                                    setEditingPaymentStaff({ ...editingPaymentStaff, payment_type: "salary", payment_amount: newAmount });
-                                  }}
-                                  className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
-                                    editingPaymentStaff?.payment_type === "salary"
-                                      ? "bg-white text-blue-600 shadow-sm"
-                                      : "text-gray-500 hover:text-gray-700"
-                                  }`}
-                                >
-                                  {t('staff.management.fixedSalary')}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!editingPaymentStaff) return;
-                                    // payment_type değiştiğinde payment_amount'u temizle (sadece salary'den commission'a geçerken)
-                                    const newAmount = editingPaymentStaff.payment_type === "salary" ? "" : (editingPaymentStaff.payment_amount || "");
-                                    setEditingPaymentStaff({ ...editingPaymentStaff, payment_type: "commission", payment_amount: newAmount });
-                                  }}
-                                  className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
-                                    editingPaymentStaff?.payment_type === "commission"
-                                      ? "bg-white text-blue-600 shadow-sm"
-                                      : "text-gray-500 hover:text-gray-700"
-                                  }`}
-                                >
-                                  {t('staff.management.commission')}
-                                </button>
-                              </div>
-                              
-                              {/* Dinamik Input Alanı */}
-                              {editingPaymentStaff?.payment_type === "salary" && (
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit_payment_amount" className="text-sm font-medium text-gray-700">
-                                    {t('staff.management.monthlySalary')}
-                                  </Label>
-                                  <div className="relative">
-                                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">{i18n.language === 'tr' ? '₺' : '£'}</span>
-                                    <Input
-                                      id="edit_payment_amount"
-                                      type="number"
-                                      min="0"
-                                      step="0.01"
-                                      value={editingPaymentStaff?.payment_amount || ""}
-                                      onChange={(e) => {
-                                        if (!editingPaymentStaff) return;
-                                        const value = e.target.value;
-                                        setEditingPaymentStaff({ ...editingPaymentStaff, payment_amount: value === "" ? "" : value });
-                                      }}
-                                      placeholder="Örn: 30000"
-                                      className="pl-8"
-                                    />
-                                  </div>
-                                </div>
-                              )}
-                              
-                              {editingPaymentStaff?.payment_type === "commission" && (
-                                <div className="space-y-2">
-                                  <Label htmlFor="edit_payment_amount" className="text-sm font-medium text-gray-700">
-                                    {t('staff.management.commissionRate')}
-                                  </Label>
-                                  <div className="relative">
-                                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">%</span>
-                                    <Input
-                                      id="edit_payment_amount"
-                                      type="number"
-                                      min="0"
-                                      max="100"
-                                      step="0.1"
-                                      value={editingPaymentStaff?.payment_amount || ""}
-                                      onChange={(e) => {
-                                        if (!editingPaymentStaff) return;
-                                        const value = e.target.value;
-                                        setEditingPaymentStaff({ ...editingPaymentStaff, payment_amount: value === "" ? "" : value });
-                                      }}
-                                      placeholder="Örn: 50"
-                                      className="pl-8"
-                                    />
-                                  </div>
-                                  <small className="text-gray-500 text-xs block">
-                                    {t('staff.management.commissionNote')}
-                                  </small>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => setEditingPaymentStaff(null)}
-                              variant="outline"
-                              className="flex-1"
-                            >
-                              {t('common.cancel')}
-                            </Button>
-                            <Button
-                              onClick={handleSavePayment}
-                              disabled={savingPayment}
-                              className="flex-1 bg-blue-600 hover:bg-blue-700"
-                            >
-                              {savingPayment ? t('settings.profile.buttons.saving') : t('common.save')}
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-
-                      <Dialog
-                        open={timeBlocksStaff?.username === staffMember.username}
-                        onOpenChange={async (open) => {
-                          if (!open) {
-                            setTimeBlocksStaff(null);
-                            setTimeBlocks([]);
-                          } else {
-                            await openTimeBlocksDialog(staffMember);
-                          }
-                        }}
-                      >
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className="flex-1 w-full sm:w-auto"
-                          >
-                            <Calendar className="w-4 h-4 mr-2" />
-                            {t('staff.management.manageTimeBlocks')}
-                          </Button>
-                        </DialogTrigger>
-
-                        <DialogContent className="max-w-md max-h-[90vh] overflow-hidden">
-                          <DialogHeader>
-                            <DialogTitle>
-                              {t('staff.management.blockTimeTitle')}
-                            </DialogTitle>
-                            <DialogDescription>
-                              {t('staff.management.blockTimeNote')}
-                            </DialogDescription>
-                          </DialogHeader>
-
-                          <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
-                            <div className="space-y-2">
-                              <Label className="text-sm font-medium text-gray-700">{t('common.date')}</Label>
-                              <Input
-                                type="date"
-                                value={timeBlocksDate}
-                                onChange={async (e) => {
-                                  const next = e.target.value;
-                                  setTimeBlocksDate(next);
-                                  if (timeBlocksStaff?.username) {
-                                    await loadTimeBlocks(timeBlocksStaff.username, next);
-                                  }
-                                }}
-                              />
-                            </div>
-
-                            <div className="p-3 rounded-lg border border-gray-200 space-y-3">
-                              <p className="text-sm font-semibold text-gray-900">{t('staff.management.blockedTimesForDate')}</p>
-                              {loadingTimeBlocks ? (
-                                <p className="text-sm text-gray-500">{t('common.loading')}</p>
-                              ) : timeBlocks.length === 0 ? (
-                                <p className="text-sm text-gray-500">{t('staff.management.noBlockedTimes')}</p>
-                              ) : (
-                                <div className="space-y-2">
-                                  {timeBlocks
-                                    .slice()
-                                    .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
-                                    .map((b) => (
-                                      <div key={b.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                                        <span className="text-sm font-medium text-gray-900">{b.start_time} - {b.end_time}</span>
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() => handleDeleteTimeBlock(b.id)}
-                                        >
-                                          {t('staff.management.unblock')}
-                                        </Button>
-                                      </div>
-                                    ))}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="p-3 rounded-lg border border-gray-200 space-y-3">
-                              <p className="text-sm font-semibold text-gray-900">{t('staff.management.timeBlocks')}</p>
-                              <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                  <Label className="text-xs text-gray-600">{t('dashboard.breaks.startTime')}</Label>
-                                  <Input
-                                    type="time"
-                                    value={newBlockStart}
-                                    onChange={(e) => setNewBlockStart(e.target.value)}
-                                  />
-                                </div>
-                                <div>
-                                  <Label className="text-xs text-gray-600">{t('dashboard.breaks.endTime')}</Label>
-                                  <Input
-                                    type="time"
-                                    value={newBlockEnd}
-                                    onChange={(e) => setNewBlockEnd(e.target.value)}
-                                  />
-                                </div>
-                              </div>
-                              <Button
-                                onClick={handleAddTimeBlock}
-                                disabled={savingTimeBlock}
-                                className="w-full bg-blue-600 hover:bg-blue-700"
+                            <DialogTrigger asChild>
+                              <Button 
+                                variant="outline" 
+                                className="flex-1 w-full sm:w-auto backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-11 font-bold shadow-sm"
                               >
-                                {savingTimeBlock ? t('settings.profile.buttons.saving') : t('common.add')}
+                                <Edit className="w-4 h-4 mr-2" />
+                                {t('staff.management.editPayment')}
                               </Button>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => setTimeBlocksStaff(null)}
-                              variant="outline"
-                              className="flex-1"
-                            >
-                              {t('common.close')}
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-
-                      <Dialog
-                        open={editingDaysOffStaff?.username === staffMember.username}
-                        onOpenChange={(open) => {
-                          if (!open) {
-                            setEditingDaysOffStaff(null);
-                          } else {
-                            openEditDaysOffModal(staffMember);
-                          }
-                        }}
-                      >
-                        <DialogTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            className="flex-1 w-full sm:w-auto"
-                          >
-                            <Calendar className="w-4 h-4 mr-2" />
-                            {t('staff.management.editDaysOff')}
-                          </Button>
-                        </DialogTrigger>
-                        
-                        <DialogContent 
-                          className="max-w-md max-h-[90vh] overflow-hidden"
-                        >
-                            <DialogHeader>
-                              <DialogTitle>
-                                {t('staff.management.editDaysOffTitle', { name: editingDaysOffStaff?.full_name || editingDaysOffStaff?.username })}
-                              </DialogTitle>
-                              <DialogDescription>
-                                {t('staff.management.editDaysOffDescription')}
-                              </DialogDescription>
-                            </DialogHeader>
-                            
-                            <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
-                              <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-2">
-                                {[
-                                  { key: 'monday', label: t('staff.management.days.monday') },
-                                  { key: 'tuesday', label: t('staff.management.days.tuesday') },
-                                  { key: 'wednesday', label: t('staff.management.days.wednesday') },
-                                  { key: 'thursday', label: t('staff.management.days.thursday') },
-                                  { key: 'friday', label: t('staff.management.days.friday') },
-                                  { key: 'saturday', label: t('staff.management.days.saturday') },
-                                  { key: 'sunday', label: t('staff.management.days.sunday') }
-                                ].map((day) => (
-                                  <div key={day.key} className="flex items-center space-x-2">
-                                    <Checkbox
-                                      id={`day-off-${day.key}-${staffMember.username}`}
-                                      checked={selectedDaysOff.includes(day.key)}
-                                      onCheckedChange={(checked) => {
-                                        if (checked) {
-                                          setSelectedDaysOff([...selectedDaysOff, day.key]);
-                                        } else {
-                                          setSelectedDaysOff(selectedDaysOff.filter(d => d !== day.key));
-                                        }
+                            </DialogTrigger>
+                      
+                            <DialogContent className="max-w-md max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+                              <DialogHeader>
+                                <DialogTitle className="text-xl font-black text-zinc-900">
+                                  {t('staff.management.editPaymentTitle', { name: editingPaymentStaff?.full_name || editingPaymentStaff?.username })}
+                                </DialogTitle>
+                                <DialogDescription className="text-zinc-600 font-medium">
+                                  {t('staff.management.editPaymentDescription')}
+                                </DialogDescription>
+                              </DialogHeader>
+                          
+                              <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
+                                <div className="space-y-3">
+                                  <Label className="text-sm font-bold text-zinc-700 mb-2 block">{t('staff.management.workModel')}</Label>
+                              
+                                  <div className="backdrop-blur-md bg-zinc-100/60 p-1 rounded-xl flex w-full border border-white/30 shadow-sm">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!editingPaymentStaff) return;
+                                        const newAmount = editingPaymentStaff.payment_type === "commission" ? "" : (editingPaymentStaff.payment_amount || "");
+                                        setEditingPaymentStaff({ ...editingPaymentStaff, payment_type: "salary", payment_amount: newAmount });
                                       }}
-                                    />
-                                    <Label
-                                      htmlFor={`day-off-${day.key}-${staffMember.username}`}
-                                      className="text-sm font-medium text-gray-700 cursor-pointer"
+                                      className={`flex-1 py-2.5 px-4 rounded-lg font-bold transition-all ${
+                                        editingPaymentStaff?.payment_type === "salary"
+                                          ? "bg-white text-blue-600 shadow-md"
+                                          : "text-zinc-600 hover:text-zinc-900"
+                                      }`}
                                     >
-                                      {day.label}
-                                    </Label>
+                                      {t('staff.management.fixedSalary')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!editingPaymentStaff) return;
+                                        const newAmount = editingPaymentStaff.payment_type === "salary" ? "" : (editingPaymentStaff.payment_amount || "");
+                                        setEditingPaymentStaff({ ...editingPaymentStaff, payment_type: "commission", payment_amount: newAmount });
+                                      }}
+                                      className={`flex-1 py-2.5 px-4 rounded-lg font-bold transition-all ${
+                                        editingPaymentStaff?.payment_type === "commission"
+                                          ? "bg-white text-blue-600 shadow-md"
+                                          : "text-zinc-600 hover:text-zinc-900"
+                                      }`}
+                                    >
+                                      {t('staff.management.commission')}
+                                    </button>
                                   </div>
-                                ))}
+                              
+                                  {editingPaymentStaff?.payment_type === "salary" && (
+                                    <div className="space-y-2">
+                                      <Label htmlFor="edit_payment_amount" className="text-sm font-bold text-zinc-700">
+                                        {t('staff.management.monthlySalary')}
+                                      </Label>
+                                      <div className="relative">
+                                        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-600 font-bold">{i18n.language === 'tr' ? '₺' : '£'}</span>
+                                        <Input
+                                          id="edit_payment_amount"
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={editingPaymentStaff?.payment_amount || ""}
+                                          onChange={(e) => {
+                                            if (!editingPaymentStaff) return;
+                                            const value = e.target.value;
+                                            setEditingPaymentStaff({ ...editingPaymentStaff, payment_amount: value === "" ? "" : value });
+                                          }}
+                                          placeholder="Örn: 30000"
+                                          className="pl-8 backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                              
+                                  {editingPaymentStaff?.payment_type === "commission" && (
+                                    <div className="space-y-2">
+                                      <Label htmlFor="edit_payment_amount" className="text-sm font-bold text-zinc-700">
+                                        {t('staff.management.commissionRate')}
+                                      </Label>
+                                      <div className="relative">
+                                        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-600 font-bold">%</span>
+                                        <Input
+                                          id="edit_payment_amount"
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="0.1"
+                                          value={editingPaymentStaff?.payment_amount || ""}
+                                          onChange={(e) => {
+                                            if (!editingPaymentStaff) return;
+                                            const value = e.target.value;
+                                            setEditingPaymentStaff({ ...editingPaymentStaff, payment_amount: value === "" ? "" : value });
+                                          }}
+                                          placeholder="Örn: 50"
+                                          className="pl-8 backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                                        />
+                                      </div>
+                                      <small className="text-zinc-500 text-xs block font-medium">
+                                        {t('staff.management.commissionNote')}
+                                      </small>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                            
-                            <div className="flex gap-2">
+                          
+                              <div className="flex gap-2 border-t border-white/30 pt-4">
+                                <Button
+                                  onClick={() => setEditingPaymentStaff(null)}
+                                  variant="outline"
+                                  className="flex-1 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-12 font-bold"
+                                >
+                                  {t('common.cancel')}
+                                </Button>
+                                <Button
+                                  onClick={handleSavePayment}
+                                  disabled={savingPayment}
+                                  className="flex-1 bg-zinc-900 hover:bg-black rounded-xl h-12 font-bold shadow-lg"
+                                >
+                                  {savingPayment ? t('settings.profile.buttons.saving') : t('common.save')}
+                                </Button>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+
+                          {/* Time Blocks Dialog */}
+                          <Dialog
+                            open={timeBlocksStaff?.username === staffMember.username}
+                            onOpenChange={async (open) => {
+                              if (!open) {
+                                setTimeBlocksStaff(null);
+                                setTimeBlocks([]);
+                              } else {
+                                await openTimeBlocksDialog(staffMember);
+                              }
+                            }}
+                          >
+                            <DialogTrigger asChild>
                               <Button
-                                onClick={() => {
-                                  setEditingDaysOffStaff(null);
-                                  setSelectedDaysOff([]);
-                                }}
                                 variant="outline"
-                                className="flex-1"
+                                className="flex-1 w-full sm:w-auto backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-11 font-bold shadow-sm"
+                              >
+                                <Calendar className="w-4 h-4 mr-2" />
+                                {t('staff.management.manageTimeBlocks')}
+                              </Button>
+                            </DialogTrigger>
+
+                            <DialogContent className="max-w-md max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+                              <DialogHeader>
+                                <DialogTitle className="text-xl font-black text-zinc-900">
+                                  {t('staff.management.blockTimeTitle')}
+                                </DialogTitle>
+                                <DialogDescription className="text-zinc-600 font-medium">
+                                  {t('staff.management.blockTimeNote')}
+                                </DialogDescription>
+                              </DialogHeader>
+
+                              <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-bold text-zinc-700">{t('common.date')}</Label>
+                                  <Input
+                                    type="date"
+                                    value={timeBlocksDate}
+                                    onChange={async (e) => {
+                                      const next = e.target.value;
+                                      setTimeBlocksDate(next);
+                                      if (timeBlocksStaff?.username) {
+                                        await loadTimeBlocks(timeBlocksStaff.username, next);
+                                      }
+                                    }}
+                                    className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                                  />
+                                </div>
+
+                                <div className="p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 space-y-3 shadow-sm">
+                                  <p className="text-sm font-bold text-zinc-900">{t('staff.management.blockedTimesForDate')}</p>
+                                  {loadingTimeBlocks ? (
+                                    <p className="text-sm text-zinc-500 font-medium">{t('common.loading')}</p>
+                                  ) : timeBlocks.length === 0 ? (
+                                    <p className="text-sm text-zinc-500 font-medium">{t('staff.management.noBlockedTimes')}</p>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {timeBlocks
+                                        .slice()
+                                        .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
+                                        .map((b) => (
+                                          <div key={b.id} className="flex items-center justify-between p-3 backdrop-blur-sm bg-zinc-50/60 rounded-xl border border-white/30 shadow-sm">
+                                            <span className="text-sm font-bold text-zinc-900">{b.start_time} - {b.end_time}</span>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleDeleteTimeBlock(b.id)}
+                                              className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-lg font-bold"
+                                            >
+                                              {t('staff.management.unblock')}
+                                            </Button>
+                                          </div>
+                                        ))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 space-y-3 shadow-sm">
+                                  <p className="text-sm font-bold text-zinc-900">{t('staff.management.timeBlocks')}</p>
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <Label className="text-xs text-zinc-600 font-bold">{t('dashboard.breaks.startTime')}</Label>
+                                      <Input
+                                        type="time"
+                                        value={newBlockStart}
+                                        onChange={(e) => setNewBlockStart(e.target.value)}
+                                        className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-10 focus:ring-2 focus:ring-zinc-900 font-medium"
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs text-zinc-600 font-bold">{t('dashboard.breaks.endTime')}</Label>
+                                      <Input
+                                        type="time"
+                                        value={newBlockEnd}
+                                        onChange={(e) => setNewBlockEnd(e.target.value)}
+                                        className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-10 focus:ring-2 focus:ring-zinc-900 font-medium"
+                                      />
+                                    </div>
+                                  </div>
+                                  <Button
+                                    onClick={handleAddTimeBlock}
+                                    disabled={savingTimeBlock}
+                                    className="w-full bg-zinc-900 hover:bg-black rounded-xl h-11 font-bold shadow-lg"
+                                  >
+                                    {savingTimeBlock ? t('settings.profile.buttons.saving') : t('common.add')}
+                                  </Button>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-2 border-t border-white/30 pt-4">
+                                <Button
+                                  onClick={() => setTimeBlocksStaff(null)}
+                                  variant="outline"
+                                  className="flex-1 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-12 font-bold"
+                                >
+                                  {t('common.close')}
+                                </Button>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+
+                          {/* Days Off Dialog */}
+                          <Dialog
+                            open={editingDaysOffStaff?.username === staffMember.username}
+                            onOpenChange={(open) => {
+                              if (!open) {
+                                setEditingDaysOffStaff(null);
+                              } else {
+                                openEditDaysOffModal(staffMember);
+                              }
+                            }}
+                          >
+                            <DialogTrigger asChild>
+                              <Button 
+                                variant="outline" 
+                                className="flex-1 w-full sm:w-auto backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-11 font-bold shadow-sm"
+                              >
+                                <Calendar className="w-4 h-4 mr-2" />
+                                {t('staff.management.editDaysOff')}
+                              </Button>
+                            </DialogTrigger>
+                        
+                            <DialogContent className="max-w-md max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+                              <DialogHeader>
+                                <DialogTitle className="text-xl font-black text-zinc-900">
+                                  {t('staff.management.editDaysOffTitle', { name: editingDaysOffStaff?.full_name || editingDaysOffStaff?.username })}
+                                </DialogTitle>
+                                <DialogDescription className="text-zinc-600 font-medium">
+                                  {t('staff.management.editDaysOffDescription')}
+                                </DialogDescription>
+                              </DialogHeader>
+                            
+                              <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
+                                <div className="backdrop-blur-md bg-white/50 p-4 rounded-xl border border-white/30 space-y-3 shadow-sm">
+                                  {[
+                                    { key: 'monday', label: t('staff.management.days.monday') },
+                                    { key: 'tuesday', label: t('staff.management.days.tuesday') },
+                                    { key: 'wednesday', label: t('staff.management.days.wednesday') },
+                                    { key: 'thursday', label: t('staff.management.days.thursday') },
+                                    { key: 'friday', label: t('staff.management.days.friday') },
+                                    { key: 'saturday', label: t('staff.management.days.saturday') },
+                                    { key: 'sunday', label: t('staff.management.days.sunday') }
+                                  ].map((day) => (
+                                    <div key={day.key} className="flex items-center space-x-3">
+                                      <Checkbox
+                                        id={`day-off-${day.key}-${staffMember.username}`}
+                                        checked={selectedDaysOff.includes(day.key)}
+                                        onCheckedChange={(checked) => {
+                                          if (checked) {
+                                            setSelectedDaysOff([...selectedDaysOff, day.key]);
+                                          } else {
+                                            setSelectedDaysOff(selectedDaysOff.filter(d => d !== day.key));
+                                          }
+                                        }}
+                                      />
+                                      <Label
+                                        htmlFor={`day-off-${day.key}-${staffMember.username}`}
+                                        className="text-sm font-bold text-zinc-700 cursor-pointer"
+                                      >
+                                        {day.label}
+                                      </Label>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            
+                              <div className="flex gap-2 border-t border-white/30 pt-4">
+                                <Button
+                                  onClick={() => {
+                                    setEditingDaysOffStaff(null);
+                                    setSelectedDaysOff([]);
+                                  }}
+                                  variant="outline"
+                                  className="flex-1 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-12 font-bold"
+                                >
+                                  {t('common.cancel')}
+                                </Button>
+                                <Button
+                                  onClick={handleSaveDaysOff}
+                                  disabled={savingDaysOff}
+                                  className="flex-1 bg-zinc-900 hover:bg-black rounded-xl h-12 font-bold shadow-lg"
+                                >
+                                  {savingDaysOff ? t('settings.profile.buttons.saving') : t('common.save')}
+                                </Button>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </>
+                      )}
+                  
+                      {canEdit && (
+                        <Dialog
+                          open={editingStaff?.username === staffMember.username}
+                          onOpenChange={(open) => {
+                            if (!open) {
+                              setEditingStaff(null);
+                            } else {
+                              openEditModal(staffMember);
+                            }
+                          }}
+                        >
+                          <DialogTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              className="flex-1 w-full sm:w-auto backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-11 font-bold shadow-sm"
+                            >
+                              <Edit className="w-4 h-4 mr-2" />
+                              {t('staff.management.editServices')}
+                            </Button>
+                          </DialogTrigger>
+                    
+                          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+                            <DialogHeader>
+                              <DialogTitle className="text-xl font-black text-zinc-900">
+                                {t('staff.management.serviceAssignmentTitle', { name: editingStaff?.full_name || editingStaff?.username })}
+                              </DialogTitle>
+                            </DialogHeader>
+                        
+                            <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
+                              <p className="text-sm text-zinc-600 font-medium">
+                                {t('staff.management.selectServices')}
+                              </p>
+                          
+                              {services.length === 0 ? (
+                                <p className="text-center text-zinc-500 py-8 font-medium">
+                                  {t('staff.management.noServicesYet')}
+                                </p>
+                              ) : (
+                                <div className="grid grid-cols-1 gap-3 w-full">
+                                  {services.map((service) => {
+                                    const isSelected = selectedServices.includes(service.id);
+                                
+                                    return (
+                                      <div
+                                        key={service.id}
+                                        onClick={() => toggleService(service.id)}
+                                        className={`p-4 rounded-xl border-2 cursor-pointer transition-all backdrop-blur-md shadow-sm ${
+                                          isSelected
+                                            ? "border-blue-500 bg-blue-50/60"
+                                            : "border-white/30 bg-white/40 hover:border-white/50 hover:bg-white/60"
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-3">
+                                          <Checkbox
+                                            checked={isSelected}
+                                            onCheckedChange={() => toggleService(service.id)}
+                                          />
+                                          <div className="flex-1">
+                                            <Label className="font-bold text-zinc-900 cursor-pointer">
+                                              {service.name}
+                                            </Label>
+                                            <p className="text-sm text-zinc-600 font-medium">{service.price}{i18n.language === 'tr' ? '₺' : '£'}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                        
+                            <div className="flex gap-2 border-t border-white/30 pt-4">
+                              <Button
+                                onClick={() => setEditingStaff(null)}
+                                variant="outline"
+                                className="flex-1 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-12 font-bold"
                               >
                                 {t('common.cancel')}
                               </Button>
                               <Button
-                                onClick={handleSaveDaysOff}
-                                disabled={savingDaysOff}
-                                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                                onClick={handleSaveServices}
+                                disabled={saving}
+                                className="flex-1 bg-zinc-900 hover:bg-black rounded-xl h-12 font-bold shadow-lg"
                               >
-                                {savingDaysOff ? t('settings.profile.buttons.saving') : t('common.save')}
+                                {saving ? t('settings.profile.buttons.saving') : t('common.save')}
                               </Button>
                             </div>
                           </DialogContent>
-                      </Dialog>
-                    </>
-                  )}
+                        </Dialog>
+                      )}
                   
-                  {canEdit && (
-                  <Dialog
-                    open={editingStaff?.username === staffMember.username}
-                    onOpenChange={(open) => {
-                      if (!open) {
-                        setEditingStaff(null);
-                      } else {
-                        openEditModal(staffMember);
-                      }
-                    }}
-                  >
-                    <DialogTrigger asChild>
-                      <Button 
-                        variant="outline" 
-                        className="flex-1 w-full sm:w-auto"
-                      >
-                        <Edit className="w-4 h-4 mr-2" />
-                        {t('staff.management.editServices')}
-                      </Button>
-                    </DialogTrigger>
-                    
-                    <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden">
-                        <DialogHeader>
-                          <DialogTitle>
-                            {t('staff.management.serviceAssignmentTitle', { name: editingStaff?.full_name || editingStaff?.username })}
-                          </DialogTitle>
-                        </DialogHeader>
-                        
-                        <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(90vh-180px)]">
-                          <p className="text-sm text-gray-600">
-                            {t('staff.management.selectServices')}
-                          </p>
-                          
-                          {services.length === 0 ? (
-                            <p className="text-center text-gray-500 py-8">
-                              {t('staff.management.noServicesYet')}
-                            </p>
-                          ) : (
-                            <div className="grid grid-cols-1 gap-3 w-full">
-                              {services.map((service) => {
-                                const isSelected = selectedServices.includes(service.id);
-                                
-                                return (
-                                  <div
-                                    key={service.id}
-                                    onClick={() => toggleService(service.id)}
-                                    className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                                      isSelected
-                                        ? "border-blue-500 bg-blue-50"
-                                        : "border-gray-200 hover:border-blue-300"
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <Checkbox
-                                        checked={isSelected}
-                                        onCheckedChange={() => toggleService(service.id)}
-                                      />
-                                      <div className="flex-1">
-                                        <Label className="font-semibold text-gray-900 cursor-pointer">
-                                          {service.name}
-                                        </Label>
-                                        <p className="text-sm text-gray-600">{service.price}{i18n.language === 'tr' ? '₺' : '£'}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <Button
-                            onClick={() => setEditingStaff(null)}
-                            variant="outline"
-                            className="flex-1"
-                          >
-                            {t('common.cancel')}
-                          </Button>
-                          <Button
-                            onClick={handleSaveServices}
-                            disabled={saving}
-                              className="flex-1 bg-blue-600 hover:bg-blue-700"
-                          >
-                            {saving ? t('settings.profile.buttons.saving') : t('common.save')}
-                          </Button>
-                        </div>
-                      </DialogContent>
-                  </Dialog>
-                  )}
-                  
-                  {canDelete && (
-                    <Button
-                      onClick={() => setDeleteDialog(staffMember)}
-                      variant="outline"
-                      size="icon"
-                      className="text-red-600 hover:bg-red-50 w-full sm:w-auto"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
+                      {canDelete && (
+                        <Button
+                          onClick={() => setDeleteDialog(staffMember)}
+                          variant="outline"
+                          size="icon"
+                          className="text-red-600 hover:bg-red-50 w-full sm:w-auto backdrop-blur-md bg-white/60 border-white/40 hover:border-red-300 rounded-xl h-11 shadow-sm font-bold"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                </div>
-              </Card>
-            );
-          });
+              );
+            });
           })()}
         </div>
       )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>{deleteDialog?.role === 'admin' ? t('staff.management.deleteAdmin') : t('staff.management.deleteStaff')}</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-xl font-black text-zinc-900">
+              {deleteDialog?.role === 'admin' ? t('staff.management.deleteAdmin') : t('staff.management.deleteStaff')}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-600 font-medium">
               <strong>{deleteDialog?.full_name || deleteDialog?.username}</strong> {deleteDialog?.role === 'admin' ? t('staff.management.adminRole').toLowerCase() : t('staff.management.staffRole').toLowerCase()} {i18n.language === 'tr' ? 'silmek istediğinizden emin misiniz?' : 'Are you sure you want to delete?'} {t('customers.deleteWarning')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogCancel className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">
+              {t('common.cancel')}
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => handleDeleteStaff(deleteDialog?.username)}
-              className="bg-red-500 hover:bg-red-600"
+              className="bg-red-500 hover:bg-red-600 rounded-xl font-bold shadow-lg"
             >
               {t('common.delete')}
             </AlertDialogAction>
