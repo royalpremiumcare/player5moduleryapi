@@ -3736,6 +3736,7 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
         # Admin'in de hizmet verip vermediğini kontrol et
         settings_data = await db.settings.find_one({"organization_id": current_user.organization_id})
         admin_provides_service = settings_data.get('admin_provides_service', True) if settings_data else True
+        no_assignable_staff = False
         
         # Bu hizmeti verebilen personelleri bul
         qualified_staff_query = {
@@ -3763,92 +3764,103 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             if admin_user and appointment.service_id in (admin_user.get('permitted_service_ids') or []):
                 qualified_staff = [{"username": admin_user['username'], "role": "admin"}]
                 logging.info(f"⚠️ No staff found, but admin can provide service. Using admin: {admin_user['username']}")
-        
+
         if not qualified_staff:
-            # Kota artırıldı ama personel bulunamadı, geri al
-            plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
-            if plan_doc:
-                await db.organization_plans.update_one(
-                    {"organization_id": current_user.organization_id},
-                    {"$inc": {"quota_usage": -1}}
+            # Admin panelinde personel hiç yoksa (ve admin de hizmet vermiyorsa),
+            # randevuyu personelsiz (unassigned) kaydetmeye izin ver.
+            if current_user.role == "admin":
+                no_assignable_staff = True
+                assigned_staff_id = None
+                logging.info("ℹ️ No assignable staff found; creating appointment as unassigned (admin)")
+            else:
+                # Kota artırıldı ama personel bulunamadı, geri al
+                plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
+                if plan_doc:
+                    await db.organization_plans.update_one(
+                        {"organization_id": current_user.organization_id},
+                        {"$inc": {"quota_usage": -1}}
+                    )
+                raise HTTPException(
+                    status_code=400,
+                    detail="Bu hizmet için uygun personel bulunamadı"
                 )
-            raise HTTPException(
-                status_code=400,
-                detail="Bu hizmet için uygun personel bulunamadı"
-            )
-        
-        # Boş personel bul (duration'a göre çakışma kontrolü ile)
-        service_duration = service.get('duration', 30)
-        
-        # Yeni randevunun başlangıç ve bitiş saatlerini hesapla
-        new_start_hour, new_start_minute = map(int, appointment.appointment_time.split(':'))
-        new_end_minute = new_start_minute + service_duration
-        new_end_hour = new_start_hour + (new_end_minute // 60)
-        new_end_minute = new_end_minute % 60
-        new_end_time = f"{str(new_end_hour).zfill(2)}:{str(new_end_minute).zfill(2)}"
-        
-        for staff in qualified_staff:
-            # Bu personelin o tarihteki tüm randevularını çek
-            existing_appointments = await db.appointments.find(
-                {
-                    "organization_id": current_user.organization_id,
-                    "staff_member_id": staff['username'],
-                    "appointment_date": appointment.appointment_date,
-                    "status": {"$ne": "İptal"}
-                },
-                {"_id": 0, "appointment_time": 1, "service_id": 1}
-            ).to_list(100)
+
+        # Personelsiz kayıt (admin) durumunda çakışma kontrolü yapılmaz
+        if no_assignable_staff:
+            pass
+        else:
+            # Boş personel bul (duration'a göre çakışma kontrolü ile)
+            service_duration = service.get('duration', 30)
             
-            # Çakışma kontrolü
-            has_conflict = False
-            for existing_appt in existing_appointments:
-                existing_start_time = existing_appt['appointment_time']
-                existing_service_id = existing_appt.get('service_id')
-                
-                # Mevcut randevunun hizmet süresini bul
-                if existing_service_id:
-                    existing_service = await db.services.find_one({"id": existing_service_id}, {"_id": 0, "duration": 1})
-                    existing_duration = existing_service.get('duration', 30) if existing_service else 30
-                else:
-                    existing_duration = 30
-                
-                # Mevcut randevunun bitiş saatini hesapla
-                existing_start_hour, existing_start_minute = map(int, existing_start_time.split(':'))
-                existing_end_minute = existing_start_minute + existing_duration
-                existing_end_hour = existing_start_hour + (existing_end_minute // 60)
-                existing_end_minute = existing_end_minute % 60
-                existing_end_time = f"{str(existing_end_hour).zfill(2)}:{str(existing_end_minute).zfill(2)}"
+            # Yeni randevunun başlangıç ve bitiş saatlerini hesapla
+            new_start_hour, new_start_minute = map(int, appointment.appointment_time.split(':'))
+            new_end_minute = new_start_minute + service_duration
+            new_end_hour = new_start_hour + (new_end_minute // 60)
+            new_end_minute = new_end_minute % 60
+            new_end_time = f"{str(new_end_hour).zfill(2)}:{str(new_end_minute).zfill(2)}"
+            
+            for staff in qualified_staff:
+                # Bu personelin o tarihteki tüm randevularını çek
+                existing_appointments = await db.appointments.find(
+                    {
+                        "organization_id": current_user.organization_id,
+                        "staff_member_id": staff['username'],
+                        "appointment_date": appointment.appointment_date,
+                        "status": {"$ne": "İptal"}
+                    },
+                    {"_id": 0, "appointment_time": 1, "service_id": 1}
+                ).to_list(100)
                 
                 # Çakışma kontrolü
-                if (appointment.appointment_time < existing_end_time and new_end_time > existing_start_time):
-                    has_conflict = True
-                    logging.debug(f"   ⚠️ Staff {staff['username']} has conflict: {appointment.appointment_time}-{new_end_time} overlaps with {existing_start_time}-{existing_end_time}")
+                has_conflict = False
+                for existing_appt in existing_appointments:
+                    existing_start_time = existing_appt['appointment_time']
+                    existing_service_id = existing_appt.get('service_id')
+                    
+                    # Mevcut randevunun hizmet süresini bul
+                    if existing_service_id:
+                        existing_service = await db.services.find_one({"id": existing_service_id}, {"_id": 0, "duration": 1})
+                        existing_duration = existing_service.get('duration', 30) if existing_service else 30
+                    else:
+                        existing_duration = 30
+                    
+                    # Mevcut randevunun bitiş saatini hesapla
+                    existing_start_hour, existing_start_minute = map(int, existing_start_time.split(':'))
+                    existing_end_minute = existing_start_minute + existing_duration
+                    existing_end_hour = existing_start_hour + (existing_end_minute // 60)
+                    existing_end_minute = existing_end_minute % 60
+                    existing_end_time = f"{str(existing_end_hour).zfill(2)}:{str(existing_end_minute).zfill(2)}"
+                    
+                    # Çakışma kontrolü
+                    if (appointment.appointment_time < existing_end_time and new_end_time > existing_start_time):
+                        has_conflict = True
+                        logging.debug(f"   ⚠️ Staff {staff['username']} has conflict: {appointment.appointment_time}-{new_end_time} overlaps with {existing_start_time}-{existing_end_time}")
+                        break
+                
+                # Mola çakışması kontrolü
+                has_break_conflict = await check_break_conflict(
+                    db, staff['username'], appointment.appointment_date,
+                    appointment.appointment_time, new_end_time, current_user.organization_id
+                )
+                
+                if not has_conflict and not has_break_conflict:
+                    # Bu personel boş ve mola yok!
+                    assigned_staff_id = staff['username']
+                    logging.info(f"✅ Auto-assigned to {staff['username']} for {appointment.appointment_time}")
                     break
             
-            # Mola çakışması kontrolü
-            has_break_conflict = await check_break_conflict(
-                db, staff['username'], appointment.appointment_date,
-                appointment.appointment_time, new_end_time, current_user.organization_id
-            )
-            
-            if not has_conflict and not has_break_conflict:
-                # Bu personel boş ve mola yok!
-                assigned_staff_id = staff['username']
-                logging.info(f"✅ Auto-assigned to {staff['username']} for {appointment.appointment_time}")
-                break
-        
-        if not assigned_staff_id:
-            # Kota artırıldı ama personel bulunamadı, geri al
-            plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
-            if plan_doc:
-                await db.organization_plans.update_one(
-                    {"organization_id": current_user.organization_id},
-                    {"$inc": {"quota_usage": -1}}
+            if not assigned_staff_id:
+                # Kota artırıldı ama personel bulunamadı, geri al
+                plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
+                if plan_doc:
+                    await db.organization_plans.update_one(
+                        {"organization_id": current_user.organization_id},
+                        {"$inc": {"quota_usage": -1}}
+                    )
+                raise HTTPException(
+                    status_code=400,
+                    detail="Bu saat dilimi doludur. Lütfen başka bir saat seçin."
                 )
-            raise HTTPException(
-                status_code=400,
-                detail="Bu saat dilimi doludur. Lütfen başka bir saat seçin."
-            )
     
     appointment_data = appointment.model_dump(); 
     appointment_data['service_name'] = service['name']; 
@@ -8492,7 +8504,141 @@ async def get_internal_availability(
         ).to_list(1000)
 
         if not staff_members:
-            return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Bu hizmet için uygun personel bulunamadı"}
+            # Admin panelinde hiç personel yoksa (ve staff_id seçilmemişse),
+            # randevu personelsiz (unassigned) oluşturulabilsin diye slotları işletme saatlerinden üret.
+            # Not: staff_id seçilmişse zaten yukarıda "Seçilen personel..." mesajı dönüyoruz.
+            if current_user.role != "admin":
+                return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Bu hizmet için uygun personel bulunamadı"}
+
+            # business_hours'dan o günün saatlerini al
+            day_hours = business_hours.get(day_name, {})
+            is_open_value = day_hours.get('is_open', True)
+            if not is_open_value:
+                return {
+                    "available_slots": [],
+                    "all_slots": [],
+                    "busy_slots": [],
+                    "message": "İşletme bu gün kapalı"
+                }
+
+            open_time_str = day_hours.get('open_time', '09:00')
+            close_time_str = day_hours.get('close_time', '18:00')
+            try:
+                open_hour, open_minute = map(int, open_time_str.split(':'))
+                close_hour, close_minute = map(int, close_time_str.split(':'))
+            except (ValueError, AttributeError):
+                open_hour, open_minute = 9, 0
+                close_hour, close_minute = 18, 0
+
+            service = await db.services.find_one(
+                {"id": service_id, "organization_id": organization_id},
+                {"_id": 0, "duration": 1}
+            )
+            if not service:
+                return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Hizmet bulunamadı"}
+
+            service_duration = service.get('duration', 30)
+
+            # Unassigned randevular: aynı gün/saatte daha önce personelsiz randevu varsa slotu "busy" say.
+            unassigned_appointments = await db.appointments.find(
+                {
+                    "organization_id": organization_id,
+                    "appointment_date": date,
+                    "status": {"$ne": "İptal"},
+                    "$or": [
+                        {"staff_member_id": None},
+                        {"staff_member_id": {"$exists": False}},
+                        {"staff_member_id": ""}
+                    ]
+                },
+                {"_id": 0, "appointment_time": 1, "service_id": 1}
+            ).to_list(1000)
+
+            appointments_with_end_time = []
+            for appt in unassigned_appointments:
+                appt_service_id = appt.get('service_id')
+                if appt_service_id:
+                    appt_service = await db.services.find_one(
+                        {"id": appt_service_id, "organization_id": organization_id},
+                        {"_id": 0, "duration": 1}
+                    )
+                    appt_duration = appt_service.get('duration', 30) if appt_service else 30
+                else:
+                    appt_duration = 30
+
+                start_time_str = appt.get('appointment_time')
+                if not start_time_str:
+                    continue
+                start_hour, start_minute = map(int, start_time_str.split(':'))
+                end_minute = start_minute + appt_duration
+                end_hour = start_hour + (end_minute // 60)
+                end_minute = end_minute % 60
+                end_time_str = f"{str(end_hour).zfill(2)}:{str(end_minute).zfill(2)}"
+                appointments_with_end_time.append({
+                    "start_time": start_time_str,
+                    "end_time": end_time_str,
+                })
+
+            STEP_INTERVAL = 15
+
+            now = datetime.now(timezone.utc)
+            turkey_tz = timezone(timedelta(hours=3))
+            now_turkey = now.astimezone(turkey_tz)
+            is_today = date == now_turkey.strftime("%Y-%m-%d")
+            current_now_minutes = now_turkey.hour * 60 + now_turkey.minute
+
+            potential_slots = []
+            current_hour = open_hour
+            current_minute = open_minute
+            while True:
+                if current_hour > close_hour or (current_hour == close_hour and current_minute >= close_minute):
+                    break
+                potential_slots.append(f"{str(current_hour).zfill(2)}:{str(current_minute).zfill(2)}")
+                current_minute += STEP_INTERVAL
+                if current_minute >= 60:
+                    current_minute = current_minute % 60
+                    current_hour += 1
+
+            def time_to_minutes(time_str: str) -> int:
+                try:
+                    h, m = map(int, time_str.split(':'))
+                    return h * 60 + m
+                except Exception:
+                    return 0
+
+            available_slots = []
+            busy_slots = []
+            for start_time in potential_slots:
+                start_minutes = time_to_minutes(start_time)
+                end_minutes = start_minutes + service_duration
+
+                # Kapanış saatini aşan başlangıçları engelle
+                close_minutes = close_hour * 60 + close_minute
+                if end_minutes > close_minutes:
+                    continue
+
+                if is_today and start_minutes <= current_now_minutes:
+                    continue
+
+                has_conflict = False
+                for ex in appointments_with_end_time:
+                    ex_start = time_to_minutes(ex['start_time'])
+                    ex_end = time_to_minutes(ex['end_time'])
+                    if start_minutes < ex_end and end_minutes > ex_start:
+                        has_conflict = True
+                        break
+
+                if has_conflict:
+                    busy_slots.append(start_time)
+                else:
+                    available_slots.append(start_time)
+
+            return {
+                "available_slots": available_slots,
+                "busy_slots": busy_slots,
+                "all_slots": potential_slots,
+                "message": "OK"
+            }
 
     # business_hours'dan o günün saatlerini al
     day_hours = business_hours.get(day_name, {})
