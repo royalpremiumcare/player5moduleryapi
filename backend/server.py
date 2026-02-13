@@ -1719,9 +1719,9 @@ class PlanUpdateRequest(BaseModel):
 class ContactRequest(BaseModel): name: str = Field(..., min_length=1); phone: str = Field(..., min_length=10); email: Optional[str] = None; message: Optional[str] = None
 class ContactStatusUpdate(BaseModel): status: Literal["pending", "contacted", "resolved"]
 class Service(BaseModel):
-    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); name: str; price: float; duration: int = 30; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-class ServiceCreate(BaseModel): name: str; price: float; duration: int = 30
-class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[float] = None; duration: Optional[int] = None
+    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); name: str; price: float; duration: int = 30; order: Optional[int] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+class ServiceCreate(BaseModel): name: str; price: float; duration: int = 30; order: Optional[int] = None
+class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[float] = None; duration: Optional[int] = None; order: Optional[int] = None
 class Appointment(BaseModel):
     model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None; source: Optional[str] = None
 class AppointmentCreate(BaseModel):
@@ -4165,6 +4165,37 @@ async def get_appointments(
     return appointments_from_db
 
 # === SERVICES ROUTES ===
+@api_router.post("/services/reorder", status_code=204)
+async def reorder_services(request: Request, payload: dict, current_user: UserInDB = Depends(get_current_user)):
+    # Sadece admin sıralayabilir
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+
+    service_ids = payload.get("service_ids")
+    if not isinstance(service_ids, list) or not service_ids:
+        raise HTTPException(status_code=400, detail="Invalid service_ids")
+
+    unique_ids = list(dict.fromkeys(service_ids))
+    db = await get_db_from_request(request)
+
+    existing = await db.services.find(
+        {"organization_id": current_user.organization_id, "id": {"$in": unique_ids}},
+        {"_id": 0, "id": 1}
+    ).to_list(2000)
+    existing_ids = {s.get("id") for s in existing}
+    missing = [sid for sid in unique_ids if sid not in existing_ids]
+    if missing:
+        raise HTTPException(status_code=400, detail="Invalid service_ids")
+
+    now = datetime.now(timezone.utc).isoformat()
+    for idx, sid in enumerate(unique_ids):
+        await db.services.update_one(
+            {"organization_id": current_user.organization_id, "id": sid},
+            {"$set": {"order": idx, "updated_at": now}}
+        )
+
+    return None
+
 @api_router.delete("/services/{service_id}")
 async def delete_service(request: Request, service_id: str, current_user: UserInDB = Depends(get_current_user)):
     # Sadece admin silebilir
@@ -4205,7 +4236,20 @@ async def create_service(request: Request, service: ServiceCreate, current_user:
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
     
-    db = await get_db_from_request(request); service_obj = Service(**service.model_dump(), organization_id=current_user.organization_id)
+    db = await get_db_from_request(request)
+
+    service_data = service.model_dump()
+    if service_data.get("order") is None:
+        last = await db.services.find(
+            {"organization_id": current_user.organization_id},
+            {"_id": 0, "order": 1}
+        ).sort("order", -1).limit(1).to_list(1)
+        last_order = None
+        if last:
+            last_order = last[0].get("order")
+        service_data["order"] = (last_order + 1) if isinstance(last_order, int) else 0
+
+    service_obj = Service(**service_data, organization_id=current_user.organization_id)
     doc = service_obj.model_dump(); doc['created_at'] = doc['created_at'].isoformat()
     await db.services.insert_one(doc)
     try:
@@ -4222,8 +4266,21 @@ async def get_services(request: Request, current_user: UserInDB = Depends(get_cu
     db = await get_db_from_request(request); query = {"organization_id": current_user.organization_id}
     services = await db.services.find(query, {"_id": 0}).to_list(1000)
     for service in services:
-        if isinstance(service['created_at'], str): service['created_at'] = datetime.fromisoformat(service['created_at'].replace('Z', '+00:00'))
-    return services
+        if isinstance(service.get('created_at'), str):
+            service['created_at'] = datetime.fromisoformat(service['created_at'].replace('Z', '+00:00'))
+
+    def sort_key(svc: dict):
+        order = svc.get("order")
+        created = svc.get("created_at")
+        created_str = created.isoformat() if isinstance(created, datetime) else (created or "")
+        return (
+            order if isinstance(order, int) else 1_000_000,
+            created_str,
+            svc.get("name") or "",
+        )
+
+    services_sorted = sorted(services, key=sort_key)
+    return services_sorted
 
 # === TRANSACTIONS ROUTES ===
 @api_router.get("/transactions", response_model=List[Transaction])
