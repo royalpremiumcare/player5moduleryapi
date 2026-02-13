@@ -230,6 +230,11 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // ADIM 2: MÜŞTERİ SEÇİMİ
   const renderStep2 = () => {
+    const handleSelectCustomer = (customer) => {
+      setFormData(prev => ({ ...prev, customer_name: customer.name, phone: customer.phone }));
+      setStep(3);
+    };
+
     const search = (customerSearchTerm || "").toLowerCase();
     const filteredCustomers = (customers || [])
       .filter(c => {
@@ -302,13 +307,17 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         {!isNewCustomerMode && (
           <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
             {filteredCustomers.map(c => (
-              <div 
+              <button
                 key={c.phone}
-                onClick={() => {
-                  setFormData(prev => ({ ...prev, customer_name: c.name, phone: c.phone }));
-                  setStep(3);
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleSelectCustomer(c);
                 }}
-                className="flex items-center justify-between p-4 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl hover:bg-white/60 hover:border-white/40 hover:shadow-lg cursor-pointer group transition-all duration-300"
+                onClick={(e) => {
+                  e.preventDefault();
+                }}
+                className="w-full text-left flex items-center justify-between p-4 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl hover:bg-white/60 hover:border-white/40 hover:shadow-lg cursor-pointer group transition-all duration-300"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-xl backdrop-blur-md bg-zinc-500/10 border border-white/30 flex items-center justify-center text-zinc-700 font-bold text-lg group-hover:bg-zinc-900 group-hover:text-white transition-all duration-300 shadow-sm">
@@ -320,7 +329,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                   </div>
                 </div>
                 <Check className={`w-5 h-5 transition-colors ${formData.phone === c.phone ? 'text-zinc-900' : 'text-zinc-300'}`} strokeWidth={2.5} />
-              </div>
+              </button>
             ))}
           </div>
         )}
