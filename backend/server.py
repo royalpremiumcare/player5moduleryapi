@@ -1702,7 +1702,7 @@ async def create_audit_log(
 # === VERİ MODELLERİ (Aynı kaldı) ===
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    id: Optional[str] = None; username: str; full_name: Optional[str] = None; language: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=lambda: ["sunday"]); onboarding_completed: bool = False; breaks: List[dict] = Field(default_factory=list)
+    id: Optional[str] = None; username: str; full_name: Optional[str] = None; language: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=list); onboarding_completed: bool = False; breaks: List[dict] = Field(default_factory=list)
 class UserInDB(User): hashed_password: Optional[str] = None
 class UserCreate(BaseModel): username: str; password: str; full_name: Optional[str] = None; organization_name: Optional[str] = None; support_phone: Optional[str] = None; sector: Optional[str] = None
 class Token(BaseModel): access_token: str; token_type: str
@@ -6512,6 +6512,15 @@ async def add_staff(request: Request, staff_data: StaffCreate, current_user: Use
     # İşletme adını al
     settings = await db.settings.find_one({"organization_id": current_user.organization_id})
     organization_name = settings.get("company_name", "İşletme") if settings else "İşletme"
+
+    # İşletmenin kapalı günlerini yeni personele varsayılan olarak uygula
+    closed_days = []
+    business_hours = (settings or {}).get("business_hours") or {}
+    day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    for day in day_names:
+        day_settings = business_hours.get(day, {}) or {}
+        if not day_settings.get("is_open", True):
+            closed_days.append(day)
     
     try:
         # Yeni personel oluştur (password olmadan, pending status ile)
@@ -6544,12 +6553,15 @@ async def add_staff(request: Request, staff_data: StaffCreate, current_user: Use
             payment_amount=payment_amount if invited_role == "staff" else None,
             status="pending",  # Bekliyor durumu
             invitation_token=invitation_token,
+            days_off=closed_days if invited_role == "staff" else [],
             language=getattr(current_user, 'language', None) or get_request_language(request)
         )
         
         user_dict = new_user.model_dump()
         # Personel için slug field'ını kaldır (MongoDB unique index hatası önlemek için)
         user_dict.pop('slug', None)
+        if invited_role == "staff":
+            user_dict["synced_closed_days"] = closed_days
         # Admin için onboarding tamamlanmış olarak işaretle (organization zaten kurulu)
         if invited_role == "admin":
             user_dict["onboarding_completed"] = True
