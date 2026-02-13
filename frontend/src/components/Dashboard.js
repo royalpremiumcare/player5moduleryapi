@@ -376,7 +376,16 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             <h2 className="text-base md:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2 uppercase tracking-wider mt-8">{t('dashboard.upcomingAppointments.title')}</h2>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100 overflow-hidden md:grid md:grid-cols-2 md:divide-y-0 md:gap-4 md:bg-transparent md:border-0 md:shadow-none">
               {upcoming.slice(0, 5).map((apt) => (
-                <div key={apt.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors md:bg-white md:rounded-xl md:border md:border-gray-200 md:shadow-sm">
+                (() => {
+                  const hasNote = apt.notes && apt.notes.trim().length > 0;
+                  const isExpanded = expandedNoteId === apt.id;
+                  return (
+                    <div
+                      key={apt.id}
+                      onClick={() => hasNote && toggleNote(apt.id)}
+                      className={`p-4 hover:bg-gray-50 transition-colors md:bg-white md:rounded-xl md:border md:border-gray-200 md:shadow-sm ${hasNote ? 'cursor-pointer' : ''}`}
+                    >
+                      <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="bg-gray-100 rounded-lg p-2 text-center min-w-[50px]">
                       <span className="block text-xs text-gray-500 font-bold uppercase">{format(new Date(apt.appointment_date || apt.date), "MMM", { locale: dateLocale })}</span>
@@ -384,24 +393,39 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                     </div>
                     <div>
                       <h4 className="text-base font-bold text-gray-900">{apt.customer_name}</h4>
-                      <p className="text-sm text-gray-500">{apt.service_name} • {apt.appointment_time}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-gray-500">{apt.service_name} • {apt.appointment_time}</p>
+                        {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
+                      </div>
                     </div>
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm"><MoreVertical className="w-4 h-4 text-gray-400" /></Button>
+                      <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}><MoreVertical className="w-4 h-4 text-gray-400" /></Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-48">
-                      <DropdownMenuItem onClick={() => onEditAppointment(apt)}>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}>
                         <Edit className="w-4 h-4 mr-2" /> Düzenle
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600">
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDeleteDialog(apt); }} className="text-red-600">
                         <Trash2 className="w-4 h-4 mr-2" /> Sil
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+
+                      {isExpanded && hasNote && (
+                        <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200">
+                          <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm">
+                            <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                            <p className="font-medium">{apt.notes}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
               ))}
               {upcoming.length > 5 && <div className="p-3 text-center bg-gray-50 text-xs md:text-sm font-medium text-gray-500 md:col-span-2">+ {upcoming.length - 5} daha</div>}
             </div>
