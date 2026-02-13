@@ -336,6 +336,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
              <label className="block text-sm font-medium text-zinc-700 mb-2">{t('appointments.form.selectStaff')}</label>
              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                 <button
+                   type="button"
                    onClick={() => setFormData(prev => ({ ...prev, staff_member_id: "" }))}
                    className={`px-4 py-2 rounded-full border text-sm font-medium whitespace-nowrap transition-all
                      ${!formData.staff_member_id ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200'}
@@ -346,6 +347,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                 {qualifiedStaff.map(staff => (
                    <button
                      key={staff.username}
+                     type="button"
                      onClick={() => setFormData(prev => ({ ...prev, staff_member_id: staff.username }))}
                      className={`px-4 py-2 rounded-full border text-sm font-medium whitespace-nowrap transition-all flex items-center gap-2
                        ${formData.staff_member_id === staff.username ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200'}
@@ -390,14 +392,15 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                const isSelected = isSameDay(date, formData.appointment_date);
                return (
                  <button 
-                   key={i}
-                   onClick={() => setFormData(prev => ({ ...prev, appointment_date: date, appointment_time: "" }))}
-                   className={`flex flex-col items-center justify-center min-w-[72px] h-[84px] rounded-2xl border transition-all shrink-0
-                     ${isSelected 
-                       ? 'bg-zinc-900 border-zinc-900 text-white shadow-lg scale-105' 
-                       : 'bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300'}
-                   `}
-                 >
+                  type="button"
+                  key={i}
+                  onClick={() => setFormData(prev => ({ ...prev, appointment_date: date, appointment_time: "" }))}
+                  className={`flex flex-col items-center justify-center min-w-[72px] h-[84px] rounded-2xl border transition-all shrink-0
+                    ${isSelected 
+                      ? 'bg-zinc-900 border-zinc-900 text-white shadow-lg scale-105' 
+                      : 'bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300'}
+                  `}
+                >
                    <span className={`text-xs font-medium mb-1 ${isSelected ? 'text-zinc-300' : 'text-zinc-400'}`}>
                      {format(date, "EEE", { locale: dateLocale })}
                    </span>
@@ -423,6 +426,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               {availableSlots.map((time) => (
                 <button
                   key={time}
+                  type="button"
                   onClick={() => setFormData(prev => ({ ...prev, appointment_time: time }))}
                   className={`py-3 rounded-xl text-sm font-semibold transition-all border
                     ${formData.appointment_time === time 
