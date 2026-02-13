@@ -10,6 +10,7 @@ class ServiceCreate(BaseModel):
     name: str = Field(..., min_length=1)
     price: float = Field(..., ge=0)
     duration: int = Field(30, ge=15, description="Duration in minutes")
+    order: Optional[int] = None
 
 
 class ServiceUpdate(BaseModel):
@@ -17,6 +18,7 @@ class ServiceUpdate(BaseModel):
     name: Optional[str] = None
     price: Optional[float] = Field(None, ge=0)
     duration: Optional[int] = Field(None, ge=15)
+    order: Optional[int] = None
 
 
 class ServiceResponse(BaseModel):
@@ -25,5 +27,6 @@ class ServiceResponse(BaseModel):
     name: str
     price: float
     duration: int
+    order: Optional[int] = None
     organization_id: str
     created_at: Optional[str] = None

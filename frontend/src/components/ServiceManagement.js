@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Briefcase, Edit, Trash2, Plus, ArrowLeft } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Briefcase, Edit, Trash2, Plus, ArrowLeft, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
@@ -8,6 +8,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import {
+  DndContext,
+  closestCenter,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  TouchSensor,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +42,78 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+const SortableServiceCard = ({ service, i18n, t, onEdit, onDelete }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: service.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Card
+        data-testid={`service-card-${service.id}`}
+        className={`bg-white shadow-md border border-gray-200 rounded-xl p-6 ${isDragging ? 'opacity-80 ring-2 ring-blue-400' : ''}`}
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3 flex-1">
+            <button
+              type="button"
+              {...attributes}
+              {...listeners}
+              className="p-2 -ml-2 rounded-lg text-gray-400 active:bg-gray-100 touch-none"
+              aria-label={t('services.management.dragToReorder', 'Sürükleyerek sırala')}
+            >
+              <GripVertical className="w-5 h-5" />
+            </button>
+
+            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Briefcase className="w-5 h-5 text-blue-600" />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">{service.name}</h3>
+              <div className="flex items-center gap-3">
+                <p className="text-lg font-bold text-blue-600">{Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}</p>
+                <p className="text-sm text-gray-500">{(service.duration || 30)} {t('services.management.minutes')}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2 flex-shrink-0">
+            <Button
+              data-testid={`edit-service-${service.id}`}
+              onClick={() => onEdit(service)}
+              size="sm"
+              variant="outline"
+            >
+              <Edit className="w-4 h-4 mr-1" />
+              {t('common.edit')}
+            </Button>
+            <Button
+              data-testid={`delete-service-${service.id}`}
+              onClick={() => onDelete(service)}
+              size="sm"
+              variant="outline"
+              className="text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
   const { t, i18n } = useTranslation();
   const [showDialog, setShowDialog] = useState(false);
@@ -36,6 +123,19 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [orderedServices, setOrderedServices] = useState([]);
+  const [reordering, setReordering] = useState(false);
+
+  useEffect(() => {
+    setOrderedServices(Array.isArray(services) ? services : []);
+  }, [services]);
+
+  const serviceIds = useMemo(() => orderedServices.map((s) => s.id), [orderedServices]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
+  );
 
   const handleEdit = (service) => {
     setEditingService(service);
@@ -45,6 +145,34 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       duration: (service.duration || 30).toString()
     });
     setShowDialog(true);
+  };
+
+  const persistOrder = async (nextServices) => {
+    setReordering(true);
+    try {
+      await api.post('/services/reorder', { service_ids: nextServices.map(s => s.id) });
+      toast.success(t('services.management.reordered', 'Sıralama güncellendi'));
+      onRefresh();
+    } catch (error) {
+      toast.error(t('services.management.reorderFailed', 'Sıralama güncellenemedi'));
+      onRefresh();
+    } finally {
+      setReordering(false);
+    }
+  };
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setOrderedServices((prev) => {
+      const oldIndex = prev.findIndex((s) => s.id === active.id);
+      const newIndex = prev.findIndex((s) => s.id === over.id);
+      if (oldIndex < 0 || newIndex < 0) return prev;
+      const next = arrayMove(prev, oldIndex, newIndex);
+      persistOrder(next);
+      return next;
+    });
   };
 
   const handleNew = () => {
@@ -225,48 +353,28 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
         </div>
       ) : (
         <div className="px-4 py-4 space-y-3">
-        {services.map((service) => (
-          <Card
-            key={service.id}
-            data-testid={`service-card-${service.id}`}
-              className="bg-white shadow-md border border-gray-200 rounded-xl p-6"
-          >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3 flex-1">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Briefcase className="w-5 h-5 text-blue-600" />
-                </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-base font-semibold text-gray-900 mb-1">{service.name}</h3>
-                    <div className="flex items-center gap-3">
-                      <p className="text-lg font-bold text-blue-600">{Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}</p>
-                      <p className="text-sm text-gray-500">{(service.duration || 30)} {t('services.management.minutes')}</p>
-                    </div>
-                </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={serviceIds} strategy={verticalListSortingStrategy}>
+              <div className="space-y-3">
+                {orderedServices.map((service) => (
+                  <SortableServiceCard
+                    key={service.id}
+                    service={service}
+                    i18n={i18n}
+                    t={t}
+                    onEdit={handleEdit}
+                    onDelete={setDeleteDialog}
+                  />
+                ))}
               </div>
-                <div className="flex gap-2 flex-shrink-0">
-              <Button
-                data-testid={`edit-service-${service.id}`}
-                onClick={() => handleEdit(service)}
-                size="sm"
-                variant="outline"
-              >
-                <Edit className="w-4 h-4 mr-1" />
-                {t('common.edit')}
-              </Button>
-              <Button
-                data-testid={`delete-service-${service.id}`}
-                onClick={() => setDeleteDialog(service)}
-                size="sm"
-                variant="outline"
-                className="text-red-600 hover:bg-red-50"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-                </div>
+            </SortableContext>
+          </DndContext>
+
+          {reordering && (
+            <div className="text-center text-xs text-gray-400 pt-2">
+              {t('common.saving', 'Kaydediliyor...')}
             </div>
-          </Card>
-        ))}
+          )}
       </div>
       )}
 
