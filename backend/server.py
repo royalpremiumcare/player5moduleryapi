@@ -8082,6 +8082,16 @@ async def get_public_business(request: Request, slug: str):
     
     # Hizmetleri çek
     services = await db.services.find({"organization_id": organization_id}, {"_id": 0}).to_list(1000)
+
+    def sort_key(svc: dict):
+        order = svc.get("order")
+        return (
+            order if isinstance(order, int) else 1_000_000,
+            svc.get("created_at") or "",
+            svc.get("name") or "",
+        )
+
+    services = sorted(services, key=sort_key)
     
     # Ayarları çek
     settings = await db.settings.find_one({"organization_id": organization_id}, {"_id": 0})
