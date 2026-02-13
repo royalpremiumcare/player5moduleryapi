@@ -3737,6 +3737,10 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
         settings_data = await db.settings.find_one({"organization_id": current_user.organization_id})
         admin_provides_service = settings_data.get('admin_provides_service', True) if settings_data else True
         no_assignable_staff = False
+        staff_count = await db.users.count_documents({
+            "organization_id": current_user.organization_id,
+            "role": {"$nin": ["admin"]}
+        })
         
         # Bu hizmeti verebilen personelleri bul
         qualified_staff_query = {
@@ -3753,15 +3757,14 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             {"_id": 0, "username": 1, "role": 1}
         ).to_list(1000)
         
-        # Eğer admin_provides_service kapalıysa ve başka personel yoksa, admin'i personel listesine ekle
-        # (Admin hizmet vermiyor ayarı açık olsa bile, başka personel yoksa admin'i kullanabiliriz)
+        # Eğer admin_provides_service açıksa ve başka personel yoksa, admin'i personel listesine ekle
         if not qualified_staff:
             # Admin'in bu hizmeti verebilip veremediğini kontrol et
             admin_user = await db.users.find_one(
                 {"username": current_user.username, "organization_id": current_user.organization_id, "role": "admin"},
                 {"_id": 0, "username": 1, "role": 1, "permitted_service_ids": 1}
             )
-            if admin_user and appointment.service_id in (admin_user.get('permitted_service_ids') or []):
+            if admin_provides_service and admin_user and appointment.service_id in (admin_user.get('permitted_service_ids') or []):
                 qualified_staff = [{"username": admin_user['username'], "role": "admin"}]
                 logging.info(f"⚠️ No staff found, but admin can provide service. Using admin: {admin_user['username']}")
 
@@ -3769,9 +3772,21 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             # Admin panelinde personel hiç yoksa (ve admin de hizmet vermiyorsa),
             # randevuyu personelsiz (unassigned) kaydetmeye izin ver.
             if current_user.role == "admin":
-                no_assignable_staff = True
-                assigned_staff_id = None
-                logging.info("ℹ️ No assignable staff found; creating appointment as unassigned (admin)")
+                if staff_count == 0:
+                    no_assignable_staff = True
+                    assigned_staff_id = None
+                    logging.info("ℹ️ No staff users exist; creating appointment as unassigned (admin)")
+                else:
+                    plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
+                    if plan_doc:
+                        await db.organization_plans.update_one(
+                            {"organization_id": current_user.organization_id},
+                            {"$inc": {"quota_usage": -1}}
+                        )
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Bu hizmeti verebilen personel yok"
+                    )
             else:
                 # Kota artırıldı ama personel bulunamadı, geri al
                 plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
@@ -8509,6 +8524,15 @@ async def get_internal_availability(
             # Not: staff_id seçilmişse zaten yukarıda "Seçilen personel..." mesajı dönüyoruz.
             if current_user.role != "admin":
                 return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Bu hizmet için uygun personel bulunamadı"}
+
+            staff_count = await db.users.count_documents({
+                "organization_id": organization_id,
+                "role": {"$nin": ["admin"]}
+            })
+
+            # Personel var ama bu hizmeti verebilen personel yoksa: slot gösterme.
+            if staff_count > 0:
+                return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Bu hizmeti verebilen personel yok"}
 
             # business_hours'dan o günün saatlerini al
             day_hours = business_hours.get(day_name, {})
