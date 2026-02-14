@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { User, ArrowLeft, Save, Phone, MessageSquare, Upload, Image, Lock } from "lucide-react";
+import { User, ArrowLeft, Save, Phone, MessageSquare, Upload, Image, Lock, ChevronDown, ChevronUp, Clock } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,7 @@ const SettingsProfile = ({ onNavigate }) => {
   const [loading, setLoading] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
+  const [businessHoursOpen, setBusinessHoursOpen] = useState(false);
 
   useEffect(() => {
     // Token'ı localStorage'dan al (eğer context'ten gelmiyorsa)
@@ -227,137 +228,217 @@ const SettingsProfile = ({ onNavigate }) => {
     }
   };
 
+  const currentRole = userRole || localStorage.getItem('userRole');
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
-      {/* KART 1: İşletme Bilgileri */}
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 pb-20">
+      {/* Header */}
       <div className="px-4 pt-6 pb-4">
-        <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
-          <div className="space-y-4">
-            <div className="mb-4">
-              <button
-                onClick={() => onNavigate && onNavigate("settings")}
-                className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                <span className="text-sm font-medium">{t('settings.backToSettings')}</span>
-              </button>
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">
-                  {(userRole || localStorage.getItem('userRole')) === 'staff' ? t('settings.profile.title') : t('settings.profile.businessTitle')}
-                </h2>
-                <p className="text-sm text-gray-600 mt-1">
-                  {(userRole || localStorage.getItem('userRole')) === 'staff' ? t('settings.profile.profileSubtitle') : t('settings.profile.businessSubtitle')}
-                </p>
+        <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+          <button
+            onClick={() => onNavigate && onNavigate("settings")}
+            className="flex items-center gap-2 text-zinc-700 hover:text-zinc-900 mb-4 transition-colors p-2 -ml-2 hover:bg-white/50 rounded-xl"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="text-sm font-bold">{t('settings.backToSettings')}</span>
+          </button>
+          <div>
+            <h2 className="text-xl font-black text-zinc-900">
+              {currentRole === 'staff' ? t('settings.profile.title') : t('settings.profile.businessTitle')}
+            </h2>
+            <p className="text-sm text-zinc-600 mt-1 font-medium">
+              {currentRole === 'staff' ? t('settings.profile.profileSubtitle') : t('settings.profile.businessSubtitle')}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Staff Profile */}
+      {currentRole === 'staff' ? (
+        userInfo.username ? (
+          <form onSubmit={handleSaveUser}>
+            <div className="px-4 pb-4 space-y-4">
+              {/* Profil Bilgileri Kartı */}
+              <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-base font-black text-zinc-900 mb-1">{t('settings.profile.fields.profileInfo')}</h3>
+                    <p className="text-sm text-zinc-600 font-medium">{t('settings.profile.fields.profileInfoNote')}</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="username" className="text-sm font-bold text-zinc-700">{t('settings.profile.fields.email')}</Label>
+                    <Input
+                      id="username"
+                      type="email"
+                      value={userInfo.username}
+                      disabled
+                      className="backdrop-blur-md bg-zinc-100/60 border-white/40 rounded-xl h-11 font-medium"
+                    />
+                    <p className="text-xs text-zinc-600 font-medium">{t('settings.profile.fields.emailCannotChange')}</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="full-name" className="text-sm font-bold text-zinc-700">{t('settings.profile.fields.fullName')}</Label>
+                    <Input
+                      id="full-name"
+                      type="text"
+                      value={userInfo.full_name}
+                      onChange={(e) => setUserInfo({ ...userInfo, full_name: e.target.value })}
+                      placeholder={t('settings.profile.fields.fullNamePlaceholder')}
+                      className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Şifre Değiştirme Kartı */}
+              <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-base font-black text-zinc-900 mb-1">{t('settings.profile.fields.changePassword')}</h3>
+                    <p className="text-sm text-zinc-600 font-medium">{t('settings.profile.fields.changePasswordNote')}</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="new-password" className="text-sm font-bold text-zinc-700">{t('settings.profile.fields.newPassword')}</Label>
+                    <Input
+                      id="new-password"
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder={t('settings.profile.fields.newPasswordPlaceholder')}
+                      className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                    />
+                    <p className="text-xs text-zinc-600 font-medium">{t('settings.profile.fields.passwordMinLengthNote')}</p>
+                  </div>
+
+                  {newPassword && (
+                    <div className="space-y-2">
+                      <Label htmlFor="confirm-password" className="text-sm font-bold text-zinc-700">{t('settings.profile.fields.confirmPassword')}</Label>
+                      <Input
+                        id="confirm-password"
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder={t('settings.profile.fields.confirmPasswordPlaceholder')}
+                        className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Kaydet Butonu */}
+              <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-zinc-900 hover:bg-black h-12 text-base font-bold rounded-xl shadow-lg"
+                >
+                  <Save className="w-5 h-5 mr-2" />
+                  {loading ? t('settings.profile.buttons.saving') : t('settings.profile.buttons.saveProfile')}
+                </Button>
               </div>
             </div>
+          </form>
+        ) : (
+          <div className="px-4 pb-4">
+            <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 mx-auto mb-3"></div>
+                <p className="text-sm text-zinc-600 font-medium">{t('settings.profile.buttons.loading')}</p>
+              </div>
+            </div>
+          </div>
+        )
+      ) : (
+        /* Admin Settings */
+        <form onSubmit={handleSave}>
+          <div className="px-4 pb-4 space-y-4">
+            {/* KART 1: Logo */}
+            <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-black text-zinc-900 mb-1 flex items-center gap-2">
+                    <Image className="w-5 h-5" />
+                    {t('settings.profile.fields.logo')}
+                  </h3>
+                  <p className="text-sm text-zinc-600 font-medium">{t('settings.profile.fields.logoNote')}</p>
+                </div>
 
-            {/* Personel için profil düzenleme */}
-            {(() => {
-              const currentRole = userRole || localStorage.getItem('userRole');
-              
-              if (currentRole === 'staff') {
-                if (userInfo.username) {
-                  return (
-                    <form onSubmit={handleSaveUser} className="space-y-4">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="username" className="text-sm font-semibold text-gray-900">{t('settings.profile.fields.email')}</Label>
-                      <Input
-                        id="username"
-                        type="email"
-                        value={userInfo.username}
-                        disabled
-                        className="text-base bg-gray-50"
-                      />
-                      <p className="text-xs text-gray-600">{t('settings.profile.fields.emailCannotChange')}</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="full-name" className="text-sm font-semibold text-gray-900">{t('settings.profile.fields.fullName')}</Label>
-                      <Input
-                        id="full-name"
-                        type="text"
-                        value={userInfo.full_name}
-                        onChange={(e) => setUserInfo({ ...userInfo, full_name: e.target.value })}
-                        placeholder={t('settings.profile.fields.fullNamePlaceholder')}
-                        className="text-base"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="new-password" className="text-sm font-semibold text-gray-900">{t('settings.profile.fields.newPassword')}</Label>
-                      <Input
-                        id="new-password"
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder={t('settings.profile.fields.newPasswordPlaceholder')}
-                        className="text-base"
-                      />
-                      <p className="text-xs text-gray-600">{t('settings.profile.fields.passwordMinLengthNote')}</p>
-                    </div>
-
-                    {newPassword && (
-                      <div className="space-y-2">
-                        <Label htmlFor="confirm-password" className="text-sm font-semibold text-gray-900">{t('settings.profile.fields.confirmPassword')}</Label>
-                        <Input
-                          id="confirm-password"
-                          type="password"
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder={t('settings.profile.fields.confirmPasswordPlaceholder')}
-                          className="text-base"
+                <div className="flex flex-col md:flex-row gap-4 p-4 backdrop-blur-md bg-white/50 rounded-xl border border-white/30 shadow-sm">
+                  <div className="flex-shrink-0">
+                    {(logoPreview || settings.logo_url) ? (
+                      <div className="relative w-32 h-32 border-2 border-white/40 rounded-xl overflow-hidden backdrop-blur-sm bg-white/60 shadow-md">
+                        <img
+                          src={logoPreview || getFullLogoUrl(settings.logo_url)}
+                          alt="Logo"
+                          className="w-full h-full object-contain"
                         />
+                      </div>
+                    ) : (
+                      <div className="w-32 h-32 border-2 border-dashed border-white/40 rounded-xl flex items-center justify-center backdrop-blur-sm bg-white/30">
+                        <Upload className="w-8 h-8 text-zinc-400" />
                       </div>
                     )}
                   </div>
-
-                  <div className="mt-6">
-                    <Button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold rounded-full"
-                    >
-                      <Save className="w-4 h-4 mr-2" />
-                      {loading ? t('settings.profile.buttons.saving') : t('settings.profile.buttons.saveProfile')}
-                    </Button>
+                  <div className="flex-1 space-y-2">
+                    <Input
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg"
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                          if (file.size > 5 * 1024 * 1024) {
+                            toast.error(t('settings.profile.fileSizeError'));
+                            return;
+                          }
+                          setLogoFile(file);
+                          setLogoPreview(URL.createObjectURL(file));
+                        }
+                      }}
+                      className="cursor-pointer backdrop-blur-md bg-white/60 border-white/40 rounded-xl font-medium"
+                    />
+                    <p className="text-xs text-zinc-600 font-medium">{t('settings.profile.fields.logoFormatsNote')}</p>
                   </div>
-                    </form>
-                  );
-                } else {
-                  return (
-                    <div className="text-center py-8">
-                      <p className="text-sm text-gray-600">{t('settings.profile.buttons.loading')}</p>
-                    </div>
-                  );
-                }
-              } else {
-                return (
-                  <form onSubmit={handleSave} className="space-y-4">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="company-name" className="text-sm font-semibold text-gray-900">{t('settings.profile.fields.companyName')}</Label>
+                </div>
+              </div>
+            </div>
+
+            {/* KART 2: İşletme Adı ve Telefon */}
+            <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-black text-zinc-900 mb-1 flex items-center gap-2">
+                    <User className="w-5 h-5" />
+                    {t('settings.profile.fields.businessInfo')}
+                  </h3>
+                  <p className="text-sm text-zinc-600 font-medium">{t('settings.profile.fields.businessInfoNote')}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="company-name" className="text-sm font-bold text-zinc-700">{t('settings.profile.fields.companyName')}</Label>
                   <Input
                     id="company-name"
                     type="text"
                     value={settings.company_name}
                     onChange={(e) => setSettings({ ...settings, company_name: e.target.value })}
                     required
-                    className="text-base"
+                    className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
                   />
-                  <p className="text-xs text-gray-600">{t('settings.profile.fields.companyNameNote')}</p>
+                  <p className="text-xs text-zinc-600 font-medium">{t('settings.profile.fields.companyNameNote')}</p>
                   {settings.slug && (() => {
-                    // Telefon numarasına göre domain belirle (+44 ise co.uk, değilse co)
                     const phone = settings.support_phone || "";
                     const cleanPhone = phone.replace(/\s/g, "");
                     const domain = (cleanPhone.startsWith('+44') || cleanPhone.startsWith('44')) ? 'plannapp.co.uk' : 'plannapp.co';
                     const appointmentLink = `${domain}/${settings.slug}`;
                     
                     return (
-                      <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <p className="text-xs text-gray-600 mb-1">{t('settings.profile.fields.appointmentLink')}</p>
+                      <div className="mt-3 p-4 backdrop-blur-md bg-white/50 rounded-xl border border-white/30 shadow-sm">
+                        <p className="text-xs text-zinc-600 mb-2 font-bold uppercase tracking-wider">{t('settings.profile.fields.appointmentLink')}</p>
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                          <code className="flex-1 text-sm font-mono bg-white px-3 py-2 rounded border border-gray-200 text-gray-700 break-all">
+                          <code className="flex-1 text-sm font-mono backdrop-blur-sm bg-white/60 px-3 py-2.5 rounded-lg border border-white/40 text-zinc-700 break-all font-medium shadow-sm">
                             {appointmentLink}
                           </code>
                           <button
@@ -370,7 +451,7 @@ const SettingsProfile = ({ onNavigate }) => {
                                 toast.error(t('settings.profile.linkCopyError'));
                               }
                             }}
-                            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs font-semibold whitespace-nowrap"
+                            className="px-4 py-2.5 bg-zinc-900 text-white rounded-lg hover:bg-black transition-colors text-xs font-bold whitespace-nowrap shadow-md"
                           >
                             {t('settings.profile.buttons.copy')}
                           </button>
@@ -381,30 +462,44 @@ const SettingsProfile = ({ onNavigate }) => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="support-phone" className="text-sm font-semibold text-gray-900">
+                  <Label htmlFor="support-phone" className="text-sm font-bold text-zinc-700">
+                    <Phone className="w-4 h-4 inline mr-1" />
                     {t('settings.profile.fields.supportPhone')}
                   </Label>
                   <Input
                     id="support-phone"
-                    type="text"
-                    value={settings.support_phone}
+                    type="tel"
+                    value={settings.support_phone || ""}
                     onChange={(e) => setSettings({ ...settings, support_phone: e.target.value })}
+                    placeholder="+90 555 123 45 67"
                     required
-                    className="text-base"
+                    className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
                   />
-                  <p className="text-xs text-gray-600">{t('settings.profile.fields.supportPhoneNote')}</p>
+                  <p className="text-xs text-zinc-600 font-medium">{t('settings.profile.fields.supportPhoneNote')}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* KART 3: WhatsApp Hatırlatma */}
+            <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-black text-zinc-900 mb-1 flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5" />
+                    {t('settings.profile.fields.whatsappReminder')}
+                  </h3>
+                  <p className="text-sm text-zinc-600 font-medium">{t('settings.profile.fields.whatsappReminderNote')}</p>
                 </div>
 
-                {/* WhatsApp Hatırlatma - Backend'de sms_reminder_hours olarak tutuluyor (legacy naming) */}
                 <div className="space-y-2">
-                  <Label htmlFor="whatsapp-reminder" className="text-sm font-semibold text-gray-900">
-                    {t('settings.profile.fields.whatsappReminder')}
+                  <Label htmlFor="whatsapp-reminder" className="text-sm font-bold text-zinc-700">
+                    {t('settings.profile.fields.reminderTime')}
                   </Label>
                   <select
                     id="whatsapp-reminder"
                     value={settings.sms_reminder_hours}
                     onChange={(e) => setSettings({ ...settings, sms_reminder_hours: parseFloat(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base"
+                    className="w-full px-4 py-2.5 backdrop-blur-md bg-white/60 border border-white/40 rounded-xl focus:ring-2 focus:ring-zinc-900 font-medium shadow-sm"
                   >
                     <option value="0.5">{t('settings.profile.reminderOptions.30min')}</option>
                     <option value="1">{t('settings.profile.reminderOptions.1hour')}</option>
@@ -414,164 +509,131 @@ const SettingsProfile = ({ onNavigate }) => {
                     <option value="12">{t('settings.profile.reminderOptions.12hours')}</option>
                     <option value="24">{t('settings.profile.reminderOptions.24hours')}</option>
                   </select>
-                  <p className="text-xs text-gray-600">
-                    {t('settings.profile.fields.whatsappReminderNote')}
-                  </p>
                 </div>
+              </div>
+            </div>
 
-                {/* Logo Upload */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-gray-900">{t('settings.profile.fields.logo')}</Label>
-                  <div className="flex flex-col md:flex-row gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="flex-shrink-0">
-                      {(logoPreview || settings.logo_url) ? (
-                        <div className="relative w-32 h-32 border-2 border-gray-300 rounded-lg overflow-hidden bg-white">
-                          <img
-                            src={logoPreview || getFullLogoUrl(settings.logo_url)}
-                            alt="Logo"
-                            className="w-full h-full object-contain"
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-white">
-                          <Upload className="w-8 h-8 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 space-y-2">
-                      <Input
-                        type="file"
-                        accept="image/png,image/jpeg,image/jpg"
-                        onChange={(e) => {
-                          const file = e.target.files[0];
-                          if (file) {
-                            if (file.size > 5 * 1024 * 1024) {
-                              toast.error(t('settings.profile.fileSizeError'));
-                              return;
-                            }
-                            setLogoFile(file);
-                            setLogoPreview(URL.createObjectURL(file));
-                          }
-                        }}
-                        className="cursor-pointer"
-                      />
-                      <p className="text-xs text-gray-600">
-                        {t('settings.profile.fields.logoNote')}
-                      </p>
-                    </div>
+            {/* KART 4: Çalışma Saatleri (Collapsible) */}
+            <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl shadow-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setBusinessHoursOpen(!businessHoursOpen)}
+                className="w-full p-6 flex items-center justify-between hover:bg-white/20 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-zinc-900" />
+                  <div className="text-left">
+                    <h3 className="text-base font-black text-zinc-900">{t('settings.profile.fields.businessHours')}</h3>
+                    <p className="text-sm text-zinc-600 font-medium">{t('settings.profile.fields.businessHoursNote')}</p>
                   </div>
                 </div>
+                {businessHoursOpen ? (
+                  <ChevronUp className="w-5 h-5 text-zinc-900" />
+                ) : (
+                  <ChevronDown className="w-5 h-5 text-zinc-900" />
+                )}
+              </button>
 
-                {/* Genel Çalışma Saatleri */}
-                <Card className="p-6 bg-white border border-gray-200">
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="text-base font-semibold text-gray-900 mb-1">{t('settings.profile.fields.businessHours')}</h3>
-                      <p className="text-xs text-gray-600">{t('settings.profile.fields.businessHoursNote')}</p>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {[
-                        { key: 'monday', label: t('settings.profile.days.monday') },
-                        { key: 'tuesday', label: t('settings.profile.days.tuesday') },
-                        { key: 'wednesday', label: t('settings.profile.days.wednesday') },
-                        { key: 'thursday', label: t('settings.profile.days.thursday') },
-                        { key: 'friday', label: t('settings.profile.days.friday') },
-                        { key: 'saturday', label: t('settings.profile.days.saturday') },
-                        { key: 'sunday', label: t('settings.profile.days.sunday') }
-                      ].map((day) => {
-                        const dayData = settings.business_hours?.[day.key] || { is_open: true, open_time: "09:00", close_time: "18:00" };
-                        return (
-                          <div key={day.key} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
-                            <div className="w-12 flex-shrink-0">
-                              <span className="text-xs font-medium text-gray-900">{day.label}</span>
-                            </div>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              <Switch
-                                checked={dayData.is_open}
-                                onCheckedChange={(checked) => {
+              {businessHoursOpen && (
+                <div className="px-6 pb-6 pt-2">
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { key: 'monday', label: t('settings.profile.days.monday') },
+                      { key: 'tuesday', label: t('settings.profile.days.tuesday') },
+                      { key: 'wednesday', label: t('settings.profile.days.wednesday') },
+                      { key: 'thursday', label: t('settings.profile.days.thursday') },
+                      { key: 'friday', label: t('settings.profile.days.friday') },
+                      { key: 'saturday', label: t('settings.profile.days.saturday') },
+                      { key: 'sunday', label: t('settings.profile.days.sunday') }
+                    ].map((day) => {
+                      const dayData = settings.business_hours?.[day.key] || { is_open: true, open_time: "09:00", close_time: "18:00" };
+                      return (
+                        <div key={day.key} className="flex items-center gap-2 p-3 backdrop-blur-md bg-white/60 rounded-xl border border-white/30 shadow-sm">
+                          <div className="w-16 flex-shrink-0">
+                            <span className="text-xs font-bold text-zinc-900">{day.label}</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Switch
+                              checked={dayData.is_open}
+                              onCheckedChange={(checked) => {
+                                setSettings({
+                                  ...settings,
+                                  business_hours: {
+                                    ...settings.business_hours,
+                                    [day.key]: {
+                                      ...dayData,
+                                      is_open: checked
+                                    }
+                                  }
+                                });
+                              }}
+                            />
+                          </div>
+                          {dayData.is_open ? (
+                            <div className="flex items-center gap-1.5 flex-1">
+                              <Input
+                                type="time"
+                                value={dayData.open_time}
+                                onChange={(e) => {
                                   setSettings({
                                     ...settings,
                                     business_hours: {
                                       ...settings.business_hours,
                                       [day.key]: {
                                         ...dayData,
-                                        is_open: checked
+                                        open_time: e.target.value
                                       }
                                     }
                                   });
                                 }}
+                                className="w-24 text-xs p-1.5 backdrop-blur-sm bg-white/80 border-white/40 rounded-lg font-medium"
+                              />
+                              <span className="text-zinc-400 text-xs font-bold">-</span>
+                              <Input
+                                type="time"
+                                value={dayData.close_time}
+                                onChange={(e) => {
+                                  setSettings({
+                                    ...settings,
+                                    business_hours: {
+                                      ...settings.business_hours,
+                                      [day.key]: {
+                                        ...dayData,
+                                        close_time: e.target.value
+                                      }
+                                    }
+                                  });
+                                }}
+                                className="w-24 text-xs p-1.5 backdrop-blur-sm bg-white/80 border-white/40 rounded-lg font-medium"
                               />
                             </div>
-                            {dayData.is_open ? (
-                              <div className="flex items-center gap-1 flex-1">
-                                <Input
-                                  type="time"
-                                  value={dayData.open_time}
-                                  onChange={(e) => {
-                                    setSettings({
-                                      ...settings,
-                                      business_hours: {
-                                        ...settings.business_hours,
-                                        [day.key]: {
-                                          ...dayData,
-                                          open_time: e.target.value
-                                        }
-                                      }
-                                    });
-                                  }}
-                                  className="w-20 text-xs p-1"
-                                />
-                                <span className="text-gray-400 text-xs">-</span>
-                                <Input
-                                  type="time"
-                                  value={dayData.close_time}
-                                  onChange={(e) => {
-                                    setSettings({
-                                      ...settings,
-                                      business_hours: {
-                                        ...settings.business_hours,
-                                        [day.key]: {
-                                          ...dayData,
-                                          close_time: e.target.value
-                                        }
-                                      }
-                                    });
-                                  }}
-                                  className="w-20 text-xs p-1"
-                                />
-                              </div>
-                            ) : (
-                              <span className="text-xs text-gray-400 flex-1">{t('settings.profile.closed')}</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                          ) : (
+                            <span className="text-xs text-zinc-400 flex-1 font-bold">{t('settings.profile.closed')}</span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                </Card>
-              </div>
+                </div>
+              )}
+            </div>
 
-              <div className="mt-6">
-                <Button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold rounded-full"
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {loading ? t('settings.profile.buttons.saving') : t('settings.profile.buttons.saveSettings')}
-                </Button>
-              </div>
-                  </form>
-                );
-              }
-            })()}
+            {/* Kaydet Butonu */}
+            <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-zinc-900 hover:bg-black h-12 text-base font-bold rounded-xl shadow-lg"
+              >
+                <Save className="w-5 h-5 mr-2" />
+                {loading ? t('settings.profile.buttons.saving') : t('settings.profile.buttons.saveSettings')}
+              </Button>
+            </div>
           </div>
-        </Card>
-      </div>
+        </form>
+      )}
     </div>
   );
 };
 
 export default SettingsProfile;
-

@@ -5,6 +5,9 @@
     "delete": "Delete",
     "edit": "Edit",
     "add": "Add",
+    "appointments": "Appointments",
+    "start": "Start",
+    "end": "End",
     "search": "Search",
     "filter": "Filter",
     "loading": "Loading...",
@@ -342,7 +345,13 @@
     "todayFlow": {
       "title": "Today's Appointments",
       "noAppointments": "No appointments today",
+      "noAppointmentsShort": "No appointments",
+      "beforeNoon": "Before Noon",
+      "afterNoon": "After Noon",
       "allStaff": "All Staff"
+    },
+    "tomorrowAppointments": {
+      "title": "Tomorrow's Appointments"
     },
     "tomorrowSummary": {
       "title": "Tomorrow's Summary"
@@ -368,6 +377,17 @@
       "selectTimes": "Please select start and end time",
       "addError": "Could not add break",
       "deleteError": "Could not delete break"
+    },
+    "greetings": {
+      "morning": "Good morning",
+      "noon": "Good afternoon",
+      "evening": "Good evening",
+      "night": "Good night"
+    },
+    "userFallback": "User",
+    "summary": {
+      "todayAppointments": "Today's Appointments",
+      "todayRevenue": "Today's Revenue"
     },
     "appointment": {
       "edit": "Edit",
@@ -673,6 +693,21 @@
   "settings": {
     "title": "Settings",
     "subtitle": "Manage your account and system settings",
+    "sections": {
+      "accountPlan": "Account & Plan",
+      "businessManagement": "Business Management",
+      "appPreferences": "App Preferences",
+      "other": "Other"
+    },
+    "staffManagementSubtitle": "Add, edit, or authorize staff",
+    "serviceManagementSubtitle": "Manage your services and pricing",
+    "financeManagementSubtitle": "Track cash, income and expenses",
+    "locationSubtitle": "Address and location information",
+    "notificationsOn": "Notifications on",
+    "notificationsOff": "Notifications off",
+    "notificationsRepairSubtitle": "Run the troubleshooter if notifications are not coming",
+    "helpCenterSubtitle": "Frequently asked questions and support",
+    "logoutSubtitle": "Sign out securely",
     "backToHome": "Back to Home",
     "backToSettings": "Back to Settings",
     "general": "General",
@@ -808,22 +843,30 @@
       "fields": {
         "email": "Email (Username)",
         "emailCannotChange": "Email address cannot be changed.",
+        "profileInfo": "Profile Information",
+        "profileInfoNote": "Your email and name",
         "fullName": "Full Name",
         "fullNamePlaceholder": "Your Full Name",
+        "changePassword": "Change Password",
+        "changePasswordNote": "Set a new password",
         "newPassword": "New Password (Optional)",
         "newPasswordPlaceholder": "Leave blank if you don't want to change password",
         "passwordMinLengthNote": "Password must be at least 6 characters.",
         "confirmPassword": "Confirm New Password",
         "confirmPasswordPlaceholder": "Re-enter your new password",
+        "businessInfo": "Business Information",
+        "businessInfoNote": "Company name and contact details",
         "companyName": "Company Name",
         "companyNameNote": "Appears in SMS messages sent to your customers.",
         "appointmentLink": "Your Appointment Link:",
-        "supportPhone": "Support Phone",
+        "supportPhone": "Contact Number",
         "supportPhoneNote": "The number customers will use to reach you.",
-        "whatsappReminder": "WhatsApp Reminder (Hours Before)",
+        "whatsappReminder": "WhatsApp Reminder",
         "whatsappReminderNote": "How many hours before the appointment should WhatsApp reminder be sent",
+        "reminderTime": "Reminder Time",
         "logo": "Company Logo",
         "logoNote": "PNG or JPG, maximum 5MB",
+        "logoFormatsNote": "PNG, JPG - Max 5MB",
         "businessHours": "General Business Hours",
         "businessHoursNote": "Set the days and times when customers can book online appointments."
       },

@@ -220,7 +220,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
           </button>
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 tracking-tight leading-none">{t('settings.title')}</h1>
-            <p className="text-sm text-zinc-500 mt-1 font-medium">{t('settings.subtitle') || "Hesap ve uygulama ayarları"}</p>
+            <p className="text-sm text-zinc-500 mt-1 font-medium">{t('settings.subtitle')}</p>
           </div>
         </div>
       </div>
@@ -228,7 +228,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
       <div className="p-5 max-w-3xl mx-auto">
         
         {/* GRUP 1: HESAP & ABONELİK */}
-        <SectionTitle title="Hesap ve Plan" />
+        <SectionTitle title={t('settings.sections.accountPlan')} />
         <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
           
           {/* Profil (Herkes) */}
@@ -253,34 +253,34 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
         {/* GRUP 2: İŞLETME YÖNETİMİ (Sadece Admin) */}
         {userRole === 'admin' && (
           <>
-            <SectionTitle title="İşletme Yönetimi" />
+            <SectionTitle title={t('settings.sections.businessManagement')} />
             <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
               
               <SettingItem 
                 icon={UserCog} 
                 title={t('settings.staffManagement')}
-                subtitle="Personel ekle, düzenle veya yetkilendir"
+                subtitle={t('settings.staffManagementSubtitle')}
                 onClick={() => onNavigate && onNavigate("staff")}
               />
 
               <SettingItem 
                 icon={Briefcase} 
                 title={t('settings.serviceManagement')}
-                subtitle="Hizmetlerinizi ve fiyatları yönetin"
+                subtitle={t('settings.serviceManagementSubtitle')}
                 onClick={() => onNavigate && onNavigate("services")}
               />
 
               <SettingItem 
                 icon={DollarSign} 
                 title={t('settings.financeManagement')}
-                subtitle="Kasa, gelir ve gider takibi"
+                subtitle={t('settings.financeManagementSubtitle')}
                 onClick={() => onNavigate && onNavigate("settings-finance")}
               />
 
               <SettingItem 
                 icon={MapPin} 
                 title={t('settings.location')}
-                subtitle="Adres ve konum bilgileri"
+                subtitle={t('settings.locationSubtitle')}
                 onClick={() => onNavigate && onNavigate("settings-location")}
               />
             </div>
@@ -288,14 +288,14 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
         )}
 
         {/* GRUP 3: UYGULAMA AYARLARI */}
-        <SectionTitle title="Uygulama Tercihleri" />
+        <SectionTitle title={t('settings.sections.appPreferences')} />
         <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
           
           {/* Bildirimler (Switch) */}
           <SettingItem 
             icon={notificationStatus === 'granted' ? Bell : BellOff} 
             title={t('settings.notifications')}
-            subtitle={notificationStatus === 'granted' ? "Bildirimler açık" : "Bildirimler kapalı"}
+            subtitle={notificationStatus === 'granted' ? t('settings.notificationsOn') : t('settings.notificationsOff')}
             rightElement={
               <Switch 
                 checked={notificationStatus === 'granted'}
@@ -310,26 +310,26 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
           <SettingItem 
             icon={Wrench} 
             title={t('settings.notificationsRepair')}
-            subtitle="Bildirim gelmiyorsa sorun gidericiyi çalıştır"
+            subtitle={t('settings.notificationsRepairSubtitle')}
             onClick={handleRepairNotifications}
           />
         </div>
 
         {/* GRUP 4: DESTEK & ÇIKIŞ */}
-        <SectionTitle title="Diğer" />
+        <SectionTitle title={t('settings.sections.other')} />
         <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
           
           <SettingItem 
             icon={HelpCircle} 
             title={t('settings.helpCenter')}
-            subtitle="Sıkça sorulan sorular ve destek"
+            subtitle={t('settings.helpCenterSubtitle')}
             onClick={() => onNavigate && onNavigate("help-center")}
           />
 
           <SettingItem 
             icon={LogOut} 
             title={t('settings.logout')}
-            subtitle="Oturumu güvenli bir şekilde kapat"
+            subtitle={t('settings.logoutSubtitle')}
             onClick={onLogout}
             isDestructive={true}
           />

@@ -5,6 +5,9 @@
     "delete": "Sil",
     "edit": "Düzenle",
     "add": "Ekle",
+    "appointments": "Randevu",
+    "start": "Başlangıç",
+    "end": "Bitiş",
     "search": "Ara",
     "filter": "Filtrele",
     "loading": "Yükleniyor...",
@@ -342,7 +345,13 @@
     "todayFlow": {
       "title": "Bugünün Randevuları",
       "noAppointments": "Bugün randevu bulunmuyor",
+      "noAppointmentsShort": "Randevu yok",
+      "beforeNoon": "Öğleden Önce",
+      "afterNoon": "Öğleden Sonra",
       "allStaff": "Tüm Personel"
+    },
+    "tomorrowAppointments": {
+      "title": "Yarının Randevuları"
     },
     "tomorrowSummary": {
       "title": "Yarının Özeti"
@@ -351,6 +360,8 @@
       "title": "Gelecek Randevular"
     },
     "breaks": {
+      "myBreaks": "Molalarım",
+      "noBreaksYet": "Henüz mola yok.",
       "title": "Müsaitlik Durumu",
       "addBreak": "+ Zaman Kapat",
       "noBreaks": "Bugün kapattığınız saat yok",
@@ -368,6 +379,17 @@
       "selectTimes": "Başlangıç ve bitiş saati seçin",
       "addError": "Mola eklenemedi",
       "deleteError": "Mola silinemedi"
+    },
+    "greetings": {
+      "morning": "Günaydın",
+      "noon": "Tünaydın",
+      "evening": "İyi Akşamlar",
+      "night": "İyi Geceler"
+    },
+    "userFallback": "Kullanıcı",
+    "summary": {
+      "todayAppointments": "Bugünkü Randevu",
+      "todayRevenue": "Bugünkü Ciro"
     },
     "appointment": {
       "edit": "Düzenle",
@@ -673,6 +695,21 @@
   "settings": {
     "title": "Ayarlar",
     "subtitle": "Hesap ve sistem ayarlarınızı yönetin",
+    "sections": {
+      "accountPlan": "Hesap ve Plan",
+      "businessManagement": "İşletme Yönetimi",
+      "appPreferences": "Uygulama Tercihleri",
+      "other": "Diğer"
+    },
+    "staffManagementSubtitle": "Personel ekle, düzenle veya yetkilendir",
+    "serviceManagementSubtitle": "Hizmetlerinizi ve fiyatları yönetin",
+    "financeManagementSubtitle": "Kasa, gelir ve gider takibi",
+    "locationSubtitle": "Adres ve konum bilgileri",
+    "notificationsOn": "Bildirimler açık",
+    "notificationsOff": "Bildirimler kapalı",
+    "notificationsRepairSubtitle": "Bildirim gelmiyorsa sorun gidericiyi çalıştır",
+    "helpCenterSubtitle": "Sıkça sorulan sorular ve destek",
+    "logoutSubtitle": "Oturumu güvenli bir şekilde kapat",
     "backToHome": "Anasayfaya Dön",
     "backToSettings": "Ayarlara Dön",
     "general": "Genel",
@@ -808,22 +845,30 @@
       "fields": {
         "email": "E-posta (Kullanıcı Adı)",
         "emailCannotChange": "E-posta adresi değiştirilemez.",
+        "profileInfo": "Profil Bilgileri",
+        "profileInfoNote": "E-posta ve adınız",
         "fullName": "Ad Soyad",
         "fullNamePlaceholder": "Adınız Soyadınız",
+        "changePassword": "Şifre Değiştir",
+        "changePasswordNote": "Yeni şifre belirleyin",
         "newPassword": "Yeni Şifre (Opsiyonel)",
         "newPasswordPlaceholder": "Şifre değiştirmek istemiyorsanız boş bırakın",
         "passwordMinLengthNote": "Şifre en az 6 karakter olmalıdır.",
         "confirmPassword": "Yeni Şifre Tekrar",
         "confirmPasswordPlaceholder": "Yeni şifrenizi tekrar girin",
+        "businessInfo": "İşletme Bilgileri",
+        "businessInfoNote": "İşletme adı ve iletişim bilgileri",
         "companyName": "İşletme Adı",
         "companyNameNote": "Müşterilerinize gönderilen SMS'lerde yer alır.",
         "appointmentLink": "Randevu Linkiniz:",
-        "supportPhone": "Destek Telefonu",
+        "supportPhone": "İletişim Numarası",
         "supportPhoneNote": "Müşterilerin size ulaşacağı numara.",
-        "whatsappReminder": "WhatsApp Hatırlatma (Saat Önce)",
+        "whatsappReminder": "WhatsApp Hatırlatma",
         "whatsappReminderNote": "Randevudan kaç saat önce WhatsApp hatırlatması gönderilsin",
+        "reminderTime": "Hatırlatma Zamanı",
         "logo": "İşletme Logosu",
         "logoNote": "PNG veya JPG, maksimum 5MB",
+        "logoFormatsNote": "PNG, JPG - Max 5MB",
         "businessHours": "Genel Çalışma Saatleri",
         "businessHoursNote": "Müşterilerinizin online randevu alabileceği gün ve saatleri belirleyin."
       },

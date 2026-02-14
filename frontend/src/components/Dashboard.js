@@ -67,10 +67,10 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   // Dinamik Selamlama + Emoji
   const getTimeBasedGreeting = () => {
     const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return { text: "Günaydın", emoji: "☀️" };
-    if (hour >= 12 && hour < 18) return { text: "Tünaydın", emoji: "🌤️" };
-    if (hour >= 18 && hour < 22) return { text: "İyi Akşamlar", emoji: "🌙" };
-    return { text: "İyi Geceler", emoji: "✨" };
+    if (hour >= 5 && hour < 12) return { text: t('dashboard.greetings.morning'), emoji: "☀️" };
+    if (hour >= 12 && hour < 18) return { text: t('dashboard.greetings.noon'), emoji: "🌤️" };
+    if (hour >= 18 && hour < 22) return { text: t('dashboard.greetings.evening'), emoji: "🌙" };
+    return { text: t('dashboard.greetings.night'), emoji: "✨" };
   };
 
   // --- LOADERS ---
@@ -106,7 +106,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         const username = payload.sub || payload.username;
         const fullName = payload.full_name || payload.name;
         setCurrentStaffUsername(username);
-        setCurrentUserName(fullName || username || "Kullanıcı");
+        setCurrentUserName(fullName || username || t('dashboard.userFallback'));
       } catch (e) { console.error(e); }
     }
   };
@@ -240,10 +240,10 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild><button onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95"><MoreVertical className="w-5 h-5" /></button></DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
-                    {!isCancelled && !isCompleted && <DropdownMenuItem onClick={() => handleStatusChange(apt.id, "İptal")} className="text-red-600"><X className="w-4 h-4 mr-2"/> İptal Et</DropdownMenuItem>}
-                    <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> Düzenle</DropdownMenuItem>
+                    {!isCancelled && !isCompleted && <DropdownMenuItem onClick={() => handleStatusChange(apt.id, t('dashboard.status.cancelled'))} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>}
+                    <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> {t('common.edit')}</DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> Sil</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> {t('common.delete')}</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -286,9 +286,9 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <div className="bg-orange-50 p-2 rounded-lg text-orange-600"><Coffee className="w-4 h-4" /></div>
-                    <span className="text-sm font-bold text-gray-900">Molalarım</span>
+                    <span className="text-sm font-bold text-gray-900">{t('dashboard.breaks.myBreaks')}</span>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => setShowBreakDialog(true)} className="h-7 text-xs text-orange-600 hover:bg-orange-50 hover:text-orange-700 font-medium transition-all hover:scale-105 active:scale-95">+ Ekle</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowBreakDialog(true)} className="h-7 text-xs text-orange-600 hover:bg-orange-50 hover:text-orange-700 font-medium transition-all hover:scale-105 active:scale-95">+ {t('common.add')}</Button>
                 </div>
                 {todayBreaks.length > 0 ? (
                   <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide py-2 px-1">
@@ -300,7 +300,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-400 italic">Henüz mola yok.</p>
+                  <p className="text-xs text-gray-400 italic">{t('dashboard.breaks.noBreaksYet')}</p>
                 )}
               </div>
             </div>
@@ -313,7 +313,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all hover:scale-105 active:scale-95 cursor-default">
             <div className="flex items-center gap-1.5 mb-0.5">
               <CalendarDays className="w-3 h-3 text-gray-400" />
-              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Bugünkü Randevu</span>
+              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{t('dashboard.summary.todayAppointments')}</span>
             </div>
             <p className="text-xl font-bold text-gray-900">{displayCount}</p>
           </div>
@@ -322,7 +322,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all hover:scale-105 active:scale-95 cursor-default">
             <div className="flex items-center gap-1.5 mb-0.5">
               <TrendingUp className="w-3 h-3 text-gray-400" />
-              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Bugünkü Ciro</span>
+              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{t('dashboard.summary.todayRevenue')}</span>
             </div>
             <p className="text-xl font-bold text-gray-900">{displayRevenue?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')}₺</p>
           </div>
@@ -348,7 +348,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             <h2 className="text-base md:text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
               {t('dashboard.todayFlow.title')}
             </h2>
-            <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full shadow-sm">{filteredToday.length} Randevu</span>
+            <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full shadow-sm">{filteredToday.length} {t('common.appointments')}</span>
           </div>
 
           {filteredToday.length === 0 ? (
@@ -361,13 +361,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               <div className="space-y-6 md:space-y-0 md:grid md:grid-cols-2 md:gap-6">
                 {/* SOL SÜTUN (ÖĞLEDEN ÖNCE) */}
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-sm font-bold text-orange-600 uppercase tracking-wider md:mb-4"><Sun className="w-4 h-4" /> Öğleden Önce</div>
-                  {morningAppointments.length > 0 ? morningAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">Randevu yok</div>}
+                  <div className="flex items-center gap-2 text-sm font-bold text-orange-600 uppercase tracking-wider md:mb-4"><Sun className="w-4 h-4" /> {t('dashboard.todayFlow.beforeNoon')}</div>
+                  {morningAppointments.length > 0 ? morningAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
                 </div>
                 {/* SAĞ SÜTUN (ÖĞLEDEN SONRA) */}
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase tracking-wider md:mb-4"><Moon className="w-4 h-4" /> Öğleden Sonra</div>
-                  {afternoonAppointments.length > 0 ? afternoonAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">Randevu yok</div>}
+                  <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase tracking-wider md:mb-4"><Moon className="w-4 h-4" /> {t('dashboard.todayFlow.afterNoon')}</div>
+                  {afternoonAppointments.length > 0 ? afternoonAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
                 </div>
               </div>
             ) : (
@@ -393,8 +393,8 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             
             <div>
               <div className={`flex items-center justify-between mb-4 ${filteredToday.length === 0 ? 'mt-8' : ''}`}>
-              <h2 className="text-base md:text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">YARININ RANDEVULARI</h2>
-              <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full shadow-sm">{filteredTomorrow.length} Randevu</span>
+              <h2 className="text-base md:text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">{t('dashboard.tomorrowAppointments.title')}</h2>
+              <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full shadow-sm">{filteredTomorrow.length} {t('common.appointments')}</span>
             </div>
             <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4">
               {filteredTomorrow.map(apt => renderAppointmentCard(apt))}
@@ -438,11 +438,11 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-48">
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}>
-                              <Edit className="w-4 h-4 mr-2" /> Düzenle
+                              <Edit className="w-4 h-4 mr-2" /> {t('common.edit')}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDeleteDialog(apt); }} className="text-red-600">
-                              <Trash2 className="w-4 h-4 mr-2" /> Sil
+                              <Trash2 className="w-4 h-4 mr-2" /> {t('common.delete')}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -460,7 +460,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   );
                 })()
               ))}
-              {upcoming.length > 5 && <div className="p-3 text-center bg-gray-50 text-xs md:text-sm font-medium text-gray-500 md:col-span-2 shadow-sm">+ {upcoming.length - 5} daha</div>}
+              {upcoming.length > 5 && <div className="p-3 text-center bg-gray-50 text-xs md:text-sm font-medium text-gray-500 md:col-span-2 shadow-sm">+ {upcoming.length - 5} {t('common.more')}</div>}
             </div>
           </div>
         )}
@@ -478,10 +478,10 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <Card className="w-full max-w-xs rounded-2xl shadow-2xl p-5">
             <h3 className="text-lg font-bold text-gray-900 mb-4">{t('dashboard.breaks.addBreakTitle')}</h3>
             <div className="grid grid-cols-2 gap-3 mb-5">
-              <div><label className="text-xs font-bold text-gray-500 mb-1 block">BAŞLANGIÇ</label><input type="time" value={newBreakStart} onChange={e => setNewBreakStart(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-lg p-2 text-sm font-bold text-gray-900 focus:ring-black shadow-sm" /></div>
-              <div><label className="text-xs font-bold text-gray-500 mb-1 block">BİTİŞ</label><input type="time" value={newBreakEnd} onChange={e => setNewBreakEnd(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-lg p-2 text-sm font-bold text-gray-900 focus:ring-black shadow-sm" /></div>
+              <div><label className="text-xs font-bold text-gray-500 mb-1 block">{t('common.start')}</label><input type="time" value={newBreakStart} onChange={e => setNewBreakStart(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-lg p-2 text-sm font-bold text-gray-900 focus:ring-black shadow-sm" /></div>
+              <div><label className="text-xs font-bold text-gray-500 mb-1 block">{t('common.end')}</label><input type="time" value={newBreakEnd} onChange={e => setNewBreakEnd(e.target.value)} className="w-full bg-gray-50 border-gray-200 rounded-lg p-2 text-sm font-bold text-gray-900 focus:ring-black shadow-sm" /></div>
             </div>
-            <div className="flex gap-2"><Button variant="outline" onClick={() => setShowBreakDialog(false)} className="flex-1 rounded-lg h-10 text-xs transition-all hover:scale-105 active:scale-95">İptal</Button><Button onClick={handleAddBreak} disabled={addingBreak} className="flex-1 rounded-lg h-10 bg-black hover:bg-gray-800 text-white text-xs transition-all hover:scale-105 active:scale-95">{addingBreak ? "..." : "Ekle"}</Button></div>
+            <div className="flex gap-2"><Button variant="outline" onClick={() => setShowBreakDialog(false)} className="flex-1 rounded-lg h-10 text-xs transition-all hover:scale-105 active:scale-95">{t('common.cancel')}</Button><Button onClick={handleAddBreak} disabled={addingBreak} className="flex-1 rounded-lg h-10 bg-black hover:bg-gray-800 text-white text-xs transition-all hover:scale-105 active:scale-95">{addingBreak ? "..." : t('common.add')}</Button></div>
           </Card>
         </div>
       )}
