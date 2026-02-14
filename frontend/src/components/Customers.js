@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
-import { Search, Phone, MessageSquare, ChevronRight, Plus, ArrowLeft, Trash2, Import } from "lucide-react";
+import { Search, Phone, MessageSquare, ChevronRight, Plus, ArrowLeft, Trash2, Import, Users, CheckSquare, X } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
@@ -53,19 +53,19 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   const [customerToDelete, setCustomerToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [newCustomerDialogOpen, setNewCustomerDialogOpen] = useState(false);
-  const [newCustomerData, setNewCustomerData] = useState({
-    name: "",
-    phone: ""
-  });
+  const [newCustomerData, setNewCustomerData] = useState({ name: "", phone: "" });
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [settings, setSettings] = useState(null);
   
-  // Rehber aktarımı loading durumu
+  // --- REHBER ENTEGRASYONU STATE'LERİ ---
   const [importingContacts, setImportingContacts] = useState(false);
-  // Desteklenmeyen tarayıcı uyarısı için state
+  const [showImportChoiceDialog, setShowImportChoiceDialog] = useState(false); // Seçim ekranı (Tümü vs Seçmeli)
+  const [showContactSelectionDialog, setShowContactSelectionDialog] = useState(false); // Liste ekranı
+  const [fetchedContacts, setFetchedContacts] = useState([]); // Telefondan çekilen ham liste
+  const [selectedContactIndices, setSelectedContactIndices] = useState(new Set()); // Seçilenlerin indexleri
   const [showNotSupportedDialog, setShowNotSupportedDialog] = useState(false);
+  // ---------------------------------------
 
-  // WebSocket connection
   const socketRef = useRef(null);
 
   const loadSettings = async () => {
@@ -264,15 +264,34 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     }
   };
 
-  // --- HİBRİT VE GÜVENLİ REHBER FONKSİYONU ---
-  const handleImportContacts = async () => {
-    // 1. Durum: Native Mobil Uygulama (APK / IPA)
+  // --- REHBER İŞLEMLERİ (YENİLENMİŞ) ---
+
+  // 1. Kullanıcıya sor: Tümü mü, Seçmeli mi?
+  const handleImportButtonClick = () => {
+    setShowImportChoiceDialog(true);
+  };
+
+  // 2. Mod 1: Tümünü Getir (Otomatik)
+  const handleImportAll = async () => {
+    setShowImportChoiceDialog(false);
+    await startImportProcess({ mode: 'ALL' });
+  };
+
+  // 3. Mod 2: Seçerek Getir (Liste Aç)
+  const handleImportSelect = async () => {
+    setShowImportChoiceDialog(false);
+    await startImportProcess({ mode: 'SELECT' });
+  };
+
+  // 4. Ana İşlem Fonksiyonu
+  const startImportProcess = async ({ mode }) => {
+    // --- NATIVE (APK) ---
     if (Capacitor.isNativePlatform()) {
       setImportingContacts(true);
       try {
         const permission = await Contacts.requestPermissions();
         if (permission.contacts !== 'granted') {
-          toast.error("Rehbere erişim izni verilmedi.");
+          toast.error("İzin verilmedi.");
           setImportingContacts(false);
           return;
         }
@@ -281,73 +300,116 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           projection: { name: true, phones: true }
         });
 
-        if (result.contacts && result.contacts.length > 0) {
-           processContacts(result.contacts.map(c => ({
-             name: c.name?.display || (c.name?.given + " " + (c.name?.family || "")),
-             phone: c.phones?.[0]?.number
-           })));
-        } else {
-           toast.info("Rehberinizde kişi bulunamadı.");
-           setImportingContacts(false);
+        if (!result.contacts || result.contacts.length === 0) {
+          toast.info("Rehber boş.");
+          setImportingContacts(false);
+          return;
         }
+
+        // Native formatı düzelt
+        const normalizedContacts = result.contacts
+          .map(c => ({
+            name: c.name?.display || (c.name?.given + " " + (c.name?.family || "")),
+            phone: c.phones?.[0]?.number
+          }))
+          .filter(c => c.name && c.phone); // İsimsiz/Nosuz olanları ele
+
+        if (mode === 'ALL') {
+          // Hepsini direkt kaydet
+          await saveContactsBatch(normalizedContacts);
+        } else {
+          // Seçim ekranını aç
+          setFetchedContacts(normalizedContacts);
+          setSelectedContactIndices(new Set()); // Sıfırla
+          setShowContactSelectionDialog(true);
+          setImportingContacts(false); // Loading'i kapat, çünkü dialog açıldı
+        }
+
       } catch (error) {
-        console.error("Native Rehber Hatası:", error);
-        toast.error("Bir hata oluştu.");
+        console.error(error);
+        toast.error("Rehber okunurken hata oluştu.");
         setImportingContacts(false);
       }
-    } 
-    // 2. Durum: Web Tarayıcısı (Chrome Android vb.)
+    }
+    // --- WEB ---
     else if ('contacts' in navigator && 'ContactsManager' in window) {
+      // Web'de API zaten seçmeli çalışır (Native picker açar)
       setImportingContacts(true);
       try {
         const webContacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+        
         if (webContacts && webContacts.length > 0) {
-           processContacts(webContacts.map(c => ({
-             name: c.name?.[0],
-             phone: c.tel?.[0]
-           })));
+          const normalized = webContacts.map(c => ({
+            name: c.name?.[0],
+            phone: c.tel?.[0]
+          }));
+          await saveContactsBatch(normalized);
         } else {
-           setImportingContacts(false); // Kullanıcı iptal etti
+          setImportingContacts(false);
         }
-      } catch (error) {
-        console.error("Web Rehber Hatası:", error);
+      } catch (e) {
         setImportingContacts(false);
       }
-    } 
-    // 3. Durum: Desteklenmeyen Tarayıcı (iOS Web / Masaüstü)
+    }
+    // --- DESTEKLENMEYEN ---
     else {
       setShowNotSupportedDialog(true);
     }
   };
 
-  // Veriyi İşleyen Yardımcı Fonksiyon
-  const processContacts = async (contactsList) => {
-    toast.info(`${contactsList.length} kişi işleniyor...`);
+  // Seçilenleri Kaydet (Dialog'daki "Ekle" butonu için)
+  const handleSaveSelectedContacts = async () => {
+    const selectedList = fetchedContacts.filter((_, index) => selectedContactIndices.has(index));
+    
+    if (selectedList.length === 0) {
+      toast.warning("Lütfen en az bir kişi seçin.");
+      return;
+    }
+
+    setShowContactSelectionDialog(false);
+    setImportingContacts(true);
+    await saveContactsBatch(selectedList);
+  };
+
+  // Checkbox işaretleme mantığı
+  const toggleContactSelection = (index) => {
+    const newSet = new Set(selectedContactIndices);
+    if (newSet.has(index)) {
+      newSet.delete(index);
+    } else {
+      newSet.add(index);
+    }
+    setSelectedContactIndices(newSet);
+  };
+
+  // Toplu Kayıt Fonksiyonu (API)
+  const saveContactsBatch = async (contactList) => {
+    toast.info(`${contactList.length} kişi işleniyor...`);
     let successCount = 0;
 
-    for (const contact of contactsList) {
-      if (contact.name && contact.phone) {
-        let cleanPhone = contact.phone.replace(/\D/g, "");
-        if (cleanPhone.length === 10) cleanPhone = '90' + cleanPhone;
-        else if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) cleanPhone = '90' + cleanPhone.substring(1);
+    for (const contact of contactList) {
+      // Telefon temizleme
+      let cleanPhone = contact.phone.replace(/\D/g, "");
+      if (cleanPhone.length === 10) cleanPhone = '90' + cleanPhone;
+      else if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) cleanPhone = '90' + cleanPhone.substring(1);
 
-        if (cleanPhone.length >= 10) {
-          try {
-            await api.post("/customers", { name: contact.name.trim(), phone: cleanPhone });
-            successCount++;
-          } catch (e) { }
-        }
+      if (cleanPhone.length >= 10) {
+        try {
+          await api.post("/customers", { name: contact.name.trim(), phone: cleanPhone });
+          successCount++;
+        } catch (e) { /* Zaten kayıtlı */ }
       }
     }
 
+    setImportingContacts(false);
     if (successCount > 0) {
-      toast.success(`${successCount} kişi başarıyla eklendi!`);
+      toast.success(`${successCount} kişi eklendi!`);
       await loadCustomers();
     } else {
       toast.warning("Yeni kişi eklenmedi.");
     }
-    setImportingContacts(false);
   };
+
 
   const filteredCustomers = customers.filter(customer =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -477,8 +539,9 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
               <Plus className="w-4 h-4 mr-2" /> {t('customers.newCustomer')}
             </Button>
             
+            {/* --- REHBER BUTONU (GÜNCELLENDİ) --- */}
             <Button
-              onClick={handleImportContacts}
+              onClick={handleImportButtonClick}
               disabled={importingContacts}
               variant="outline"
               className="bg-white border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg w-14 flex-shrink-0"
@@ -524,6 +587,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         )}
       </div>
       
+      {/* Silme Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -531,8 +595,8 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
             <AlertDialogDescription>
               {customerToDelete && (
                 <>
-                  <strong>{customerToDelete.name}</strong> {i18n.language === 'tr' ? 'müşterisini ve tüm randevularını silmek istediğinize emin misiniz?' : 'customer and all their appointments?'}
-                  <br /> <span className="text-red-600 font-semibold">{t('customers.deleteWarning')}</span>
+                  <strong>{customerToDelete.name}</strong> müşterisini ve tüm randevularını silmek istediğinize emin misiniz?
+                  <br /> <span className="text-red-600 font-semibold">Bu işlem geri alınamaz!</span>
                 </>
               )}
             </AlertDialogDescription>
@@ -546,6 +610,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         </AlertDialogContent>
       </AlertDialog>
       
+      {/* Yeni Müşteri Dialog */}
       <Dialog open={newCustomerDialogOpen} onOpenChange={setNewCustomerDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -571,21 +636,102 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         </DialogContent>
       </Dialog>
 
-      {/* --- Desteklenmiyor Uyarısı Dialog'u (En alta ekledik) --- */}
+      {/* --- 1. SEÇİM DİALOGU (Tümünü Mü / Seçerek Mi?) --- */}
+      <Dialog open={showImportChoiceDialog} onOpenChange={setShowImportChoiceDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rehberden Aktar</DialogTitle>
+            <DialogDescription>
+              Müşterilerinizi rehberden nasıl aktarmak istersiniz?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-4">
+            <Button 
+              onClick={handleImportAll}
+              className="w-full justify-start h-14 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-900" 
+              variant="ghost"
+            >
+              <Users className="w-5 h-5 mr-3 text-blue-600" />
+              <div className="flex flex-col items-start">
+                <span className="font-semibold">Tümünü Aktar (Hızlı)</span>
+                <span className="text-xs text-gray-500">Rehberdeki tüm kişileri tek seferde ekler.</span>
+              </div>
+            </Button>
+
+            <Button 
+              onClick={handleImportSelect}
+              className="w-full justify-start h-14 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-900" 
+              variant="ghost"
+            >
+              <CheckSquare className="w-5 h-5 mr-3 text-green-600" />
+              <div className="flex flex-col items-start">
+                <span className="font-semibold">Seçerek Aktar</span>
+                <span className="text-xs text-gray-500">Listeden istediklerinizi seçip eklersiniz.</span>
+              </div>
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowImportChoiceDialog(false)}>İptal</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- 2. KİŞİ SEÇİM LİSTESİ DİALOGU (Sadece Native Modda Açılır) --- */}
+      <Dialog open={showContactSelectionDialog} onOpenChange={setShowContactSelectionDialog}>
+        <DialogContent className="h-[80vh] flex flex-col sm:max-w-md p-0 overflow-hidden">
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle className="flex justify-between items-center">
+              <span>Kişileri Seç</span>
+              <span className="text-sm font-normal text-gray-500">
+                {selectedContactIndices.size} kişi seçildi
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          
+          {/* Liste Alanı */}
+          <div className="flex-1 overflow-y-auto px-6 py-2">
+            {fetchedContacts.map((contact, index) => {
+              const isSelected = selectedContactIndices.has(index);
+              return (
+                <div 
+                  key={index} 
+                  className={`flex items-center justify-between py-3 border-b border-gray-50 cursor-pointer ${isSelected ? 'bg-blue-50' : ''}`}
+                  onClick={() => toggleContactSelection(index)}
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    {/* Checkbox Görünümü */}
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'}`}>
+                      {isSelected && <Users className="w-3 h-3 text-white" />}
+                    </div>
+                    
+                    <div className="flex flex-col truncate">
+                      <span className="font-medium text-gray-900 truncate">{contact.name}</span>
+                      <span className="text-xs text-gray-500">{contact.phone}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <DialogFooter className="px-6 py-4 border-t bg-gray-50">
+            <Button variant="outline" onClick={() => setShowContactSelectionDialog(false)} className="mr-2">
+              İptal
+            </Button>
+            <Button onClick={handleSaveSelectedContacts} className="bg-blue-600 hover:bg-blue-700 text-white">
+              Seçilenleri Ekle ({selectedContactIndices.size})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- Desteklenmiyor Uyarısı --- */}
       <AlertDialog open={showNotSupportedDialog} onOpenChange={setShowNotSupportedDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Özellik Kullanılamıyor</AlertDialogTitle>
             <AlertDialogDescription>
               Bu tarayıcı veya cihaz "Rehberden Aktarma" özelliğini desteklemiyor.
-              <br /><br />
-              Bu özellik şuralarda çalışır:
-              <ul className="list-disc pl-5 mt-2 space-y-1 text-gray-600">
-                <li>Android Telefonlar (Chrome Tarayıcı)</li>
-                <li>PLANN Mobil Uygulaması (APK / iOS App)</li>
-              </ul>
-              <br />
-              <span className="text-xs text-gray-500">*iPhone (iOS) tarayıcılarında Apple kısıtlaması nedeniyle çalışmaz. Lütfen uygulamamızı indirin.</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
