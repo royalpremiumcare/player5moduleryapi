@@ -651,30 +651,48 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
               Müşterilerinizi rehberden nasıl aktarmak istersiniz?
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-3 py-4">
-            <Button 
+          <div className="flex flex-col gap-4 py-6">
+            {/* Tümünü Aktar - Primary Style */}
+            <button
               onClick={handleImportAll}
-              className="w-full justify-start h-14 backdrop-blur-md bg-white/60 hover:bg-white/80 border border-white/40 text-zinc-900 rounded-xl shadow-sm" 
-              variant="ghost"
+              className="group relative overflow-hidden backdrop-blur-xl bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 border-2 border-white/20 rounded-2xl p-6 transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
             >
-              <Users className="w-5 h-5 mr-3 text-blue-600" />
-              <div className="flex flex-col items-start">
-                <span className="font-bold">Tümünü Aktar (Hızlı)</span>
-                <span className="text-xs text-zinc-500 font-medium">Rehberdeki tüm kişileri tek seferde ekler.</span>
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0 group-hover:bg-white/30 transition-colors">
+                  <Users className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex flex-col items-start text-left flex-1">
+                  <span className="font-black text-white text-lg mb-1">Tümünü Aktar</span>
+                  <span className="text-sm text-white/90 font-medium">Rehberdeki tüm kişileri tek seferde ekler. Hızlı ve pratik.</span>
+                </div>
               </div>
-            </Button>
+              <div className="absolute top-2 right-2">
+                <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <ChevronRight className="w-4 h-4 text-white" />
+                </div>
+              </div>
+            </button>
 
-            <Button 
+            {/* Seçerek Aktar - Secondary Style */}
+            <button
               onClick={handleImportSelect}
-              className="w-full justify-start h-14 backdrop-blur-md bg-white/60 hover:bg-white/80 border border-white/40 text-zinc-900 rounded-xl shadow-sm" 
-              variant="ghost"
+              className="group relative overflow-hidden backdrop-blur-xl bg-white/60 hover:bg-white/80 border-2 border-zinc-200 hover:border-zinc-300 rounded-2xl p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
             >
-              <CheckSquare className="w-5 h-5 mr-3 text-green-600" />
-              <div className="flex flex-col items-start">
-                <span className="font-bold">Seçerek Aktar</span>
-                <span className="text-xs text-zinc-500 font-medium">Listeden istediklerinizi seçip eklersiniz.</span>
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0 group-hover:bg-green-200 transition-colors">
+                  <CheckSquare className="w-6 h-6 text-green-600" />
+                </div>
+                <div className="flex flex-col items-start text-left flex-1">
+                  <span className="font-black text-zinc-900 text-lg mb-1">Seçerek Aktar</span>
+                  <span className="text-sm text-zinc-600 font-medium">Listeden istediklerinizi seçip eklersiniz. Daha kontrollü.</span>
+                </div>
               </div>
-            </Button>
+              <div className="absolute top-2 right-2">
+                <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center group-hover:bg-zinc-200 transition-colors">
+                  <ChevronRight className="w-4 h-4 text-zinc-600" />
+                </div>
+              </div>
+            </button>
           </div>
           <DialogFooter className="border-t border-white/30 pt-4">
             <Button variant="outline" onClick={() => setShowImportChoiceDialog(false)} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">İptal</Button>
@@ -685,10 +703,10 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       {/* Kişi Seçim Dialog */}
       <Dialog open={showContactSelectionDialog} onOpenChange={setShowContactSelectionDialog}>
         <DialogContent className="h-[80vh] flex flex-col sm:max-w-md p-0 overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
-          <DialogHeader className="px-6 py-4 border-b border-white/30">
-            <DialogTitle className="flex justify-between items-center">
+          <DialogHeader className="px-6 py-4 border-b border-white/30 pr-12">
+            <DialogTitle className="flex flex-col space-y-1">
               <span className="font-black text-zinc-900">Kişileri Seç</span>
-              <span className="text-sm font-bold text-zinc-600">
+              <span className="text-xs font-bold text-zinc-600">
                 {selectedContactPhones.size} kişi seçildi
               </span>
             </DialogTitle>
