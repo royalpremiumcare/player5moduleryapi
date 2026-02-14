@@ -2,13 +2,25 @@ import { useState, useEffect, useRef } from "react";
 import { format, addDays, isSameDay } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
-import { Calendar as CalendarIcon, Clock, ArrowLeft, User, Search, X, Check, UserPlus, ChevronLeft, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, ArrowLeft, User, Search, X, Check, UserPlus, ChevronLeft, Loader2, Users, Import } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import axios from "axios";
+
+// --- REHBER ENTEGRASYONİ İÇİN ---
+import { Capacitor } from '@capacitor/core';
+import { Contacts } from '@capacitor-community/contacts';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+// ---------------------------------
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const publicApi = axios.create({
@@ -41,7 +53,6 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   // Data States
   const [availableSlots, setAvailableSlots] = useState([]);
   const [busySlots, setBusySlots] = useState([]);
-  const [allSlots, setAllSlots] = useState([]);
   const [loading, setLoading] = useState(false);
   
   // Filtrelemeler
@@ -52,6 +63,14 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   const [customers, setCustomers] = useState([]);
   const [customerSearchTerm, setCustomerSearchTerm] = useState("");
   const [isNewCustomerMode, setIsNewCustomerMode] = useState(false);
+
+  // --- REHBER ENTEGRASYONU STATE'LERİ ---
+  const [importingContacts, setImportingContacts] = useState(false);
+  const [showContactSelectionDialog, setShowContactSelectionDialog] = useState(false);
+  const [fetchedContacts, setFetchedContacts] = useState([]);
+  const [contactSearchTerm, setContactSearchTerm] = useState("");
+  const [selectedContactPhones, setSelectedContactPhones] = useState(new Set());
+  // ---------------------------------------
 
   // --- INIT & LOADERS ---
 
@@ -144,7 +163,6 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       }
       setAvailableSlots(res.data.available_slots || []);
       setBusySlots(res.data.busy_slots || []);
-      setAllSlots(res.data.all_slots || []);
     } catch (e) {
       console.error(e);
       setAvailableSlots([]);
@@ -152,6 +170,113 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   };
 
   // --- HANDLERS ---
+
+  // --- REHBER İŞLEMLERİ ---
+  const handleImportFromContacts = async () => {
+    if (Capacitor.isNativePlatform()) {
+      setImportingContacts(true);
+      try {
+        const permission = await Contacts.requestPermissions();
+        if (permission.contacts !== 'granted') {
+          toast.error("İzin verilmedi.");
+          setImportingContacts(false);
+          return;
+        }
+
+        const result = await Contacts.getContacts({
+          projection: { name: true, phones: true }
+        });
+
+        if (!result.contacts || result.contacts.length === 0) {
+          toast.info("Rehber boş.");
+          setImportingContacts(false);
+          return;
+        }
+
+        const normalizedContacts = result.contacts
+          .map(c => ({
+            name: c.name?.display || (c.name?.given + " " + (c.name?.family || "")),
+            phone: c.phones?.[0]?.number
+          }))
+          .filter(c => c.name && c.phone);
+
+        setFetchedContacts(normalizedContacts);
+        setSelectedContactPhones(new Set());
+        setContactSearchTerm("");
+        setShowContactSelectionDialog(true);
+        setImportingContacts(false);
+
+      } catch (error) {
+        console.error(error);
+        toast.error("Rehber okunurken hata oluştu.");
+        setImportingContacts(false);
+      }
+    }
+    else if ('contacts' in navigator && 'ContactsManager' in window) {
+      setImportingContacts(true);
+      try {
+        const webContacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+        if (webContacts && webContacts.length > 0) {
+          const normalized = webContacts.map(c => ({
+            name: c.name?.[0],
+            phone: c.tel?.[0]
+          })).filter(c => c.name && c.phone);
+          
+          setFetchedContacts(normalized);
+          setSelectedContactPhones(new Set());
+          setContactSearchTerm("");
+          setShowContactSelectionDialog(true);
+        }
+        setImportingContacts(false);
+      } catch (e) {
+        setImportingContacts(false);
+        toast.error("Rehber erişimi başarısız.");
+      }
+    }
+    else {
+      toast.error("Bu tarayıcı rehber özelliğini desteklemiyor.");
+    }
+  };
+
+  const toggleContactSelection = (phone) => {
+    const newSet = new Set(selectedContactPhones);
+    if (newSet.has(phone)) {
+      newSet.delete(phone);
+    } else {
+      newSet.add(phone);
+    }
+    setSelectedContactPhones(newSet);
+  };
+
+  const filteredFetchedContacts = fetchedContacts.filter(contact => 
+    contact.name.toLowerCase().includes(contactSearchTerm.toLowerCase()) || 
+    contact.phone.replace(/\D/g, "").includes(contactSearchTerm)
+  );
+
+  const handleSelectFromContacts = () => {
+    const selectedList = fetchedContacts.filter(c => selectedContactPhones.has(c.phone));
+    
+    if (selectedList.length === 0) {
+      toast.warning("Lütfen en az bir kişi seçin.");
+      return;
+    }
+
+    // İlk seçilen kişiyi forma aktar
+    const firstContact = selectedList[0];
+    let cleanPhone = firstContact.phone.replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = '90' + cleanPhone;
+    else if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) cleanPhone = '90' + cleanPhone.substring(1);
+
+    setFormData(prev => ({
+      ...prev,
+      customer_name: firstContact.name.trim(),
+      phone: cleanPhone
+    }));
+
+    setShowContactSelectionDialog(false);
+    toast.success(`${firstContact.name} seçildi`);
+  };
+  // ------------------------------
 
   const handleSubmit = async () => {
     if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
@@ -230,11 +355,6 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // ADIM 2: MÜŞTERİ SEÇİMİ
   const renderStep2 = () => {
-    const handleSelectCustomer = (customer) => {
-      setFormData(prev => ({ ...prev, customer_name: customer.name, phone: customer.phone }));
-      setStep(3);
-    };
-
     const search = (customerSearchTerm || "").toLowerCase();
     const filteredCustomers = (customers || [])
       .filter(c => {
@@ -265,35 +385,74 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         </div>
 
         {isNewCustomerMode ? (
-          <div className="p-5 backdrop-blur-xl bg-zinc-50/50 border border-white/30 rounded-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 shadow-lg">
-             <div className="flex justify-between items-center">
+          <>
+            {/* Manuel Müşteri Ekleme Kartı */}
+            <div className="p-5 backdrop-blur-xl bg-zinc-50/50 border border-white/30 rounded-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 shadow-lg">
+              <div className="flex justify-between items-center">
                 <h4 className="font-bold text-zinc-900">{t('appointments.form.newCustomer')}</h4>
                 <button onClick={() => setIsNewCustomerMode(false)} className="p-1.5 hover:bg-white/50 rounded-lg transition-colors">
                   <X className="w-5 h-5 text-zinc-500"/>
                 </button>
-             </div>
-             <Input 
-               placeholder={t('customers.fields.name')} 
-               value={formData.customer_name}
-               onChange={(e) => setFormData(prev => ({...prev, customer_name: e.target.value}))}
-               className="backdrop-blur-md bg-white/60 border-white/40"
-             />
-             <Input 
-               placeholder={i18n.language === 'en' ? '+44...' : '05...'}
-               value={formData.phone}
-               onChange={(e) => {
-                 let val = e.target.value.replace(/[^0-9+]/g, '');
-                 setFormData(prev => ({...prev, phone: val}));
-               }}
-               className="backdrop-blur-md bg-white/60 border-white/40"
-             />
-             <Button className="w-full bg-zinc-900 hover:bg-black h-12 rounded-xl font-bold shadow-lg" onClick={() => {
-                 if(formData.customer_name && formData.phone) setStep(3);
-                 else toast.error(t('appointments.form.fillRequiredFields'));
-             }}>
-               {t('common.continue')}
-             </Button>
-          </div>
+              </div>
+              <Input 
+                placeholder={t('customers.fields.name')} 
+                value={formData.customer_name}
+                onChange={(e) => setFormData(prev => ({...prev, customer_name: e.target.value}))}
+                className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+              />
+              <Input 
+                placeholder={i18n.language === 'en' ? '+44...' : '05...'}
+                value={formData.phone}
+                onChange={(e) => {
+                  let val = e.target.value.replace(/[^0-9+]/g, '');
+                  // Sadece rakamları say (+ işaretini sayma)
+                  const digits = val.replace(/[^0-9]/g, '');
+                  if (digits.length <= 11) {
+                    setFormData(prev => ({...prev, phone: val}));
+                  }
+                }}
+                className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                maxLength={12}
+              />
+              <Button className="w-full bg-zinc-900 hover:bg-black h-12 rounded-xl font-bold shadow-lg" onClick={() => {
+                if(formData.customer_name && formData.phone) setStep(3);
+                else toast.error(t('appointments.form.fillRequiredFields'));
+              }}>
+                {t('common.continue')}
+              </Button>
+            </div>
+
+            {/* Rehberden Ekle Kartı */}
+            <div className="p-5 backdrop-blur-xl bg-white/40 border border-white/30 rounded-2xl space-y-3 animate-in fade-in zoom-in-95 duration-200 shadow-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-md">
+                  <Import className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-zinc-900 text-sm">{t('appointments.form.importFromContacts', 'Rehberden Ekle')}</h4>
+                  <p className="text-xs text-zinc-600 font-medium">{t('appointments.form.importFromContactsDesc', 'Telefonunuzdaki kişileri seçin')}</p>
+                </div>
+              </div>
+              <Button 
+                onClick={handleImportFromContacts}
+                disabled={importingContacts}
+                className="w-full backdrop-blur-md bg-white/60 border-2 border-white/40 hover:bg-white/80 text-zinc-900 h-11 rounded-xl font-bold shadow-sm hover:shadow-md transition-all"
+                variant="outline"
+              >
+                {importingContacts ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    {t('appointments.form.loading', 'Yükleniyor...')}
+                  </>
+                ) : (
+                  <>
+                    <Users className="w-4 h-4 mr-2" />
+                    {t('appointments.form.selectFromContacts', 'Rehberden Seç')}
+                  </>
+                )}
+              </Button>
+            </div>
+          </>
         ) : (
           <button 
             onClick={() => { setIsNewCustomerMode(true); setFormData(prev => ({...prev, customer_name: "", phone: ""})); }}
@@ -307,11 +466,13 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         {!isNewCustomerMode && (
           <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
             {filteredCustomers.map(c => (
-              <button
+              <div 
                 key={c.phone}
-                type="button"
-                onClick={() => handleSelectCustomer(c)}
-                className="w-full text-left flex items-center justify-between p-4 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl hover:bg-white/60 hover:border-white/40 hover:shadow-lg cursor-pointer group transition-all duration-300"
+                onClick={() => {
+                  setFormData(prev => ({ ...prev, customer_name: c.name, phone: c.phone }));
+                  setStep(3);
+                }}
+                className="flex items-center justify-between p-4 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl hover:bg-white/60 hover:border-white/40 hover:shadow-lg cursor-pointer group transition-all duration-300"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-xl backdrop-blur-md bg-zinc-500/10 border border-white/30 flex items-center justify-center text-zinc-700 font-bold text-lg group-hover:bg-zinc-900 group-hover:text-white transition-all duration-300 shadow-sm">
@@ -323,7 +484,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                   </div>
                 </div>
                 <Check className={`w-5 h-5 transition-colors ${formData.phone === c.phone ? 'text-zinc-900' : 'text-zinc-300'}`} strokeWidth={2.5} />
-              </button>
+              </div>
             ))}
           </div>
         )}
@@ -349,17 +510,8 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       }
     };
 
-    const displayAllSlots = (allSlots && allSlots.length > 0)
-      ? [...allSlots].sort()
-      : [...new Set([...availableSlots, ...busySlots])].sort();
-
-    const derivedBusySlots = (() => {
-      if (allSlots && allSlots.length > 0) {
-        const computedBusy = displayAllSlots.filter((t) => !availableSlots.includes(t));
-        return [...new Set([...(busySlots || []), ...computedBusy])];
-      }
-      return busySlots || [];
-    })();
+    // Tüm saatleri birleştir ve sırala
+    const allSlots = [...new Set([...availableSlots, ...busySlots])].sort();
 
     return (
       <div className="space-y-8 animate-in slide-in-from-right duration-300 pb-24">
@@ -453,16 +605,16 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         {/* SAAT GRID - Dolu saatler artık belirgin gri ve seçilemez */}
         <div>
           <h3 className="font-bold text-zinc-900 mb-4 uppercase tracking-wider text-sm">{t('appointments.form.appointmentTime')}</h3>
-          {displayAllSlots.length === 0 ? (
+          {allSlots.length === 0 ? (
              <div className="text-center p-8 border-2 border-dashed border-zinc-200 rounded-2xl backdrop-blur-sm bg-white/30">
                 <Clock className="w-10 h-10 mx-auto mb-3 text-zinc-300"/>
                 <p className="text-sm text-zinc-500 font-medium">{t('appointments.form.noAvailableSlots')}</p>
              </div>
           ) : (
             <div className="grid grid-cols-4 gap-3">
-              {displayAllSlots.map((time) => {
+              {allSlots.map((time) => {
                 const isAvailable = availableSlots.includes(time);
-                const isBusy = derivedBusySlots.includes(time);
+                const isBusy = busySlots.includes(time);
                 const isSelected = formData.appointment_time === time;
                 
                 return (
@@ -475,7 +627,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                       ${isSelected 
                         ? 'bg-blue-600 border-blue-600 text-white shadow-lg scale-105' 
                         : isBusy 
-                          ? 'bg-zinc-200/80 border-zinc-300/80 text-zinc-400 cursor-not-allowed'
+                          ? 'bg-zinc-200/80 border-zinc-300/80 text-zinc-400 cursor-not-allowed line-through'
                           : 'backdrop-blur-xl bg-white/40 border-white/30 text-zinc-700 hover:bg-white/60 hover:border-white/40 hover:shadow-md'}
                     `}
                   >
@@ -569,6 +721,71 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
           </div>
         )}
       </div>
+
+      {/* Kişi Seçim Dialog */}
+      <Dialog open={showContactSelectionDialog} onOpenChange={setShowContactSelectionDialog}>
+        <DialogContent className="h-[80vh] flex flex-col sm:max-w-md p-0 overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+          <DialogHeader className="px-6 py-4 border-b border-white/30 pr-12">
+            <DialogTitle className="flex flex-col space-y-1">
+              <span className="font-black text-zinc-900">Kişileri Seç</span>
+              <span className="text-xs font-bold text-zinc-600">
+                {selectedContactPhones.size} kişi seçildi
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          
+          {/* Arama Alanı */}
+          <div className="px-6 py-3 border-b border-white/30 backdrop-blur-md bg-white/50">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <Input 
+                placeholder="İsim veya numara ile ara..." 
+                value={contactSearchTerm}
+                onChange={(e) => setContactSearchTerm(e.target.value)}
+                className="pl-9 h-10 backdrop-blur-md bg-white/60 border-white/40 rounded-xl font-medium"
+              />
+            </div>
+          </div>
+          
+          {/* Liste Alanı */}
+          <div className="flex-1 overflow-y-auto px-6 py-2">
+            {filteredFetchedContacts.length === 0 ? (
+              <p className="text-center text-zinc-500 py-8 font-medium">Sonuç bulunamadı.</p>
+            ) : (
+              filteredFetchedContacts.map((contact, index) => {
+                const isSelected = selectedContactPhones.has(contact.phone);
+                return (
+                  <div 
+                    key={index}
+                    className={`flex items-center justify-between py-3 border-b border-white/30 cursor-pointer transition-colors ${isSelected ? 'bg-blue-50/50' : 'hover:bg-white/50'}`}
+                    onClick={() => toggleContactSelection(contact.phone)}
+                  >
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-zinc-300 bg-white'}`}>
+                        {isSelected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                      </div>
+                      
+                      <div className="flex flex-col truncate">
+                        <span className="font-bold text-zinc-900 truncate">{contact.name}</span>
+                        <span className="text-xs text-zinc-500 font-medium">{contact.phone}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter className="px-6 py-4 border-t border-white/30 backdrop-blur-md bg-white/50">
+            <Button variant="outline" onClick={() => setShowContactSelectionDialog(false)} className="mr-2 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">
+              İptal
+            </Button>
+            <Button onClick={handleSelectFromContacts} className="bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg">
+              Seçileni Kullan ({selectedContactPhones.size})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
