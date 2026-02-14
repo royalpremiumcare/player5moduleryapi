@@ -62,9 +62,9 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   const [showImportChoiceDialog, setShowImportChoiceDialog] = useState(false);
   const [showContactSelectionDialog, setShowContactSelectionDialog] = useState(false);
   
-  const [fetchedContacts, setFetchedContacts] = useState([]); // Tüm rehber
-  const [contactSearchTerm, setContactSearchTerm] = useState(""); // Rehber içi arama
-  const [selectedContactPhones, setSelectedContactPhones] = useState(new Set()); // Seçilenlerin telefonları (Unique ID olarak)
+  const [fetchedContacts, setFetchedContacts] = useState([]);
+  const [contactSearchTerm, setContactSearchTerm] = useState("");
+  const [selectedContactPhones, setSelectedContactPhones] = useState(new Set());
   
   const [showNotSupportedDialog, setShowNotSupportedDialog] = useState(false);
   // ---------------------------------------
@@ -267,7 +267,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     }
   };
 
-  // --- REHBER İŞLEMLERİ (GÜNCELLENMİŞ) ---
+  // --- REHBER İŞLEMLERİ ---
 
   const handleImportButtonClick = () => {
     setShowImportChoiceDialog(true);
@@ -315,8 +315,8 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           await saveContactsBatch(normalizedContacts);
         } else {
           setFetchedContacts(normalizedContacts);
-          setSelectedContactPhones(new Set()); // Sıfırla
-          setContactSearchTerm(""); // Arama çubuğunu sıfırla
+          setSelectedContactPhones(new Set());
+          setContactSearchTerm("");
           setShowContactSelectionDialog(true);
           setImportingContacts(false);
         }
@@ -349,9 +349,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     }
   };
 
-  // Seçilenleri Kaydet
   const handleSaveSelectedContacts = async () => {
-    // Telefon numarasına göre filtreleyip alıyoruz
     const selectedList = fetchedContacts.filter(c => selectedContactPhones.has(c.phone));
     
     if (selectedList.length === 0) {
@@ -364,7 +362,6 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     await saveContactsBatch(selectedList);
   };
 
-  // Checkbox işaretleme mantığı (Telefon numarasına göre)
   const toggleContactSelection = (phone) => {
     const newSet = new Set(selectedContactPhones);
     if (newSet.has(phone)) {
@@ -375,7 +372,6 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     setSelectedContactPhones(newSet);
   };
 
-  // Arama Filtresi (İsim veya Numaraya göre)
   const filteredFetchedContacts = fetchedContacts.filter(contact => 
     contact.name.toLowerCase().includes(contactSearchTerm.toLowerCase()) || 
     contact.phone.replace(/\D/g, "").includes(contactSearchTerm)
@@ -407,7 +403,6 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     }
   };
 
-
   const filteredCustomers = customers.filter(customer =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     customer.phone.includes(searchTerm)
@@ -415,98 +410,101 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
 
   if (selectedCustomer) {
     return (
-      <div className="space-y-4 pb-6">
-        <div className="flex items-center justify-between">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 pb-20">
+        <div className="p-4 space-y-4">
           <button
             onClick={() => { setSelectedCustomer(null); setCustomerHistory(null); setCustomerNotes(""); }}
-            className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-white/50 rounded-xl transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span className="text-sm font-medium">{t('customers.backToCustomers')}</span>
+            <span className="text-sm font-bold">{t('customers.backToCustomers')}</span>
           </button>
-        </div>
 
-        <Card className="bg-white p-6 rounded-xl shadow-sm text-center">
-          <div className="flex flex-col items-center">
-            <div className="w-20 h-20 bg-gray-100 text-gray-600 rounded-full flex items-center justify-center font-bold text-2xl mb-4">
-              {getInitials(selectedCustomer.name)}
+          <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg text-center">
+            <div className="flex flex-col items-center">
+              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-full flex items-center justify-center font-black text-2xl mb-4 shadow-md">
+                {getInitials(selectedCustomer.name)}
+              </div>
+              <h2 className="text-xl font-black text-zinc-900 mt-4 mb-2">{selectedCustomer.name}</h2>
+              <p className="text-zinc-600 mb-6 font-medium">{selectedCustomer.phone}</p>
+              <div className="flex gap-3 w-full max-w-xs">
+                <Button onClick={() => handleCall(selectedCustomer.phone)} variant="outline" className="flex-1 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 text-zinc-700 rounded-xl font-bold shadow-sm">
+                  <Phone className="w-4 h-4 mr-2" /> {t('customers.actions.call')}
+                </Button>
+                <Button onClick={() => handleWhatsApp(selectedCustomer.phone)} className="flex-1 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold shadow-lg">
+                  <MessageSquare className="w-4 h-4 mr-2" /> {t('customers.actions.whatsapp')}
+                </Button>
+              </div>
+              {userRole === 'admin' && (
+                <Button onClick={() => { setCustomerToDelete(selectedCustomer); setDeleteDialogOpen(true); }} variant="outline" className="w-full max-w-xs mt-3 backdrop-blur-md bg-white/60 border-red-300 text-red-600 hover:bg-red-50 rounded-xl font-bold shadow-sm">
+                  <Trash2 className="w-4 h-4 mr-2" /> {t('customers.deleteButton')}
+                </Button>
+              )}
             </div>
-            <h2 className="text-xl font-bold text-gray-900 mt-4 mb-2">{selectedCustomer.name}</h2>
-            <p className="text-gray-500 mb-6">{selectedCustomer.phone}</p>
-            <div className="flex gap-3 w-full max-w-xs">
-              <Button onClick={() => handleCall(selectedCustomer.phone)} variant="outline" className="flex-1 border border-gray-300 text-gray-700 rounded-lg">
-                <Phone className="w-4 h-4 mr-2" /> {t('customers.actions.call')}
-              </Button>
-              <Button onClick={() => handleWhatsApp(selectedCustomer.phone)} className="flex-1 bg-green-500 hover:bg-green-600 text-white rounded-lg">
-                <MessageSquare className="w-4 h-4 mr-2" /> {t('customers.actions.whatsapp')}
-              </Button>
-            </div>
-            {userRole === 'admin' && (
-              <Button onClick={() => { setCustomerToDelete(selectedCustomer); setDeleteDialogOpen(true); }} variant="outline" className="w-full max-w-xs mt-3 border border-red-300 text-red-600 hover:bg-red-50 rounded-lg">
-                <Trash2 className="w-4 h-4 mr-2" /> {t('customers.deleteButton')}
-              </Button>
+          </div>
+
+          <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+            <h3 className="font-black text-zinc-900 mb-4 text-base">{t('customers.historyTitle')}</h3>
+            {loadingHistory ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 mx-auto mb-3"></div>
+                <p className="text-zinc-600 font-medium">{t('customers.loading')}</p>
+              </div>
+            ) : customerHistory && customerHistory.appointments.length > 0 ? (
+              <div className="space-y-3">
+                {customerHistory.appointments.map((apt, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-4 backdrop-blur-md bg-white/50 rounded-xl border border-white/30 shadow-sm">
+                    <div>
+                      <p className="font-bold text-zinc-900">
+                        {format(new Date(apt.appointment_date), "d MMMM yyyy", { locale: dateLocale })}
+                      </p>
+                      <p className="text-sm text-zinc-600 font-medium">{apt.appointment_time} - {apt.service_name}</p>
+                      {userRole === 'admin' && apt.staff_member_id && (!settings || settings.customer_can_choose_staff || settings.admin_provides_service) && (
+                        <p className="text-xs text-zinc-500 mt-1 font-medium">{t('customers.staff')}: {apt.staff_member_id}</p>
+                      )}
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                      apt.status === t('dashboard.status.completed') || apt.status === 'Tamamlandı' ? 'bg-green-100 text-green-700' :
+                      apt.status === t('dashboard.status.pending') || apt.status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {apt.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-zinc-600 text-center py-8 font-medium">{t('customers.historyEmpty')}</p>
             )}
           </div>
-        </Card>
 
-        <Card className="bg-white p-4 rounded-xl shadow-sm mt-4">
-          <h3 className="font-semibold text-gray-900 mb-3">{t('customers.historyTitle')}</h3>
-          {loadingHistory ? (
-            <p className="text-gray-500 text-center py-4">{t('customers.loading')}</p>
-          ) : customerHistory && customerHistory.appointments.length > 0 ? (
+          <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+            <h3 className="font-black text-zinc-900 mb-3 text-base">{t('customers.notesTitle')}</h3>
             <div className="space-y-3">
-              {customerHistory.appointments.map((apt, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {format(new Date(apt.appointment_date), "d MMMM yyyy", { locale: dateLocale })}
-                    </p>
-                    <p className="text-sm text-gray-600">{apt.appointment_time} - {apt.service_name}</p>
-                    {userRole === 'admin' && apt.staff_member_id && (!settings || settings.customer_can_choose_staff || settings.admin_provides_service) && (
-                      <p className="text-xs text-gray-500 mt-1">{t('customers.staff')}: {apt.staff_member_id}</p>
-                    )}
-                  </div>
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${
-                    apt.status === t('dashboard.status.completed') || apt.status === 'Tamamlandı' ? 'bg-green-100 text-green-700' :
-                    apt.status === t('dashboard.status.pending') || apt.status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-700' :
-                    'bg-gray-100 text-gray-700'
-                  }`}>
-                    {apt.status}
-                  </span>
-                </div>
-              ))}
+              <Textarea value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} placeholder={t('customers.notesPlaceholder')} rows={4} className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl font-medium focus:ring-2 focus:ring-zinc-900" />
+              <Button onClick={handleSaveNotes} className="w-full bg-zinc-900 hover:bg-black text-white rounded-xl h-12 font-bold shadow-lg">
+                {t('common.save')}
+              </Button>
             </div>
-          ) : (
-            <p className="text-gray-500 text-center py-4">{t('customers.historyEmpty')}</p>
-          )}
-        </Card>
-
-        <Card className="bg-white p-4 rounded-xl shadow-sm mt-4">
-          <h3 className="font-semibold text-gray-900 mb-2">{t('customers.notesTitle')}</h3>
-          <div className="space-y-3">
-            <Textarea value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} placeholder={t('customers.notesPlaceholder')} rows={4} className="rounded-lg border border-gray-300" />
-            <Button onClick={handleSaveNotes} className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
-              {t('common.save')}
-            </Button>
           </div>
-        </Card>
+        </div>
         
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogContent>
+          <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
             <AlertDialogHeader>
-              <AlertDialogTitle>{t('customers.deleteTitle')}</AlertDialogTitle>
-              <AlertDialogDescription>
+              <AlertDialogTitle className="text-xl font-black text-zinc-900">{t('customers.deleteTitle')}</AlertDialogTitle>
+              <AlertDialogDescription className="text-zinc-600 font-medium">
                 {customerToDelete && (
                   <>
                     <strong>{customerToDelete.name}</strong> {i18n.language === 'tr' ? 'müşterisini ve tüm randevularını silmek istediğinize emin misiniz?' : 'customer and all their appointments?'}
-                    <br /> <span className="text-red-600 font-semibold">{t('customers.deleteWarning')}</span>
+                    <br /> <span className="text-red-600 font-bold">{t('customers.deleteWarning')}</span>
                   </>
                 )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleting}>{t('common.cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteCustomer} disabled={deleting} className="bg-red-600 hover:bg-red-700">
+              <AlertDialogCancel disabled={deleting} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteCustomer} disabled={deleting} className="bg-red-600 hover:bg-red-700 rounded-xl font-bold shadow-lg">
                 {deleting ? t('customers.deleting') : t('customers.actions.delete')}
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -517,89 +515,101 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   }
 
   return (
-    <div className="space-y-4 pb-6">
-      {onNavigate && (
-        <button onClick={() => onNavigate("dashboard")} className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors mb-2">
-          <ArrowLeft className="w-5 h-5" /> <span className="text-sm font-medium">{t('customers.backToHome')}</span>
-        </button>
-      )}
-      
-      <div className="sticky top-0 z-10 bg-gray-50 pb-4 pt-2">
-        <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <Input type="text" placeholder={t('customers.searchPlaceholder')} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 bg-white rounded-lg border border-gray-300 shadow-sm" />
-        </div>
-        
-        {userRole === 'admin' && (
-          <div className="flex gap-2">
-            <Button onClick={() => setNewCustomerDialogOpen(true)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
-              <Plus className="w-4 h-4 mr-2" /> {t('customers.newCustomer')}
-            </Button>
-            
-            <Button
-              onClick={handleImportButtonClick}
-              disabled={importingContacts}
-              variant="outline"
-              className="bg-white border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg w-14 flex-shrink-0"
-              title="Rehberden Kişi Ekle"
-            >
-              {importingContacts ? (
-                <div className="animate-spin h-5 w-5 border-2 border-gray-500 border-t-transparent rounded-full" />
-              ) : (
-                <Import className="w-5 h-5" />
-              )}
-            </Button>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 pb-20">
+      <div className="p-4 space-y-4">
+        {onNavigate && (
+          <button onClick={() => onNavigate("dashboard")} className="flex items-center gap-2 px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-white/50 rounded-xl transition-colors">
+            <ArrowLeft className="w-5 h-5" /> <span className="text-sm font-bold">{t('customers.backToHome')}</span>
+          </button>
         )}
-      </div>
+        
+        <div className="sticky top-0 z-10 backdrop-blur-2xl bg-gradient-to-br from-gray-50/80 via-blue-50/50 to-purple-50/30 pb-4 pt-2 -mx-4 px-4">
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-zinc-400" />
+            <Input type="text" placeholder={t('customers.searchPlaceholder')} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-12 shadow-sm focus:ring-2 focus:ring-zinc-900 font-medium" />
+          </div>
+          
+          {userRole === 'admin' && (
+            <div className="space-y-2">
+              <Button onClick={() => setNewCustomerDialogOpen(true)} className="w-full bg-zinc-900 hover:bg-black text-white rounded-xl h-12 font-bold shadow-lg">
+                <Plus className="w-5 h-5 mr-2" /> {t('customers.newCustomer')}
+              </Button>
+              
+              <Button
+                onClick={handleImportButtonClick}
+                disabled={importingContacts}
+                variant="outline"
+                className="w-full backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 text-zinc-700 rounded-xl h-12 font-bold shadow-sm"
+              >
+                {importingContacts ? (
+                  <>
+                    <div className="animate-spin h-5 w-5 border-2 border-zinc-900 border-t-transparent rounded-full mr-2" />
+                    {t('customers.importing', 'İçe aktarılıyor...')}
+                  </>
+                ) : (
+                  <>
+                    <Import className="w-5 h-5 mr-2" />
+                    {t('customers.importFromContacts', 'Rehberden Ekle')}
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </div>
 
-      <div className="space-y-3">
-        {loading ? (
-          <Card className="p-8 text-center"><p className="text-gray-500">{t('customers.loading')}</p></Card>
-        ) : filteredCustomers.length === 0 ? (
-          <Card className="p-8 text-center"><p className="text-gray-500">{t('customers.noResults')}</p></Card>
-        ) : (
-          filteredCustomers.map((customer) => (
-            <Card key={customer.phone} className="p-4 mb-3 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-4">
-                <div onClick={() => handleCustomerClick(customer)} className="w-10 h-10 bg-gray-100 text-gray-600 rounded-full flex items-center justify-center font-bold flex-shrink-0 cursor-pointer">
-                  {getInitials(customer.name)}
-                </div>
-                <div onClick={() => handleCustomerClick(customer)} className="flex-1 min-w-0 cursor-pointer">
-                  <h3 className="text-gray-900 font-semibold text-base truncate">{customer.name}</h3>
-                  <p className="text-gray-500 text-sm truncate">{customer.phone}</p>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {userRole === 'admin' && (
-                    <button onClick={(e) => { e.stopPropagation(); setCustomerToDelete(customer); setDeleteDialogOpen(true); }} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  )}
-                  <ChevronRight onClick={() => handleCustomerClick(customer)} className="w-5 h-5 text-gray-400 cursor-pointer" />
+        <div className="space-y-3">
+          {loading ? (
+            <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-8 text-center shadow-lg">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 mx-auto mb-3"></div>
+              <p className="text-zinc-600 font-medium">{t('customers.loading')}</p>
+            </div>
+          ) : filteredCustomers.length === 0 ? (
+            <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-8 text-center shadow-lg">
+              <p className="text-zinc-600 font-medium">{t('customers.noResults')}</p>
+            </div>
+          ) : (
+            filteredCustomers.map((customer) => (
+              <div key={customer.phone} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:bg-white/50 transition-all duration-300">
+                <div className="flex items-center gap-4">
+                  <div onClick={() => handleCustomerClick(customer)} className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl flex items-center justify-center font-black flex-shrink-0 cursor-pointer shadow-md">
+                    {getInitials(customer.name)}
+                  </div>
+                  <div onClick={() => handleCustomerClick(customer)} className="flex-1 min-w-0 cursor-pointer">
+                    <h3 className="text-zinc-900 font-black text-base truncate">{customer.name}</h3>
+                    <p className="text-zinc-600 text-sm truncate font-medium">{customer.phone}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {userRole === 'admin' && (
+                      <button onClick={(e) => { e.stopPropagation(); setCustomerToDelete(customer); setDeleteDialogOpen(true); }} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-colors">
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
+                    <ChevronRight onClick={() => handleCustomerClick(customer)} className="w-5 h-5 text-zinc-400 cursor-pointer" />
+                  </div>
                 </div>
               </div>
-            </Card>
-          ))
-        )}
+            ))
+          )}
+        </div>
       </div>
       
       {/* Silme Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('customers.deleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-xl font-black text-zinc-900">{t('customers.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-600 font-medium">
               {customerToDelete && (
                 <>
                   <strong>{customerToDelete.name}</strong> {i18n.language === 'tr' ? 'müşterisini ve tüm randevularını silmek istediğinize emin misiniz?' : 'customer and all their appointments?'}
-                  <br /> <span className="text-red-600 font-semibold">{t('customers.deleteWarning')}</span>
+                  <br /> <span className="text-red-600 font-bold">{t('customers.deleteWarning')}</span>
                 </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteCustomer} disabled={deleting} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogCancel disabled={deleting} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteCustomer} disabled={deleting} className="bg-red-600 hover:bg-red-700 rounded-xl font-bold shadow-lg">
               {deleting ? t('customers.deleting') : t('customers.actions.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -608,117 +618,114 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       
       {/* Yeni Müşteri Dialog */}
       <Dialog open={newCustomerDialogOpen} onOpenChange={setNewCustomerDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>{t('customers.addTitle')}</DialogTitle>
-            <DialogDescription>{t('customers.addDescription')}</DialogDescription>
+            <DialogTitle className="text-xl font-black text-zinc-900">{t('customers.addTitle')}</DialogTitle>
+            <DialogDescription className="text-zinc-600 font-medium">{t('customers.addDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="new-customer-name" className="text-sm font-semibold text-gray-900">{t('customers.fields.name')} *</Label>
-              <Input id="new-customer-name" type="text" placeholder={t('customers.fields.name')} value={newCustomerData.name} onChange={(e) => setNewCustomerData({ ...newCustomerData, name: e.target.value })} className="rounded-lg border border-gray-300" autoFocus />
+              <Label htmlFor="new-customer-name" className="text-sm font-bold text-zinc-700">{t('customers.fields.name')} *</Label>
+              <Input id="new-customer-name" type="text" placeholder={t('customers.fields.name')} value={newCustomerData.name} onChange={(e) => setNewCustomerData({ ...newCustomerData, name: e.target.value })} className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium" autoFocus />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="new-customer-phone" className="text-sm font-semibold text-gray-900">{t('customers.fields.phone')} *</Label>
-              <Input id="new-customer-phone" type="tel" placeholder={i18n.language === 'en' ? '+44 XXXX XXXXXX' : '05XX XXX XX XX'} value={newCustomerData.phone} onChange={(e) => setNewCustomerData({ ...newCustomerData, phone: e.target.value })} className="rounded-lg border border-gray-300" />
+              <Label htmlFor="new-customer-phone" className="text-sm font-bold text-zinc-700">{t('customers.fields.phone')} *</Label>
+              <Input id="new-customer-phone" type="tel" placeholder={i18n.language === 'en' ? '+44 XXXX XXXXXX' : '05XX XXX XX XX'} value={newCustomerData.phone} onChange={(e) => setNewCustomerData({ ...newCustomerData, phone: e.target.value })} className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium" />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setNewCustomerDialogOpen(false); setNewCustomerData({ name: "", phone: "" }); }} disabled={savingCustomer}>{t('common.cancel')}</Button>
-            <Button onClick={handleAddNewCustomer} disabled={savingCustomer || !newCustomerData.name.trim() || !newCustomerData.phone.trim()} className="bg-blue-600 hover:bg-blue-700 text-white">
+          <DialogFooter className="border-t border-white/30 pt-4">
+            <Button variant="outline" onClick={() => { setNewCustomerDialogOpen(false); setNewCustomerData({ name: "", phone: "" }); }} disabled={savingCustomer} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">{t('common.cancel')}</Button>
+            <Button onClick={handleAddNewCustomer} disabled={savingCustomer || !newCustomerData.name.trim() || !newCustomerData.phone.trim()} className="bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg">
               {savingCustomer ? t('customers.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* --- 1. SEÇİM DİALOGU (Tümünü Mü / Seçerek Mi?) --- */}
+      {/* Seçim Dialogu */}
       <Dialog open={showImportChoiceDialog} onOpenChange={setShowImportChoiceDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rehberden Aktar</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-xl font-black text-zinc-900">Rehberden Aktar</DialogTitle>
+            <DialogDescription className="text-zinc-600 font-medium">
               Müşterilerinizi rehberden nasıl aktarmak istersiniz?
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3 py-4">
             <Button 
               onClick={handleImportAll}
-              className="w-full justify-start h-14 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-900" 
+              className="w-full justify-start h-14 backdrop-blur-md bg-white/60 hover:bg-white/80 border border-white/40 text-zinc-900 rounded-xl shadow-sm" 
               variant="ghost"
             >
               <Users className="w-5 h-5 mr-3 text-blue-600" />
               <div className="flex flex-col items-start">
-                <span className="font-semibold">Tümünü Aktar (Hızlı)</span>
-                <span className="text-xs text-gray-500">Rehberdeki tüm kişileri tek seferde ekler.</span>
+                <span className="font-bold">Tümünü Aktar (Hızlı)</span>
+                <span className="text-xs text-zinc-500 font-medium">Rehberdeki tüm kişileri tek seferde ekler.</span>
               </div>
             </Button>
 
             <Button 
               onClick={handleImportSelect}
-              className="w-full justify-start h-14 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-900" 
+              className="w-full justify-start h-14 backdrop-blur-md bg-white/60 hover:bg-white/80 border border-white/40 text-zinc-900 rounded-xl shadow-sm" 
               variant="ghost"
             >
               <CheckSquare className="w-5 h-5 mr-3 text-green-600" />
               <div className="flex flex-col items-start">
-                <span className="font-semibold">Seçerek Aktar</span>
-                <span className="text-xs text-gray-500">Listeden istediklerinizi seçip eklersiniz.</span>
+                <span className="font-bold">Seçerek Aktar</span>
+                <span className="text-xs text-zinc-500 font-medium">Listeden istediklerinizi seçip eklersiniz.</span>
               </div>
             </Button>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowImportChoiceDialog(false)}>İptal</Button>
+          <DialogFooter className="border-t border-white/30 pt-4">
+            <Button variant="outline" onClick={() => setShowImportChoiceDialog(false)} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">İptal</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* --- 2. KİŞİ SEÇİM LİSTESİ DİALOGU (ARAMALI) --- */}
+      {/* Kişi Seçim Dialog */}
       <Dialog open={showContactSelectionDialog} onOpenChange={setShowContactSelectionDialog}>
-        <DialogContent className="h-[80vh] flex flex-col sm:max-w-md p-0 overflow-hidden">
-          <DialogHeader className="px-6 py-4 border-b">
+        <DialogContent className="h-[80vh] flex flex-col sm:max-w-md p-0 overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+          <DialogHeader className="px-6 py-4 border-b border-white/30">
             <DialogTitle className="flex justify-between items-center">
-              <span>Kişileri Seç</span>
-              <span className="text-sm font-normal text-gray-500">
+              <span className="font-black text-zinc-900">Kişileri Seç</span>
+              <span className="text-sm font-bold text-zinc-600">
                 {selectedContactPhones.size} kişi seçildi
               </span>
             </DialogTitle>
           </DialogHeader>
           
-          {/* Arama Alanı (YENİ EKLENDİ) */}
-          <div className="px-6 py-3 border-b bg-gray-50">
+          <div className="px-6 py-3 border-b border-white/30 backdrop-blur-md bg-white/50">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400" />
               <Input 
                 placeholder="İsim veya numara ile ara..." 
                 value={contactSearchTerm}
                 onChange={(e) => setContactSearchTerm(e.target.value)}
-                className="pl-9 h-10 bg-white"
+                className="pl-9 h-10 backdrop-blur-md bg-white/60 border-white/40 rounded-xl font-medium"
               />
             </div>
           </div>
           
-          {/* Liste Alanı */}
           <div className="flex-1 overflow-y-auto px-6 py-2">
             {filteredFetchedContacts.length === 0 ? (
-              <p className="text-center text-gray-500 py-4">Sonuç bulunamadı.</p>
+              <p className="text-center text-zinc-500 py-8 font-medium">Sonuç bulunamadı.</p>
             ) : (
               filteredFetchedContacts.map((contact, index) => {
                 const isSelected = selectedContactPhones.has(contact.phone);
                 return (
                   <div 
-                    key={index} // Filtrelemede index güvenli değil ama sadece render için ok
-                    className={`flex items-center justify-between py-3 border-b border-gray-50 cursor-pointer ${isSelected ? 'bg-blue-50' : ''}`}
+                    key={index}
+                    className={`flex items-center justify-between py-3 border-b border-white/30 cursor-pointer transition-colors ${isSelected ? 'bg-blue-50/50' : 'hover:bg-white/50'}`}
                     onClick={() => toggleContactSelection(contact.phone)}
                   >
                     <div className="flex items-center gap-3 overflow-hidden">
-                      {/* Checkbox Görünümü */}
-                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'}`}>
+                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-zinc-300 bg-white'}`}>
                         {isSelected && <Users className="w-3 h-3 text-white" />}
                       </div>
                       
                       <div className="flex flex-col truncate">
-                        <span className="font-medium text-gray-900 truncate">{contact.name}</span>
-                        <span className="text-xs text-gray-500">{contact.phone}</span>
+                        <span className="font-bold text-zinc-900 truncate">{contact.name}</span>
+                        <span className="text-xs text-zinc-500 font-medium">{contact.phone}</span>
                       </div>
                     </div>
                   </div>
@@ -727,28 +734,28 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
             )}
           </div>
 
-          <DialogFooter className="px-6 py-4 border-t bg-gray-50">
-            <Button variant="outline" onClick={() => setShowContactSelectionDialog(false)} className="mr-2">
+          <DialogFooter className="px-6 py-4 border-t border-white/30 backdrop-blur-md bg-white/50">
+            <Button variant="outline" onClick={() => setShowContactSelectionDialog(false)} className="mr-2 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">
               İptal
             </Button>
-            <Button onClick={handleSaveSelectedContacts} className="bg-blue-600 hover:bg-blue-700 text-white">
+            <Button onClick={handleSaveSelectedContacts} className="bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg">
               Seçilenleri Ekle ({selectedContactPhones.size})
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* --- Desteklenmiyor Uyarısı --- */}
+      {/* Desteklenmiyor Dialog */}
       <AlertDialog open={showNotSupportedDialog} onOpenChange={setShowNotSupportedDialog}>
-        <AlertDialogContent>
+        <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>Özellik Kullanılamıyor</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-xl font-black text-zinc-900">Özellik Kullanılamıyor</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-600 font-medium">
               Bu tarayıcı veya cihaz "Rehberden Aktarma" özelliğini desteklemiyor.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Tamam</AlertDialogCancel>
+            <AlertDialogCancel className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">Tamam</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
