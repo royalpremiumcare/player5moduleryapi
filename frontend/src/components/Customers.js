@@ -59,10 +59,13 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   
   // --- REHBER ENTEGRASYONU STATE'LERİ ---
   const [importingContacts, setImportingContacts] = useState(false);
-  const [showImportChoiceDialog, setShowImportChoiceDialog] = useState(false); // Seçim ekranı (Tümü vs Seçmeli)
-  const [showContactSelectionDialog, setShowContactSelectionDialog] = useState(false); // Liste ekranı
-  const [fetchedContacts, setFetchedContacts] = useState([]); // Telefondan çekilen ham liste
-  const [selectedContactIndices, setSelectedContactIndices] = useState(new Set()); // Seçilenlerin indexleri
+  const [showImportChoiceDialog, setShowImportChoiceDialog] = useState(false);
+  const [showContactSelectionDialog, setShowContactSelectionDialog] = useState(false);
+  
+  const [fetchedContacts, setFetchedContacts] = useState([]); // Tüm rehber
+  const [contactSearchTerm, setContactSearchTerm] = useState(""); // Rehber içi arama
+  const [selectedContactPhones, setSelectedContactPhones] = useState(new Set()); // Seçilenlerin telefonları (Unique ID olarak)
+  
   const [showNotSupportedDialog, setShowNotSupportedDialog] = useState(false);
   // ---------------------------------------
 
@@ -264,28 +267,23 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     }
   };
 
-  // --- REHBER İŞLEMLERİ (YENİLENMİŞ) ---
+  // --- REHBER İŞLEMLERİ (GÜNCELLENMİŞ) ---
 
-  // 1. Kullanıcıya sor: Tümü mü, Seçmeli mi?
   const handleImportButtonClick = () => {
     setShowImportChoiceDialog(true);
   };
 
-  // 2. Mod 1: Tümünü Getir (Otomatik)
   const handleImportAll = async () => {
     setShowImportChoiceDialog(false);
     await startImportProcess({ mode: 'ALL' });
   };
 
-  // 3. Mod 2: Seçerek Getir (Liste Aç)
   const handleImportSelect = async () => {
     setShowImportChoiceDialog(false);
     await startImportProcess({ mode: 'SELECT' });
   };
 
-  // 4. Ana İşlem Fonksiyonu
   const startImportProcess = async ({ mode }) => {
-    // --- NATIVE (APK) ---
     if (Capacitor.isNativePlatform()) {
       setImportingContacts(true);
       try {
@@ -306,23 +304,21 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           return;
         }
 
-        // Native formatı düzelt
         const normalizedContacts = result.contacts
           .map(c => ({
             name: c.name?.display || (c.name?.given + " " + (c.name?.family || "")),
             phone: c.phones?.[0]?.number
           }))
-          .filter(c => c.name && c.phone); // İsimsiz/Nosuz olanları ele
+          .filter(c => c.name && c.phone);
 
         if (mode === 'ALL') {
-          // Hepsini direkt kaydet
           await saveContactsBatch(normalizedContacts);
         } else {
-          // Seçim ekranını aç
           setFetchedContacts(normalizedContacts);
-          setSelectedContactIndices(new Set()); // Sıfırla
+          setSelectedContactPhones(new Set()); // Sıfırla
+          setContactSearchTerm(""); // Arama çubuğunu sıfırla
           setShowContactSelectionDialog(true);
-          setImportingContacts(false); // Loading'i kapat, çünkü dialog açıldı
+          setImportingContacts(false);
         }
 
       } catch (error) {
@@ -331,13 +327,10 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         setImportingContacts(false);
       }
     }
-    // --- WEB ---
     else if ('contacts' in navigator && 'ContactsManager' in window) {
-      // Web'de API zaten seçmeli çalışır (Native picker açar)
       setImportingContacts(true);
       try {
         const webContacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
-        
         if (webContacts && webContacts.length > 0) {
           const normalized = webContacts.map(c => ({
             name: c.name?.[0],
@@ -351,15 +344,15 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         setImportingContacts(false);
       }
     }
-    // --- DESTEKLENMEYEN ---
     else {
       setShowNotSupportedDialog(true);
     }
   };
 
-  // Seçilenleri Kaydet (Dialog'daki "Ekle" butonu için)
+  // Seçilenleri Kaydet
   const handleSaveSelectedContacts = async () => {
-    const selectedList = fetchedContacts.filter((_, index) => selectedContactIndices.has(index));
+    // Telefon numarasına göre filtreleyip alıyoruz
+    const selectedList = fetchedContacts.filter(c => selectedContactPhones.has(c.phone));
     
     if (selectedList.length === 0) {
       toast.warning("Lütfen en az bir kişi seçin.");
@@ -371,24 +364,28 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     await saveContactsBatch(selectedList);
   };
 
-  // Checkbox işaretleme mantığı
-  const toggleContactSelection = (index) => {
-    const newSet = new Set(selectedContactIndices);
-    if (newSet.has(index)) {
-      newSet.delete(index);
+  // Checkbox işaretleme mantığı (Telefon numarasına göre)
+  const toggleContactSelection = (phone) => {
+    const newSet = new Set(selectedContactPhones);
+    if (newSet.has(phone)) {
+      newSet.delete(phone);
     } else {
-      newSet.add(index);
+      newSet.add(phone);
     }
-    setSelectedContactIndices(newSet);
+    setSelectedContactPhones(newSet);
   };
 
-  // Toplu Kayıt Fonksiyonu (API)
+  // Arama Filtresi (İsim veya Numaraya göre)
+  const filteredFetchedContacts = fetchedContacts.filter(contact => 
+    contact.name.toLowerCase().includes(contactSearchTerm.toLowerCase()) || 
+    contact.phone.replace(/\D/g, "").includes(contactSearchTerm)
+  );
+
   const saveContactsBatch = async (contactList) => {
     toast.info(`${contactList.length} kişi işleniyor...`);
     let successCount = 0;
 
     for (const contact of contactList) {
-      // Telefon temizleme
       let cleanPhone = contact.phone.replace(/\D/g, "");
       if (cleanPhone.length === 10) cleanPhone = '90' + cleanPhone;
       else if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) cleanPhone = '90' + cleanPhone.substring(1);
@@ -397,7 +394,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         try {
           await api.post("/customers", { name: contact.name.trim(), phone: cleanPhone });
           successCount++;
-        } catch (e) { /* Zaten kayıtlı */ }
+        } catch (e) { }
       }
     }
 
@@ -539,7 +536,6 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
               <Plus className="w-4 h-4 mr-2" /> {t('customers.newCustomer')}
             </Button>
             
-            {/* --- REHBER BUTONU (GÜNCELLENDİ) --- */}
             <Button
               onClick={handleImportButtonClick}
               disabled={importingContacts}
@@ -595,8 +591,8 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
             <AlertDialogDescription>
               {customerToDelete && (
                 <>
-                  <strong>{customerToDelete.name}</strong> müşterisini ve tüm randevularını silmek istediğinize emin misiniz?
-                  <br /> <span className="text-red-600 font-semibold">Bu işlem geri alınamaz!</span>
+                  <strong>{customerToDelete.name}</strong> {i18n.language === 'tr' ? 'müşterisini ve tüm randevularını silmek istediğinize emin misiniz?' : 'customer and all their appointments?'}
+                  <br /> <span className="text-red-600 font-semibold">{t('customers.deleteWarning')}</span>
                 </>
               )}
             </AlertDialogDescription>
@@ -676,42 +672,59 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         </DialogContent>
       </Dialog>
 
-      {/* --- 2. KİŞİ SEÇİM LİSTESİ DİALOGU (Sadece Native Modda Açılır) --- */}
+      {/* --- 2. KİŞİ SEÇİM LİSTESİ DİALOGU (ARAMALI) --- */}
       <Dialog open={showContactSelectionDialog} onOpenChange={setShowContactSelectionDialog}>
         <DialogContent className="h-[80vh] flex flex-col sm:max-w-md p-0 overflow-hidden">
           <DialogHeader className="px-6 py-4 border-b">
             <DialogTitle className="flex justify-between items-center">
               <span>Kişileri Seç</span>
               <span className="text-sm font-normal text-gray-500">
-                {selectedContactIndices.size} kişi seçildi
+                {selectedContactPhones.size} kişi seçildi
               </span>
             </DialogTitle>
           </DialogHeader>
           
+          {/* Arama Alanı (YENİ EKLENDİ) */}
+          <div className="px-6 py-3 border-b bg-gray-50">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input 
+                placeholder="İsim veya numara ile ara..." 
+                value={contactSearchTerm}
+                onChange={(e) => setContactSearchTerm(e.target.value)}
+                className="pl-9 h-10 bg-white"
+              />
+            </div>
+          </div>
+          
           {/* Liste Alanı */}
           <div className="flex-1 overflow-y-auto px-6 py-2">
-            {fetchedContacts.map((contact, index) => {
-              const isSelected = selectedContactIndices.has(index);
-              return (
-                <div 
-                  key={index} 
-                  className={`flex items-center justify-between py-3 border-b border-gray-50 cursor-pointer ${isSelected ? 'bg-blue-50' : ''}`}
-                  onClick={() => toggleContactSelection(index)}
-                >
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    {/* Checkbox Görünümü */}
-                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'}`}>
-                      {isSelected && <Users className="w-3 h-3 text-white" />}
-                    </div>
-                    
-                    <div className="flex flex-col truncate">
-                      <span className="font-medium text-gray-900 truncate">{contact.name}</span>
-                      <span className="text-xs text-gray-500">{contact.phone}</span>
+            {filteredFetchedContacts.length === 0 ? (
+              <p className="text-center text-gray-500 py-4">Sonuç bulunamadı.</p>
+            ) : (
+              filteredFetchedContacts.map((contact, index) => {
+                const isSelected = selectedContactPhones.has(contact.phone);
+                return (
+                  <div 
+                    key={index} // Filtrelemede index güvenli değil ama sadece render için ok
+                    className={`flex items-center justify-between py-3 border-b border-gray-50 cursor-pointer ${isSelected ? 'bg-blue-50' : ''}`}
+                    onClick={() => toggleContactSelection(contact.phone)}
+                  >
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      {/* Checkbox Görünümü */}
+                      <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'}`}>
+                        {isSelected && <Users className="w-3 h-3 text-white" />}
+                      </div>
+                      
+                      <div className="flex flex-col truncate">
+                        <span className="font-medium text-gray-900 truncate">{contact.name}</span>
+                        <span className="text-xs text-gray-500">{contact.phone}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
 
           <DialogFooter className="px-6 py-4 border-t bg-gray-50">
@@ -719,7 +732,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
               İptal
             </Button>
             <Button onClick={handleSaveSelectedContacts} className="bg-blue-600 hover:bg-blue-700 text-white">
-              Seçilenleri Ekle ({selectedContactIndices.size})
+              Seçilenleri Ekle ({selectedContactPhones.size})
             </Button>
           </DialogFooter>
         </DialogContent>
