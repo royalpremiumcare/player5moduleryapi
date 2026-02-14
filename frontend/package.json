@@ -4,6 +4,7 @@
   "private": true,
   "homepage": ".",
   "dependencies": {
+    "@capacitor-community/contacts": "^7.1.0",
     "@capacitor/android": "^7.4.4",
     "@capacitor/app": "^7.1.0",
     "@capacitor/browser": "^7.0.2",
@@ -64,6 +65,7 @@
     "react-helmet-async": "^2.0.5",
     "react-hook-form": "^7.56.2",
     "react-i18next": "^16.5.0",
+    "react-native-contacts": "^8.0.10",
     "react-resizable-panels": "^3.0.1",
     "react-router-dom": "^7.5.1",
     "react-scripts": "5.0.1",

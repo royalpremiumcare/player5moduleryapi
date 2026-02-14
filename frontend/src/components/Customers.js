@@ -1,9 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
-import { Search, Phone, MessageSquare, ChevronRight, Plus, ArrowLeft, Trash2 } from "lucide-react";
+import { Search, Phone, MessageSquare, ChevronRight, Plus, ArrowLeft, Trash2, Import } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
+
+// --- HİBRİT YAPI İÇİN GEREKLİ IMPORTLAR ---
+import { Capacitor } from '@capacitor/core';
+import { Contacts } from '@capacitor-community/contacts';
+// ------------------------------------------
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,7 +48,6 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerHistory, setCustomerHistory] = useState(null);
   const [customerNotes, setCustomerNotes] = useState("");
-  const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState(null);
@@ -54,20 +59,22 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   });
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [settings, setSettings] = useState(null);
+  
+  // Rehber aktarımı loading durumu
+  const [importingContacts, setImportingContacts] = useState(false);
+  // Desteklenmeyen tarayıcı uyarısı için state
+  const [showNotSupportedDialog, setShowNotSupportedDialog] = useState(false);
 
-  // WebSocket connection for real-time updates
+  // WebSocket connection
   const socketRef = useRef(null);
 
   const loadSettings = async () => {
     try {
       const response = await api.get("/settings");
       setSettings(response.data);
-    } catch (error) {
-      // Silent error
-    }
+    } catch (error) { }
   };
 
-  // WebSocket bağlantısını sadece bir kez oluştur
   useEffect(() => {
     const initialize = async () => {
       await loadSettings();
@@ -78,13 +85,9 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     };
     initialize();
     
-    // WebSocket bağlantısı sadece bir kez oluşturulmalı
     if (!socketRef.current) {
-      // Initialize Socket.IO connection
       const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
       const socketUrl = BACKEND_URL || window.location.origin;
-      
-      // Get token for authentication
       const authToken = token || localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
       
       const socket = io(socketUrl, {
@@ -92,9 +95,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         transports: ['websocket', 'polling'],
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        auth: {
-          token: authToken || ''
-        }
+        auth: { token: authToken || '' }
       });
       
       socketRef.current = socket;
@@ -108,58 +109,24 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
             if (organizationId) {
               socket.emit('join_organization', { organization_id: organizationId });
             }
-          } catch (error) {
-            console.error('Error parsing token:', error);
-          }
+          } catch (error) { console.error('Error parsing token:', error); }
         }
       });
       
-      socket.on('appointment_created', () => {
-        loadCustomers();
-        // selectedCustomer ref kullanarak güncel değeri al
-        if (selectedCustomer) {
-          loadCustomerHistory(selectedCustomer.phone);
-        }
-      });
-      
-      socket.on('appointment_updated', () => {
-        loadCustomers();
-        if (selectedCustomer) {
-          loadCustomerHistory(selectedCustomer.phone);
-        }
-      });
-      
-      socket.on('appointment_deleted', () => {
-        loadCustomers();
-        if (selectedCustomer) {
-          loadCustomerHistory(selectedCustomer.phone);
-        }
-      });
-      
-      socket.on('customer_added', () => {
-        loadCustomers();
-      });
-      
+      socket.on('appointment_created', () => { loadCustomers(); if (selectedCustomer) loadCustomerHistory(selectedCustomer.phone); });
+      socket.on('appointment_updated', () => { loadCustomers(); if (selectedCustomer) loadCustomerHistory(selectedCustomer.phone); });
+      socket.on('appointment_deleted', () => { loadCustomers(); if (selectedCustomer) loadCustomerHistory(selectedCustomer.phone); });
+      socket.on('customer_added', () => { loadCustomers(); });
       socket.on('customer_deleted', (data) => {
         loadCustomers();
-        // Eğer silinen müşteri seçiliyse, seçimi temizle
         if (selectedCustomer && data?.phone && selectedCustomer.phone === data.phone) {
-          setSelectedCustomer(null);
-          setCustomerHistory(null);
-          setCustomerNotes("");
+          setSelectedCustomer(null); setCustomerHistory(null); setCustomerNotes("");
         }
       });
     }
-    
-    // Cleanup sadece component unmount olduğunda
-    return () => {
-      // WebSocket bağlantısını component unmount olduğunda kapat
-      // Ancak bu App.js'deki global bağlantıyı etkilememeli
-      // Bu yüzden cleanup'ı kaldırıyoruz veya sadece event listener'ları temizliyoruz
-    };
-  }, []); // Empty dependency array - sadece mount'ta çalışır
-  
-  // selectedCustomer değiştiğinde sadece history yükle
+    return () => {};
+  }, []); 
+
   useEffect(() => {
     if (selectedCustomer) {
       loadCustomerHistory(selectedCustomer.phone);
@@ -175,25 +142,19 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         const tokenPayload = JSON.parse(atob(token.split('.')[1]));
         setCurrentStaffUsername(tokenPayload.sub || tokenPayload.username);
       }
-    } catch (error) {
-      console.error("Kullanıcı bilgisi alınamadı:", error);
-    }
+    } catch (error) { console.error("Kullanıcı bilgisi alınamadı:", error); }
   };
 
   const loadCustomers = async () => {
     try {
       setLoading(true);
-      // Backend'den müşterileri yükle (randevulardan ve customers collection'ından)
       const response = await api.get("/customers");
-      
-      // Backend'den gelen müşterileri frontend formatına dönüştür
       const customerList = (response.data || []).map(customer => ({
         name: customer.name,
         phone: customer.phone,
         totalAppointments: customer.total_appointments || 0,
         isPending: customer.is_pending || false
       }));
-      
       setCustomers(customerList);
     } catch (error) {
       if (error.response && error.response.status !== 401) {
@@ -208,21 +169,11 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     try {
       setLoadingHistory(true);
       const response = await api.get(`/customers/${phone}/history`);
-      
-      // Personel için sadece kendi randevularını filtrele
       let appointments = response.data.appointments || [];
       if (userRole === 'staff' && currentStaffUsername) {
-        appointments = appointments.filter(apt => 
-          apt.staff_member_id === currentStaffUsername
-        );
+        appointments = appointments.filter(apt => apt.staff_member_id === currentStaffUsername);
       }
-      
-      setCustomerHistory({
-        ...response.data,
-        appointments: appointments
-      });
-      
-      // Müşteri notlarını backend'den yükle
+      setCustomerHistory({ ...response.data, appointments: appointments });
       setCustomerNotes(response.data.notes || "");
     } catch (error) {
       toast.error(t('customers.historyLoadingError'));
@@ -242,21 +193,15 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
 
   const handleWhatsApp = (phone) => {
     let cleanPhone = phone.replace(/\D/g, "");
-    if (cleanPhone.startsWith("0")) {
-      cleanPhone = cleanPhone.substring(1);
-    }
-    if (!cleanPhone.startsWith("90")) {
-      cleanPhone = "90" + cleanPhone;
-    }
+    if (cleanPhone.startsWith("0")) cleanPhone = cleanPhone.substring(1);
+    if (!cleanPhone.startsWith("90")) cleanPhone = "90" + cleanPhone;
     window.open(`https://wa.me/${cleanPhone}`, "_blank");
   };
 
   const handleSaveNotes = async () => {
     if (selectedCustomer) {
       try {
-        await api.put(`/customers/${selectedCustomer.phone}/notes`, {
-          notes: customerNotes
-        });
+        await api.put(`/customers/${selectedCustomer.phone}/notes`, { notes: customerNotes });
         toast.success(t('customers.notesSaved'));
       } catch (error) {
         toast.error(error.response?.data?.detail || t('customers.notesSaveError'));
@@ -275,24 +220,15 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
 
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
-    
     setDeleting(true);
     try {
       const response = await api.delete(`/customers/${customerToDelete.phone}`);
       toast.success(response.data?.message || t('customers.deleteSuccess'));
-      
-      // Eğer silinen müşteri seçiliyse, seçimi temizle
       if (selectedCustomer && selectedCustomer.phone === customerToDelete.phone) {
-        setSelectedCustomer(null);
-        setCustomerHistory(null);
-        setCustomerNotes("");
+        setSelectedCustomer(null); setCustomerHistory(null); setCustomerNotes("");
       }
-      
-      // Müşteriler listesini yeniden yükle
       await loadCustomers();
-      
-      setDeleteDialogOpen(false);
-      setCustomerToDelete(null);
+      setDeleteDialogOpen(false); setCustomerToDelete(null);
     } catch (error) {
       toast.error(error.response?.data?.detail || t('customers.deleteError'));
     } finally {
@@ -305,29 +241,20 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       toast.error(t('customers.addValidationNamePhone'));
       return;
     }
-
-    // Telefon numarası formatını temizle
     const cleanPhone = newCustomerData.phone.replace(/\D/g, "");
     if (cleanPhone.length < 10) {
       toast.error(t('customers.addValidationPhone'));
       return;
     }
-
     setSavingCustomer(true);
     try {
-      // Müşteriyi backend'e kaydet (veritabanına)
       const response = await api.post("/customers", {
         name: newCustomerData.name.trim(),
         phone: newCustomerData.phone.trim()
       });
-      
       toast.success(response.data?.message || t('customers.addSuccess'));
-      
-      // Dialog'u kapat ve formu temizle
       setNewCustomerDialogOpen(false);
       setNewCustomerData({ name: "", phone: "" });
-      
-      // Müşteriler listesini yeniden yükle
       await loadCustomers();
     } catch (error) {
       const errorMessage = error.response?.data?.detail || t('customers.addError');
@@ -337,23 +264,102 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     }
   };
 
+  // --- HİBRİT VE GÜVENLİ REHBER FONKSİYONU ---
+  const handleImportContacts = async () => {
+    // 1. Durum: Native Mobil Uygulama (APK / IPA)
+    if (Capacitor.isNativePlatform()) {
+      setImportingContacts(true);
+      try {
+        const permission = await Contacts.requestPermissions();
+        if (permission.contacts !== 'granted') {
+          toast.error("Rehbere erişim izni verilmedi.");
+          setImportingContacts(false);
+          return;
+        }
+
+        const result = await Contacts.getContacts({
+          projection: { name: true, phones: true }
+        });
+
+        if (result.contacts && result.contacts.length > 0) {
+           processContacts(result.contacts.map(c => ({
+             name: c.name?.display || (c.name?.given + " " + (c.name?.family || "")),
+             phone: c.phones?.[0]?.number
+           })));
+        } else {
+           toast.info("Rehberinizde kişi bulunamadı.");
+           setImportingContacts(false);
+        }
+      } catch (error) {
+        console.error("Native Rehber Hatası:", error);
+        toast.error("Bir hata oluştu.");
+        setImportingContacts(false);
+      }
+    } 
+    // 2. Durum: Web Tarayıcısı (Chrome Android vb.)
+    else if ('contacts' in navigator && 'ContactsManager' in window) {
+      setImportingContacts(true);
+      try {
+        const webContacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+        if (webContacts && webContacts.length > 0) {
+           processContacts(webContacts.map(c => ({
+             name: c.name?.[0],
+             phone: c.tel?.[0]
+           })));
+        } else {
+           setImportingContacts(false); // Kullanıcı iptal etti
+        }
+      } catch (error) {
+        console.error("Web Rehber Hatası:", error);
+        setImportingContacts(false);
+      }
+    } 
+    // 3. Durum: Desteklenmeyen Tarayıcı (iOS Web / Masaüstü)
+    else {
+      setShowNotSupportedDialog(true);
+    }
+  };
+
+  // Veriyi İşleyen Yardımcı Fonksiyon
+  const processContacts = async (contactsList) => {
+    toast.info(`${contactsList.length} kişi işleniyor...`);
+    let successCount = 0;
+
+    for (const contact of contactsList) {
+      if (contact.name && contact.phone) {
+        let cleanPhone = contact.phone.replace(/\D/g, "");
+        if (cleanPhone.length === 10) cleanPhone = '90' + cleanPhone;
+        else if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) cleanPhone = '90' + cleanPhone.substring(1);
+
+        if (cleanPhone.length >= 10) {
+          try {
+            await api.post("/customers", { name: contact.name.trim(), phone: cleanPhone });
+            successCount++;
+          } catch (e) { }
+        }
+      }
+    }
+
+    if (successCount > 0) {
+      toast.success(`${successCount} kişi başarıyla eklendi!`);
+      await loadCustomers();
+    } else {
+      toast.warning("Yeni kişi eklenmedi.");
+    }
+    setImportingContacts(false);
+  };
+
   const filteredCustomers = customers.filter(customer =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     customer.phone.includes(searchTerm)
   );
 
-  // Müşteri Detay Görünümü
   if (selectedCustomer) {
     return (
       <div className="space-y-4 pb-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <button
-            onClick={() => {
-              setSelectedCustomer(null);
-              setCustomerHistory(null);
-              setCustomerNotes("");
-            }}
+            onClick={() => { setSelectedCustomer(null); setCustomerHistory(null); setCustomerNotes(""); }}
             className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -361,59 +367,29 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           </button>
         </div>
 
-        {/* KART 1: Profil ve İletişim */}
         <Card className="bg-white p-6 rounded-xl shadow-sm text-center">
           <div className="flex flex-col items-center">
-            {/* Büyük Avatar */}
             <div className="w-20 h-20 bg-gray-100 text-gray-600 rounded-full flex items-center justify-center font-bold text-2xl mb-4">
               {getInitials(selectedCustomer.name)}
             </div>
-            
-            {/* İsim */}
-            <h2 className="text-xl font-bold text-gray-900 mt-4 mb-2">
-              {selectedCustomer.name}
-            </h2>
-            
-            {/* Telefon */}
+            <h2 className="text-xl font-bold text-gray-900 mt-4 mb-2">{selectedCustomer.name}</h2>
             <p className="text-gray-500 mb-6">{selectedCustomer.phone}</p>
-            
-            {/* Aksiyon Butonları */}
             <div className="flex gap-3 w-full max-w-xs">
-              <Button
-                onClick={() => handleCall(selectedCustomer.phone)}
-                variant="outline"
-                className="flex-1 border border-gray-300 text-gray-700 rounded-lg"
-              >
-                <Phone className="w-4 h-4 mr-2" />
-                {t('customers.actions.call')}
+              <Button onClick={() => handleCall(selectedCustomer.phone)} variant="outline" className="flex-1 border border-gray-300 text-gray-700 rounded-lg">
+                <Phone className="w-4 h-4 mr-2" /> {t('customers.actions.call')}
               </Button>
-              <Button
-                onClick={() => handleWhatsApp(selectedCustomer.phone)}
-                className="flex-1 bg-green-500 hover:bg-green-600 text-white rounded-lg"
-              >
-                <MessageSquare className="w-4 h-4 mr-2" />
-                {t('customers.actions.whatsapp')}
+              <Button onClick={() => handleWhatsApp(selectedCustomer.phone)} className="flex-1 bg-green-500 hover:bg-green-600 text-white rounded-lg">
+                <MessageSquare className="w-4 h-4 mr-2" /> {t('customers.actions.whatsapp')}
               </Button>
             </div>
-            
-            {/* Sil Butonu (Sadece Admin) */}
             {userRole === 'admin' && (
-              <Button
-                onClick={() => {
-                  setCustomerToDelete(selectedCustomer);
-                  setDeleteDialogOpen(true);
-                }}
-                variant="outline"
-                className="w-full max-w-xs mt-3 border border-red-300 text-red-600 hover:bg-red-50 rounded-lg"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                {t('customers.deleteButton')}
+              <Button onClick={() => { setCustomerToDelete(selectedCustomer); setDeleteDialogOpen(true); }} variant="outline" className="w-full max-w-xs mt-3 border border-red-300 text-red-600 hover:bg-red-50 rounded-lg">
+                <Trash2 className="w-4 h-4 mr-2" /> {t('customers.deleteButton')}
               </Button>
             )}
           </div>
         </Card>
 
-        {/* KART 2: Randevu Geçmişi */}
         <Card className="bg-white p-4 rounded-xl shadow-sm mt-4">
           <h3 className="font-semibold text-gray-900 mb-3">{t('customers.historyTitle')}</h3>
           {loadingHistory ? (
@@ -421,22 +397,14 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           ) : customerHistory && customerHistory.appointments.length > 0 ? (
             <div className="space-y-3">
               {customerHistory.appointments.map((apt, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100"
-                >
+                <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
                   <div>
                     <p className="font-medium text-gray-900">
                       {format(new Date(apt.appointment_date), "d MMMM yyyy", { locale: dateLocale })}
                     </p>
-                    <p className="text-sm text-gray-600">
-                      {apt.appointment_time} - {apt.service_name}
-                    </p>
-                    {userRole === 'admin' && apt.staff_member_id && 
-                     (!settings || settings.customer_can_choose_staff || settings.admin_provides_service) && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        {t('customers.staff')}: {apt.staff_member_id}
-                      </p>
+                    <p className="text-sm text-gray-600">{apt.appointment_time} - {apt.service_name}</p>
+                    {userRole === 'admin' && apt.staff_member_id && (!settings || settings.customer_can_choose_staff || settings.admin_provides_service) && (
+                      <p className="text-xs text-gray-500 mt-1">{t('customers.staff')}: {apt.staff_member_id}</p>
                     )}
                   </div>
                   <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -454,27 +422,16 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           )}
         </Card>
 
-        {/* KART 3: Müşteri Notları */}
         <Card className="bg-white p-4 rounded-xl shadow-sm mt-4">
           <h3 className="font-semibold text-gray-900 mb-2">{t('customers.notesTitle')}</h3>
           <div className="space-y-3">
-            <Textarea
-              value={customerNotes}
-              onChange={(e) => setCustomerNotes(e.target.value)}
-              placeholder={t('customers.notesPlaceholder')}
-              rows={4}
-              className="rounded-lg border border-gray-300"
-            />
-            <Button
-              onClick={handleSaveNotes}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
-            >
+            <Textarea value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} placeholder={t('customers.notesPlaceholder')} rows={4} className="rounded-lg border border-gray-300" />
+            <Button onClick={handleSaveNotes} className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
               {t('common.save')}
             </Button>
           </div>
         </Card>
         
-        {/* Silme Onay Dialog'u - Müşteri Detay Görünümü */}
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -483,19 +440,14 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                 {customerToDelete && (
                   <>
                     <strong>{customerToDelete.name}</strong> {i18n.language === 'tr' ? 'müşterisini ve tüm randevularını silmek istediğinize emin misiniz?' : 'customer and all their appointments?'}
-                    <br />
-                    <span className="text-red-600 font-semibold">{t('customers.deleteWarning')}</span>
+                    <br /> <span className="text-red-600 font-semibold">{t('customers.deleteWarning')}</span>
                   </>
                 )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deleting}>{t('common.cancel')}</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDeleteCustomer}
-                disabled={deleting}
-                className="bg-red-600 hover:bg-red-700"
-              >
+              <AlertDialogAction onClick={handleDeleteCustomer} disabled={deleting} className="bg-red-600 hover:bg-red-700">
                 {deleting ? t('customers.deleting') : t('customers.actions.delete')}
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -505,105 +457,66 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     );
   }
 
-  // Müşteri Listesi Görünümü
   return (
     <div className="space-y-4 pb-6">
-      {/* Geri Tuşu (Ana Sayfaya Dön) */}
       {onNavigate && (
-        <button
-          onClick={() => onNavigate("dashboard")}
-          className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors mb-2"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          <span className="text-sm font-medium">{t('customers.backToHome')}</span>
+        <button onClick={() => onNavigate("dashboard")} className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors mb-2">
+          <ArrowLeft className="w-5 h-5" /> <span className="text-sm font-medium">{t('customers.backToHome')}</span>
         </button>
       )}
       
-      {/* Üst Bölüm: Arama ve Ekleme */}
       <div className="sticky top-0 z-10 bg-gray-50 pb-4 pt-2">
-        {/* Arama Çubuğu */}
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <Input
-            type="text"
-            placeholder={t('customers.searchPlaceholder')}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 bg-white rounded-lg border border-gray-300 shadow-sm"
-          />
+          <Input type="text" placeholder={t('customers.searchPlaceholder')} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 bg-white rounded-lg border border-gray-300 shadow-sm" />
         </div>
         
-        {/* Yeni Müşteri Ekle Butonu (Sadece Admin) */}
         {userRole === 'admin' && (
-          <Button
-            onClick={() => {
-              setNewCustomerDialogOpen(true);
-            }}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            {t('customers.newCustomer')}
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setNewCustomerDialogOpen(true)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
+              <Plus className="w-4 h-4 mr-2" /> {t('customers.newCustomer')}
+            </Button>
+            
+            <Button
+              onClick={handleImportContacts}
+              disabled={importingContacts}
+              variant="outline"
+              className="bg-white border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg w-14 flex-shrink-0"
+              title="Rehberden Kişi Ekle"
+            >
+              {importingContacts ? (
+                <div className="animate-spin h-5 w-5 border-2 border-gray-500 border-t-transparent rounded-full" />
+              ) : (
+                <Import className="w-5 h-5" />
+              )}
+            </Button>
+          </div>
         )}
       </div>
 
-      {/* Müşteri Listesi */}
       <div className="space-y-3">
         {loading ? (
-          <Card className="p-8 text-center">
-            <p className="text-gray-500">{t('customers.loading')}</p>
-          </Card>
+          <Card className="p-8 text-center"><p className="text-gray-500">{t('customers.loading')}</p></Card>
         ) : filteredCustomers.length === 0 ? (
-          <Card className="p-8 text-center">
-            <p className="text-gray-500">{t('customers.noResults')}</p>
-          </Card>
+          <Card className="p-8 text-center"><p className="text-gray-500">{t('customers.noResults')}</p></Card>
         ) : (
           filteredCustomers.map((customer) => (
-            <Card
-              key={customer.phone}
-              className="p-4 mb-3 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
-            >
+            <Card key={customer.phone} className="p-4 mb-3 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-4">
-                {/* Sol: Avatar */}
-                <div 
-                  onClick={() => handleCustomerClick(customer)}
-                  className="w-10 h-10 bg-gray-100 text-gray-600 rounded-full flex items-center justify-center font-bold flex-shrink-0 cursor-pointer"
-                >
+                <div onClick={() => handleCustomerClick(customer)} className="w-10 h-10 bg-gray-100 text-gray-600 rounded-full flex items-center justify-center font-bold flex-shrink-0 cursor-pointer">
                   {getInitials(customer.name)}
                 </div>
-                
-                {/* Orta: Bilgi */}
-                <div 
-                  onClick={() => handleCustomerClick(customer)}
-                  className="flex-1 min-w-0 cursor-pointer"
-                >
-                  <h3 className="text-gray-900 font-semibold text-base truncate">
-                    {customer.name}
-                  </h3>
-                  <p className="text-gray-500 text-sm truncate">
-                    {customer.phone}
-                  </p>
+                <div onClick={() => handleCustomerClick(customer)} className="flex-1 min-w-0 cursor-pointer">
+                  <h3 className="text-gray-900 font-semibold text-base truncate">{customer.name}</h3>
+                  <p className="text-gray-500 text-sm truncate">{customer.phone}</p>
                 </div>
-                
-                {/* Sağ: Butonlar */}
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {userRole === 'admin' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCustomerToDelete(customer);
-                        setDeleteDialogOpen(true);
-                      }}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title={t('customers.deleteButton')}
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); setCustomerToDelete(customer); setDeleteDialogOpen(true); }} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                       <Trash2 className="w-5 h-5" />
                     </button>
                   )}
-                  <ChevronRight 
-                    onClick={() => handleCustomerClick(customer)}
-                    className="w-5 h-5 text-gray-400 cursor-pointer" 
-                  />
+                  <ChevronRight onClick={() => handleCustomerClick(customer)} className="w-5 h-5 text-gray-400 cursor-pointer" />
                 </div>
               </div>
             </Card>
@@ -611,93 +524,76 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         )}
       </div>
       
-      {/* Silme Onay Dialog'u */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Müşteriyi Sil</AlertDialogTitle>
+            <AlertDialogTitle>{t('customers.deleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
               {customerToDelete && (
                 <>
-                  <strong>{customerToDelete.name}</strong> müşterisini ve tüm randevularını silmek istediğinize emin misiniz?
-                  <br />
-                  <span className="text-red-600 font-semibold">Bu işlem geri alınamaz!</span>
+                  <strong>{customerToDelete.name}</strong> {i18n.language === 'tr' ? 'müşterisini ve tüm randevularını silmek istediğinize emin misiniz?' : 'customer and all their appointments?'}
+                  <br /> <span className="text-red-600 font-semibold">{t('customers.deleteWarning')}</span>
                 </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>İptal</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteCustomer}
-              disabled={deleting}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {deleting ? "Siliniyor..." : "Sil"}
+            <AlertDialogCancel disabled={deleting}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteCustomer} disabled={deleting} className="bg-red-600 hover:bg-red-700">
+              {deleting ? t('customers.deleting') : t('customers.actions.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       
-      {/* Yeni Müşteri Ekleme Dialog'u */}
       <Dialog open={newCustomerDialogOpen} onOpenChange={setNewCustomerDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>{t('customers.addTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('customers.addDescription')}
-            </DialogDescription>
+            <DialogDescription>{t('customers.addDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="new-customer-name" className="text-sm font-semibold text-gray-900">
-                {t('customers.fields.name')} *
-              </Label>
-              <Input
-                id="new-customer-name"
-                type="text"
-                placeholder={t('customers.fields.name')}
-                value={newCustomerData.name}
-                onChange={(e) => setNewCustomerData({ ...newCustomerData, name: e.target.value })}
-                className="rounded-lg border border-gray-300"
-                autoFocus
-              />
+              <Label htmlFor="new-customer-name" className="text-sm font-semibold text-gray-900">{t('customers.fields.name')} *</Label>
+              <Input id="new-customer-name" type="text" placeholder={t('customers.fields.name')} value={newCustomerData.name} onChange={(e) => setNewCustomerData({ ...newCustomerData, name: e.target.value })} className="rounded-lg border border-gray-300" autoFocus />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="new-customer-phone" className="text-sm font-semibold text-gray-900">
-                {t('customers.fields.phone')} *
-              </Label>
-              <Input
-                id="new-customer-phone"
-                type="tel"
-                placeholder={i18n.language === 'en' ? '+44 XXXX XXXXXX' : '05XX XXX XX XX'}
-                value={newCustomerData.phone}
-                onChange={(e) => setNewCustomerData({ ...newCustomerData, phone: e.target.value })}
-                className="rounded-lg border border-gray-300"
-              />
+              <Label htmlFor="new-customer-phone" className="text-sm font-semibold text-gray-900">{t('customers.fields.phone')} *</Label>
+              <Input id="new-customer-phone" type="tel" placeholder={i18n.language === 'en' ? '+44 XXXX XXXXXX' : '05XX XXX XX XX'} value={newCustomerData.phone} onChange={(e) => setNewCustomerData({ ...newCustomerData, phone: e.target.value })} className="rounded-lg border border-gray-300" />
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setNewCustomerDialogOpen(false);
-                setNewCustomerData({ name: "", phone: "" });
-              }}
-              disabled={savingCustomer}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onClick={handleAddNewCustomer}
-              disabled={savingCustomer || !newCustomerData.name.trim() || !newCustomerData.phone.trim()}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
+            <Button variant="outline" onClick={() => { setNewCustomerDialogOpen(false); setNewCustomerData({ name: "", phone: "" }); }} disabled={savingCustomer}>{t('common.cancel')}</Button>
+            <Button onClick={handleAddNewCustomer} disabled={savingCustomer || !newCustomerData.name.trim() || !newCustomerData.phone.trim()} className="bg-blue-600 hover:bg-blue-700 text-white">
               {savingCustomer ? t('customers.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* --- Desteklenmiyor Uyarısı Dialog'u (En alta ekledik) --- */}
+      <AlertDialog open={showNotSupportedDialog} onOpenChange={setShowNotSupportedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Özellik Kullanılamıyor</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bu tarayıcı veya cihaz "Rehberden Aktarma" özelliğini desteklemiyor.
+              <br /><br />
+              Bu özellik şuralarda çalışır:
+              <ul className="list-disc pl-5 mt-2 space-y-1 text-gray-600">
+                <li>Android Telefonlar (Chrome Tarayıcı)</li>
+                <li>PLANN Mobil Uygulaması (APK / iOS App)</li>
+              </ul>
+              <br />
+              <span className="text-xs text-gray-500">*iPhone (iOS) tarayıcılarında Apple kısıtlaması nedeniyle çalışmaz. Lütfen uygulamamızı indirin.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Tamam</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 };
