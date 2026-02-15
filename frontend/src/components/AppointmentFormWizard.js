@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { format, addDays, isSameDay } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -60,11 +60,18 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   // Filtrelemeler
   const [filteredServices, setFilteredServices] = useState([]);
   const [qualifiedStaff, setQualifiedStaff] = useState([]);
+
+  // Hizmet Arama
+  const [serviceSearchTerm, setServiceSearchTerm] = useState("");
+  const [debouncedServiceSearchTerm, setDebouncedServiceSearchTerm] = useState("");
   
   // Müşteri Arama
   const [customers, setCustomers] = useState([]);
   const [customerSearchTerm, setCustomerSearchTerm] = useState("");
+  const [debouncedCustomerSearchTerm, setDebouncedCustomerSearchTerm] = useState("");
   const [isNewCustomerMode, setIsNewCustomerMode] = useState(false);
+  const customerListRef = useRef(null);
+  const [customerListScrollTop, setCustomerListScrollTop] = useState(0);
 
   // --- REHBER ENTEGRASYONU STATE'LERİ ---
   const [importingContacts, setImportingContacts] = useState(false);
@@ -110,6 +117,46 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       setFilteredServices(services);
     }
   }, [userRole, currentUser, services]);
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedServiceSearchTerm(serviceSearchTerm), 150);
+    return () => clearTimeout(id);
+  }, [serviceSearchTerm]);
+
+  const visibleServices = useMemo(() => {
+    const raw = filteredServices || [];
+    const search = (debouncedServiceSearchTerm || "").toLowerCase();
+    if (!search) return raw;
+    return raw.filter((s) => String(s?.name || "").toLowerCase().includes(search));
+  }, [filteredServices, debouncedServiceSearchTerm]);
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedCustomerSearchTerm(customerSearchTerm), 150);
+    return () => clearTimeout(id);
+  }, [customerSearchTerm]);
+
+  const filteredCustomers = useMemo(() => {
+    const raw = customers || [];
+    const search = (debouncedCustomerSearchTerm || "").toLowerCase();
+    const phoneSearch = String(debouncedCustomerSearchTerm || "");
+
+    const filtered = search
+      ? raw.filter((c) => {
+          const name = (c?.name || "").toLowerCase();
+          const phone = String(c?.phone || "");
+          return name.includes(search) || phone.includes(phoneSearch);
+        })
+      : raw;
+
+    const locale = i18n.language === 'tr' ? 'tr-TR' : 'en-GB';
+    return filtered
+      .slice()
+      .sort((a, b) => {
+        const aName = String(a?.name || "");
+        const bName = String(b?.name || "");
+        return aName.localeCompare(bName, locale, { sensitivity: 'base' });
+      });
+  }, [customers, debouncedCustomerSearchTerm, i18n.language]);
 
   useEffect(() => {
     if (formData.service_id && allStaff.length > 0) {
@@ -335,15 +382,17 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   // ADIM 1: HİZMET SEÇİMİ
   const renderStep1 = () => (
     <div className="space-y-4 animate-in slide-in-from-right duration-300 pb-20">
-      <div className="relative">
-        <Search className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-        <Input 
-          placeholder={t('appointments.form.searchService', 'Hizmet ara...')} 
-          className="pl-10 h-12 backdrop-blur-md bg-white/50 border-black rounded-xl focus:ring-zinc-900 shadow-sm"
-        />
-      </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
+          <Input 
+            placeholder={t('appointments.form.searchService', 'Hizmet ara...')} 
+            value={serviceSearchTerm}
+            onChange={(e) => setServiceSearchTerm(e.target.value)}
+            className="pl-10 h-12 backdrop-blur-md bg-white/50 border-black rounded-xl focus:ring-zinc-900 shadow-sm"
+          />
+        </div>
       <div className="grid grid-cols-1 gap-3">
-        {filteredServices.map((service) => (
+        {visibleServices.map((service) => (
           <div 
             key={service.id}
             onClick={() => {
@@ -379,19 +428,16 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // ADIM 2: MÜŞTERİ SEÇİMİ
   const renderStep2 = () => {
-    const search = (customerSearchTerm || "").toLowerCase();
-    const filteredCustomers = (customers || [])
-      .filter(c => {
-        const name = (c?.name || "").toLowerCase();
-        const phone = String(c?.phone || "");
-        return name.includes(search) || phone.includes(customerSearchTerm || "");
-      })
-      .sort((a, b) => {
-        const aName = String(a?.name || "");
-        const bName = String(b?.name || "");
-        const locale = i18n.language === 'tr' ? 'tr-TR' : 'en-GB';
-        return aName.localeCompare(bName, locale, { sensitivity: 'base' });
-      });
+    const LIST_HEIGHT = 420;
+    const ITEM_HEIGHT = 78;
+    const OVERSCAN = 6;
+
+    const total = filteredCustomers.length;
+    const startIndex = Math.max(0, Math.floor(customerListScrollTop / ITEM_HEIGHT) - OVERSCAN);
+    const endIndex = Math.min(total, Math.ceil((customerListScrollTop + LIST_HEIGHT) / ITEM_HEIGHT) + OVERSCAN);
+    const visible = filteredCustomers.slice(startIndex, endIndex);
+    const offsetY = startIndex * ITEM_HEIGHT;
+    const totalHeight = total * ITEM_HEIGHT;
 
     return (
       <div className="space-y-6 animate-in slide-in-from-right duration-300 pb-20">
@@ -401,6 +447,10 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
              value={customerSearchTerm}
              onChange={(e) => {
                setCustomerSearchTerm(e.target.value);
+               setCustomerListScrollTop(0);
+               if (customerListRef.current) {
+                 customerListRef.current.scrollTop = 0;
+               }
                if(isNewCustomerMode) setIsNewCustomerMode(false);
              }}
              placeholder={t('appointments.form.searchCustomer')}
@@ -487,28 +537,37 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         )}
 
         {!isNewCustomerMode && (
-          <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
-            {filteredCustomers.map(c => (
-              <div 
-                key={c.phone}
-                onClick={() => {
-                  setFormData(prev => ({ ...prev, customer_name: c.name, phone: c.phone }));
-                  setStep(3);
-                }}
-                className="flex items-center justify-between p-4 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl hover:bg-white/60 hover:border-white/40 hover:shadow-lg cursor-pointer group transition-all duration-300"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl backdrop-blur-md bg-zinc-500/10 border border-white/30 flex items-center justify-center text-zinc-700 font-bold text-lg group-hover:bg-zinc-900 group-hover:text-white transition-all duration-300 shadow-sm">
-                    {c.name.charAt(0).toUpperCase()}
+          <div
+            ref={customerListRef}
+            onScroll={(e) => setCustomerListScrollTop(e.currentTarget.scrollTop)}
+            className="max-h-[420px] overflow-y-auto pr-1"
+            style={{ height: LIST_HEIGHT }}
+          >
+            <div style={{ height: totalHeight, position: 'relative' }}>
+              <div style={{ transform: `translateY(${offsetY}px)` }} className="space-y-3">
+                {visible.map((c) => (
+                  <div
+                    key={c.phone}
+                    onClick={() => {
+                      setFormData((prev) => ({ ...prev, customer_name: c.name, phone: c.phone }));
+                      setStep(3);
+                    }}
+                    className="flex items-center justify-between p-4 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl hover:bg-white/60 hover:border-white/40 hover:shadow-lg cursor-pointer group transition-all duration-300"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl backdrop-blur-md bg-zinc-500/10 border border-white/30 flex items-center justify-center text-zinc-700 font-bold text-lg group-hover:bg-zinc-900 group-hover:text-white transition-all duration-300 shadow-sm">
+                        {(c.name || '').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-bold text-zinc-900">{c.name}</p>
+                        <p className="text-xs text-zinc-500 font-medium">{c.phone}</p>
+                      </div>
+                    </div>
+                    <Check className={`w-5 h-5 transition-colors ${formData.phone === c.phone ? 'text-zinc-900' : 'text-zinc-300'}`} strokeWidth={2.5} />
                   </div>
-                  <div>
-                    <p className="font-bold text-zinc-900">{c.name}</p>
-                    <p className="text-xs text-zinc-500 font-medium">{c.phone}</p>
-                  </div>
-                </div>
-                <Check className={`w-5 h-5 transition-colors ${formData.phone === c.phone ? 'text-zinc-900' : 'text-zinc-300'}`} strokeWidth={2.5} />
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         )}
       </div>
