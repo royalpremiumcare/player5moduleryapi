@@ -10,9 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import axios from "axios";
 
-// --- REHBER ENTEGRASYONİ İÇİN ---
+// --- REHBER & TİTREŞİM ENTEGRASYONU ---
 import { Capacitor } from '@capacitor/core';
 import { Contacts } from '@capacitor-community/contacts';
+import { Haptics, NotificationType } from '@capacitor/haptics'; // TİTREŞİM EKLENDİ
+// --------------------------------------
+
 import {
   Dialog,
   DialogContent,
@@ -20,7 +23,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-// ---------------------------------
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const publicApi = axios.create({
@@ -174,9 +176,8 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // --- REHBER İŞLEMLERİ ---
   const handleImportFromContacts = async () => {
-    // Önce destek kontrolü yap
     const isSupported = Capacitor.isNativePlatform() || 
-                       ('contacts' in navigator && 'ContactsManager' in window);
+                        ('contacts' in navigator && 'ContactsManager' in window);
     
     if (!isSupported) {
       setShowNotSupportedDialog(true);
@@ -268,7 +269,6 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       return;
     }
 
-    // İlk seçilen kişiyi forma aktar
     const firstContact = selectedList[0];
     let cleanPhone = firstContact.phone.replace(/\D/g, "");
     if (cleanPhone.length === 10) cleanPhone = '90' + cleanPhone;
@@ -287,10 +287,14 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   const handleSubmit = async () => {
     if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
+      // Hata titreşimi
+      try { await Haptics.notification({ type: NotificationType.Error }); } catch (e) {}
       toast.error(t('appointments.form.fillRequiredFields'));
       return;
     }
+    
     setLoading(true);
+    
     try {
       const payload = { ...formData, appointment_date: format(formData.appointment_date, "yyyy-MM-dd") };
       if (userRole === 'staff' && currentUser && !payload.staff_member_id) payload.staff_member_id = currentUser.username;
@@ -304,9 +308,22 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         toast.success(t('appointments.form.created'));
         await loadCustomers();
       }
+
+      // --- BAŞARILI İŞLEM TİTREŞİMİ (BURASI YENİ) ---
+      try {
+        await Haptics.notification({ type: NotificationType.Success });
+      } catch (e) {
+        console.log("Haptic error", e);
+      }
+      // ----------------------------------------------
+
       await new Promise(r => setTimeout(r, 500));
       onSave();
     } catch (error) {
+      // --- HATA TİTREŞİMİ ---
+      try { await Haptics.notification({ type: NotificationType.Error }); } catch (e) {}
+      // ---------------------
+      
       toast.error(error.response?.data?.detail || t('appointments.form.operationFailed'));
     } finally {
       setLoading(false);
@@ -315,7 +332,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // --- RENDER STEPS ---
 
-  // ADIM 1: HİZMET SEÇİMİ (Glassmorphic Kart Görünümü)
+  // ADIM 1: HİZMET SEÇİMİ
   const renderStep1 = () => (
     <div className="space-y-4 animate-in slide-in-from-right duration-300 pb-20">
       <div className="relative">
@@ -412,7 +429,6 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                 value={formData.phone}
                 onChange={(e) => {
                   let val = e.target.value.replace(/[^0-9+]/g, '');
-                  // Sadece rakamları say (+ işaretini sayma)
                   const digits = val.replace(/[^0-9]/g, '');
                   if (digits.length <= 11) {
                     setFormData(prev => ({...prev, phone: val}));
@@ -609,7 +625,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
            </div>
         </div>
 
-        {/* SAAT GRID - Dolu saatler artık belirgin gri ve seçilemez */}
+        {/* SAAT GRID */}
         <div>
           <h3 className="font-bold text-zinc-900 mb-4 uppercase tracking-wider text-sm">{t('appointments.form.appointmentTime')}</h3>
           {allSlots.length === 0 ? (
