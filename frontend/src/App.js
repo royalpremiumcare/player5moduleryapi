@@ -46,6 +46,8 @@ function App() {
   const { theme, toggleTheme } = useTheme();
   const { t, i18n } = useTranslation();
   const bottomNavRef = useRef(null);
+
+  const ENABLE_SETUP_WIZARD = false;
   
   const [currentView, setCurrentView] = useState("dashboard");
   const [services, setServices] = useState([]);
@@ -282,7 +284,7 @@ function App() {
             setCurrentUser(user);
             // Admin ve onboarding tamamlanmamışsa sihirbazı göster
             if (user.role === 'admin' && !user.onboarding_completed) {
-              setShowOnboarding(true);
+              if (ENABLE_SETUP_WIZARD) setShowOnboarding(true);
             }
           }
         }
@@ -290,7 +292,7 @@ function App() {
         console.error("Onboarding kontrolü yapılamadı:", error);
       }
     }
-  }, [userRole, token]);
+  }, [userRole, token, ENABLE_SETUP_WIZARD]);
 
   const loadServices = useCallback(async () => {
     try {
@@ -819,7 +821,7 @@ function App() {
       <Toaster position="top-center" richColors />
 
       {/* Setup Wizard - Onboarding */}
-      {showOnboarding && (
+      {ENABLE_SETUP_WIZARD && showOnboarding && (
         <SetupWizard
           onComplete={() => {
             setShowOnboarding(false);
@@ -1192,7 +1194,7 @@ function App() {
             {/* Yeni Randevu Ekle (Ana Renk - Mavi) */}
             <button
               onClick={handleNewAppointment}
-              className="flex items-center justify-center w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors -mt-4"
+              className="flex items-center justify-center w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors -mt-4 tour-new-appointment"
             >
               <Plus className="w-6 h-6" />
             </button>
@@ -1215,7 +1217,7 @@ function App() {
                 setCurrentView("settings");
                 setShowForm(false);
               }}
-              className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
+              className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors text-gray-600 hover:text-gray-900 tour-settings"
             >
               <SettingsIcon className="w-5 h-5" />
               <span className="text-xs font-medium">{t('nav.settings', 'Settings')}</span>

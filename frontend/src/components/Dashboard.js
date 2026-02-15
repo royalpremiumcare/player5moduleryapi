@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { format, addDays } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -18,6 +18,10 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
+// --- TUR REHBERİ IMPORT ---
+import TourGuide from "../components/TourGuide"; 
+// --------------------------
 
 // --- WHATSAPP ICON ---
 const WhatsAppIcon = ({ className }) => (
@@ -46,6 +50,21 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const [newBreakStart, setNewBreakStart] = useState("12:00");
   const [newBreakEnd, setNewBreakEnd] = useState("12:30");
   const [addingBreak, setAddingBreak] = useState(false);
+
+  // --- TOUR GUIDE STATE ---
+  const [runTour, setRunTour] = useState(false);
+
+  const dashboardTourStorageKey = useMemo(() => {
+    if (!token) return null;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const username = payload.sub || payload.username || 'unknown';
+      const role = payload.role || userRole || 'unknown';
+      return `dashboard_tour_completed:${role}:${username}`;
+    } catch (e) {
+      return null;
+    }
+  }, [token, userRole]);
 
   const today = format(new Date(), "yyyy-MM-dd");
   const tomorrow = format(addDays(new Date(), 1), "yyyy-MM-dd");
@@ -119,7 +138,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     if (userRole === 'staff') {
       loadPersonnelStats();
     }
-  }, [userRole, loadPersonnelStats]);
+    
+    // --- TUR KONTROLÜ (LOCAL STORAGE) ---
+    if (dashboardTourStorageKey && !localStorage.getItem(dashboardTourStorageKey)) {
+      // Sayfa tam yüklensin diye azıcık beklet
+      setTimeout(() => setRunTour(true), 1000);
+    }
+  }, [userRole, loadPersonnelStats, dashboardTourStorageKey]);
 
   useEffect(() => { if (settings !== null) loadStaffMembers(); }, [settings, userRole]);
   useEffect(() => { if (userRole === 'staff') loadPersonnelStats(); }, [appointments.length, userRole, loadPersonnelStats]);
@@ -145,6 +170,52 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const handleCall = (phone) => window.location.href = `tel:${phone}`;
   const handleWhatsApp = (phone) => { let clean = phone.replace(/\D/g, ""); if (clean.startsWith("0")) clean = clean.substring(1); if (!clean.startsWith("90")) clean = "90" + clean; window.open(`https://wa.me/${clean}`, "_blank"); };
 
+  // --- TURU BİTİRME HANDLER'I ---
+  const handleTourFinish = () => {
+    if (dashboardTourStorageKey) {
+      localStorage.setItem(dashboardTourStorageKey, 'true');
+    }
+    setRunTour(false);
+  };
+
+  // --- TUR ADIMLARI TANIMLAMASI ---
+  const tourSteps = [
+    {
+      target: 'body',
+      content: t('tour.welcome', { defaultValue: "PLANN'a Hoş Geldiniz! İşinizi kolaylaştıracak özellikleri keşfetmek için kısa bir tura ne dersiniz?" }),
+      placement: 'center',
+      disableBeacon: true,
+    },
+    {
+      target: '.tour-greeting',
+      content: t('tour.greeting', { defaultValue: 'Burası sizin kontrol paneliniz. Tarihi ve size özel bildirimleri burada görebilirsiniz.' }),
+    },
+    {
+      target: '.tour-stats',
+      content: t('tour.stats', { defaultValue: 'Günün özeti: Randevu sayınız ve tahmini cironuz anlık olarak burada hesaplanır.' }),
+    },
+    {
+      target: '.tour-new-appointment',
+      content: t('tour.newAppointment', { defaultValue: 'Yeni randevu oluşturmak için buradaki + butonunu kullanabilirsiniz.' }),
+    },
+    {
+      target: '.tour-settings',
+      content: t('tour.settings', { defaultValue: 'Kullanmaya başlamadan önce Ayarlar bölümünden işletme, hizmet ve personel ayarlarınızı yapmanızı tavsiye ederiz.' }),
+    },
+    ...(userRole === 'staff' ? [{
+      target: '.tour-breaks',
+      content: t('tour.breaks', { defaultValue: 'Yemek veya dinlenme molalarınızı buradan kolayca ekleyip yönetebilirsiniz.' }),
+    }] : []),
+    {
+      target: '.tour-today-flow',
+      content: t('tour.todayFlow', { defaultValue: 'Bugünkü randevularınızın akışı. Sabah ve öğleden sonra olarak ayrılır, böylece gününüzü daha kolay planlarsınız.' }),
+    },
+    {
+      target: '.tour-upcoming',
+      content: t('tour.upcoming', { defaultValue: 'Yarın ve sonraki günler için yaklaşan randevularınızı buradan takip edebilirsiniz.' }),
+    }
+  ];
+
   // --- DATA FILTERING ---
   const todayAppointments = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
@@ -159,7 +230,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const morningAppointments = filteredToday.filter(apt => apt.appointment_time < "12:00");
   const afternoonAppointments = filteredToday.filter(apt => apt.appointment_time >= "12:00");
 
-  // yeni: akıllı bölümleme kontrolü
   const shouldSplit = morningAppointments.length > 0 && afternoonAppointments.length > 0;
 
   const filteredTomorrow = appointments.filter(apt => {
@@ -167,7 +237,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     if (!aptDate || aptDate !== tomorrow) return false;
     if (userRole === 'staff' && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
     return true;
-  }).filter(apt => staffFilter === "all" || apt.staff_member_id === staffFilter).sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
+  });
   const upcoming = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
     if (!aptDate || aptDate <= tomorrow) return false;
@@ -177,16 +247,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
   const getStaffName = (id) => { const staff = staffMembers.find(s => s.username === id); return staff?.full_name || staff?.username; };
 
-  // --- ÖZET METNİ HESAPLAMALARI ---
   const displayCount = userRole === 'admin' ? stats?.today_appointments || 0 : todayAppointments.length;
   const displayRevenue = userRole === 'admin'
     ? stats?.bugunku_toplam_hizmet_tutari || 0
     : personnelStats?.total_revenue_generated || 0;
 
-  // Zamana göre selamlama
   const greeting = getTimeBasedGreeting();
 
-  // --- CARD RENDERER ---
   const renderAppointmentCard = (apt) => {
     const isCancelled = apt.status === "İptal" || apt.status === t('dashboard.status.cancelled');
     const isCompleted = apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed');
@@ -230,7 +297,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><WhatsAppIcon className="w-4 h-4" /></button>
               </div>
               <div className="flex items-center gap-2">
-                {/* Personel İsmi */}
                 {userRole === 'admin' && getStaffName(apt.staff_member_id) && (
                   <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded text-gray-600 border border-gray-100 shadow-sm">
                     <User className="w-3 h-3" />
@@ -250,7 +316,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             </div>
           </div>
         </div>
-        {/* Not Açılır Alanı */}
         {isExpanded && hasNote && (
           <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200">
             <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm shadow-sm">
@@ -263,14 +328,17 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     );
   };
 
-  // --- MAIN RENDER ---
   return (
     <div className="min-h-screen bg-gray-50/50 pb-24 font-sans selection:bg-gray-200">
+      
+      {/* --- TUR BİLEŞENİ --- */}
+      <TourGuide run={runTour} steps={tourSteps} onFinish={handleTourFinish} />
+
       {/* 1. HEADER & SUMMARY */}
       <div className="px-5 pt-8 pb-4 bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
           {/* Sol Taraf: Karşılama */}
-          <div>
+          <div className="tour-greeting"> {/* CLASS EKLENDI */}
             <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
               {greeting.text}, <span className="text-gray-700">{currentUserName}</span> <span className="text-2xl">{greeting.emoji}</span>
             </h1>
@@ -281,7 +349,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
           {/* Sağ Taraf: PERSONEL MOLA ALANI (sadece staff için) */}
           {userRole === 'staff' && (
-            <div className="mt-4 md:mt-0 w-full md:w-auto md:min-w-[280px]">
+            <div className="mt-4 md:mt-0 w-full md:w-auto md:min-w-[280px] tour-breaks"> {/* CLASS EKLENDI */}
               <div className="bg-white border border-orange-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -308,7 +376,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         </div>
 
         {/* İstatistik Kartları */}
-        <div className="grid grid-cols-2 gap-2.5 mt-4 px-2 py-1">
+        <div className="grid grid-cols-2 gap-2.5 mt-4 px-2 py-1 tour-stats"> {/* CLASS EKLENDI */}
           {/* Randevu Sayısı */}
           <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all hover:scale-105 active:scale-95 cursor-default">
             <div className="flex items-center gap-1.5 mb-0.5">
@@ -343,7 +411,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         )}
 
         {/* 3. BUGÜNÜN AKIŞI */}
-        <div>
+        <div className="tour-today-flow"> {/* CLASS EKLENDI */}
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base md:text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
               {t('dashboard.todayFlow.title')}
@@ -356,22 +424,18 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               <p className="text-sm text-gray-400 font-medium">{t('dashboard.todayFlow.noAppointments')}</p>
             </div>
           ) : (
-            // Akıllı davranış: sadece her iki dönemde de randevu varsa split göster; aksi halde tek liste
             shouldSplit ? (
               <div className="space-y-6 md:space-y-0 md:grid md:grid-cols-2 md:gap-6">
-                {/* SOL SÜTUN (ÖĞLEDEN ÖNCE) */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-sm font-bold text-orange-600 uppercase tracking-wider md:mb-4"><Sun className="w-4 h-4" /> {t('dashboard.todayFlow.beforeNoon')}</div>
                   {morningAppointments.length > 0 ? morningAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
                 </div>
-                {/* SAĞ SÜTUN (ÖĞLEDEN SONRA) */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase tracking-wider md:mb-4"><Moon className="w-4 h-4" /> {t('dashboard.todayFlow.afterNoon')}</div>
                   {afternoonAppointments.length > 0 ? afternoonAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
                 </div>
               </div>
             ) : (
-              // Tek liste görünümü (varsayılan): tüm bugünkü randevuları zaman sırasına göre tek sütunda göster
               <div className="space-y-4">
                 {filteredToday.map(apt => renderAppointmentCard(apt))}
               </div>
@@ -382,7 +446,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         {/* 4. YARININ RANDEVULARI */}
         {filteredTomorrow.length > 0 && (
           <>
-            {/* Ayırıcı Çizgi - Sadece bugün de randevu varsa göster */}
             {filteredToday.length > 0 && (
               <div className="flex items-center gap-4 my-8">
                 <div className="flex-1 h-[2px] bg-gradient-to-r from-transparent via-gray-400 to-transparent"></div>
@@ -391,7 +454,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               </div>
             )}
             
-            <div>
+            <div className="tour-tomorrow">
               <div className={`flex items-center justify-between mb-4 ${filteredToday.length === 0 ? 'mt-8' : ''}`}>
               <h2 className="text-base md:text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">{t('dashboard.tomorrowAppointments.title')}</h2>
               <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full shadow-sm">{filteredTomorrow.length} {t('common.appointments')}</span>
@@ -405,7 +468,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
         {/* 5. GELECEK RANDEVULAR */}
         {upcoming.length > 0 && (
-          <div>
+          <div className="tour-upcoming"> {/* CLASS EKLENDI */}
             <h2 className="text-base md:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2 uppercase tracking-wider mt-8">{t('dashboard.upcomingAppointments.title')}</h2>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100 overflow-hidden md:grid md:grid-cols-2 md:divide-y-0 md:gap-4 md:bg-transparent md:border-0 md:shadow-none">
               {upcoming.slice(0, 5).map((apt) => (
