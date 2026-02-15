@@ -3,5 +3,8 @@
   "private": true,
   "scripts": {
     "build:sitemap": "node scripts/generate-sitemap.js"
+  },
+  "dependencies": {
+    "@capacitor/haptics": "^8.0.0"
   }
 }
