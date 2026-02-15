@@ -182,7 +182,9 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const tourSteps = [
     {
       target: 'body',
-      content: t('tour.welcome', { defaultValue: "PLANN'a Hoş Geldiniz! İşinizi kolaylaştıracak özellikleri keşfetmek için kısa bir tura ne dersiniz?" }),
+      content: t('tour.welcome', {
+        defaultValue: `PLANN'a Hoş Geldiniz${currentUserName ? `, ${currentUserName}` : ''}! İşinizi kolaylaştıracak özellikleri keşfetmek için kısa bir tura ne dersiniz?`,
+      }),
       placement: 'center',
       disableBeacon: true,
     },
@@ -198,10 +200,10 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       target: '.tour-new-appointment',
       content: t('tour.newAppointment', { defaultValue: 'Yeni randevu oluşturmak için buradaki + butonunu kullanabilirsiniz.' }),
     },
-    {
+    ...(userRole === 'admin' ? [{
       target: '.tour-settings',
       content: t('tour.settings', { defaultValue: 'Kullanmaya başlamadan önce Ayarlar bölümünden işletme, hizmet ve personel ayarlarınızı yapmanızı tavsiye ederiz.' }),
-    },
+    }] : []),
     ...(userRole === 'staff' ? [{
       target: '.tour-breaks',
       content: t('tour.breaks', { defaultValue: 'Yemek veya dinlenme molalarınızı buradan kolayca ekleyip yönetebilirsiniz.' }),
