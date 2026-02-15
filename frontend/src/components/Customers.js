@@ -270,6 +270,15 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   // --- REHBER İŞLEMLERİ ---
 
   const handleImportButtonClick = () => {
+    // Destek kontrolü yap
+    const isSupported = Capacitor.isNativePlatform() || 
+                       ('contacts' in navigator && 'ContactsManager' in window);
+    
+    if (!isSupported) {
+      setShowNotSupportedDialog(true);
+      return;
+    }
+    
     setShowImportChoiceDialog(true);
   };
 
@@ -343,9 +352,6 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       } catch (e) {
         setImportingContacts(false);
       }
-    }
-    else {
-      setShowNotSupportedDialog(true);
     }
   };
 
@@ -764,19 +770,43 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       </Dialog>
 
       {/* Desteklenmiyor Dialog */}
-      <AlertDialog open={showNotSupportedDialog} onOpenChange={setShowNotSupportedDialog}>
-        <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-xl font-black text-zinc-900">Özellik Kullanılamıyor</AlertDialogTitle>
-            <AlertDialogDescription className="text-zinc-600 font-medium">
+      <Dialog open={showNotSupportedDialog} onOpenChange={setShowNotSupportedDialog}>
+        <DialogContent className="sm:max-w-md backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+          <DialogHeader className="border-b border-zinc-200 pb-4">
+            <DialogTitle className="text-xl font-black text-zinc-900">Özellik Kullanılamıyor</DialogTitle>
+          </DialogHeader>
+          <div className="py-6 space-y-4">
+            <p className="text-sm text-zinc-700 font-medium leading-relaxed">
               Bu tarayıcı veya cihaz "Rehberden Aktarma" özelliğini desteklemiyor.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">Tamam</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </p>
+            
+            <div className="space-y-3">
+              <p className="text-xs font-bold text-zinc-900 uppercase tracking-wider">Bu özellik şuralarda çalışır:</p>
+              <ul className="space-y-2">
+                <li className="flex items-start gap-2 text-sm text-zinc-700">
+                  <span className="text-zinc-400 mt-0.5">•</span>
+                  <span className="font-medium">Android Telefonlar (Chrome Tarayıcı)</span>
+                </li>
+                <li className="flex items-start gap-2 text-sm text-zinc-700">
+                  <span className="text-zinc-400 mt-0.5">•</span>
+                  <span className="font-medium">PLANN Mobil Uygulaması (APK/iOS App)</span>
+                </li>
+              </ul>
+              
+              <div className="pt-2 mt-2 border-t border-zinc-200">
+                <p className="text-xs text-zinc-500 font-medium italic leading-relaxed">
+                  *iPhone (iOS) tarayıcılarında Apple kısıtlaması nedeniyle çalışmaz. Lütfen uygulamamızı indirin.
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="border-t border-zinc-200 pt-4">
+            <Button onClick={() => setShowNotSupportedDialog(false)} className="w-full bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg h-11">
+              Anladım
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

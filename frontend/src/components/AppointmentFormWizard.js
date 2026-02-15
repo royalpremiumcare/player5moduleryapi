@@ -70,6 +70,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   const [fetchedContacts, setFetchedContacts] = useState([]);
   const [contactSearchTerm, setContactSearchTerm] = useState("");
   const [selectedContactPhones, setSelectedContactPhones] = useState(new Set());
+  const [showNotSupportedDialog, setShowNotSupportedDialog] = useState(false);
   // ---------------------------------------
 
   // --- INIT & LOADERS ---
@@ -173,6 +174,15 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // --- REHBER İŞLEMLERİ ---
   const handleImportFromContacts = async () => {
+    // Önce destek kontrolü yap
+    const isSupported = Capacitor.isNativePlatform() || 
+                       ('contacts' in navigator && 'ContactsManager' in window);
+    
+    if (!isSupported) {
+      setShowNotSupportedDialog(true);
+      return;
+    }
+
     if (Capacitor.isNativePlatform()) {
       setImportingContacts(true);
       try {
@@ -232,9 +242,6 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         setImportingContacts(false);
         toast.error("Rehber erişimi başarısız.");
       }
-    }
-    else {
-      toast.error("Bu tarayıcı rehber özelliğini desteklemiyor.");
     }
   };
 
@@ -423,30 +430,30 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             </div>
 
             {/* Rehberden Ekle Kartı */}
-            <div className="p-5 backdrop-blur-xl bg-white/40 border border-white/30 rounded-2xl space-y-3 animate-in fade-in zoom-in-95 duration-200 shadow-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-md">
-                  <Import className="w-5 h-5 text-white" />
+            <div className="p-6 backdrop-blur-xl bg-white/40 border border-white/30 rounded-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200 shadow-lg">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-md">
+                  <Import className="w-7 h-7 text-white" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-zinc-900 text-sm">{t('appointments.form.importFromContacts', 'Rehberden Ekle')}</h4>
-                  <p className="text-xs text-zinc-600 font-medium">{t('appointments.form.importFromContactsDesc', 'Telefonunuzdaki kişileri seçin')}</p>
+                  <h4 className="font-bold text-zinc-900 text-base">{t('appointments.form.importFromContacts', 'Rehberden Ekle')}</h4>
+                  <p className="text-sm text-zinc-600 font-medium">{t('appointments.form.importFromContactsDesc', 'Telefonunuzdaki kişileri seçin')}</p>
                 </div>
               </div>
               <Button 
                 onClick={handleImportFromContacts}
                 disabled={importingContacts}
-                className="w-full backdrop-blur-md bg-white/60 border-2 border-white/40 hover:bg-white/80 text-zinc-900 h-11 rounded-xl font-bold shadow-sm hover:shadow-md transition-all"
+                className="w-full backdrop-blur-md bg-white/60 border-2 border-white/40 hover:bg-white/80 text-zinc-900 h-14 rounded-xl font-bold shadow-sm hover:shadow-md transition-all text-base"
                 variant="outline"
               >
                 {importingContacts ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                     {t('appointments.form.loading', 'Yükleniyor...')}
                   </>
                 ) : (
                   <>
-                    <Users className="w-4 h-4 mr-2" />
+                    <Users className="w-5 h-5 mr-2" />
                     {t('appointments.form.selectFromContacts', 'Rehberden Seç')}
                   </>
                 )}
@@ -782,6 +789,45 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             </Button>
             <Button onClick={handleSelectFromContacts} className="bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg">
               Seçileni Kullan ({selectedContactPhones.size})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Desteklenmiyor Dialog */}
+      <Dialog open={showNotSupportedDialog} onOpenChange={setShowNotSupportedDialog}>
+        <DialogContent className="sm:max-w-md backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+          <DialogHeader className="border-b border-zinc-200 pb-4">
+            <DialogTitle className="text-xl font-black text-zinc-900">Özellik Kullanılamıyor</DialogTitle>
+          </DialogHeader>
+          <div className="py-6 space-y-4">
+            <p className="text-sm text-zinc-700 font-medium leading-relaxed">
+              Bu tarayıcı veya cihaz "Rehberden Aktarma" özelliğini desteklemiyor.
+            </p>
+            
+            <div className="space-y-3">
+              <p className="text-xs font-bold text-zinc-900 uppercase tracking-wider">Bu özellik şuralarda çalışır:</p>
+              <ul className="space-y-2">
+                <li className="flex items-start gap-2 text-sm text-zinc-700">
+                  <span className="text-zinc-400 mt-0.5">•</span>
+                  <span className="font-medium">Android Telefonlar (Chrome Tarayıcı)</span>
+                </li>
+                <li className="flex items-start gap-2 text-sm text-zinc-700">
+                  <span className="text-zinc-400 mt-0.5">•</span>
+                  <span className="font-medium">PLANN Mobil Uygulaması (APK/iOS App)</span>
+                </li>
+              </ul>
+              
+              <div className="pt-2 mt-2 border-t border-zinc-200">
+                <p className="text-xs text-zinc-500 font-medium italic leading-relaxed">
+                  *iPhone (iOS) tarayıcılarında Apple kısıtlaması nedeniyle çalışmaz. Lütfen uygulamamızı indirin.
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="border-t border-zinc-200 pt-4">
+            <Button onClick={() => setShowNotSupportedDialog(false)} className="w-full bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg h-11">
+              Anladım
             </Button>
           </DialogFooter>
         </DialogContent>
