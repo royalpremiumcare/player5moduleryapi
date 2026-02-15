@@ -527,10 +527,6 @@ const PublicBookingPage = () => {
           <div className="hidden lg:block space-y-4">
             <h2 className="text-3xl xl:text-4xl font-extrabold tracking-tight text-white">
               {/* BURADA currentVisualStep kullanıyoruz */}
-              {currentVisualStep === 1 && t('publicBooking.step1')}
-              {currentVisualStep === 2 && t('publicBooking.step2') /* Eğer personel yoksa buraya Tarih başlığı gelmeli ama dil dosyasında step2 "Uzman Seçimi" ise bu sorun olabilir. Şimdilik mapping ile idare ediyoruz. */}
-              {/* DİL DOSYASI NOTU: İdealde Visual Step 2, eğer Tarih ekranıysa "step3" string'ini göstermeli. Aşağıdaki mantık daha doğru: */}
-              
               {currentStep === 1 && t('publicBooking.step1')} 
               {currentStep === 2 && t('publicBooking.step2')}
               {currentStep === 3 && t('publicBooking.step3')}
