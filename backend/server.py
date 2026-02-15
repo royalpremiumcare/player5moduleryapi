@@ -1750,6 +1750,7 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); work_start_hour: int = 7; work_end_hour: int = 3; appointment_interval: int = 30
     company_name: str = "İşletmeniz"; support_phone: str = "05000000000"; slug: Optional[str] = None; customer_can_choose_staff: bool = False
     logo_url: Optional[str] = None; sms_reminder_hours: float = 1.0; sector: Optional[str] = None; admin_provides_service: bool = False
+    images: List[str] = Field(default_factory=list)
     show_service_duration_on_public: bool = True; show_service_price_on_public: bool = True
     break_limit_minutes: int = 60; break_limit_count: int = 2
     location: Optional[BusinessLocation] = None
@@ -6569,6 +6570,32 @@ async def upload_logo(request: Request, file: UploadFile = File(...), current_us
     
     return {"logo_url": logo_url, "message": "Logo başarıyla yüklendi"}
 
+
+@api_router.post("/upload/image")
+async def upload_image(request: Request, file: UploadFile = File(...), current_user: UserInDB = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="Sadece resim dosyaları yüklenebilir")
+
+    file_content = await file.read()
+    if len(file_content) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Dosya boyutu 8MB'dan büyük olamaz")
+
+    static_dir = ROOT_DIR / "static" / "gallery"
+    static_dir.mkdir(parents=True, exist_ok=True)
+
+    file_extension = (file.filename or "image").split('.')[-1]
+    unique_filename = f"{current_user.organization_id}_{str(uuid.uuid4())[:8]}.{file_extension}"
+    file_path = static_dir / unique_filename
+
+    with open(file_path, "wb") as f:
+        f.write(file_content)
+
+    url = f"/api/static/gallery/{unique_filename}"
+    return {"url": url}
+
 # === USERS/PERSONEL LİSTESİ (Model D) ===
 @api_router.get("/users")
 async def get_users(request: Request, current_user: UserInDB = Depends(get_current_user)):
@@ -8127,6 +8154,7 @@ async def get_public_business(request: Request, slug: str):
     return {
         "business_name": settings.get('company_name', admin_user.get('full_name', 'İşletme')),
         "logo_url": settings.get('logo_url'),
+        "images": settings.get('images', []) or [],
         "location": settings.get('location'),
         "organization_id": organization_id,
         "services": services,

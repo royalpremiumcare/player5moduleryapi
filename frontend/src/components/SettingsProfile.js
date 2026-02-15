@@ -24,6 +24,7 @@ const SettingsProfile = ({ onNavigate }) => {
     company_name: "",
     support_phone: "",
     logo_url: "",
+    images: [],
     slug: "",
     sms_reminder_hours: 1.0,
     business_hours: {
@@ -48,6 +49,8 @@ const SettingsProfile = ({ onNavigate }) => {
   const [loading, setLoading] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
+  const [galleryFiles, setGalleryFiles] = useState([]);
+  const [galleryUploading, setGalleryUploading] = useState(false);
   const [businessHoursOpen, setBusinessHoursOpen] = useState(false);
 
   useEffect(() => {
@@ -196,6 +199,32 @@ const SettingsProfile = ({ onNavigate }) => {
 
     setLoading(true);
     try {
+      if (galleryFiles.length > 0) {
+        setGalleryUploading(true);
+        const uploadedUrls = [];
+
+        for (const file of galleryFiles) {
+          const formData = new FormData();
+          formData.append('file', file);
+          try {
+            const res = await api.post("/upload/image", formData, {
+              headers: {
+                'Content-Type': 'multipart/form-data'
+              }
+            });
+            if (res?.data?.url) {
+              uploadedUrls.push(res.data.url);
+            }
+          } catch (error) {
+            toast.error(t('settings.profile.logoUploadError', { error: error.response?.data?.detail || error.message }));
+          }
+        }
+
+        if (uploadedUrls.length > 0) {
+          settings.images = Array.from(new Set([...(settings.images || []), ...uploadedUrls]));
+        }
+      }
+
       if (logoFile) {
         const formData = new FormData();
         formData.append('file', logoFile);
@@ -220,10 +249,12 @@ const SettingsProfile = ({ onNavigate }) => {
       await loadSettings();
       setLogoFile(null);
       setLogoPreview(null);
+      setGalleryFiles([]);
       
     } catch (error) {
       toast.error(t('settings.profile.settingsSaveError'));
     } finally {
+      setGalleryUploading(false);
       setLoading(false);
     }
   };
@@ -403,6 +434,95 @@ const SettingsProfile = ({ onNavigate }) => {
                     <p className="text-xs text-zinc-600 font-medium">{t('settings.profile.fields.logoFormatsNote')}</p>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-black text-zinc-900 mb-1 flex items-center gap-2">
+                    <Image className="w-5 h-5" />
+                    {t('settings.profile.fields.gallery', 'Galeri Yönetimi')}
+                  </h3>
+                  <p className="text-sm text-zinc-600 font-medium">{t('settings.profile.fields.galleryNote', 'İşletmenizin portföy görsellerini yükleyin.')}</p>
+                </div>
+
+                <div
+                  className="p-4 backdrop-blur-md bg-white/50 rounded-xl border border-dashed border-white/40 shadow-sm"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const files = Array.from(e.dataTransfer.files || []).filter((f) => (f?.type || '').startsWith('image/'));
+                    if (files.length === 0) return;
+                    const tooBig = files.find((f) => f.size > 8 * 1024 * 1024);
+                    if (tooBig) {
+                      toast.error(t('settings.profile.fileSizeError'));
+                      return;
+                    }
+                    setGalleryFiles((prev) => [...prev, ...files]);
+                  }}
+                >
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                    <div className="text-sm text-zinc-700 font-medium">
+                      {t('settings.profile.fields.galleryDrop', 'Görselleri buraya sürükleyip bırakın veya seçin')}
+                    </div>
+                    <Input
+                      type="file"
+                      multiple
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length === 0) return;
+                        const tooBig = files.find((f) => f.size > 8 * 1024 * 1024);
+                        if (tooBig) {
+                          toast.error(t('settings.profile.fileSizeError'));
+                          return;
+                        }
+                        setGalleryFiles((prev) => [...prev, ...files]);
+                        e.target.value = '';
+                      }}
+                      className="cursor-pointer backdrop-blur-md bg-white/60 border-white/40 rounded-xl font-medium"
+                    />
+                  </div>
+
+                  {galleryFiles.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {galleryFiles.map((f, idx) => (
+                        <div key={`${f.name}-${idx}`} className="px-3 py-1.5 rounded-lg bg-white/60 border border-white/40 text-xs font-bold text-zinc-700">
+                          {f.name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {(settings.images?.length > 0) && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {(settings.images || []).map((url) => (
+                      <div key={url} className="relative rounded-xl overflow-hidden border border-white/30 bg-white/40">
+                        <img src={getFullLogoUrl(url)} alt="" className="w-full aspect-video object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSettings((prev) => ({
+                              ...prev,
+                              images: (prev.images || []).filter((x) => x !== url)
+                            }));
+                          }}
+                          className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-zinc-900 text-white text-xs font-bold shadow-md"
+                        >
+                          {t('common.delete', 'Sil')}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {galleryUploading && (
+                  <div className="text-sm text-zinc-600 font-medium">
+                    {t('appointments.form.loading', 'Yükleniyor...')}
+                  </div>
+                )}
               </div>
             </div>
 
