@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { format } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
-import { Calendar as CalendarIcon, Clock, Check, AlertCircle, User, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Check, AlertCircle, User, ArrowRight, ArrowLeft, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,65 @@ const API = `${BACKEND_URL}/api`;
 const publicApi = axios.create({
   baseURL: `${BACKEND_URL}/api`,
 });
+
+const BusinessGallery = ({ images }) => {
+  const validImages = Array.isArray(images) ? images.filter(Boolean) : [];
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [validImages.length]);
+
+  if (!validImages.length) return null;
+
+  const goPrev = () => setActiveIndex((i) => (i - 1 + validImages.length) % validImages.length);
+  const goNext = () => setActiveIndex((i) => (i + 1) % validImages.length);
+
+  return (
+    <div className="group relative aspect-video rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950">
+      <img
+        src={validImages[activeIndex]}
+        alt=""
+        className="h-full w-full object-cover"
+        loading="lazy"
+        draggable={false}
+      />
+
+      {validImages.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={goPrev}
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full border border-zinc-800 bg-zinc-950/70 text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+            aria-label="Previous"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={goNext}
+            className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full border border-zinc-800 bg-zinc-950/70 text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+            aria-label="Next"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+
+          <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-2">
+            {validImages.map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setActiveIndex(idx)}
+                className={`h-2 w-2 rounded-full transition-all ${idx === activeIndex ? 'bg-white' : 'bg-zinc-600 hover:bg-zinc-400'}`}
+                aria-label={`Go to slide ${idx + 1}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 const PublicBookingPage = () => {
   const { slug } = useParams();
@@ -523,6 +582,8 @@ const PublicBookingPage = () => {
               <p className="text-zinc-400 text-base lg:text-sm">{t('publicBooking.onlineBookingSystem')}</p>
             </div>
           </div>
+
+          <BusinessGallery images={business?.images} />
 
           <div className="hidden lg:block space-y-4">
             <h2 className="text-3xl xl:text-4xl font-extrabold tracking-tight text-white">
