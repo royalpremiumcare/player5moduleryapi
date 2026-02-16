@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import { useParams } from "react-router-dom";
 import { format } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
@@ -23,28 +23,125 @@ const publicApi = axios.create({
   baseURL: `${BACKEND_URL}/api`,
 });
 
-const BusinessGallery = ({ images }) => {
-  const validImages = Array.isArray(images) ? images.filter(Boolean) : [];
+const BusinessGallery = memo(({ images }) => {
+  const validImages = useMemo(() => (Array.isArray(images) ? images.filter(Boolean) : []), [images]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [frontSrc, setFrontSrc] = useState("");
+  const [backSrc, setBackSrc] = useState("");
+  const [showFront, setShowFront] = useState(true);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const decodeReqRef = useRef(0);
 
   useEffect(() => {
     setActiveIndex(0);
   }, [validImages.length]);
 
-  if (!validImages.length) return null;
+  useEffect(() => {
+    const first = validImages[0] || "";
+    setFrontSrc(first);
+    setBackSrc("");
+    setShowFront(true);
+  }, [validImages.length]);
 
-  const goPrev = () => setActiveIndex((i) => (i - 1 + validImages.length) % validImages.length);
-  const goNext = () => setActiveIndex((i) => (i + 1) % validImages.length);
+  useEffect(() => {
+    if (!validImages.length) return;
+
+    const total = validImages.length;
+    const current = validImages[activeIndex];
+    const next = validImages[(activeIndex + 1) % total];
+    const prev = validImages[(activeIndex - 1 + total) % total];
+
+    const preload = (src) => {
+      if (!src) return;
+      const img = new Image();
+      img.src = src;
+    };
+
+    preload(next);
+    preload(prev);
+
+    const currentShown = showFront ? frontSrc : backSrc;
+    if (!current || current === currentShown) return;
+
+    const reqId = ++decodeReqRef.current;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setIsSwitching(true);
+        const img = new Image();
+        img.src = current;
+        if (img.decode) {
+          await img.decode();
+        }
+        if (cancelled || decodeReqRef.current !== reqId) return;
+        if (showFront) {
+          setBackSrc(current);
+        } else {
+          setFrontSrc(current);
+        }
+
+        // next paint'te opacity swap
+        requestAnimationFrame(() => {
+          if (cancelled || decodeReqRef.current !== reqId) return;
+          setShowFront((v) => !v);
+        });
+      } catch {
+        if (cancelled || decodeReqRef.current !== reqId) return;
+        if (showFront) {
+          setBackSrc(current);
+        } else {
+          setFrontSrc(current);
+        }
+        requestAnimationFrame(() => {
+          if (cancelled || decodeReqRef.current !== reqId) return;
+          setShowFront((v) => !v);
+        });
+      } finally {
+        if (cancelled || decodeReqRef.current !== reqId) return;
+        setIsSwitching(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [validImages, activeIndex, showFront, frontSrc, backSrc]);
+
+  const goPrev = useCallback(() => {
+    setActiveIndex((i) => (i - 1 + validImages.length) % validImages.length);
+  }, [validImages.length]);
+  const goNext = useCallback(() => {
+    setActiveIndex((i) => (i + 1) % validImages.length);
+  }, [validImages.length]);
+  const goTo = useCallback((idx) => {
+    setActiveIndex(idx);
+  }, []);
+
+  if (!validImages.length) return null;
 
   return (
     <div className="group relative aspect-video rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950">
       <img
-        src={validImages[activeIndex]}
+        src={frontSrc || validImages[0]}
         alt=""
-        className="h-full w-full object-cover"
-        loading="lazy"
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ease-out ${showFront ? 'opacity-100' : 'opacity-0'}`}
+        loading="eager"
+        decoding="async"
         draggable={false}
       />
+      <img
+        src={backSrc}
+        alt=""
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ease-out ${showFront ? 'opacity-0' : 'opacity-100'}`}
+        loading="eager"
+        decoding="async"
+        draggable={false}
+      />
+
+      {isSwitching && (
+        <div className="absolute inset-0 bg-zinc-950/20" />
+      )}
 
       {validImages.length > 1 && (
         <>
@@ -70,7 +167,7 @@ const BusinessGallery = ({ images }) => {
               <button
                 key={idx}
                 type="button"
-                onClick={() => setActiveIndex(idx)}
+                onClick={() => goTo(idx)}
                 className={`h-2 w-2 rounded-full transition-all ${idx === activeIndex ? 'bg-white' : 'bg-zinc-600 hover:bg-zinc-400'}`}
                 aria-label={`Go to slide ${idx + 1}`}
               />
@@ -80,7 +177,7 @@ const BusinessGallery = ({ images }) => {
       )}
     </div>
   );
-};
+});
 
 const PublicBookingPage = () => {
   const { slug } = useParams();
