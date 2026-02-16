@@ -57,6 +57,12 @@ const PrivacyPolicy = () => {
               <li><strong>{isEnglish ? 'Usage Data:' : 'Kullanım Verileri:'}</strong> {isEnglish ? 'Information about how you use our services' : 'Hizmetlerimizi nasıl kullandığınıza dair bilgiler'}</li>
               <li><strong>{isEnglish ? 'Appointment Data:' : 'Randevu Verileri:'}</strong> {isEnglish ? 'Customer appointment information, service records' : 'Müşteri randevu bilgileri, hizmet kayıtları'}</li>
             </ul>
+
+            <p className="text-gray-700 leading-relaxed mt-4">
+              {isEnglish
+                ? 'PLANN requests access to your contact list to facilitate quick customer registration. The contact details you select (Name and Phone Number) are uploaded to our secure servers solely to create your customer portfolio and are never shared with third parties.'
+                : 'PLANN uygulaması, müşteri kayıt işlemlerini hızlandırmak amacıyla telefon rehberinize erişim izni ister. Rehberinizden seçtiğiniz kişi bilgileri (Ad ve Telefon Numarası), sadece sizin müşteri portföyünüzü oluşturmak için güvenli sunucularımıza kaydedilir ve asla üçüncü taraflarla paylaşılmaz.'}
+            </p>
           </section>
 
           <section>
