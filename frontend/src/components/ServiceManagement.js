@@ -121,6 +121,8 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
   const { t, i18n } = useTranslation();
   const [showDialog, setShowDialog] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(null);
+  const [showAssignReminder, setShowAssignReminder] = useState(false);
+  const [lastAddedServiceName, setLastAddedServiceName] = useState("");
   const [editingService, setEditingService] = useState(null);
   const [formData, setFormData] = useState({ name: "", price: "", duration: "30" });
   const [loading, setLoading] = useState(false);
@@ -214,6 +216,8 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       } else {
         await api.post("/services", payload);
         toast.success(t('services.management.serviceAdded'));
+        setLastAddedServiceName(formData.name);
+        setShowAssignReminder(true);
       }
       
       setShowDialog(false);
@@ -456,6 +460,41 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAssignReminder} onOpenChange={setShowAssignReminder}>
+        <DialogContent className="backdrop-blur-2xl bg-white/40 border border-white/30 rounded-3xl shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black text-zinc-900">
+              {i18n.language === 'en' ? 'Reminder' : 'Hatırlatma'}
+            </DialogTitle>
+            <DialogDescription className="text-zinc-700 font-semibold">
+              {i18n.language === 'en'
+                ? `After adding${lastAddedServiceName ? ` “${lastAddedServiceName}”` : ''}, don’t forget to assign it to your staff from Staff Management.`
+                : `Hizmeti${lastAddedServiceName ? ` “${lastAddedServiceName}”` : ''} ekledikten sonra, lütfen Personel Yönetimi sayfasından personelinize tanımlamayı unutmayın.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="border-t border-white/30 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowAssignReminder(false)}
+              className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-11 font-bold"
+            >
+              {i18n.language === 'en' ? 'Close' : 'Kapat'}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setShowAssignReminder(false);
+                onNavigate && onNavigate("staff");
+              }}
+              className="bg-zinc-900 hover:bg-black rounded-xl h-11 font-bold shadow-lg"
+            >
+              {i18n.language === 'en' ? 'Go to Staff Management' : 'Personel Yönetimi’ne Git'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
