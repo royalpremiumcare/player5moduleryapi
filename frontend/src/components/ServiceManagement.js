@@ -464,7 +464,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       </Dialog>
 
       <Dialog open={showAssignReminder} onOpenChange={setShowAssignReminder}>
-        <DialogContent className="backdrop-blur-2xl bg-white/40 border border-white/30 rounded-3xl shadow-2xl">
+        <DialogContent className="backdrop-blur-2xl bg-white/75 border border-white/40 rounded-3xl shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-black text-zinc-900">
               {i18n.language === 'en' ? 'Reminder' : 'Hatırlatma'}
