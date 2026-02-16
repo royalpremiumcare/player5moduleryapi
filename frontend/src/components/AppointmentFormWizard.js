@@ -388,7 +388,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             placeholder={t('appointments.form.searchService', 'Hizmet ara...')} 
             value={serviceSearchTerm}
             onChange={(e) => setServiceSearchTerm(e.target.value)}
-            className="pl-10 h-12 backdrop-blur-md bg-white/50 border-black rounded-xl focus:ring-zinc-900 shadow-sm"
+            className="pl-10 h-12 backdrop-blur-md bg-white/50 md:bg-white/75 border-black rounded-xl focus:ring-zinc-900 shadow-sm"
           />
         </div>
       <div className="grid grid-cols-1 gap-3">
@@ -402,7 +402,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             className={`group p-5 backdrop-blur-xl border rounded-2xl shadow-lg hover:shadow-xl cursor-pointer transition-all duration-300 active:scale-[0.99] flex justify-between items-center
               ${formData.service_id === service.id 
                 ? 'bg-zinc-900/90 border-zinc-900 text-white' 
-                : 'bg-white/40 border-white/20 hover:bg-white/60 hover:border-white/40'}
+                : 'bg-white/40 md:bg-white/70 border-white/20 hover:bg-white/60 md:hover:bg-white/80 hover:border-white/40'}
             `}
           >
             <div>
@@ -737,7 +737,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-white md:bg-black/50 md:backdrop-blur-sm md:flex md:items-center md:justify-center p-0 md:p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 bg-white md:bg-black/35 md:backdrop-blur-[1px] md:flex md:items-center md:justify-center p-0 md:p-4 animate-in fade-in duration-200">
       <div className="w-full h-full md:h-auto md:max-h-[90vh] md:max-w-[500px] bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 md:rounded-[32px] md:shadow-2xl flex flex-col overflow-hidden relative">
         
         {/* HEADER */}
