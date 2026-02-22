@@ -1535,6 +1535,9 @@ async def check_quota_and_increment(db, organization_id: str) -> tuple[bool, str
     if not quota_limit:
         quota_limit = plan_info.get('quota_monthly_appointments', 50)
         logger.warning(f"⚠️ quota_limit plan_doc'da yok, plan_info'dan alındı: {quota_limit}")
+    # Plan tanımı sınırsız ise (-1) DB kaydından bağımsız olarak override et
+    if plan_info.get('quota_monthly_appointments') == -1:
+        quota_limit = -1
     
     # Eğer reset tarihi geçmişse, kullanımı sıfırla
     if quota_reset and datetime.now(timezone.utc) > quota_reset:
@@ -1554,8 +1557,8 @@ async def check_quota_and_increment(db, organization_id: str) -> tuple[bool, str
             }
         )
     
-    # Kota kontrolü
-    if current_usage >= quota_limit:
+    # Kota kontrolü (-1 = sınırsız)
+    if quota_limit != -1 and current_usage >= quota_limit:
         return False, f"Aylık randevu limitinize ulaştınız ({quota_limit} randevu). Paketinizi yükseltmeniz gerekmektedir."
     
     # Kullanımı artır
@@ -1997,10 +2000,10 @@ PLANS = [
         "name": "Kurumsal",
         "price_monthly": 3580,
         "price_yearly": 35800,
-        "quota_monthly_appointments": 2000,
+        "quota_monthly_appointments": -1,
         "ai_message_limit": -1,
         "features": [
-            "2.000 Randevu/Ay",
+            "Sınırsız Randevu/Ay",
             "Randevu Hatırlatma Dahil",
             "Sınırsız Personel",
             "Sınırsız Müşteri",
@@ -4475,6 +4478,9 @@ async def get_current_plan(request: Request, current_user: UserInDB = Depends(ge
     if not quota_limit:
         # Fallback: Eğer database'de quota_limit yoksa plan_info'dan al (aylık)
         quota_limit = plan_info.get('quota_monthly_appointments', 50)
+    # Plan tanımı sınırsız ise (-1) DB kaydından bağımsız olarak override et
+    if plan_info.get('quota_monthly_appointments') == -1:
+        quota_limit = -1
     
     result = {
         "plan_id": plan_id,
@@ -5903,8 +5909,12 @@ async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends
             if not quota_limit:
                 # Fallback: Eğer database'de quota_limit yoksa plan_info'dan al (aylık)
                 quota_limit = plan_info.get('quota_monthly_appointments', 50)
-            quota_remaining = max(0, quota_limit - quota_usage)
-            quota_percentage = (quota_usage / quota_limit * 100) if quota_limit > 0 else 0
+            if quota_limit == -1:
+                quota_remaining = -1  # sınırsız
+                quota_percentage = 0.0
+            else:
+                quota_remaining = max(0, quota_limit - quota_usage)
+                quota_percentage = (quota_usage / quota_limit * 100) if quota_limit > 0 else 0
             
             quota_info = {
                 "plan_id": plan_id,
@@ -9994,7 +10004,7 @@ async def run_stripe_audit():
         "premium": 600,
         "business": 900,
         "enterprise": 1200,
-        "corporate": 2000
+        "corporate": -1
     }
     CYCLES = ["monthly", "yearly"]
     CURRENCIES = ["gbp", "try"]
