@@ -154,6 +154,7 @@
       "daysRemaining": "{{days}} days remaining",
       "trialDaysRemaining": "{{days}} days remaining",
       "trustBadge": "7-day free trial",
+      "noCreditCard": "No credit card required",
       "savings": "Off",
       "plans": {
         "standart": {
