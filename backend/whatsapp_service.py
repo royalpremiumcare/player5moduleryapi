@@ -1,25 +1,36 @@
 """
-Twilio WhatsApp Business API Entegrasyonu - Content API (Template) Yapısı
-Randevu bilgilendirmeleri için WhatsApp mesajları gönderir.
+WhatsApp Bildirim Servisi
+
+Twilio devre dışı (geçici, test amaçlı).
+Meta WhatsApp Cloud API doğrudan HTTP entegrasyonu kullanılıyor.
 """
 
 import os
 import logging
 import re
 import json
+import requests
 from typing import Optional, Union, Dict
-from twilio.rest import Client
-from twilio.base.exceptions import TwilioException
+# from twilio.rest import Client                  # Twilio geçici olarak devre dışı
+# from twilio.base.exceptions import TwilioException  # Twilio geçici olarak devre dışı
 from dotenv import load_dotenv
 
 # .env dosyasını yükle
 load_dotenv()
 
-# Twilio WhatsApp konfigürasyonu
-TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
-TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
-TWILIO_WHATSAPP_FROM = os.getenv('TWILIO_FROM_NUMBER', 'whatsapp:+14155238886')  # Sandbox default
+# Twilio WhatsApp konfigürasyonu (geçici olarak devre dışı)
+# TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+# TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+# TWILIO_WHATSAPP_FROM = os.getenv('TWILIO_FROM_NUMBER', 'whatsapp:+14155238886')
 WHATSAPP_ENABLED = os.getenv('WHATSAPP_ENABLED', 'true').lower() in ('1', 'true', 'yes')
+
+# ============================================================================
+# META WHATSAPP CLOUD API KONFİGÜRASYONU
+# ============================================================================
+
+META_ACCESS_TOKEN = os.getenv('META_ACCESS_TOKEN')
+META_PHONE_NUMBER_ID = os.getenv('META_PHONE_NUMBER_ID')
+META_API_VERSION = os.getenv('META_API_VERSION', 'v21.0')
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -81,32 +92,27 @@ def detect_language_from_phone(phone: str) -> str:
 
 def format_phone_number(phone: str) -> str:
     """
-    Telefon numarasını Twilio WhatsApp formatına çevirir.
+    Telefon numarasını E.164 formatına çevirir (Meta Cloud API için).
     
     Args:
         phone (str): Ham telefon numarası (örn: "5551234567", "+905551234567")
     
     Returns:
-        str: Twilio formatında numara (örn: "whatsapp:+905551234567")
+        str: E.164 formatında numara başında + olmadan (örn: "905551234567")
     """
     # Sadece rakamları al
     clean_phone = re.sub(r'\D', '', phone)
     
     # Türkiye için format kontrolü
-    if clean_phone.startswith('90'):
-        # Zaten +90 ile başlıyor
-        formatted = f"+{clean_phone}"
+    if clean_phone.startswith('90') and len(clean_phone) == 12:
+        return clean_phone
     elif clean_phone.startswith('5') and len(clean_phone) == 10:
-        # 5XXXXXXXXX formatında, +90 ekle
-        formatted = f"+90{clean_phone}"
+        return f"90{clean_phone}"
     elif len(clean_phone) == 11 and clean_phone.startswith('05'):
-        # 05XXXXXXXXX formatında, 0'ı kaldır ve +90 ekle
-        formatted = f"+90{clean_phone[1:]}"
+        return f"90{clean_phone[1:]}"
     else:
-        # Diğer durumlar için olduğu gibi kullan
-        formatted = f"+{clean_phone}" if not clean_phone.startswith('+') else clean_phone
-    
-    return f"whatsapp:{formatted}"
+        # Diğer ülkeler: başındaki 0'ı at, olduğu gibi kullan
+        return clean_phone.lstrip('0') if clean_phone else clean_phone
 
 # ============================================================================
 # TARİH FORMATLAMA
@@ -160,7 +166,88 @@ def format_date_for_display(date_input: str) -> str:
     return date_input
 
 # ============================================================================
-# CONTENT API İLE MESAJ GÖNDERME
+# META WHATSAPP CLOUD API - MESAJ GÖNDERME
+# ============================================================================
+
+def send_meta_whatsapp_template(
+    to_number: str,
+    template_name: str,
+    language_code: str,
+    body_params: list,
+) -> str:
+    """
+    Meta WhatsApp Cloud API kullanarak şablon mesajı gönderir.
+
+    Args:
+        to_number (str): Alıcı telefon numarası (ham format, E.164'e çevrilir)
+        template_name (str): Meta'da onaylı şablon adı (örn: "randevu_onay")
+        language_code (str): Şablon dil kodu (örn: "tr", "en")
+        body_params (list): Şablondaki {{1}}, {{2}}... değişkenlerine karşılık gelen
+                            string listesi (sıra önemli)
+
+    Returns:
+        str: Meta API'den dönen mesaj ID'si
+
+    Raises:
+        Exception: API hatası veya eksik konfigürasyon durumunda
+    """
+    if not META_ACCESS_TOKEN or not META_PHONE_NUMBER_ID:
+        raise Exception(
+            "Meta WhatsApp Cloud API credentials not found. "
+            "Set META_ACCESS_TOKEN and META_PHONE_NUMBER_ID environment variables."
+        )
+
+    url = f"https://graph.facebook.com/{META_API_VERSION}/{META_PHONE_NUMBER_ID}/messages"
+
+    headers = {
+        "Authorization": f"Bearer {META_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    formatted_to = format_phone_number(to_number)
+
+    parameters = [
+        {"type": "text", "text": _normalise_template_var(p)}
+        for p in body_params
+    ]
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": formatted_to,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language_code},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": parameters,
+                }
+            ],
+        },
+    }
+
+    logger.info(
+        f"Meta WA → template={template_name} lang={language_code} to={formatted_to} "
+        f"params={body_params}"
+    )
+
+    response = requests.post(url, headers=headers, json=payload, timeout=15)
+
+    if not response.ok:
+        logger.error(
+            f"Meta WA API error: status={response.status_code} body={response.text}"
+        )
+        response.raise_for_status()
+
+    data = response.json()
+    message_id = data.get("messages", [{}])[0].get("id", "unknown")
+    logger.info(f"Meta WA message sent. id={message_id}")
+    return message_id
+
+
+# ============================================================================
+# TWILIO (devre dışı) → Meta Cloud API'ye yönlendirme
 # ============================================================================
 
 def _normalise_template_var(value: object, fallback: str = "-") -> str:
@@ -207,37 +294,25 @@ def send_whatsapp_template(
         Exception: Diğer hatalar durumunda
     """
     try:
-        # WhatsApp devre dışı ise logla ve skip et (bu bir hata değil, bir ayar)
+        # WhatsApp devre dışı ise logla ve skip et
         if not WHATSAPP_ENABLED:
             logger.info("WhatsApp messaging is disabled via WHATSAPP_ENABLED env. Skipping.")
-            return "disabled"  # Placeholder değer, gerçek SID değil
-        
-        # API anahtarları kontrolü
-        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
-            logger.error("Twilio credentials not found in environment variables")
-            raise Exception("Twilio credentials not found in environment variables")
-        
+            return "disabled"
+
         # Dil tespiti
         language = detect_language_from_phone(to_number)
-        
+
         # Şablon tipi kontrolü
         template_type_upper = template_type.upper()
         if template_type_upper not in TEMPLATES:
             error_msg = f"Invalid template type: {template_type}. Must be one of: {list(TEMPLATES.keys())}"
             logger.error(error_msg)
             raise ValueError(error_msg)
-        
-        # Şablon ID'yi al
-        content_sid = TEMPLATES[template_type_upper].get(language)
-        if not content_sid:
-            error_msg = f"Template SID not found for type '{template_type_upper}' and language '{language}'"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
-        # Tarih formatını düzenle (DD.MM.YYYY formatına çevir)
-        # Kullanıcı dostu format: 25.12.2025 (Gün.Ay.Yıl)
+
+        # Tarih formatını düzenle (DD.MM.YYYY)
         formatted_date = format_date_for_display(appointment_date)
 
+        # Konum linki oluştur
         map_link: Optional[str] = None
         try:
             if business_lat is not None and business_lng is not None:
@@ -247,67 +322,66 @@ def send_whatsapp_template(
         except Exception:
             map_link = None
 
-        # Location placeholder: Twilio rejects null/undefined variables.
-        # If there is no pin, send a safe default text.
         map_link_fallback = "Konum girilmedi" if language == "TR" else "-"
         map_link_value = _normalise_template_var(map_link, fallback=map_link_fallback)
-        
-        # Content Variables oluştur (Twilio Content API formatı)
-        # Sıralama: 1=İşletme Adı, 2=Müşteri Adı, 3=Tarih, 4=Saat, 5=Hizmet Adı, 6=İletişim Numarası, 7=Konum Linki
-        if language == "TR" and template_type_upper in ("CONFIRMATION", "REMINDER"):
-            content_variables = {
-                "1": _normalise_template_var(customer_name),
-                "2": _normalise_template_var(company_name),
-                "3": _normalise_template_var(formatted_date),
-                "4": _normalise_template_var(appointment_time),
-                "5": _normalise_template_var(service_name),
-                "6": _normalise_template_var(support_phone),
-                "7": map_link_value
-            }
+
+        # ----------------------------------------------------------------
+        # TWILIO ÇAĞRISI DEVRE DIŞI (geçici, test amaçlı)
+        # ----------------------------------------------------------------
+        # client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        # message = client.messages.create(
+        #     content_sid=content_sid,
+        #     content_variables=json.dumps(content_variables),
+        #     from_=TWILIO_WHATSAPP_FROM,
+        #     to=formatted_to
+        # )
+        # return message.sid
+        # ----------------------------------------------------------------
+
+        # META WHATSAPP CLOUD API'ye yönlendir
+        # Şu an için sadece "randevu_onay" şablonu (CONFIRMATION) destekleniyor.
+        # REMINDER ve CANCELLATION için Meta'da şablon onayı sonrası genişletilebilir.
+
+        if template_type_upper == "CONFIRMATION":
+            meta_template_name = "randevu_onay"
+        elif template_type_upper == "REMINDER":
+            meta_template_name = "randevu_onay"  # Geçici: hatırlatma için de aynı şablon
+        elif template_type_upper == "CANCELLATION":
+            meta_template_name = "randevu_onay"  # Geçici: iptal şablonu onaylanana kadar
         else:
-            content_variables = {
-                "1": _normalise_template_var(company_name),        # İşletme Adı
-                "2": _normalise_template_var(customer_name),      # Müşteri Adı
-                "3": _normalise_template_var(formatted_date),       # Tarih
-                "4": _normalise_template_var(appointment_time),    # Saat
-                "5": _normalise_template_var(service_name),        # Hizmet Adı
-                "6": _normalise_template_var(support_phone)       # İletişim Numarası
-            }
-        
-        # Telefon numarasını formatla
-        formatted_to = format_phone_number(to_number)
-        
-        # Twilio client oluştur
-        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        
-        # DEBUG: Template SID'yi logla
-        print(f"DEBUG: Sending Template SID: {content_sid} to {formatted_to}")
-        logger.info(f"DEBUG: Sending Template SID: {content_sid} to {formatted_to}")
-        
-        # WhatsApp mesajı gönder (Content API - SADECE content_sid ve content_variables kullan)
-        # ÖNEMLİ: body parametresi KULLANILMAMALI (24 saat kuralı nedeniyle Error 63016 hatası verir)
-        message = client.messages.create(
-            content_sid=content_sid,
-            content_variables=json.dumps(content_variables),
-            from_=TWILIO_WHATSAPP_FROM,
-            to=formatted_to
+            meta_template_name = "randevu_onay"
+
+        # Parametreler: {{1}}=müşteri adı, {{2}}=işletme adı, {{3}}=tarih,
+        #               {{4}}=saat, {{5}}=hizmet, {{6}}=destek tel, {{7}}=harita
+        body_params = [
+            _normalise_template_var(customer_name),
+            _normalise_template_var(company_name),
+            _normalise_template_var(formatted_date),
+            _normalise_template_var(appointment_time),
+            _normalise_template_var(service_name),
+            _normalise_template_var(support_phone),
+            map_link_value,
+        ]
+
+        lang_code = "tr" if language == "TR" else "en"
+
+        message_id = send_meta_whatsapp_template(
+            to_number=to_number,
+            template_name=meta_template_name,
+            language_code=lang_code,
+            body_params=body_params,
         )
-        
+
         logger.info(
-            f"WhatsApp template message sent successfully to {formatted_to}. "
-            f"Template: {template_type_upper} ({language}), SID: {message.sid}"
+            f"WhatsApp (Meta) sent to {to_number}. "
+            f"Template: {meta_template_name} ({lang_code}), id: {message_id}"
         )
-        return message.sid
-        
-    except TwilioException as e:
-        logger.error(f"Twilio WhatsApp error for {to_number}: {str(e)}")
-        # Fallback yok - hata varsa kod patlasın, yanlış yöntem denemesin
-        raise
+        return message_id
+
     except Exception as e:
         logger.error(f"Unexpected error sending WhatsApp to {to_number}: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
-        # Fallback yok - hata varsa kod patlasın, yanlış yöntem denemesin
         raise
 
 
