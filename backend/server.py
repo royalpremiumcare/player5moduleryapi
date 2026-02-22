@@ -9998,10 +9998,17 @@ async def whatsapp_webhook(request: Request):
 
                     logger.info(f"📩 Gelen WA mesajı: from={from_number} type={msg_type}")
 
-                    auto_reply_text = (
-                        "Bu numara sadece bilgilendirme amaçlıdır, "
-                        "lütfen doğrudan işletmeyle iletişime geçin."
-                    )
+                    lang = detect_language_from_phone(from_number)
+                    if lang == "TR":
+                        auto_reply_text = (
+                            "Bu numara sadece bilgilendirme amaçlıdır, "
+                            "lütfen doğrudan işletmeyle iletişime geçin."
+                        )
+                    else:
+                        auto_reply_text = (
+                            "This number is for information purposes only, "
+                            "please contact the business directly."
+                        )
                     _send_whatsapp_text_reply(from_number, auto_reply_text)
     except Exception as e:
         logger.error(f"Webhook işleme hatası: {e}")
