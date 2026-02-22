@@ -1,27 +1,29 @@
 """
-WhatsApp Bildirim Servisi
+WhatsApp Bildirim Servisi — Meta WhatsApp Cloud API (Direkt HTTP)
 
-Twilio devre dışı (geçici, test amaçlı).
-Meta WhatsApp Cloud API doğrudan HTTP entegrasyonu kullanılıyor.
+Şablon Mimarisi (8 onaylı şablon):
+  CONFIRMATION x TR x Konumlu  → randevu_onay_konumlu
+  CONFIRMATION x TR x Metin    → randevu_onay_metin
+  CONFIRMATION x EN x Konumlu  → randevu_onay_konumlu_eng
+  CONFIRMATION x EN x Metin    → randevu_onay_metin_eng_v2
+  REMINDER     x TR x Konumlu  → randevu_hatirlatma_konumlu
+  REMINDER     x TR x Metin    → randevu_hatirlatma_metin_v2
+  REMINDER     x EN x Konumlu  → randevu_hatirlatma_konumlu_eng
+  REMINDER     x EN x Metin    → randevu_hatirlatma_metin_v2_eng
+
+Senaryo A (koordinat VARSA):  header = location, body = 5-6 parametre
+Senaryo B (koordinat YOKSA):  header = text (işletme adı), body = 7 parametre
 """
 
 import os
 import logging
 import re
-import json
 import requests
-from typing import Optional, Union, Dict
-# from twilio.rest import Client                  # Twilio geçici olarak devre dışı
-# from twilio.base.exceptions import TwilioException  # Twilio geçici olarak devre dışı
+from typing import Optional, Union, Dict, List
 from dotenv import load_dotenv
 
-# .env dosyasını yükle
 load_dotenv()
 
-# Twilio WhatsApp konfigürasyonu (geçici olarak devre dışı)
-# TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
-# TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
-# TWILIO_WHATSAPP_FROM = os.getenv('TWILIO_FROM_NUMBER', 'whatsapp:+14155238886')
 WHATSAPP_ENABLED = os.getenv('WHATSAPP_ENABLED', 'true').lower() in ('1', 'true', 'yes')
 
 # ============================================================================
@@ -32,58 +34,54 @@ META_ACCESS_TOKEN = os.getenv('META_ACCESS_TOKEN')
 META_PHONE_NUMBER_ID = os.getenv('META_PHONE_NUMBER_ID')
 META_API_VERSION = os.getenv('META_API_VERSION', 'v21.0')
 
-# Logger
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# ŞABLON ID YÖNETİMİ
+# ŞABLON İSİM MATRİSİ
 # ============================================================================
 
-TEMPLATES = {
+TEMPLATES: Dict[str, Dict[str, Dict[str, str]]] = {
     "CONFIRMATION": {
-        "TR": "HXdb5b18b2e4b59d9498176217da791091",  # randevu_onay_v1
-        "EN": "HX09627707c0333f6d4cbea400a73b5d04"   # randevu_onay_v1_ingilizce
+        "TR": {
+            "with_location":    "randevu_onay_konumlu",
+            "without_location": "randevu_onay_metin",
+            "lang_code":        "tr",
+        },
+        "EN": {
+            "with_location":    "randevu_onay_konumlu_eng",
+            "without_location": "randevu_onay_metin_eng_v2",
+            "lang_code":        "en",
+        },
     },
     "REMINDER": {
-        "TR": "HX807f1d58779d6fd7bab54b325fce7e21",  # randevu_hatirlatma_v1
-        "EN": "HXc95f6ee596484b410bd68089bbeecdd8"   # randevu_hatirlatma_v1_ingilizce
+        "TR": {
+            "with_location":    "randevu_hatirlatma_konumlu",
+            "without_location": "randevu_hatirlatma_metin_v2",
+            "lang_code":        "tr",
+        },
+        "EN": {
+            "with_location":    "randevu_hatirlatma_konumlu_eng",
+            "without_location": "randevu_hatirlatma_metin_v2_eng",
+            "lang_code":        "en",
+        },
     },
-    "CANCELLATION": {
-        "TR": "HX5cfe91716bcfb5175fcb42af743780f2",  # randevu_iptal_v1
-        "EN": "HX16e5f28fb977e5fbefd49acbed1d90b7"   # randevu_iptal_v1_ingilizce
-    }
 }
+
+VALID_TEMPLATE_TYPES = set(TEMPLATES.keys())
 
 # ============================================================================
 # DİL TESPİTİ
 # ============================================================================
 
 def detect_language_from_phone(phone: str) -> str:
-    """
-    Telefon numarasına göre dil tespiti yapar.
-    
-    Args:
-        phone (str): Telefon numarası (örn: "+905551234567", "5551234567")
-    
-    Returns:
-        str: "TR" veya "EN"
-    """
-    # Sadece rakamları ve + işaretini al
+    """Telefon numarasına göre dil tespiti. Türkiye → 'TR', diğer → 'EN'."""
     clean_phone = re.sub(r'[^\d+]', '', phone)
-    
-    # +90 ile başlıyorsa Türkçe
     if clean_phone.startswith('+90') or clean_phone.startswith('90'):
         return "TR"
-    
-    # 0 ile başlayıp 5 ile devam ediyorsa (05XXXXXXXXX) Türkçe
     if clean_phone.startswith('05') and len(clean_phone) == 11:
         return "TR"
-    
-    # 5 ile başlayıp 10 haneli ise (5XXXXXXXXX) Türkçe
     if clean_phone.startswith('5') and len(clean_phone) == 10:
         return "TR"
-    
-    # Diğer tüm durumlar için İngilizce
     return "EN"
 
 # ============================================================================
@@ -91,19 +89,8 @@ def detect_language_from_phone(phone: str) -> str:
 # ============================================================================
 
 def format_phone_number(phone: str) -> str:
-    """
-    Telefon numarasını E.164 formatına çevirir (Meta Cloud API için).
-    
-    Args:
-        phone (str): Ham telefon numarası (örn: "5551234567", "+905551234567")
-    
-    Returns:
-        str: E.164 formatında numara başında + olmadan (örn: "905551234567")
-    """
-    # Sadece rakamları al
+    """Ham numarayı E.164 formatına çevirir (+ öneki olmadan)."""
     clean_phone = re.sub(r'\D', '', phone)
-    
-    # Türkiye için format kontrolü
     if clean_phone.startswith('90') and len(clean_phone) == 12:
         return clean_phone
     elif clean_phone.startswith('5') and len(clean_phone) == 10:
@@ -111,7 +98,6 @@ def format_phone_number(phone: str) -> str:
     elif len(clean_phone) == 11 and clean_phone.startswith('05'):
         return f"90{clean_phone[1:]}"
     else:
-        # Diğer ülkeler: başındaki 0'ı at, olduğu gibi kullan
         return clean_phone.lstrip('0') if clean_phone else clean_phone
 
 # ============================================================================
@@ -119,86 +105,120 @@ def format_phone_number(phone: str) -> str:
 # ============================================================================
 
 def format_date_for_display(date_input: str) -> str:
-    """
-    Tarihi kullanıcı dostu formata çevirir (DD.MM.YYYY).
-    
-    Desteklenen giriş formatları:
-    - YYYY-MM-DD (örn: "2025-12-25")
-    - DD.MM.YYYY (zaten formatlanmış)
-    - DD/MM/YYYY
-    - YYYY/MM/DD
-    
-    Args:
-        date_input (str): Ham tarih string'i
-    
-    Returns:
-        str: DD.MM.YYYY formatında tarih (örn: "25.12.2025")
-    """
+    """Tarihi DD.MM.YYYY formatına çevirir. Desteklenen: YYYY-MM-DD, DD/MM/YYYY vb."""
     from datetime import datetime
-    
     if not date_input:
         return date_input
-    
-    # Zaten DD.MM.YYYY formatındaysa olduğu gibi döndür
     if re.match(r'^\d{2}\.\d{2}\.\d{4}$', date_input):
         return date_input
-    
-    # Farklı formatları dene
-    date_formats = [
-        "%Y-%m-%d",      # 2025-12-25
-        "%d.%m.%Y",      # 25.12.2025
-        "%d/%m/%Y",      # 25/12/2025
-        "%Y/%m/%d",      # 2025/12/25
-        "%d-%m-%Y",      # 25-12-2025
-        "%Y-%m-%d %H:%M:%S",  # 2025-12-25 14:30:00 (datetime string)
-    ]
-    
-    for date_format in date_formats:
+    for fmt in ["%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y", "%Y-%m-%d %H:%M:%S"]:
         try:
-            date_obj = datetime.strptime(date_input.strip(), date_format)
-            # DD.MM.YYYY formatına çevir
-            return date_obj.strftime("%d.%m.%Y")
+            return datetime.strptime(date_input.strip(), fmt).strftime("%d.%m.%Y")
         except ValueError:
             continue
-    
-    # Hiçbir format uymazsa, orijinal değeri döndür ve uyarı ver
     logger.warning(f"Could not parse date format: {date_input}. Using original value.")
     return date_input
 
 # ============================================================================
-# META WHATSAPP CLOUD API - MESAJ GÖNDERME
+# YARDIMCI FONKSİYONLAR
+# ============================================================================
+
+def _normalise_template_var(value: object, fallback: str = "-") -> str:
+    """Template değişkenlerini güvenli, boşluksuz string'e çevirir."""
+    if value is None:
+        return fallback
+    try:
+        text = str(value).strip()
+    except Exception:
+        return fallback
+    return text if text else fallback
+
+
+def _has_valid_coordinates(lat, lng) -> bool:
+    """Geçerli (non-None, sayısal) koordinat çifti var mı kontrol eder."""
+    try:
+        if lat is None or lng is None:
+            return False
+        float(lat)
+        float(lng)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+# ============================================================================
+# COMPONENT OLUŞTURUCULAR
+# ============================================================================
+
+def _build_location_header(lat: float, lng: float, name: str, address: str) -> dict:
+    """Senaryo A — location tipi header component."""
+    return {
+        "type": "header",
+        "parameters": [
+            {
+                "type": "location",
+                "location": {
+                    "latitude":  str(lat),
+                    "longitude": str(lng),
+                    "name":      name,
+                    "address":   address,
+                },
+            }
+        ],
+    }
+
+
+def _build_text_header(company_name: str) -> dict:
+    """Senaryo B — text tipi header component (işletme adı kalın görünür)."""
+    return {
+        "type": "header",
+        "parameters": [
+            {"type": "text", "text": company_name}
+        ],
+    }
+
+
+def _build_body(params: List[str]) -> dict:
+    """Sıralı string listesinden body component oluşturur."""
+    return {
+        "type": "body",
+        "parameters": [
+            {"type": "text", "text": _normalise_template_var(p)}
+            for p in params
+        ],
+    }
+
+# ============================================================================
+# META WHATSAPP CLOUD API — DÜŞÜK SEVİYE GÖNDERME
 # ============================================================================
 
 def send_meta_whatsapp_template(
     to_number: str,
     template_name: str,
     language_code: str,
-    body_params: list,
+    components: Optional[List[dict]] = None,
 ) -> str:
     """
-    Meta WhatsApp Cloud API kullanarak şablon mesajı gönderir.
+    Meta WhatsApp Cloud API'ye direkt HTTP isteği atar.
 
     Args:
-        to_number (str): Alıcı telefon numarası (ham format, E.164'e çevrilir)
-        template_name (str): Meta'da onaylı şablon adı (örn: "randevu_onay")
-        language_code (str): Şablon dil kodu (örn: "tr", "en")
-        body_params (list): Şablondaki {{1}}, {{2}}... değişkenlerine karşılık gelen
-                            string listesi (sıra önemli)
+        to_number:     Alıcı numara (ham, E.164'e çevrilir)
+        template_name: Meta'da onaylı şablon adı
+        language_code: "tr" veya "en"
+        components:    [header_component, body_component, ...] listesi
 
     Returns:
         str: Meta API'den dönen mesaj ID'si
-
-    Raises:
-        Exception: API hatası veya eksik konfigürasyon durumunda
     """
     if not META_ACCESS_TOKEN or not META_PHONE_NUMBER_ID:
         raise Exception(
-            "Meta WhatsApp Cloud API credentials not found. "
-            "Set META_ACCESS_TOKEN and META_PHONE_NUMBER_ID environment variables."
+            "Meta WhatsApp Cloud API credentials eksik. "
+            "META_ACCESS_TOKEN ve META_PHONE_NUMBER_ID env variable'larını ayarlayın."
         )
 
-    url = f"https://graph.facebook.com/{META_API_VERSION}/{META_PHONE_NUMBER_ID}/messages"
-
+    url = (
+        f"https://graph.facebook.com/{META_API_VERSION}"
+        f"/{META_PHONE_NUMBER_ID}/messages"
+    )
     headers = {
         "Authorization": f"Bearer {META_ACCESS_TOKEN}",
         "Content-Type": "application/json",
@@ -206,30 +226,23 @@ def send_meta_whatsapp_template(
 
     formatted_to = format_phone_number(to_number)
 
-    parameters = [
-        {"type": "text", "text": _normalise_template_var(p)}
-        for p in body_params
-    ]
+    template_payload: Dict = {
+        "name": template_name,
+        "language": {"code": language_code},
+    }
+    if components:
+        template_payload["components"] = components
 
     payload = {
         "messaging_product": "whatsapp",
         "to": formatted_to,
         "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {"code": language_code},
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": parameters,
-                }
-            ],
-        },
+        "template": template_payload,
     }
 
     logger.info(
-        f"Meta WA → template={template_name} lang={language_code} to={formatted_to} "
-        f"params={body_params}"
+        f"Meta WA → template={template_name} lang={language_code} "
+        f"to={formatted_to} components={len(components) if components else 0}"
     )
 
     response = requests.post(url, headers=headers, json=payload, timeout=15)
@@ -242,23 +255,13 @@ def send_meta_whatsapp_template(
 
     data = response.json()
     message_id = data.get("messages", [{}])[0].get("id", "unknown")
-    logger.info(f"Meta WA message sent. id={message_id}")
+    logger.info(f"Meta WA mesaj gönderildi. id={message_id}")
     return message_id
 
 
 # ============================================================================
-# TWILIO (devre dışı) → Meta Cloud API'ye yönlendirme
+# ANA GÖNDERIM FONKSİYONU
 # ============================================================================
-
-def _normalise_template_var(value: object, fallback: str = "-") -> str:
-    """Twilio Content API content_variables must contain non-null string values."""
-    if value is None:
-        return fallback
-    try:
-        text = str(value).strip()
-    except Exception:
-        return fallback
-    return text if text else fallback
 
 def send_whatsapp_template(
     to_number: str,
@@ -270,155 +273,143 @@ def send_whatsapp_template(
     service_name: str,
     support_phone: str,
     business_lat: Optional[Union[float, int, str]] = None,
-    business_lng: Optional[Union[float, int, str]] = None
+    business_lng: Optional[Union[float, int, str]] = None,
+    business_address: Optional[str] = None,
 ) -> str:
     """
-    Twilio Content API kullanarak WhatsApp şablon mesajı gönderir.
-    
-    Args:
-        to_number (str): Alıcı telefon numarası
-        template_type (str): Şablon tipi ("CONFIRMATION", "REMINDER", "CANCELLATION")
-        customer_name (str): Müşteri adı
-        company_name (str): İşletme adı
-        appointment_date (str): Randevu tarihi (format: YYYY-MM-DD)
-        appointment_time (str): Randevu saati (format: HH:MM)
-        service_name (str): Hizmet adı
-        support_phone (str): İletişim numarası
-    
-    Returns:
-        str: Message SID (başarılı ise)
-    
-    Raises:
-        TwilioException: Twilio API hatası durumunda
-        ValueError: Geçersiz parametreler durumunda
-        Exception: Diğer hatalar durumunda
+    Müşteri diline ve işletme koordinatına göre doğru Meta WA şablonunu seçip gönderir.
+
+    Senaryo A (koordinat VARSA):
+      Şablon: randevu_*_konumlu[_eng]
+      Header: location (lat, lng, işletme adı, açık adres)
+      CONFIRMATION body: {{1}} müşteri  {{2}} işletme  {{3}} tarih  {{4}} saat  {{5}} hizmet
+      REMINDER body:     {{1}}-{{5}} + {{6}} iletişim
+
+    Senaryo B (koordinat YOKSA):
+      Şablon: randevu_*_metin[_v2][_eng]
+      Header: text (işletme adı)
+      CONFIRMATION+REMINDER body: {{1}}-{{5}} + {{6}} iletişim + {{7}} adres/konum metni
     """
     try:
-        # WhatsApp devre dışı ise logla ve skip et
         if not WHATSAPP_ENABLED:
             logger.info("WhatsApp messaging is disabled via WHATSAPP_ENABLED env. Skipping.")
             return "disabled"
 
-        # Dil tespiti
-        language = detect_language_from_phone(to_number)
-
-        # Şablon tipi kontrolü
         template_type_upper = template_type.upper()
-        if template_type_upper not in TEMPLATES:
-            error_msg = f"Invalid template type: {template_type}. Must be one of: {list(TEMPLATES.keys())}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+        if template_type_upper not in VALID_TEMPLATE_TYPES:
+            raise ValueError(
+                f"Geçersiz template_type: '{template_type}'. "
+                f"Geçerli değerler: {list(VALID_TEMPLATE_TYPES)}"
+            )
 
-        # Tarih formatını düzenle (DD.MM.YYYY)
+        language = detect_language_from_phone(to_number)   # "TR" veya "EN"
+        template_info = TEMPLATES[template_type_upper][language]
+        lang_code = template_info["lang_code"]
         formatted_date = format_date_for_display(appointment_date)
+        has_location = _has_valid_coordinates(business_lat, business_lng)
 
-        # Konum linki oluştur
-        map_link: Optional[str] = None
-        try:
-            if business_lat is not None and business_lng is not None:
-                lat = float(business_lat)
-                lng = float(business_lng)
-                map_link = f"https://maps.google.com/?q={lat},{lng}"
-        except Exception:
-            map_link = None
+        if has_location:
+            # ── SENARYO A: Konumlu şablon ──────────────────────────────────
+            lat = float(business_lat)
+            lng = float(business_lng)
+            addr_text = _normalise_template_var(business_address, fallback=company_name)
+            template_name = template_info["with_location"]
+            header = _build_location_header(lat, lng, company_name, addr_text)
 
-        map_link_fallback = "Konum girilmedi" if language == "TR" else "-"
-        map_link_value = _normalise_template_var(map_link, fallback=map_link_fallback)
-
-        # ----------------------------------------------------------------
-        # TWILIO ÇAĞRISI DEVRE DIŞI (geçici, test amaçlı)
-        # ----------------------------------------------------------------
-        # client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        # message = client.messages.create(
-        #     content_sid=content_sid,
-        #     content_variables=json.dumps(content_variables),
-        #     from_=TWILIO_WHATSAPP_FROM,
-        #     to=formatted_to
-        # )
-        # return message.sid
-        # ----------------------------------------------------------------
-
-        # META WHATSAPP CLOUD API'ye yönlendir
-        # Şu an için sadece "randevu_onay" şablonu (CONFIRMATION) destekleniyor.
-        # REMINDER ve CANCELLATION için Meta'da şablon onayı sonrası genişletilebilir.
-
-        if template_type_upper == "CONFIRMATION":
-            meta_template_name = "randevu_onay"
-        elif template_type_upper == "REMINDER":
-            meta_template_name = "randevu_onay"  # Geçici: hatırlatma için de aynı şablon
-        elif template_type_upper == "CANCELLATION":
-            meta_template_name = "randevu_onay"  # Geçici: iptal şablonu onaylanana kadar
+            if template_type_upper == "CONFIRMATION":
+                body = _build_body([
+                    customer_name, company_name,
+                    formatted_date, appointment_time, service_name,
+                ])
+            else:  # REMINDER
+                body = _build_body([
+                    customer_name, company_name,
+                    formatted_date, appointment_time, service_name,
+                    support_phone,
+                ])
         else:
-            meta_template_name = "randevu_onay"
+            # ── SENARYO B: Metin şablon ────────────────────────────────────
+            template_name = template_info["without_location"]
+            header = _build_text_header(company_name)
+            location_fallback = "Konum girilmedi" if language == "TR" else "Location not provided"
+            location_text = _normalise_template_var(business_address, fallback=location_fallback)
+            body = _build_body([
+                customer_name, company_name,
+                formatted_date, appointment_time, service_name,
+                support_phone, location_text,
+            ])
 
-        # Parametreler: {{1}}=müşteri adı, {{2}}=işletme adı, {{3}}=tarih,
-        #               {{4}}=saat, {{5}}=hizmet, {{6}}=destek tel, {{7}}=harita
-        body_params = [
-            _normalise_template_var(customer_name),
-            _normalise_template_var(company_name),
-            _normalise_template_var(formatted_date),
-            _normalise_template_var(appointment_time),
-            _normalise_template_var(service_name),
-            _normalise_template_var(support_phone),
-            map_link_value,
-        ]
+        components = [header, body]
 
-        lang_code = "tr" if language == "TR" else "en"
+        logger.info(
+            f"WhatsApp gönderimi → type={template_type_upper} lang={language} "
+            f"template={template_name} "
+            f"senaryo={'A (konumlu)' if has_location else 'B (metin)'} to={to_number}"
+        )
 
         message_id = send_meta_whatsapp_template(
             to_number=to_number,
-            template_name=meta_template_name,
+            template_name=template_name,
             language_code=lang_code,
-            body_params=body_params,
+            components=components,
         )
 
-        logger.info(
-            f"WhatsApp (Meta) sent to {to_number}. "
-            f"Template: {meta_template_name} ({lang_code}), id: {message_id}"
-        )
+        logger.info(f"WhatsApp (Meta) gönderildi. id={message_id} to={to_number}")
         return message_id
 
     except Exception as e:
-        logger.error(f"Unexpected error sending WhatsApp to {to_number}: {str(e)}")
+        logger.error(f"send_whatsapp_template hatası [{to_number}]: {e}")
         import traceback
         logger.error(traceback.format_exc())
         raise
-
 
 # ============================================================================
 # TEST FONKSİYONU
 # ============================================================================
 
 if __name__ == "__main__":
-    # Test mesajı
-    print("Testing WhatsApp Content API Integration...")
+    print("Meta WhatsApp Cloud API — Entegrasyon Testi")
     print("=" * 60)
-    
-    # Test 1: Türkçe numara ile onay mesajı
-    result1 = send_whatsapp_template(
-        to_number="+905551234567",
-        template_type="CONFIRMATION",
-        customer_name="Ahmet Yılmaz",
-        company_name="Test Kuaför",
-        appointment_date="2025-12-25",
-        appointment_time="14:30",
-        service_name="Saç Kesimi",
-        support_phone="0532 123 45 67"
+
+    # Test 1: TR — Senaryo A (Konumlu Onay)
+    r1 = send_whatsapp_template(
+        to_number="+905551234567", template_type="CONFIRMATION",
+        customer_name="Ahmet Yılmaz", company_name="Royal Premium Care",
+        appointment_date="2025-04-25", appointment_time="14:20",
+        service_name="Halı Yıkama", support_phone="05321234567",
+        business_lat=38.6248, business_lng=34.7142, business_address="Nevşehir Merkez",
     )
-    print(f"Test 1 (TR Confirmation): {result1}")
-    
-    # Test 2: İngilizce numara ile hatırlatma mesajı
-    result2 = send_whatsapp_template(
-        to_number="+441234567890",
-        template_type="REMINDER",
-        customer_name="John Doe",
-        company_name="Test Salon",
-        appointment_date="2025-12-25",
-        appointment_time="15:00",
-        service_name="Haircut",
-        support_phone="+44 20 1234 5678"
+    print(f"Test 1 — TR Onay (Konumlu):     {r1}")
+
+    # Test 2: TR — Senaryo B (Metin Hatırlatma)
+    r2 = send_whatsapp_template(
+        to_number="+905559876543", template_type="REMINDER",
+        customer_name="Fatma Kaya", company_name="Royal Premium Care",
+        appointment_date="2025-04-25", appointment_time="11:00",
+        service_name="Saç Kesimi", support_phone="05321234567",
+        business_address="Atatürk Cad. No:5, Nevşehir",
     )
-    print(f"Test 2 (EN Reminder): {result2}")
-    
+    print(f"Test 2 — TR Hatırlatma (Metin): {r2}")
+
+    # Test 3: EN — Senaryo A (Konumlu Onay)
+    r3 = send_whatsapp_template(
+        to_number="+441234567890", template_type="CONFIRMATION",
+        customer_name="John Doe", company_name="Royal Premium Care",
+        appointment_date="2025-04-25", appointment_time="14:20",
+        service_name="Haircut", support_phone="+44201234567",
+        business_lat=51.5074, business_lng=-0.1278,
+        business_address="123 Oxford Street, London",
+    )
+    print(f"Test 3 — EN Onay (Konumlu):     {r3}")
+
+    # Test 4: EN — Senaryo B (Metin Hatırlatma)
+    r4 = send_whatsapp_template(
+        to_number="+441234567891", template_type="REMINDER",
+        customer_name="Jane Smith", company_name="Royal Premium Care",
+        appointment_date="2025-04-25", appointment_time="15:00",
+        service_name="Massage", support_phone="+44201234567",
+    )
+    print(f"Test 4 — EN Hatırlatma (Metin): {r4}")
+
     print("=" * 60)
-    print("Tests completed.")
+    print("Test tamamlandı.")

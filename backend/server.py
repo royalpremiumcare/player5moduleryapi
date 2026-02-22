@@ -475,7 +475,8 @@ async def check_and_send_reminders():
                             apt['service_name'],
                             support_phone,
                             business_lat=lat,
-                            business_lng=lng
+                            business_lng=lng,
+                            business_address=location.get('address'),
                         )
                         
                         if wa_result:
@@ -4024,7 +4025,8 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             service_name=service['name'],
             support_phone=support_phone or "+44 7474 626 900",
             business_lat=lat,
-            business_lng=lng
+            business_lng=lng,
+            business_address=location.get('address'),
         )
     except Exception as whatsapp_error:
         logger.warning(f"⚠️ WhatsApp mesajı gönderilemedi: {whatsapp_error}")
@@ -9316,7 +9318,8 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                         service['name'],
                         support_phone,
                         business_lat=lat,
-                        business_lng=lng
+                        business_lng=lng,
+                        business_address=location.get('address'),
                     )
                     logging.info(f"✓ WhatsApp confirmation sent to {appointment.phone}")
                 except Exception as wa_error:
