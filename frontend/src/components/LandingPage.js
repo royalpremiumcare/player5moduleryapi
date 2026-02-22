@@ -183,48 +183,79 @@ const LandingPage = () => {
       // WhatsApp
       'WhatsApp hatırlatma': t('landing.pricing.features.whatsappReminder'),
       'WhatsApp Hatırlatma': t('landing.pricing.features.whatsappReminder'),
+      'WhatsApp Reminder': t('landing.pricing.features.whatsappReminder'),
       // SMS
       'SMS hatırlatma': t('landing.pricing.features.smsReminder'),
       'SMS Hatırlatma': t('landing.pricing.features.smsReminder'),
+      'SMS Reminder': t('landing.pricing.features.smsReminder'),
       // Staff
       'Sınırsız personel': t('landing.pricing.features.unlimitedStaff'),
       'Sınırsız Personel': t('landing.pricing.features.unlimitedStaff'),
+      'Unlimited Staff': t('landing.pricing.features.unlimitedStaff'),
+      'Unlimited staff': t('landing.pricing.features.unlimitedStaff'),
       // Customers
       'Sınırsız müşteri': t('landing.pricing.features.unlimitedCustomers'),
       'Sınırsız Müşteri': t('landing.pricing.features.unlimitedCustomers'),
+      'Unlimited Customers': t('landing.pricing.features.unlimitedCustomers'),
+      'Unlimited customers': t('landing.pricing.features.unlimitedCustomers'),
       // Services
       'Sınırsız hizmet': t('landing.pricing.features.unlimitedServices'),
       'Sınırsız Hizmet': t('landing.pricing.features.unlimitedServices'),
+      'Unlimited Services': t('landing.pricing.features.unlimitedServices'),
+      'Unlimited services': t('landing.pricing.features.unlimitedServices'),
       // Booking page
       'Online rezervasyon sayfası': t('landing.pricing.features.bookingPage'),
       'Online Rezervasyon Sayfası': t('landing.pricing.features.bookingPage'),
       'Online randevu': t('landing.pricing.features.bookingPage'),
       'Online Randevu': t('landing.pricing.features.bookingPage'),
+      'Online Appointment': t('landing.pricing.features.bookingPage'),
+      'Online appointment': t('landing.pricing.features.bookingPage'),
+      'Online Booking Page': t('landing.pricing.features.bookingPage'),
       // Notifications
       'Anlık bildirimler': t('landing.pricing.features.instantNotifications'),
       'Anlık Bildirimler': t('landing.pricing.features.instantNotifications'),
+      'Instant Notifications': t('landing.pricing.features.instantNotifications'),
+      'Instant notifications': t('landing.pricing.features.instantNotifications'),
       // Revenue stats
       'Gelir gider istatistikleri': t('landing.pricing.features.revenueStats'),
       'Gelir Gider İstatistikleri': t('landing.pricing.features.revenueStats'),
       'Gelir & gider istatistikleri': t('landing.pricing.features.revenueStats'),
       'Gelir & Gider İstatistikleri': t('landing.pricing.features.revenueStats'),
       'İstatistikler': t('landing.pricing.features.revenueStats'),
+      'Statistics': t('landing.pricing.features.revenueStats'),
+      'Revenue & Expense Statistics': t('landing.pricing.features.revenueStats'),
       // AI Assistant
       'AI akıllı asistan': t('landing.pricing.features.aiAssistant'),
       'AI Akıllı Asistan': t('landing.pricing.features.aiAssistant'),
       'Yapay Zeka Akıllı Asistan': t('landing.pricing.features.aiAssistant'),
       'Yapay Zeka Akıllı Asistan (Limitsiz)': t('landing.pricing.features.aiAssistantUnlimited'),
+      'AI Smart Assistant': t('landing.pricing.features.aiAssistant'),
+      'AI Smart Assistant (Standard Use)': t('landing.pricing.features.aiAssistant'),
+      'AI Smart Assistant (Advanced Use)': t('landing.pricing.features.aiAssistant'),
+      'AI Smart Assistant (Unlimited)': t('landing.pricing.features.aiAssistantUnlimited'),
       // Priority support
       'Öncelikli destek': t('landing.pricing.features.prioritySupport'),
       'Öncelikli Destek': t('landing.pricing.features.prioritySupport'),
+      'Priority Support': t('landing.pricing.features.prioritySupport'),
+      'Priority support': t('landing.pricing.features.prioritySupport'),
       // Custom integrations
       'Özel entegrasyonlar': t('landing.pricing.features.customIntegrations'),
       'Özel Entegrasyonlar': t('landing.pricing.features.customIntegrations'),
+      'Custom Integrations': t('landing.pricing.features.customIntegrations'),
+      'Custom integrations': t('landing.pricing.features.customIntegrations'),
       // Appointment reminder
       'Randevu hatırlatma dahil': t('landing.pricing.features.appointmentReminder'),
       'Randevu Hatırlatma Dahil': t('landing.pricing.features.appointmentReminder'),
+      'Appointment Reminders Included': t('landing.pricing.features.appointmentReminder'),
+      'Appointment reminders included': t('landing.pricing.features.appointmentReminder'),
+      'Appointment Reminder': t('landing.pricing.features.appointmentReminder'),
     };
-    return featureMap[normalizedFeature] || feature;
+
+    // Büyük/küçük harf farkı için lowercase fallback
+    const lowerMap = Object.fromEntries(
+      Object.entries(featureMap).map(([k, v]) => [k.toLowerCase(), v])
+    );
+    return featureMap[normalizedFeature] ?? lowerMap[lowerFeature] ?? feature;
   };
 
   // Animasyonlu kelimeler - dil değişince güncellenir
