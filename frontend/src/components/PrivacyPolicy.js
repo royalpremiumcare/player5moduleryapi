@@ -29,7 +29,7 @@ const PrivacyPolicy = () => {
         
         <div className="prose prose-gray max-w-none space-y-6">
           <p className="text-gray-600">
-            <strong>{isEnglish ? 'Last Updated:' : 'Son Güncelleme:'}</strong> {isEnglish ? '28 November 2025' : '28 Kasım 2025'}
+            <strong>{isEnglish ? 'Last Updated:' : 'Son Güncelleme:'}</strong> {isEnglish ? 'February 17 2026' : '17 Şubat 2026'}
           </p>
 
           <section>
