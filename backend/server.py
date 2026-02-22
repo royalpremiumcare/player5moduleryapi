@@ -1,7 +1,6 @@
 from voice_ai_service import get_voice_ai_service
 from whatsapp_service import send_whatsapp_template, detect_language_from_phone
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form
-from twilio.twiml.messaging_response import MessagingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -9918,47 +9917,97 @@ async def ai_chat_endpoint(
 # --- Router prefix'i buraya taşındı ---
 app.include_router(api_router, prefix="/api")
 
-# === WhatsApp Webhook (Twilio) ===
-@app.post("/webhook")
-async def whatsapp_webhook(
-    Body: str = Form(default=""),  # default="" hata almamak için önemlidir
-    From: str = Form(default="")
-):
-    """
-    Twilio'dan gelen mesajları dinler ve otomatik cevap döner.
-    """
-    # 1. Loglama (Terminalde görmen için)
-    logger.info(f"📩 WEBHOOK TETİKLENDİ! Gönderen: {From}, Mesaj: {Body}")
-    print(f"\n📩 WEBHOOK TETİKLENDİ! Gönderen: {From}, Mesaj: {Body}")
+# === WhatsApp Webhook (Meta Cloud API) ===
 
-    # 2. Numarayı temizle
-    incoming_msg = Body.lower()
-    clean_phone = From.replace('whatsapp:', '')
-    
-    # 3. Dil tespiti
-    lang = detect_language_from_phone(clean_phone)
-    
-    # 4. Yanıtı Hazırla
-    resp = MessagingResponse()
-    msg = resp.message()
-    
-    if lang == "TR":
-        response_text = (
-            "🤖 *Otomatik Bilgilendirme*\n\n"
-            "Bu numara sadece randevu bilgilendirmeleri içindir. "
-            "Lütfen talepleriniz için işletme ile doğrudan iletişime geçiniz."
+META_WEBHOOK_VERIFY_TOKEN = os.getenv("META_WEBHOOK_VERIFY_TOKEN", "plann_meta_webhook_2025")
+_META_WH_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN")
+_META_WH_PHONE_ID = os.getenv("META_PHONE_NUMBER_ID")
+_META_WH_API_VERSION = os.getenv("META_API_VERSION", "v21.0")
+
+
+def _send_whatsapp_text_reply(to_number: str, text: str) -> None:
+    """Gelen mesaja düz metin (text) olarak otomatik yanıt gönderir."""
+    if not _META_WH_ACCESS_TOKEN or not _META_WH_PHONE_ID:
+        logger.warning("Meta WA credentials eksik, auto-reply gönderilemedi.")
+        return
+    url = f"https://graph.facebook.com/{_META_WH_API_VERSION}/{_META_WH_PHONE_ID}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_number,
+        "type": "text",
+        "text": {"body": text},
+    }
+    try:
+        import requests as _req
+        resp = _req.post(
+            url,
+            headers={"Authorization": f"Bearer {_META_WH_ACCESS_TOKEN}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=10,
         )
-    else:
-        response_text = (
-            "🤖 *Automated Message*\n\n"
-            "This number is for appointment notifications only. "
-            "Please contact the business directly for any inquiries."
-        )
-    
-    msg.body(response_text)
-    
-    # 5. XML Olarak Döndür (Kritik nokta burası)
-    return Response(content=str(resp), media_type="application/xml")
+        if not resp.ok:
+            logger.error(f"Auto-reply hata: {resp.status_code} {resp.text}")
+        else:
+            logger.info(f"Auto-reply gönderildi → {to_number}")
+    except Exception as e:
+        logger.error(f"Auto-reply exception: {e}")
+
+
+@app.get("/webhook")
+async def whatsapp_webhook_verify(request: Request):
+    """
+    Meta webhook doğrulama: GET isteğiyle hub.challenge döner.
+    """
+    params = request.query_params
+    mode      = params.get("hub.mode")
+    token     = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+
+    if mode == "subscribe" and token == META_WEBHOOK_VERIFY_TOKEN:
+        logger.info("✅ Meta webhook doğrulandı.")
+        return Response(content=challenge, media_type="text/plain")
+
+    logger.warning(f"❌ Webhook doğrulama başarısız. token={token}")
+    raise HTTPException(status_code=403, detail="Webhook doğrulama başarısız.")
+
+
+@app.post("/webhook")
+async def whatsapp_webhook(request: Request):
+    """
+    Meta'dan gelen mesajları dinler ve otomatik cevap döner.
+    Yanıt: 'Bu numara sadece bilgilendirme amaçlıdır, lütfen doğrudan işletmeyle iletişime geçin.'
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return Response(status_code=200)  # Meta 200 bekler, hata olsa da
+
+    logger.info(f"📩 Meta Webhook: {body}")
+
+    try:
+        for entry in body.get("entry", []):
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                messages = value.get("messages", [])
+                for message in messages:
+                    from_number = message.get("from")  # E.164, + olmadan
+                    msg_type    = message.get("type", "")
+
+                    if not from_number or msg_type not in ("text", "audio", "image", "video", "document", "sticker", "location", "contacts", "interactive", "button"):
+                        continue
+
+                    logger.info(f"📩 Gelen WA mesajı: from={from_number} type={msg_type}")
+
+                    auto_reply_text = (
+                        "Bu numara sadece bilgilendirme amaçlıdır, "
+                        "lütfen doğrudan işletmeyle iletişime geçin."
+                    )
+                    _send_whatsapp_text_reply(from_number, auto_reply_text)
+    except Exception as e:
+        logger.error(f"Webhook işleme hatası: {e}")
+
+    # Meta her zaman 200 bekler
+    return Response(status_code=200)
 
 # === CORS Preflight için OPTIONS handler (router'dan SONRA) ===
 @app.options("/api/{path:path}")
