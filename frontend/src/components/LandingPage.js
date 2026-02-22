@@ -936,11 +936,15 @@ const LandingPage = () => {
                       {/* Features */}
                       <div className="flex-grow space-y-3 mb-6">
                         {/* Randevu Limiti - Vurgulu */}
-                        <div className={`flex items-center gap-3 p-3 rounded-xl ${
-                          isPopular ? 'bg-amber-400/10 border border-amber-400/30' : 'bg-blue-50 border border-blue-100'
+                        <div className={`flex items-center gap-3 p-3 rounded-xl backdrop-blur-sm ${
+                          isPopular
+                            ? 'bg-white/10 border border-white/20 shadow-inner'
+                            : 'bg-white/60 border border-slate-200/70 shadow-sm'
                         }`}>
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                            isPopular ? 'bg-amber-400 text-gray-900' : 'bg-blue-500 text-white'
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md ${
+                            isPopular
+                              ? 'bg-white/20 text-white backdrop-blur-sm'
+                              : 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white'
                           }`}>
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -952,10 +956,8 @@ const LandingPage = () => {
                                 ? t('landing.pricing.features.unlimitedAppointments')
                                 : t('landing.pricing.features.appointments', { count: plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') })}
                             </div>
-                            <div className={`text-xs ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {['kurumsal', 'corporate'].includes(plan.name.toLowerCase())
-                                ? t('landing.pricing.unlimitedLimit')
-                                : t('landing.pricing.monthlyLimit')}
+                            <div className={`text-xs ${isPopular ? 'text-blue-200' : 'text-gray-400'}`}>
+                              {t('landing.pricing.monthlyLimit')}
                             </div>
                           </div>
                         </div>

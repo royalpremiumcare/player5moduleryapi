@@ -182,7 +182,7 @@
         }
       },
       "features": {
-        "appointments": "{{count}} Randevu/ay",
+        "appointments": "{{count}} Randevu",
         "whatsappReminder": "WhatsApp Hatırlatma",
         "smsReminder": "SMS Hatırlatma",
         "unlimitedStaff": "Sınırsız Personel",

@@ -182,7 +182,7 @@
         }
       },
       "features": {
-        "appointments": "{{count}} Appointments/month",
+        "appointments": "{{count}} Appointments",
         "whatsappReminder": "WhatsApp Reminders",
         "smsReminder": "SMS Reminders",
         "unlimitedStaff": "Unlimited Staff",
