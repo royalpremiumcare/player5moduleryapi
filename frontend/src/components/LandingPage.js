@@ -398,8 +398,11 @@ const LandingPage = () => {
       try {
         const response = await publicApi.get('/plans');
         console.log('API Response:', response.data);
-        // Trial hariç tüm planları al (Trial sadece kayıt sonrası)
-        const paidPlans = (response.data.plans || []).filter(p => p.id !== 'tier_trial');
+        // Landing page'de sadece 3 paket göster: Standart, Profesyonel, Kurumsal
+        const VISIBLE_PLANS = ['standart', 'standard', 'profesyonel', 'professional', 'kurumsal', 'corporate'];
+        const paidPlans = (response.data.plans || []).filter(p =>
+          p.id !== 'tier_trial' && VISIBLE_PLANS.includes(p.name.toLowerCase())
+        );
         console.log('Filtered Plans:', paidPlans);
         if (paidPlans.length > 0) {
           setPlans(paidPlans);

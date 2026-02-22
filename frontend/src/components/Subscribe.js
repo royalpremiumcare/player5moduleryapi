@@ -194,8 +194,11 @@ const Subscribe = ({ onNavigate }) => {
         api.get("/plan/current")
       ]);
       
-      // Trial paketini filtrele, sadece ücretli paketleri göster
-      const paidPlans = plansResponse.data.plans.filter(plan => plan.id !== 'tier_trial');
+      // Sadece 3 paket göster: Standart, Profesyonel, Kurumsal
+      const VISIBLE_PLANS = ['standart', 'standard', 'profesyonel', 'professional', 'kurumsal', 'corporate'];
+      const paidPlans = plansResponse.data.plans.filter(plan =>
+        plan.id !== 'tier_trial' && VISIBLE_PLANS.includes(plan.name.toLowerCase())
+      );
       setPlans(paidPlans);
       setCurrentPlan(currentPlanResponse.data);
     } catch (error) {
