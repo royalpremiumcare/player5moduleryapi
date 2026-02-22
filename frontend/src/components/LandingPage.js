@@ -948,9 +948,15 @@ const LandingPage = () => {
                           </div>
                           <div>
                             <div className={`text-lg font-bold ${isPopular ? 'text-white' : 'text-gray-900'}`}>
-                              {t('landing.pricing.features.appointments', { count: plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') })}
+                              {['kurumsal', 'corporate'].includes(plan.name.toLowerCase())
+                                ? t('landing.pricing.features.unlimitedAppointments')
+                                : t('landing.pricing.features.appointments', { count: plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') })}
                             </div>
-                            <div className={`text-xs ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>{t('landing.pricing.monthlyLimit')}</div>
+                            <div className={`text-xs ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {['kurumsal', 'corporate'].includes(plan.name.toLowerCase())
+                                ? t('landing.pricing.unlimitedLimit')
+                                : t('landing.pricing.monthlyLimit')}
+                            </div>
                           </div>
                         </div>
                         

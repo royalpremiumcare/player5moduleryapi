@@ -150,6 +150,7 @@
       "appointmentsPerMonth": "{{count}} Appointments",
       "monthlyLimit": "Monthly limit",
       "yearlyLimit": "Yearly limit",
+      "unlimitedLimit": "Unlimited",
       "daysRemaining": "{{days}} days remaining",
       "trialDaysRemaining": "{{days}} days remaining",
       "trustBadge": "7-day free trial",
@@ -194,7 +195,8 @@
         "aiAssistantUnlimited": "AI Smart Assistant (Unlimited)",
         "prioritySupport": "Priority Support",
         "customIntegrations": "Custom Integrations",
-        "appointmentReminder": "Appointment Reminders Included"
+        "appointmentReminder": "Appointment Reminders Included",
+        "unlimitedAppointments": "Unlimited Appointments"
       }
     },
     "testimonials": {

@@ -393,7 +393,9 @@ const Subscribe = ({ onNavigate }) => {
                 {/* Ana Özellik (Randevu Limiti) */}
                 <div className="mb-4">
                   <p className="text-base font-semibold text-gray-900">
-                    {plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {t('settings.subscribePage.appointmentsPerMonth')}
+                    {['kurumsal', 'corporate'].includes(plan.name.toLowerCase())
+                      ? (i18n.language === 'tr' ? 'Sınırsız Randevu' : 'Unlimited Appointments')
+                      : `${plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} ${t('settings.subscribePage.appointmentsPerMonth')}`}
                   </p>
                 </div>
 

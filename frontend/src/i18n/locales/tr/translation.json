@@ -150,6 +150,7 @@
       "appointmentsPerMonth": "{{count}} Randevu",
       "monthlyLimit": "Aylık limit",
       "yearlyLimit": "Yıllık limit",
+      "unlimitedLimit": "Sınırsız",
       "daysRemaining": "{{days}} gün kaldı",
       "trialDaysRemaining": "Kalan {{days}} gün",
       "trustBadge": "7 gün ücretsiz deneme",
@@ -194,7 +195,8 @@
         "aiAssistantUnlimited": "Yapay Zeka Akıllı Asistan (Limitsiz)",
         "prioritySupport": "Öncelikli Destek",
         "customIntegrations": "Özel Entegrasyonlar",
-        "appointmentReminder": "Randevu Hatırlatma Dahil"
+        "appointmentReminder": "Randevu Hatırlatma Dahil",
+        "unlimitedAppointments": "Sınırsız Randevu"
       }
     },
     "testimonials": {
