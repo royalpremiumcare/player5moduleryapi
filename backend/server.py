@@ -9806,6 +9806,52 @@ async def get_available_plans(
     """Mevcut planları getir - Sadece superadmin"""
     return {"plans": PLANS}
 
+@api_router.get("/superadmin/whatsapp-logs")
+async def get_whatsapp_message_logs(
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db),
+    status_filter: Optional[str] = None,   # ?status_filter=failed
+    limit: int = 200,
+    skip: int = 0,
+):
+    """
+    WhatsApp mesaj durum logları - Sadece superadmin.
+    Kaydedilen alanlar: message_id, recipient, status (sent/delivered/read/failed),
+    timestamp (Unix), errors (failed durumunda), recorded_at.
+    """
+    try:
+        query = {}
+        if status_filter:
+            query["status"] = status_filter
+
+        logs = await db.whatsapp_message_logs.find(
+            query, {"_id": 0}
+        ).sort("recorded_at", -1).skip(skip).limit(limit).to_list(limit)
+
+        total = await db.whatsapp_message_logs.count_documents(query)
+
+        failed_count    = await db.whatsapp_message_logs.count_documents({"status": "failed"})
+        delivered_count = await db.whatsapp_message_logs.count_documents({"status": "delivered"})
+        read_count      = await db.whatsapp_message_logs.count_documents({"status": "read"})
+        sent_count      = await db.whatsapp_message_logs.count_documents({"status": "sent"})
+
+        return {
+            "logs": logs,
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "summary": {
+                "sent":      sent_count,
+                "delivered": delivered_count,
+                "read":      read_count,
+                "failed":    failed_count,
+            },
+        }
+    except Exception as e:
+        logging.error(f"Error in get_whatsapp_message_logs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="WhatsApp logları alınırken hata oluştu")
+
 # === AI CHATBOT ENDPOINT ===
 class AIChatRequest(BaseModel):
     message: str
@@ -9974,46 +10020,86 @@ async def whatsapp_webhook_verify(request: Request):
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     """
-    Meta'dan gelen mesajları dinler ve otomatik cevap döner.
-    Yanıt: 'Bu numara sadece bilgilendirme amaçlıdır, lütfen doğrudan işletmeyle iletişime geçin.'
+    Meta'dan gelen mesajları ve durum güncellemelerini dinler.
+    - messages  → dil tespiti yaparak otomatik yanıt gönderir
+    - statuses  → sent/delivered/read/failed durumlarını DB'ye kaydeder
     """
     try:
         body = await request.json()
     except Exception:
-        return Response(status_code=200)  # Meta 200 bekler, hata olsa da
+        return Response(status_code=200)
 
-    logger.info(f"📩 Meta Webhook: {body}")
+    logger.info(f"📩 Meta Webhook gövdesi: {body}")
+
+    db = getattr(request.app.state, "db", None)
 
     try:
         for entry in body.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
-                messages = value.get("messages", [])
-                for message in messages:
-                    from_number = message.get("from")  # E.164, + olmadan
+
+                # ── 1. Gelen müşteri mesajları → otomatik yanıt ──────────────
+                for message in value.get("messages", []):
+                    from_number = message.get("from")
                     msg_type    = message.get("type", "")
-
-                    if not from_number or msg_type not in ("text", "audio", "image", "video", "document", "sticker", "location", "contacts", "interactive", "button"):
+                    if not from_number or msg_type not in (
+                        "text", "audio", "image", "video", "document",
+                        "sticker", "location", "contacts", "interactive", "button",
+                    ):
                         continue
-
                     logger.info(f"📩 Gelen WA mesajı: from={from_number} type={msg_type}")
-
                     lang = detect_language_from_phone(from_number)
                     if lang == "TR":
-                        auto_reply_text = (
+                        reply = (
                             "Bu numara sadece bilgilendirme amaçlıdır, "
                             "lütfen doğrudan işletmeyle iletişime geçin."
                         )
                     else:
-                        auto_reply_text = (
+                        reply = (
                             "This number is for information purposes only, "
                             "please contact the business directly."
                         )
-                    _send_whatsapp_text_reply(from_number, auto_reply_text)
+                    _send_whatsapp_text_reply(from_number, reply)
+
+                # ── 2. Mesaj durumu güncellemeleri → DB'ye kaydet ────────────
+                for status_obj in value.get("statuses", []):
+                    message_id   = status_obj.get("id")
+                    recipient    = status_obj.get("recipient_id")
+                    wa_status    = status_obj.get("status")        # sent/delivered/read/failed
+                    timestamp_ms = status_obj.get("timestamp")
+                    errors       = status_obj.get("errors", [])
+
+                    if wa_status == "failed" and errors:
+                        logger.error(
+                            f"❌ WA mesaj gönderilemedi | id={message_id} "
+                            f"to={recipient} errors={errors}"
+                        )
+                    else:
+                        logger.info(
+                            f"📬 WA durum: {wa_status} | id={message_id} to={recipient}"
+                        )
+
+                    if db is not None:
+                        try:
+                            log_doc = {
+                                "message_id": message_id,
+                                "recipient":  recipient,
+                                "status":     wa_status,
+                                "timestamp":  int(timestamp_ms) if timestamp_ms else None,
+                                "errors":     errors,
+                                "recorded_at": datetime.now(timezone.utc).isoformat(),
+                            }
+                            await db.whatsapp_message_logs.update_one(
+                                {"message_id": message_id, "status": wa_status},
+                                {"$set": log_doc},
+                                upsert=True,
+                            )
+                        except Exception as db_err:
+                            logger.error(f"WA log DB kayıt hatası: {db_err}")
+
     except Exception as e:
         logger.error(f"Webhook işleme hatası: {e}")
 
-    # Meta her zaman 200 bekler
     return Response(status_code=200)
 
 # === CORS Preflight için OPTIONS handler (router'dan SONRA) ===
