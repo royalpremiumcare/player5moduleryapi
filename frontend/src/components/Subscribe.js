@@ -18,13 +18,12 @@ const Subscribe = ({ onNavigate }) => {
   // Pricing Display Configuration - Exact flat numbers matching Stripe Fixed Amount Coupons
   const PRICING_DISPLAY = {
     try: {
-      // Math: Base Price - Coupon Amount = Discounted Price
-      standard:     { original: 750,  discounted: 550 },  // 750 - 200 = 550
-      professional: { original: 1000, discounted: 750 },  // 1000 - 250 = 750
-      premium:      { original: 1550, discounted: 1150 }, // 1550 - 400 = 1150
-      business:     { original: 1950, discounted: 1450 }, // 1950 - 500 = 1450
-      enterprise:   { original: 2350, discounted: 1750 }, // 2350 - 600 = 1750
-      corporate:    { original: 3600, discounted: 2700 }, // 3600 - 900 = 2700
+      standard:     { original: 1090, discounted: 990  },
+      professional: { original: 1490, discounted: 1390 },
+      premium:      { original: 1550, discounted: 1150 },
+      business:     { original: 1950, discounted: 1450 },
+      enterprise:   { original: 2350, discounted: 1750 },
+      corporate:    { original: 2850, discounted: 2490 },
     },
     gbp: {
       // Math: Base Price - Coupon Amount = Discounted Price

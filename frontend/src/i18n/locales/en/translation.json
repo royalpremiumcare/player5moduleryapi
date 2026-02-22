@@ -63,7 +63,7 @@
     "logout": "Logout"
   },
   "landing": {
-    "banner": "Special offer: 25% off first month for new businesses!",
+    "banner": "Special offer: discounted first month for new businesses!",
     "hero": {
       "with": "with PLANN",
       "appointment": "Appointment",
@@ -139,7 +139,7 @@
       "monthly": "Monthly",
       "yearly": "Yearly",
       "twoMonthsFree": "2 Months Free",
-      "newUserDiscount": "Special offer: 25% off first month for new businesses!",
+      "newUserDiscount": "Special offer: discounted first month for new businesses!",
       "mostPopular": "Most Popular",
       "tryFree": "Try Free",
       "perMonth": "/month",
@@ -771,8 +771,8 @@
       "monthly": "Monthly",
       "yearly": "Yearly",
       "twoMonthsFree": "2 Months Free",
-      "firstMonthDiscount": "First Month 25% Off",
-      "firstMonthDiscountDesc": "Special first month offer! Your first month payment is 25% off.",
+      "firstMonthDiscount": "First Month Special Discount!",
+      "firstMonthDiscountDesc": "Special first month offer! Enjoy a discounted rate on your first month payment.",
       "nextMonths": "In the following months, automatic payment will be made at the regular price.",
       "appointmentsPerMonth": "Appointments / Monthly",
       "currentSubscription": "Current Subscription",
@@ -788,7 +788,7 @@
       "backToSettings": "Back",
       "yearlyBadge": "Yearly (2 months free)",
       "monthlyEquivalent": "Monthly: ",
-      "firstMonthBadge": "First month 25% off",
+      "firstMonthBadge": "First month discounted",
       "nextMonthsPrice": "Next months:",
       "perMonth": "/ Monthly"
     },

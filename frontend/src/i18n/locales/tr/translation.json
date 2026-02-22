@@ -63,7 +63,7 @@
     "logout": "Çıkış Yap"
   },
   "landing": {
-    "banner": "Yeni üye işyerlerine özel ilk ay %25 indirim!",
+    "banner": "Yeni üye işyerlerine özel ilk ay indirimi!",
     "hero": {
       "with": "PLANN ile",
       "appointment": "Randevu",
@@ -139,7 +139,7 @@
       "monthly": "Aylık",
       "yearly": "Yıllık",
       "twoMonthsFree": "2 Ay Ücretsiz",
-      "newUserDiscount": "Yeni üye işyerlerine özel ilk ay %25 indirim!",
+      "newUserDiscount": "Yeni üye işyerlerine özel ilk ay indirimi!",
       "mostPopular": "En Popüler",
       "tryFree": "Ücretsiz Dene",
       "perMonth": "/ay",
@@ -773,8 +773,8 @@
       "monthly": "Aylık",
       "yearly": "Yıllık",
       "twoMonthsFree": "2 Ay Ücretsiz",
-      "firstMonthDiscount": "İlk Aya Özel %25 İndirim!",
-      "firstMonthDiscountDesc": "İlk ay özel fırsatı! Seçtiğiniz paketin ilk ay ödemesi %25 indirimli.",
+      "firstMonthDiscount": "İlk Aya Özel İndirim!",
+      "firstMonthDiscountDesc": "İlk ay özel fırsatı! Seçtiğiniz paketin ilk ay ödemesinde indirimli fiyatlardan yararlanın.",
       "nextMonths": "Sonraki aylarda normal fiyattan otomatik olarak tahsilat yapılacaktır.",
       "appointmentsPerMonth": "Randevu / Aylık",
       "currentSubscription": "Mevcut Abonelik",
@@ -790,7 +790,7 @@
       "backToSettings": "Geri Dön",
       "yearlyBadge": "Yıllık (2 ay ücretsiz)",
       "monthlyEquivalent": "Aylık karşılığı: ~",
-      "firstMonthBadge": "İlk ay %25 indirimli",
+      "firstMonthBadge": "İlk ay indirimli",
       "nextMonthsPrice": "Sonraki aylar:",
       "perMonth": "/ Aylık"
     },

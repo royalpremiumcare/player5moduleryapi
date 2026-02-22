@@ -87,28 +87,28 @@ const LandingPage = () => {
 
   // TL İlk Ay İndirimli Fiyatlar (Türkçe seçildiğinde)
   const tlFirstMonthPricing = {
-    'standart': 550,
-    'standard': 550,
-    'profesyonel': 750,
-    'professional': 750,
+    'standart': 990,
+    'standard': 990,
+    'profesyonel': 1390,
+    'professional': 1390,
     'premium': 1150,
     'business': 1450,
     'enterprise': 1750,
-    'kurumsal': 2700,
-    'corporate': 2700,
+    'kurumsal': 2490,
+    'corporate': 2490,
   };
 
   // TL Normal Aylık Fiyatlar (Türkçe seçildiğinde)
   const tlMonthlyPricing = {
-    'standart': 750,
-    'standard': 750,
-    'profesyonel': 1000,
-    'professional': 1000,
+    'standart': 1090,
+    'standard': 1090,
+    'profesyonel': 1490,
+    'professional': 1490,
     'premium': 1550,
     'business': 1950,
     'enterprise': 2350,
-    'kurumsal': 3600,
-    'corporate': 3600,
+    'kurumsal': 2850,
+    'corporate': 2850,
   };
 
   // Para birimi ve fiyat formatlama
