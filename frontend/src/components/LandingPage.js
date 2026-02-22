@@ -427,7 +427,7 @@ const LandingPage = () => {
     // Backend'den planları çek
     const fetchPlans = async () => {
       try {
-        const response = await publicApi.get('/plans');
+        const response = await publicApi.get('/plans', { headers: { 'Accept-Language': i18n.language } });
         console.log('API Response:', response.data);
         // Landing page'de sadece 3 paket göster: Standart, Profesyonel, Kurumsal
         const VISIBLE_PLANS = ['standart', 'standard', 'profesyonel', 'professional', 'kurumsal', 'corporate'];

@@ -189,7 +189,7 @@ const Subscribe = ({ onNavigate }) => {
   const loadPlans = async () => {
     try {
       const [plansResponse, currentPlanResponse] = await Promise.all([
-        api.get("/plans"),
+        api.get("/plans", { headers: { 'Accept-Language': i18n.language } }),
         api.get("/plan/current")
       ]);
       
