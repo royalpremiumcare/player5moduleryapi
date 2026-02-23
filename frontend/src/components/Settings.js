@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { 
   Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, 
-  ArrowLeft, DollarSign, Bell, BellOff, MapPin, Wrench, ShieldCheck 
+  ArrowLeft, DollarSign, Bell, BellOff, MapPin, Wrench, ShieldCheck, Globe
 } from "lucide-react"; 
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -282,6 +282,13 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                 title={t('settings.location')}
                 subtitle={t('settings.locationSubtitle')}
                 onClick={() => onNavigate && onNavigate("settings-location")}
+              />
+
+              <SettingItem 
+                icon={Globe} 
+                title="Online Randevu Sayfası"
+                subtitle="Galeri, logo, konum ve randevu linki"
+                onClick={() => onNavigate && onNavigate("settings-online-booking")}
               />
             </div>
           </>

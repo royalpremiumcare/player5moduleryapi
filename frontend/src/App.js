@@ -19,6 +19,7 @@ import Settings from "@/components/Settings";
 import SettingsSubscription from "@/components/SettingsSubscription";
 import SettingsProfile from "@/components/SettingsProfile";
 import LocationSettings from "@/components/LocationSettings";
+import SettingsOnlineBooking from "@/components/SettingsOnlineBooking";
 import Finance from "@/components/Finance";
 import Subscribe from "@/components/Subscribe";
 import Customers from "@/components/Customers";
@@ -958,7 +959,7 @@ function App() {
         </header>
       )}
 
-      <main className={(currentView === "dashboard" || currentView === "settings" || currentView === "settings-subscription" || currentView === "settings-profile" || currentView === "settings-location" || currentView === "subscribe" || currentView === "staff" || currentView === "services" || currentView === "help-center") && !showForm ? "" : "container mx-auto px-4 py-6"}>
+      <main className={(currentView === "dashboard" || currentView === "settings" || currentView === "settings-subscription" || currentView === "settings-profile" || currentView === "settings-location" || currentView === "settings-online-booking" || currentView === "subscribe" || currentView === "staff" || currentView === "services" || currentView === "help-center") && !showForm ? "" : "container mx-auto px-4 py-6"}>
         {/* Ödeme Başarı Banner'ı */}
         {showPaymentSuccess && (
           <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-6 shadow-lg sticky top-0 z-50 animate-in slide-in-from-top">
@@ -1101,6 +1102,14 @@ function App() {
 
         {currentView === "settings-location" && userRole === 'admin' && (
           <LocationSettings
+            onNavigate={(view) => {
+              setCurrentView(view);
+              setShowForm(false);
+            }}
+          />
+        )}
+        {currentView === "settings-online-booking" && userRole === 'admin' && (
+          <SettingsOnlineBooking
             onNavigate={(view) => {
               setCurrentView(view);
               setShowForm(false);
