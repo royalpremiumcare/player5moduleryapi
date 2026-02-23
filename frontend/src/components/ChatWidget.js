@@ -2,6 +2,34 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, X, Send, Loader2, Mic, MicOff } from 'lucide-react';
 import api from '@/api/api';
 
+// Capacitor native TTS (Android/iOS) — web'de graceful fallback
+let CapacitorTTS = null;
+try {
+  const ttsModule = require('@capacitor-community/text-to-speech');
+  CapacitorTTS = ttsModule.TextToSpeech;
+} catch (_) {}
+
+const speakText = async (text) => {
+  const clean = text.replace(/[#*_`]/g, '').substring(0, 400);
+  if (CapacitorTTS) {
+    try {
+      await CapacitorTTS.stop();
+      await CapacitorTTS.speak({ text: clean, lang: 'tr-TR', rate: 1.0, pitch: 1.0, volume: 1.0, category: 'ambient' });
+      return;
+    } catch (_) {}
+  }
+  // Web fallback
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.resume();
+    const u = new SpeechSynthesisUtterance(clean);
+    const voices = window.speechSynthesis.getVoices();
+    const trVoice = voices.find(v => v.lang.startsWith('tr'));
+    if (trVoice) { u.voice = trVoice; u.lang = trVoice.lang; }
+    window.speechSynthesis.speak(u);
+  }
+};
+
 const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -187,6 +215,8 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         if (data?.history) setChatHistory(data.history);
         if (data?.usage_info) setUsageInfo(data.usage_info);
 
+        // Sesli yanıt (native Capacitor TTS → web fallback)
+        speakText(aiText).catch(() => {});
         setTimeout(restartRecognition, 300);
       } catch (error) {
         const errMsg = error.response?.data?.detail || error.message || 'Bir hata oluştu.';
