@@ -923,12 +923,14 @@ const PublicBookingPage = () => {
                                 <span className="font-medium text-zinc-900 text-right bg-zinc-200 px-2 rounded text-xs py-0.5 inline-flex items-center">{selectedTime || "-"}</span>
                              </div>
                              
+                             {settings?.show_service_price_on_public !== false && (
                              <div className="border-t border-zinc-200 pt-4 mt-4 flex justify-between items-center">
                                 <span className="text-zinc-600 font-medium">{t('publicBooking.price')}</span>
                                 <span className="text-2xl font-bold text-zinc-900">
                                   {selectedService ? (currentLang === 'en' ? `${currencySymbol}${Math.round(selectedService.price)}` : `${Math.round(selectedService.price)}${currencySymbol}`) : "-"}
                                 </span>
                              </div>
+                             )}
                           </div>
 
                           <Button
