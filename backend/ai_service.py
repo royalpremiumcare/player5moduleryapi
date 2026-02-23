@@ -1156,10 +1156,28 @@ async def chat_with_ai(
         
         # Chat başlat
         chat = model.start_chat(history=chat_history)
-        
+
+        async def send_with_retry(message_text: str, max_retries: int = 3):
+            """429 rate limit için exponential backoff retry"""
+            for attempt in range(max_retries):
+                try:
+                    return chat.send_message(message_text)
+                except Exception as e:
+                    msg = str(e)
+                    is_429 = (
+                        isinstance(e, google_exceptions.ResourceExhausted)
+                        or "429" in msg or "quota" in msg.lower() or "rate" in msg.lower()
+                    )
+                    if is_429 and attempt < max_retries - 1:
+                        wait_sec = 5 * (2 ** attempt)  # 5s, 10s, 20s
+                        logger.warning(f"Gemini 429 rate limit, {wait_sec}s bekleniyor (deneme {attempt+1}/{max_retries})")
+                        await asyncio.sleep(wait_sec)
+                        continue
+                    raise  # son denemede yeniden fırlat
+
         # İlk yanıt al
         try:
-            response = chat.send_message(user_message)
+            response = await send_with_retry(user_message)
         except Exception as e:
             msg = str(e)
             status = 500
@@ -1171,7 +1189,7 @@ async def chat_with_ai(
             except Exception:
                 status = 500
             if status == 429:
-                return {"success": False, "status": 429, "message": "❌ Google AI servis kotası aşıldı. Lütfen birkaç dakika sonra tekrar deneyin."}
+                return {"success": False, "status": 429, "message": "⏳ Yoğun talep nedeniyle şu an yanıt alınamıyor. Lütfen 1-2 dakika bekleyip tekrar deneyin."}
             if status == 403:
                 return {"success": False, "status": 403, "message": "❌ AI servisine erişim reddedildi. API anahtarı veya yetkiler kontrol edilmelidir."}
             return {"success": False, "status": 500, "message": f"❌ AI hatası: {msg}"}
@@ -1288,8 +1306,8 @@ async def chat_with_ai(
             
             tool_results_text += "\nBu bilgileri kullanarak kullanıcıya detaylı ve anlaşılır bir yanıt ver."
             
-            # Sonuçları modele gönder
-            response = chat.send_message(tool_results_text)
+            # Sonuçları modele gönder (retry ile)
+            response = await send_with_retry(tool_results_text)
             
             iteration += 1
         
