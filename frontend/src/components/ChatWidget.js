@@ -188,18 +188,18 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         if (data?.history) setChatHistory(data.history);
         if (data?.usage_info) setUsageInfo(data.usage_info);
 
+        // TTS: arka planda çal, recognition'ı bekleme
         if (voiceActiveRef.current && window.speechSynthesis) {
-          setIsSpeaking(true);
+          window.speechSynthesis.cancel(); // önceki varsa temizle
           const utterance = new SpeechSynthesisUtterance(aiText.replace(/[#*_`]/g, ''));
           utterance.lang = 'tr-TR';
-          utterance.onend = () => {
-            setIsSpeaking(false);
-            setTimeout(restartRecognition, 300);
-          };
+          utterance.onend = () => setIsSpeaking(false);
+          utterance.onerror = () => setIsSpeaking(false);
+          setIsSpeaking(true);
           window.speechSynthesis.speak(utterance);
-        } else {
-          setTimeout(restartRecognition, 300);
         }
+        // TTS bitsin ya da bitmesin, hemen tekrar dinle
+        setTimeout(restartRecognition, 300);
       } catch (error) {
         const errMsg = error.response?.data?.detail || error.message || 'Bir hata oluştu.';
         setMessages([...newMessages, { role: 'assistant', content: `❌ ${errMsg}` }]);
