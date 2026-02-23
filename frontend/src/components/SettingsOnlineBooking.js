@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Save, Image, Upload, MapPin, Link, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { ArrowLeft, Save, Image, Upload, MapPin, Link, ChevronDown, ChevronUp, ExternalLink, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api, { BACKEND_URL } from "../api/api";
+import { Browser } from '@capacitor/browser';
 
 const getFullUrl = (url) => {
   if (!url) return null;
@@ -142,14 +143,19 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                   >
                     {t('settings.profile.buttons.copy')}
                   </button>
-                  <a
-                    href={`https://${appointmentLink}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => Browser.open({ url: `https://${appointmentLink}` })}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-1"
                   >
                     <ExternalLink className="w-3 h-3" /> Aç
-                  </a>
+                  </button>
+                </div>
+                <div className="flex items-start gap-2 mt-3 p-3 bg-blue-50/60 border border-blue-100 rounded-xl">
+                  <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-blue-700 font-medium leading-relaxed">
+                    Bu linki kopyalayıp <strong>Instagram biyografinize</strong> veya <strong>WhatsApp profilinize</strong> ekleyin — müşterileriniz doğrudan sizden online randevu alabilsin.
+                  </p>
                 </div>
               </div>
             ) : (

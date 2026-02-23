@@ -26,87 +26,8 @@ const publicApi = axios.create({
 const BusinessGallery = memo(({ images }) => {
   const validImages = useMemo(() => (Array.isArray(images) ? images.filter(Boolean) : []), [images]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [frontSrc, setFrontSrc] = useState("");
-  const [backSrc, setBackSrc] = useState("");
-  const [showFront, setShowFront] = useState(true);
-  const [isSwitching, setIsSwitching] = useState(false);
-  const decodeReqRef = useRef(0);
 
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [validImages.length]);
-
-  useEffect(() => {
-    const first = validImages[0] || "";
-    setFrontSrc(first);
-    setBackSrc("");
-    setShowFront(true);
-  }, [validImages.length]);
-
-  useEffect(() => {
-    if (!validImages.length) return;
-
-    const total = validImages.length;
-    const current = validImages[activeIndex];
-    const next = validImages[(activeIndex + 1) % total];
-    const prev = validImages[(activeIndex - 1 + total) % total];
-
-    const preload = (src) => {
-      if (!src) return;
-      const img = new Image();
-      img.src = src;
-    };
-
-    preload(next);
-    preload(prev);
-
-    const currentShown = showFront ? frontSrc : backSrc;
-    if (!current || current === currentShown) return;
-
-    const reqId = ++decodeReqRef.current;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        setIsSwitching(true);
-        const img = new Image();
-        img.src = current;
-        if (img.decode) {
-          await img.decode();
-        }
-        if (cancelled || decodeReqRef.current !== reqId) return;
-        if (showFront) {
-          setBackSrc(current);
-        } else {
-          setFrontSrc(current);
-        }
-
-        // next paint'te opacity swap
-        requestAnimationFrame(() => {
-          if (cancelled || decodeReqRef.current !== reqId) return;
-          setShowFront((v) => !v);
-        });
-      } catch {
-        if (cancelled || decodeReqRef.current !== reqId) return;
-        if (showFront) {
-          setBackSrc(current);
-        } else {
-          setFrontSrc(current);
-        }
-        requestAnimationFrame(() => {
-          if (cancelled || decodeReqRef.current !== reqId) return;
-          setShowFront((v) => !v);
-        });
-      } finally {
-        if (cancelled || decodeReqRef.current !== reqId) return;
-        setIsSwitching(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [validImages, activeIndex, showFront, frontSrc, backSrc]);
+  useEffect(() => { setActiveIndex(0); }, [validImages.length]);
 
   const goPrev = useCallback(() => {
     setActiveIndex((i) => (i - 1 + validImages.length) % validImages.length);
@@ -114,34 +35,23 @@ const BusinessGallery = memo(({ images }) => {
   const goNext = useCallback(() => {
     setActiveIndex((i) => (i + 1) % validImages.length);
   }, [validImages.length]);
-  const goTo = useCallback((idx) => {
-    setActiveIndex(idx);
-  }, []);
 
   if (!validImages.length) return null;
 
   return (
     <div className="group relative aspect-video rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950">
-      <img
-        src={frontSrc || validImages[0]}
-        alt=""
-        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ease-out ${showFront ? 'opacity-100' : 'opacity-0'}`}
-        loading="eager"
-        decoding="async"
-        draggable={false}
-      />
-      <img
-        src={backSrc}
-        alt=""
-        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ease-out ${showFront ? 'opacity-0' : 'opacity-100'}`}
-        loading="eager"
-        decoding="async"
-        draggable={false}
-      />
-
-      {isSwitching && (
-        <div className="absolute inset-0 bg-zinc-950/20" />
-      )}
+      {/* Tüm görseller DOM'da — sadece aktif olan görünür, decode bekleme yok */}
+      {validImages.map((src, idx) => (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ease-out ${idx === activeIndex ? 'opacity-100' : 'opacity-0'}`}
+          loading={idx === 0 ? 'eager' : 'lazy'}
+          decoding="async"
+          draggable={false}
+        />
+      ))}
 
       {validImages.length > 1 && (
         <>
@@ -167,7 +77,7 @@ const BusinessGallery = memo(({ images }) => {
               <button
                 key={idx}
                 type="button"
-                onClick={() => goTo(idx)}
+                onClick={() => setActiveIndex(idx)}
                 className={`h-2 w-2 rounded-full transition-all ${idx === activeIndex ? 'bg-white' : 'bg-zinc-600 hover:bg-zinc-400'}`}
                 aria-label={`Go to slide ${idx + 1}`}
               />
