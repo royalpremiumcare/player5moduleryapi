@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, X, Send, Loader2, Mic, MicOff } from 'lucide-react';
-import { io } from 'socket.io-client';
 import api from '@/api/api';
 
 const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
@@ -25,18 +24,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
   const [voiceMode, setVoiceMode] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [audioLevel, setAudioLevel] = useState(0); // Ses seviyesi (debug)
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const audioContextRef = useRef(null);
-  const analyserRef = useRef(null);
-  const silenceTimeoutRef = useRef(null);
-  const socketRef = useRef(null);
-  const isListeningRef = useRef(false); // Ref ile kontrol (state asenkron)
-
-  // Voice config
-  const SILENCE_THRESHOLD = 0.005; // Daha hassas (0.01'den 0.005'e düştü)
-  const SILENCE_DURATION = 1500;
+  const recognitionRef = useRef(null);
 
   // Kullanıcı rolüne göre örnek sorular
   const sampleQuestions = user?.role === 'admin' 
@@ -147,292 +135,121 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
     }
   };
 
-  // === VOICE MODE ===
-  const toggleVoiceMode = async () => {
-    if (!voiceMode) {
-      await startVoiceSession();
+  // === VOICE MODE (Web Speech API) ===
+  const toggleVoiceMode = () => {
+    if (voiceMode) {
+      stopVoiceMode();
     } else {
-      await stopVoiceSession();
+      startVoiceMode();
     }
   };
 
-  const startVoiceSession = async () => {
-    try {
-      console.log('🎤 Starting voice session...');
-      
-      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-      const socketUrl = window.location.origin;
-      
-      const socket = io(socketUrl, {
-        path: '/api/socket.io',
-        auth: { token },
-        transports: ['websocket', 'polling'],
-        reconnectionDelay: 1000,
-        reconnectionAttempts: 5
-      });
-
-      socketRef.current = socket;
-
-      socket.on('connect', () => {
-        console.log('✅ Voice WebSocket connected');
-        
-        socket.emit('voice_start', {
-          organization_id: user?.organization_id,
-          user_role: user?.role,
-          username: user?.username
-        });
-      });
-
-      socket.on('voice_ready', () => {
-        console.log('✅ Voice session ready');
-        setVoiceMode(true);
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: '🎤 Sesli mod aktif! Konuşmaya başlayabilirsiniz.'
-        }]);
-        
-        startListening();
-      });
-
-      socket.on('voice_response', async (data) => {
-        console.log('🔊 Voice response received');
-        
-        setIsSpeaking(true);
-        setIsListening(false);
-        
-        await playAudioResponse(data.audio);
-        
-        setIsSpeaking(false);
-        if (voiceMode) {
-          startListening();
-        }
-      });
-
-      socket.on('voice_error', (data) => {
-        console.error('❌ Voice error:', data.message);
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `❌ Sesli mod hatası: ${data.message}`
-        }]);
-      });
-
-      socket.on('voice_stopped', () => {
-        console.log('🛑 Voice session stopped');
-        setVoiceMode(false);
-      });
-
-    } catch (error) {
-      console.error('Voice session start error:', error);
+  const startVoiceMode = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: '❌ Sesli mod başlatılamadı. Lütfen mikrofon iznini kontrol edin.'
+        content: '❌ Tarayıcınız sesli komutu desteklemiyor. Chrome veya Edge kullanın.'
       }]);
+      return;
     }
-  };
 
-  const stopVoiceSession = async () => {
-    try {
-      console.log('🛑 Stopping voice session...');
-      
-      stopListening();
-      
-      if (socketRef.current) {
-        socketRef.current.emit('voice_stop');
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-      
-      setVoiceMode(false);
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: '🛑 Sesli mod kapatıldı.'
-      }]);
-      
-    } catch (error) {
-      console.error('Voice session stop error:', error);
-    }
-  };
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'tr-TR';
+    recognition.continuous = false;
+    recognition.interimResults = false;
 
-  const startListening = async () => {
-    try {
-      console.log('🎤 Starting to listen...');
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const source = audioContext.createMediaStreamSource(stream);
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 2048;
-      source.connect(analyser);
-      
-      audioContextRef.current = audioContext;
-      analyserRef.current = analyser;
-      
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-      
-      mediaRecorder.ondataavailable = (event) => {
-        console.log('🎵 ondataavailable triggered, size:', event.data.size);
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-          console.log('✅ Audio chunk added, total chunks:', audioChunksRef.current.length);
-        }
-      };
-      
-      mediaRecorder.onstop = () => {
-        console.log('🛑 MediaRecorder stopped, chunks:', audioChunksRef.current.length);
-        sendAudioToAI();
-      };
-      
+    recognition.onstart = () => {
       setIsListening(true);
-      isListeningRef.current = true; // Ref'i hemen güncelle
-      
-      detectVoiceActivity();
-      
-    } catch (error) {
-      console.error('Mikrofon başlatma hatası:', error);
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: '❌ Mikrofon erişimi reddedildi. Lütfen izin verin.'
-      }]);
-    }
-  };
+    };
 
-  const stopListening = () => {
-    console.log('🛑 Stopping listening...');
-    
-    isListeningRef.current = false; // Önce ref'i kapat (loop dursun)
-    
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
-    
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    
-    if (silenceTimeoutRef.current) {
-      clearTimeout(silenceTimeoutRef.current);
-      silenceTimeoutRef.current = null;
-    }
-    
-    setIsListening(false);
-  };
+    recognition.onresult = async (event) => {
+      const transcript = event.results[0][0].transcript.trim();
+      if (!transcript) return;
 
-  const detectVoiceActivity = () => {
-    if (!analyserRef.current) return;
-    
-    const analyser = analyserRef.current;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    const checkAudio = () => {
-      if (!isListeningRef.current) return; // Ref ile kontrol
-      
-      analyser.getByteFrequencyData(dataArray);
-      
-      const average = dataArray.reduce((a, b) => a + b) / bufferLength / 255;
-      
-      // Debug: Ses seviyesini UI'da göster
-      setAudioLevel(average);
-      
-      // Debug: Ses seviyesini logla
-      if (average > 0.001) {
-        console.log('🎵 Ses seviyesi:', average.toFixed(4));
-      }
-      
-      if (average > SILENCE_THRESHOLD) {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
-          console.log('🎤 Voice detected, starting recording...');
-          console.log('MediaRecorder state before start:', mediaRecorderRef.current.state);
-          mediaRecorderRef.current.start(100); // Her 100ms'de ondataavailable tetikle
-          console.log('MediaRecorder state after start:', mediaRecorderRef.current.state);
-        }
-        
-        if (silenceTimeoutRef.current) {
-          clearTimeout(silenceTimeoutRef.current);
-          silenceTimeoutRef.current = null;
-        }
-      } else {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          if (!silenceTimeoutRef.current) {
-            silenceTimeoutRef.current = setTimeout(() => {
-              console.log('🔇 Silence detected, stopping recording...');
-              if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                mediaRecorderRef.current.stop();
-              }
-              silenceTimeoutRef.current = null;
-            }, SILENCE_DURATION);
+      setIsListening(false);
+
+      // Kullanıcı mesajını ekle ve gönder
+      const newMessages = [...messages, { role: 'user', content: transcript }];
+      setMessages(newMessages);
+      setIsLoading(true);
+
+      try {
+        const { data } = await api.post('/ai/chat', {
+          message: transcript,
+          history: chatHistory
+        });
+
+        const aiText = (data && data.message) || '✅ İşlem tamamlandı.';
+        setMessages([...newMessages, { role: 'assistant', content: aiText }]);
+        if (data?.history) setChatHistory(data.history);
+        if (data?.usage_info) setUsageInfo(data.usage_info);
+
+        // AI yanıtını sesli oku
+        if (voiceMode && window.speechSynthesis) {
+          setIsSpeaking(true);
+          const utterance = new SpeechSynthesisUtterance(aiText.replace(/[#*_`]/g, ''));
+          utterance.lang = 'tr-TR';
+          utterance.onend = () => {
+            setIsSpeaking(false);
+            // Tekrar dinle
+            if (recognitionRef.current) {
+              setTimeout(() => recognitionRef.current.start(), 300);
+            }
+          };
+          window.speechSynthesis.speak(utterance);
+        } else {
+          // TTS kapalıysa hemen tekrar dinle
+          if (recognitionRef.current) {
+            setTimeout(() => recognitionRef.current.start(), 300);
           }
         }
+      } catch (error) {
+        const errMsg = error.response?.data?.detail || error.message || 'Bir hata oluştu.';
+        setMessages([...newMessages, { role: 'assistant', content: `❌ ${errMsg}` }]);
+        setIsSpeaking(false);
+      } finally {
+        setIsLoading(false);
       }
-      
-      requestAnimationFrame(checkAudio);
     };
-    
-    checkAudio();
-  };
 
-  const sendAudioToAI = async () => {
-    try {
-      if (audioChunksRef.current.length === 0) {
-        console.log('⚠️ No audio data to send');
+    recognition.onerror = (event) => {
+      setIsListening(false);
+      if (event.error === 'no-speech') {
+        // Sessizlik — tekrar başlat
+        if (recognitionRef.current) setTimeout(() => recognitionRef.current.start(), 500);
         return;
       }
-      
-      console.log('📤 Sending audio to AI...');
-      
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-      audioChunksRef.current = [];
-      
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64Audio = reader.result.split(',')[1];
-        
-        if (socketRef.current) {
-          socketRef.current.emit('voice_audio', {
-            audio: base64Audio
-          });
-        }
-      };
-      reader.readAsDataURL(audioBlob);
-      
-    } catch (error) {
-      console.error('Audio send error:', error);
-    }
+      if (event.error === 'aborted') return;
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `❌ Mikrofon hatası: ${event.error}. Lütfen mikrofon iznini kontrol edin.`
+      }]);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    setVoiceMode(true);
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: '🎤 Sesli mod aktif! Konuşabilirsiniz...'
+    }]);
+    recognition.start();
   };
 
-  const playAudioResponse = async (base64Audio) => {
-    return new Promise((resolve) => {
-      try {
-        console.log('🔊 Playing AI response...');
-        
-        const audioData = atob(base64Audio);
-        const arrayBuffer = new ArrayBuffer(audioData.length);
-        const view = new Uint8Array(arrayBuffer);
-        for (let i = 0; i < audioData.length; i++) {
-          view[i] = audioData.charCodeAt(i);
-        }
-        
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        audioContext.decodeAudioData(arrayBuffer, (audioBuffer) => {
-          const source = audioContext.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(audioContext.destination);
-          source.onended = () => {
-            console.log('✅ AI response playback finished');
-            resolve();
-          };
-          source.start(0);
-        });
-        
-      } catch (error) {
-        console.error('Audio playback error:', error);
-        resolve();
-      }
-    });
+  const stopVoiceMode = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.abort();
+      recognitionRef.current = null;
+    }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    setVoiceMode(false);
+    setIsListening(false);
+    setIsSpeaking(false);
+    setMessages(prev => [...prev, { role: 'assistant', content: '🛑 Sesli mod kapatıldı.' }]);
   };
 
   if (!isOpen) return null;
@@ -480,7 +297,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         {usageInfo.limit === -1 ? (
           <div className="mt-2 text-xs bg-amber-50 text-amber-700 border border-amber-100 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
             <Sparkles className="w-3 h-3" />
-            <span>AI Erişiminiz: Sınırsız ✨</span>
+            <span>Yapay Zeka Erişiminiz: Sınırsız ✨</span>
           </div>
         ) : usageInfo.current >= usageInfo.limit * 0.9 ? (
           <div className="mt-2 text-xs bg-orange-50 text-orange-700 border border-orange-100 px-2.5 py-1 rounded-lg">
@@ -522,18 +339,6 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
           <div className="flex flex-col items-center space-y-2">
             <div className="bg-red-100 text-red-600 text-xs px-3 py-1 rounded-full animate-pulse">
               🎤 Dinleniyor...
-            </div>
-            {/* Ses seviyesi göstergesi */}
-            <div className="w-full max-w-xs">
-              <div className="bg-gray-200 h-2 rounded-full overflow-hidden">
-                <div 
-                  className="bg-green-500 h-full transition-all duration-100"
-                  style={{ width: `${Math.min(audioLevel * 1000, 100)}%` }}
-                />
-              </div>
-              <div className="text-xs text-gray-500 text-center mt-1">
-                Ses: {(audioLevel * 100).toFixed(2)}% (Eşik: {(SILENCE_THRESHOLD * 100).toFixed(2)}%)
-              </div>
             </div>
           </div>
         )}
