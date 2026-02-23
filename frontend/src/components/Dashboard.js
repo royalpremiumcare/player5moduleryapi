@@ -343,14 +343,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         {onOpenChat && (
           <button
             onClick={onOpenChat}
-            className="absolute top-4 right-4 flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/80 backdrop-blur-xl border border-gray-200/70 shadow-md shadow-black/8 hover:shadow-lg hover:bg-white active:scale-95 transition-all duration-200 group z-20"
+            className="absolute top-4 right-4 flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl bg-white/80 backdrop-blur-xl border border-gray-200/70 shadow-md shadow-black/8 hover:shadow-lg hover:bg-white active:scale-95 transition-all duration-200 group z-20"
           >
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shrink-0">
-              <Sparkles className="w-3 h-3 text-white group-hover:rotate-12 transition-transform duration-200" />
+            <div className="w-6 h-6 md:w-9 md:h-9 rounded-lg md:rounded-xl bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shrink-0">
+              <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-white group-hover:rotate-12 transition-transform duration-200" />
             </div>
             <div className="text-left hidden sm:block">
-              <p className="text-[11px] font-bold text-gray-800 leading-none">AI Asistan</p>
-              <p className="text-[9px] text-gray-400 leading-none mt-0.5">PLANN</p>
+              <p className="text-[11px] md:text-sm font-bold text-gray-800 leading-none">AI Asistan</p>
+              <p className="text-[9px] md:text-[11px] text-gray-400 leading-none mt-0.5">PLANN</p>
             </div>
           </button>
         )}
