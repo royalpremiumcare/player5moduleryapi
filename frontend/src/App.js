@@ -55,6 +55,7 @@ function App() {
   const [stats, setStats] = useState(null);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [settings, setSettings] = useState(null);
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -1002,6 +1003,7 @@ function App() {
                 await loadStats();
               }
             }}
+            onOpenChat={() => setChatOpen(true)}
           />
         )}
 
@@ -1228,11 +1230,15 @@ function App() {
 
       {/* AI Chatbot Widget - Sadece giriş yapmış kullanıcılara göster */}
       {token && currentUser && currentView === "dashboard" && !showForm && !showOnboarding && (
-        <ChatWidget user={{
-          username: currentUser.username,
-          full_name: currentUser.full_name,
-          role: userRole
-        }} />
+        <ChatWidget
+          user={{
+            username: currentUser.username,
+            full_name: currentUser.full_name,
+            role: userRole
+          }}
+          externalOpen={chatOpen}
+          onExternalClose={() => setChatOpen(false)}
+        />
       )}
     </div>
   );

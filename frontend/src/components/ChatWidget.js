@@ -3,8 +3,17 @@ import { Sparkles, X, Send, Loader2, Mic, MicOff } from 'lucide-react';
 import { io } from 'socket.io-client';
 import api from '@/api/api';
 
-const ChatWidget = ({ user }) => {
+const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (externalOpen) setIsOpen(true);
+  }, [externalOpen]);
+
+  const handleClose = () => {
+    setIsOpen(false);
+    if (onExternalClose) onExternalClose();
+  };
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -426,24 +435,7 @@ const ChatWidget = ({ user }) => {
     });
   };
 
-  // Widget kapalıysa sadece butonu göster
-  if (!isOpen) {
-    return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-24 right-4 z-50 flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/70 backdrop-blur-xl border border-gray-200/80 shadow-lg shadow-black/10 hover:shadow-xl hover:shadow-black/15 hover:bg-white/90 active:scale-95 transition-all duration-200 group"
-        aria-label="AI Asistan"
-      >
-        <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shadow-sm shrink-0">
-          <Sparkles className="w-3.5 h-3.5 text-white group-hover:rotate-12 transition-transform duration-200" />
-        </div>
-        <div className="text-left">
-          <p className="text-xs font-bold text-gray-900 leading-none">AI Asistan</p>
-          <p className="text-[10px] text-gray-400 leading-none mt-0.5">PLANN</p>
-        </div>
-      </button>
-    );
-  }
+  if (!isOpen) return null;
 
   // Chat penceresi
   return (
@@ -476,7 +468,7 @@ const ChatWidget = ({ user }) => {
               {voiceMode ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
             </button>
             <button
-              onClick={() => setIsOpen(false)}
+              onClick={handleClose}
               className="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
             >
               <X className="w-4 h-4" />

@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import io from "socket.io-client";
 import {
   Calendar, Clock, Phone, Edit, Trash2, Check, X,
-  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee, TrendingUp, CalendarDays
+  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee, TrendingUp, CalendarDays, Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
@@ -30,7 +30,7 @@ const WhatsAppIcon = ({ className }) => (
   </svg>
 );
 
-const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate }) => {
+const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate, onOpenChat }) => {
   const { token } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
@@ -337,7 +337,24 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       <TourGuide run={runTour} steps={tourSteps} onFinish={handleTourFinish} />
 
       {/* 1. HEADER & SUMMARY */}
-      <div className="px-5 pt-8 pb-4 bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm">
+      <div className="px-5 pt-8 pb-4 bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm relative">
+
+        {/* AI Asistan Badge — sağ üst köşe */}
+        {onOpenChat && (
+          <button
+            onClick={onOpenChat}
+            className="absolute top-4 right-4 flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/80 backdrop-blur-xl border border-gray-200/70 shadow-md shadow-black/8 hover:shadow-lg hover:bg-white active:scale-95 transition-all duration-200 group z-20"
+          >
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shrink-0">
+              <Sparkles className="w-3 h-3 text-white group-hover:rotate-12 transition-transform duration-200" />
+            </div>
+            <div className="text-left hidden sm:block">
+              <p className="text-[11px] font-bold text-gray-800 leading-none">AI Asistan</p>
+              <p className="text-[9px] text-gray-400 leading-none mt-0.5">PLANN</p>
+            </div>
+          </button>
+        )}
+
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
           {/* Sol Taraf: Karşılama */}
           <div className="tour-greeting"> {/* CLASS EKLENDI */}
