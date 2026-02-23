@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { 
   Building2, DollarSign, Calendar, Users, Search, ArrowUpDown, ArrowUp, ArrowDown, 
   Phone, Mail, MessageSquare, Clock, CheckCircle2, MessageCircle, Trash2, Trash, 
-  ArrowLeft, Package, CreditCard, X, ChevronDown, ChevronUp, UserX, Settings
+  ArrowLeft, Package, CreditCard, X, ChevronDown, ChevronUp, UserX, Settings,
+  Send, CheckCheck, Eye, AlertTriangle, RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -27,10 +28,30 @@ const SuperAdmin = ({ onNavigate }) => {
   const [selectedCycle, setSelectedCycle] = useState('monthly');
   const [staffList, setStaffList] = useState([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
+  const [whatsappLogs, setWhatsappLogs] = useState({ logs: [], total: 0, summary: { sent: 0, delivered: 0, read: 0, failed: 0 } });
+  const [waLogFilter, setWaLogFilter] = useState("");
+  const [loadingWaLogs, setLoadingWaLogs] = useState(false);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "whatsapp") loadWhatsappLogs(waLogFilter);
+  }, [activeTab, waLogFilter]);
+
+  const loadWhatsappLogs = async (statusFilter = "") => {
+    setLoadingWaLogs(true);
+    try {
+      const params = statusFilter ? `?status_filter=${statusFilter}&limit=200` : "?limit=200";
+      const res = await api.get(`/superadmin/whatsapp-logs${params}`);
+      setWhatsappLogs(res.data);
+    } catch (e) {
+      toast.error("WhatsApp logları yüklenemedi");
+    } finally {
+      setLoadingWaLogs(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -331,6 +352,21 @@ const SuperAdmin = ({ onNavigate }) => {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab("whatsapp")}
+            className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors relative ${
+              activeTab === "whatsapp"
+                ? "bg-green-600 text-white"
+                : "bg-white text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            WhatsApp Logları
+            {whatsappLogs.summary.failed > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                {whatsappLogs.summary.failed}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Organizations Tab */}
@@ -504,6 +540,126 @@ const SuperAdmin = ({ onNavigate }) => {
 
             <p className="text-sm text-gray-500 text-center">
               Toplam {filteredAndSortedOrgs.length} işletme
+            </p>
+          </div>
+        )}
+
+        {/* WhatsApp Logs Tab */}
+        {activeTab === "whatsapp" && (
+          <div className="space-y-4">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { key: "",          label: "Toplam",     value: whatsappLogs.total,              icon: MessageSquare, color: "blue" },
+                { key: "sent",      label: "Gönderildi", value: whatsappLogs.summary.sent,       icon: Send,          color: "indigo" },
+                { key: "delivered", label: "İletildi",   value: whatsappLogs.summary.delivered,  icon: CheckCheck,    color: "green" },
+                { key: "read",      label: "Okundu",     value: whatsappLogs.summary.read,       icon: Eye,           color: "purple" },
+                { key: "failed",    label: "Başarısız",  value: whatsappLogs.summary.failed,     icon: AlertTriangle, color: "red" },
+              ].map(({ key, label, value, icon: Icon, color }) => (
+                <Card
+                  key={key}
+                  onClick={() => setWaLogFilter(waLogFilter === key ? "" : key)}
+                  className={`p-3 cursor-pointer transition-all ${
+                    waLogFilter === key ? `ring-2 ring-${color}-500` : "hover:shadow-md"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`p-1.5 bg-${color}-100 rounded-lg`}>
+                      <Icon className={`h-4 w-4 text-${color}-600`} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">{label}</p>
+                      <p className="text-lg font-bold">{value}</p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+
+            {/* Filter bar */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">
+                {waLogFilter ? `Filtre: ${waLogFilter}` : "Tümü gösteriliyor"}
+              </span>
+              {waLogFilter && (
+                <button
+                  onClick={() => setWaLogFilter("")}
+                  className="text-xs text-blue-600 underline"
+                >
+                  Filtreyi kaldır
+                </button>
+              )}
+              <button
+                onClick={() => loadWhatsappLogs(waLogFilter)}
+                className="ml-auto flex items-center gap-1 px-3 py-1.5 bg-white border rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${loadingWaLogs ? "animate-spin" : ""}`} />
+                Yenile
+              </button>
+            </div>
+
+            {/* Logs List */}
+            {loadingWaLogs ? (
+              <Card className="p-8 text-center text-gray-500">Yükleniyor...</Card>
+            ) : whatsappLogs.logs.length === 0 ? (
+              <Card className="p-8 text-center text-gray-500">
+                {waLogFilter ? `"${waLogFilter}" durumunda log bulunamadı` : "Henüz WhatsApp log kaydı yok"}
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {whatsappLogs.logs.map((log, idx) => (
+                  <Card key={`${log.message_id}-${idx}`} className="p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            log.status === "read"      ? "bg-purple-100 text-purple-700" :
+                            log.status === "delivered" ? "bg-green-100 text-green-700" :
+                            log.status === "sent"      ? "bg-indigo-100 text-indigo-700" :
+                            log.status === "failed"    ? "bg-red-100 text-red-700" :
+                            "bg-gray-100 text-gray-700"
+                          }`}>
+                            {log.status === "read"      && <Eye className="w-3 h-3" />}
+                            {log.status === "delivered" && <CheckCheck className="w-3 h-3" />}
+                            {log.status === "sent"      && <Send className="w-3 h-3" />}
+                            {log.status === "failed"    && <AlertTriangle className="w-3 h-3" />}
+                            {log.status === "read" ? "Okundu" :
+                             log.status === "delivered" ? "İletildi" :
+                             log.status === "sent" ? "Gönderildi" :
+                             log.status === "failed" ? "Başarısız" : log.status}
+                          </span>
+                          <span className="text-sm font-medium text-gray-800 flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-gray-400" />
+                            +{log.recipient}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1 font-mono truncate">{log.message_id}</p>
+                        {log.errors?.length > 0 && (
+                          <div className="mt-1 p-2 bg-red-50 rounded text-xs text-red-700">
+                            {log.errors.map((e, i) => (
+                              <p key={i}><strong>{e.code}</strong>: {e.title || e.message || JSON.stringify(e)}</p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs text-gray-400">
+                          {log.recorded_at ? new Date(log.recorded_at).toLocaleString("tr-TR") : "-"}
+                        </p>
+                        {log.timestamp && (
+                          <p className="text-xs text-gray-300">
+                            {new Date(log.timestamp * 1000).toLocaleTimeString("tr-TR")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            <p className="text-sm text-gray-500 text-center">
+              {whatsappLogs.logs.length} kayıt gösteriliyor (toplam {whatsappLogs.total})
             </p>
           </div>
         )}
