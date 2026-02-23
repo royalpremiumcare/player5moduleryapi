@@ -26,39 +26,41 @@ const publicApi = axios.create({
 const BusinessGallery = memo(({ images }) => {
   const validImages = useMemo(() => (Array.isArray(images) ? images.filter(Boolean) : []), [images]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const total = validImages.length;
 
-  useEffect(() => { setActiveIndex(0); }, [validImages.length]);
+  useEffect(() => { setActiveIndex(0); }, [total]);
 
-  const goPrev = useCallback(() => {
-    setActiveIndex((i) => (i - 1 + validImages.length) % validImages.length);
-  }, [validImages.length]);
-  const goNext = useCallback(() => {
-    setActiveIndex((i) => (i + 1) % validImages.length);
-  }, [validImages.length]);
+  const goPrev = useCallback(() => setActiveIndex((i) => (i - 1 + total) % total), [total]);
+  const goNext = useCallback(() => setActiveIndex((i) => (i + 1) % total), [total]);
 
   if (!validImages.length) return null;
 
+  const prevIdx = (activeIndex - 1 + total) % total;
+  const nextIdx = (activeIndex + 1) % total;
+  // Sadece active + prev + next yükle; diğerleri src yok (yüklenmez)
+  const visibleSet = new Set([activeIndex, prevIdx, nextIdx]);
+
   return (
-    <div className="group relative aspect-video rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950">
-      {/* Tüm görseller DOM'da — sadece aktif olan görünür, decode bekleme yok */}
+    <div className="relative aspect-video rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950">
       {validImages.map((src, idx) => (
         <img
-          key={src}
-          src={src}
+          key={idx}
+          src={visibleSet.has(idx) ? src : undefined}
           alt=""
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ease-out ${idx === activeIndex ? 'opacity-100' : 'opacity-0'}`}
-          loading={idx === 0 ? 'eager' : 'lazy'}
-          decoding="async"
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-100 ease-out ${idx === activeIndex ? 'opacity-100' : 'opacity-0'}`}
+          loading="eager"
+          decoding={idx === activeIndex ? 'sync' : 'async'}
           draggable={false}
         />
       ))}
 
-      {validImages.length > 1 && (
+      {total > 1 && (
         <>
+          {/* Butonlar her zaman görünür — mobil/touch 1 tıkta çalışır */}
           <button
             type="button"
             onClick={goPrev}
-            className="absolute left-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full border border-zinc-800 bg-zinc-950/70 text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+            className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full border border-zinc-700 bg-zinc-950/80 text-white backdrop-blur-sm flex items-center justify-center active:scale-95 transition-transform"
             aria-label="Previous"
           >
             <ChevronLeft className="h-5 w-5" />
@@ -66,7 +68,7 @@ const BusinessGallery = memo(({ images }) => {
           <button
             type="button"
             onClick={goNext}
-            className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full border border-zinc-800 bg-zinc-950/70 text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+            className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full border border-zinc-700 bg-zinc-950/80 text-white backdrop-blur-sm flex items-center justify-center active:scale-95 transition-transform"
             aria-label="Next"
           >
             <ChevronRight className="h-5 w-5" />
@@ -78,7 +80,7 @@ const BusinessGallery = memo(({ images }) => {
                 key={idx}
                 type="button"
                 onClick={() => setActiveIndex(idx)}
-                className={`h-2 w-2 rounded-full transition-all ${idx === activeIndex ? 'bg-white' : 'bg-zinc-600 hover:bg-zinc-400'}`}
+                className={`h-2 w-2 rounded-full transition-all ${idx === activeIndex ? 'bg-white scale-125' : 'bg-zinc-600'}`}
                 aria-label={`Go to slide ${idx + 1}`}
               />
             ))}
