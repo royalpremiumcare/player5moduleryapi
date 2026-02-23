@@ -1,5 +1,5 @@
 """
-PLANN AI Assistant Service - Google Gemini 2.5 Flash Integration
+PLANN AI Assistant Service - Google Gemini 3.0 Flash Integration
 """
 
 import os
@@ -41,17 +41,79 @@ PENDING_APPTS: Dict[str, Dict[str, str]] = {}
 
 # === SYSTEM DOCUMENTATION ===
 SYSTEM_DOCUMENTATION = """
-[PLANN - KULLANIM KILAVUZU]
+[PLANN - KULLANIM VE BÜYÜME KILAVUZU]
 
+=== NASIL PERSONEL EKLERİM? ===
+1. Sol menüden "Ayarlar" → "Personel" sekmesine git
+2. "Personel Ekle" butonuna tıkla
+3. Ad-soyad, e-posta ve telefon bilgilerini gir
+4. Kaydet — sistem otomatik davet e-postası gönderir
+5. Personel e-postasındaki bağlantıya tıklayarak şifresini oluşturur
+6. Her personelin çalışma saatleri ayrı ayarlanabilir (Ayarlar → Personel → Düzenle)
+7. Personelin sunacağı hizmetler de Personel kartından seçilebilir
+
+=== NASIL HİZMET EKLERİM / DÜZENLERİM? ===
+1. Sol menüden "Ayarlar" → "Hizmetler" sekmesine git
+2. "Hizmet Ekle" butonuna tıkla
+3. Hizmet adı, fiyat (₺) ve süre (dakika) gir
+4. Kaydet — hizmet online rezervasyon sayfasında da görünür
+5. Mevcut hizmet düzenlemek için: hizmet kartında üç noktaya (⋯) tıkla → Düzenle
+6. Hizmet süresini doğru girmek kritik: 60dk hizmet 15:00'de başlarsa 16:00'a kadar bloklar
+7. Hizmet silerek online sayfadan da kaldırılır
+
+=== NASIL YENİ RANDEVU OLUŞTURURUM? ===
+Yöntem 1 - Dashboard:
+  1. Sağ alttaki mavi "+" butonuna tıkla
+  2. Müşteri ara (telefon veya isimle) veya yeni müşteri ekle
+  3. Hizmet seç, tarih ve saat belirle
+  4. Kaydet — WhatsApp onay mesajı otomatik gider
+
+Yöntem 2 - Takvim:
+  1. Sol menüden "Takvim" seç
+  2. İstediğin güne ve saate tıkla
+  3. Form açılır, doldurup kaydet
+
+Yöntem 3 - AI Asistan ile (bana söyle):
+  - "Ahmet için yarın saat 14:00'e kesim randevusu oluştur"
+  - Asistan sisteme kaydeder ve onay ister
+
+=== NASIL RANDEVU İPTAL / SİLERİM? ===
+- Randevu kartındaki üç nokta (⋯) → İptal Et veya Sil
+- AI Asistan'a: "Ahmet'in yarınki randevusunu iptal et" de
+
+=== İŞLETMEYİ NASIL BÜYÜTÜRÜRÜm? ===
+1. Online Rezervasyon Sayfası:
+   - Ayarlar → İşletme → Online Rezervasyon URL'ini kopyala (plannapp.co/senin-slug)
+   - Instagram bio, Google My Business, WhatsApp'a ekle → müşteriler 7/24 randevu alır
+   - No-show önlemek için WhatsApp hatırlatma açık olsun
+
+2. WhatsApp Bildirimleri:
+   - Her randevuya otomatik onay + 24 saat önce hatırlatma gönderilir
+   - Ayarlar → Bildirimler kısmından kontrol edilebilir
+
+3. Performansı Analiz Et:
+   - "Bu ay en çok hangi hizmet verildi?" → gelir optimizasyonu
+   - "Hangi personel en çok randevu aldı?" → iş yükü dengesi
+   - "Geçen ay kaç randevu iptal edildi?" → sorunlu noktaları gör
+
+4. Müşteri Sadakati:
+   - Müşteri profiline not ekle: tercihler, alerjiler, özel istekler
+   - Tekrar gelen müşterileri takip et
+
+5. Personel Verimliliği:
+   - Personel çalışma saatlerini doğru gir → takvimdeki boşlukları azalt
+   - Personel bazlı gelir takibi: Ayarlar → Personel → Performans
+
+=== GENEL BİLGİLER ===
 1. GENEL: PLANN, işletme yönetim sistemidir. İki rol: Admin ve Personel.
 2. TAKVİM: Randevu "Hizmet Süresi"ne göre 15dk adımlarla hesaplanır. Geçmiş tarihe randevu alınamaz.
 3. FİNANS (Sadece Admin): Gelirler otomatik, giderler manuel eklenir. Personel ödemeleri bordrodan yönetilir.
 4. PERSONEL: Personel eklenirken davet emaili gönderilir. Çalışma saatleri işletme saatlerinden kopyalanır.
-5. ONLINE RANDEVU: plann.com/slug adresinden müşteriler randevu alır. 'Farketmez' seçeneği otomatik personel atar.
+5. ONLINE RANDEVU: plannapp.co/slug adresinden müşteriler randevu alır. 'Farketmez' otomatik personel atar.
 6. HİZMET: Her hizmet için isim, fiyat, süre (dk) tanımlanır. Süre randevu slotlarını belirler.
 7. MÜŞTERİ: Telefon numarasıyla otomatik kayıt. Geçmiş ve notlar görülebilir.
-8. AYARLAR: İşletme adı, logo, slug, çalışma saatleri, SMS hatırlatma yapılandırılır.
-9. ABONELİK: Trial (ücretsiz), Basic (299₺), Pro (499₺), Enterprise (799₺) paketleri.
+8. AYARLAR: İşletme adı, logo, fotoğraflar, konum, slug, çalışma saatleri, WhatsApp bildirimi.
+9. ABONELİK: Trial (ücretsiz), Standart (1090₺), Profesyonel (1490₺), Kurumsal (2850₺).
 10. GÜVENLİK: Personel sadece kendi verilerini görebilir.
 """
 
@@ -66,46 +128,40 @@ def get_system_instruction(user_role: str, user_name: str, org_name: str = "İş
     today_str = today.strftime("%Y-%m-%d")  # 2025-11-19
     today_readable = today.strftime("%d %B %Y")  # 19 Kasım 2025
     
-    base_instruction = f"""Sen PLANN Akıllı Asistanısın. Kullanıcı: {user_name} ({user_role.upper()})
+    base_instruction = f"""Sen PLANN Akıllı Asistanısın. Kullanıcı: {user_name} ({user_role.upper()}), İşletme: {org_name}
 
-📅 BUGÜN: {today_str} (YYYY-MM-DD formatı)
-📅 TARİH ÖRNEKLERİ:
-   - Bugün: {today_str}
-   - Yarın: {(datetime.now(turkey_tz) + timedelta(days=1)).date().isoformat()}
-   - "3 gün sonra" = bugünden 3 gün ekle
-   
-⚠️ TARİH FORMATI: YYYY-MM-DD (örnek: 2025-11-20)
-⚠️ SAAT FORMATI: HH:MM (örnek: 14:30)
+📅 BUGÜN: {today_str} | YARIN: {(datetime.now(turkey_tz) + timedelta(days=1)).date().isoformat()}
+⚠️ TARİH: YYYY-MM-DD | SAAT: HH:MM
+
+{SYSTEM_DOCUMENTATION}
 
 🔧 RANDEVU OLUŞTURMA ADIM ADIM:
+1. get_dashboard_status ÇAĞIR (müşteri telefonu ve hizmet listesi için)
+2. Müşteriyi customers listesinde ara
+   - VARSA: telefonu oradan al, create_appointment çağır (TELEFON SORMA!)
+   - YOKSA: "Telefon numarası?" diye sor → add_customer → get_dashboard_status → create_appointment
+❌ ASLA telefon numarası olmadan randevu oluşturma!
+❌ ASLA tarihi "19-11-2025" gibi yaz, sadece "2025-11-19" formatı!
 
-ADIM 1: get_dashboard_status ÇAĞIR
-ADIM 2: Customers listesinde müşteriyi ara
-  ÖRNEK: Kullanıcı "uhn için randevu" dedi
-  - Customers'ta name="uhn", phone="05588852525" VARSA
-  - Telefon: 05588852525 kullan
-  - create_appointment çağır (customer_name="uhn", phone="05588852525")
-  
-  ÖRNEK 2: Kullanıcı "Ahmet için randevu" dedi
-  - Customers'ta "Ahmet" YOK
-  - "Ahmet sistemde kayıtlı değil, telefon numarası?" diye SOR
-  - Kullanıcı telefon verdiğinde add_customer ÇAĞIR
-  - Sonra TEKRAR get_dashboard_status ÇAĞIR
-  - Customers'ta bul, telefonu al
-  - create_appointment çağır
+📊 ANALİTİK SORGULAR (get_analytics tool'unu kullan):
+- "Bu ay en çok hangi hizmet?" → get_analytics(period="this_month") → top_services
+- "Bu hafta kaç randevu?" → get_analytics(period="this_week")
+- "Geçen ay geliri?" → get_analytics(period="last_month") → summary.total_revenue
+- "En çok gelen müşteri?" → get_analytics(period="this_month") → top_customers
+- "Hangi personel kaç randevu yaptı?" → get_analytics(period="this_month") → staff_performance
+- "Bugün kaç randevu var?" → get_analytics(period="today") VEYA get_dashboard_status
+- "Son 30 gün özeti?" → get_analytics(period="last_30_days")
 
-❗❗❗ MEVCUT MÜŞTERİ İÇİN TELEFON SORMA! Customers listesinden AL!
+📋 NASIL YAPILIR SORULARI (tool çağırmadan cevapla — SYSTEM_DOCUMENTATION'dan):
+- "Nasıl personel eklerim?" → SYSTEM_DOCUMENTATION'daki adımları ver
+- "Nasıl hizmet eklerim?" → SYSTEM_DOCUMENTATION'daki adımları ver
+- "Nasıl randevu oluştururum?" → 3 yöntemi açıkla
+- "İşletmemi nasıl büyütürüm?" → büyüme ipuçlarını ver
 
 🔧 DİĞER İŞLEMLER:
-- "Hangi müşteriler var?" → get_dashboard_status ÇAĞIR
-- "Randevu iptal et" → get_dashboard_status ÇAĞIR → ID bul → cancel_appointment ÇAĞIR
-- "Randevu sil" → get_dashboard_status ÇAĞIR → ID bul → delete_appointment ÇAĞIR
-
-👥 PERSONEL BİLGİLERİ (Sadece Admin):
-- "Personeller kimler?" → get_dashboard_status ÇAĞIR → staff_list içinde
-- "En çok randevu alan personel?" → get_dashboard_status ÇAĞIR → staff_performance'tan sırala
-- "X personelinin performansı?" → get_dashboard_status ÇAĞIR → staff_performance'ta ara
-- "Bu ay hangi personel kaç para kazandırdı?" → staff_performance'taki monthly_revenue kullan
+- "Randevu iptal et" → get_dashboard_status → ID bul → cancel_appointment
+- "Randevu sil" → get_dashboard_status → ID bul → delete_appointment
+- "Personel performansı?" → get_analytics veya get_dashboard_status (staff_performance)
 
 ❌ ASLA telefon numarası olmadan randevu oluşturma!
 ❌ ASLA tarihi "19-11-2025" gibi yaz, sadece "2025-11-19" formatı!
@@ -636,6 +692,114 @@ async def get_dashboard_status_tool(db, org_id: str, user_role: str, username: s
         return {"success": False, "message": f"❌ Hata: {str(e)}"}
 
 
+async def get_analytics_tool(db, org_id: str, period: str = "this_month",
+                             start_date: str = None, end_date: str = None) -> Dict:
+    """Dönem bazlı analiz: en çok verilen hizmet, gelir, müşteri sıklığı, personel performansı"""
+    try:
+        import calendar
+        from collections import Counter
+        turkey_tz = ZoneInfo("Europe/Istanbul")
+        today = datetime.now(turkey_tz).date()
+        today_str = today.isoformat()
+
+        if start_date and end_date:
+            period_start, period_end = start_date, end_date
+            period_label = f"{start_date} - {end_date}"
+        elif period == "today":
+            period_start = period_end = today_str
+            period_label = "Bugün"
+        elif period == "this_week":
+            week_start = today - timedelta(days=today.weekday())
+            period_start, period_end = week_start.isoformat(), today_str
+            period_label = f"Bu Hafta ({period_start} - {period_end})"
+        elif period == "last_7_days":
+            period_start = (today - timedelta(days=6)).isoformat()
+            period_end = today_str
+            period_label = "Son 7 Gün"
+        elif period == "last_month":
+            lm_year, lm_month = (today.year - 1, 12) if today.month == 1 else (today.year, today.month - 1)
+            last_day = calendar.monthrange(lm_year, lm_month)[1]
+            period_start = f"{lm_year}-{lm_month:02d}-01"
+            period_end = f"{lm_year}-{lm_month:02d}-{last_day:02d}"
+            period_label = f"Geçen Ay ({lm_year}/{lm_month:02d})"
+        elif period == "last_30_days":
+            period_start = (today - timedelta(days=29)).isoformat()
+            period_end = today_str
+            period_label = "Son 30 Gün"
+        else:  # this_month
+            period_start = today.strftime("%Y-%m-01")
+            period_end = today_str
+            period_label = f"Bu Ay ({today.strftime('%Y/%m')})"
+
+        apts = await db.appointments.find({
+            "organization_id": org_id,
+            "appointment_date": {"$gte": period_start, "$lte": period_end},
+        }).to_list(10000)
+
+        total_count = len(apts)
+        completed = [a for a in apts if a.get('status') == 'Tamamlandı']
+        cancelled = [a for a in apts if a.get('status') in ('İptal', 'İptal Edildi')]
+        pending = [a for a in apts if a.get('status') == 'Bekliyor']
+        total_revenue = sum(a.get('service_price', a.get('price', 0)) or 0 for a in completed)
+
+        service_counter = Counter(a.get('service_name', 'Bilinmiyor') for a in apts)
+        service_revenue: Dict[str, float] = {}
+        for a in completed:
+            svc = a.get('service_name', 'Bilinmiyor')
+            service_revenue[svc] = service_revenue.get(svc, 0) + (a.get('service_price', a.get('price', 0)) or 0)
+        top_services = [
+            {"service": svc, "count": cnt, "revenue": service_revenue.get(svc, 0)}
+            for svc, cnt in service_counter.most_common(10)
+        ]
+
+        customer_counter = Counter(a.get('customer_name', 'Bilinmiyor') for a in apts)
+        top_customers = [
+            {"customer": cust, "count": cnt}
+            for cust, cnt in customer_counter.most_common(10)
+        ]
+
+        staff_counter = Counter(
+            a.get('staff_member_name', a.get('staff_member_id', 'Atanmamış')) for a in apts
+        )
+        staff_performance = [
+            {
+                "staff": staff,
+                "appointments": cnt,
+                "revenue": sum(
+                    (a.get('service_price', a.get('price', 0)) or 0)
+                    for a in completed
+                    if a.get('staff_member_name', a.get('staff_member_id')) == staff
+                )
+            }
+            for staff, cnt in staff_counter.most_common(10)
+        ]
+
+        daily_counter = Counter(a.get('appointment_date', '') for a in apts)
+        daily_breakdown = [
+            {"date": date, "count": cnt}
+            for date, cnt in sorted(daily_counter.items())
+        ]
+
+        return {
+            "success": True,
+            "period": period_label,
+            "summary": {
+                "total_appointments": total_count,
+                "completed": len(completed),
+                "pending": len(pending),
+                "cancelled": len(cancelled),
+                "total_revenue": total_revenue,
+            },
+            "top_services": top_services,
+            "top_customers": top_customers,
+            "staff_performance": staff_performance,
+            "daily_breakdown": daily_breakdown,
+        }
+    except Exception as e:
+        logger.error(f"get_analytics_tool error: {e}")
+        return {"success": False, "message": f"❌ Analiz hatası: {str(e)}"}
+
+
 # === GEMINI TOOLS DECLARATION ===
 def get_gemini_tools():
     """Gemini için tool tanımlamaları - Gemini SDK formatında"""
@@ -718,14 +882,49 @@ def get_gemini_tools():
             "required": []
         }
     )
-    
+
+    get_analytics_func = FunctionDeclaration(
+        name="get_analytics",
+        description=(
+            "Dönem bazlı detaylı analiz: en çok verilen hizmet, gelir dağılımı, en sık gelen müşteri, "
+            "personel bazlı randevu/gelir, günlük dağılım. "
+            "Kullanıcı şu soruları sorduğunda çağır: "
+            "'bu ay/hafta/gün en çok hangi hizmet', 'kaç randevu aldık', 'toplam gelir ne kadar', "
+            "'en çok gelen müşteri kim', 'geçen ay ne kadar kazandık', 'hangi personel kaç randevu yaptı', "
+            "'bu haftanın istatistikleri', 'son 30 günde ne oldu'."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "enum": ["today", "this_week", "this_month", "last_month", "last_7_days", "last_30_days"],
+                    "description": (
+                        "Analiz dönemi: today=bugün, this_week=bu hafta (Pzt'den bugüne), "
+                        "this_month=bu ay, last_month=geçen ay, last_7_days=son 7 gün, last_30_days=son 30 gün"
+                    )
+                },
+                "start_date": {
+                    "type": "string",
+                    "description": "Özel başlangıç tarihi YYYY-MM-DD (opsiyonel)"
+                },
+                "end_date": {
+                    "type": "string",
+                    "description": "Özel bitiş tarihi YYYY-MM-DD (opsiyonel)"
+                }
+            },
+            "required": ["period"]
+        }
+    )
+
     return Tool(function_declarations=[
         create_appointment_func,
         cancel_appointment_func,
         delete_appointment_func,
         add_customer_func,
         delete_customer_func,
-        get_dashboard_func
+        get_dashboard_func,
+        get_analytics_func,
     ])
 
 
@@ -939,7 +1138,7 @@ async def chat_with_ai(
         
         try:
             model = genai.GenerativeModel(
-                model_name='gemini-2.5-flash',
+                model_name='gemini-3.0-flash',
                 system_instruction=system_instruction,
                 tools=get_gemini_tools(),
                 safety_settings=safety_settings
@@ -947,7 +1146,7 @@ async def chat_with_ai(
         except Exception:
             try:
                 model = genai.GenerativeModel(
-                    model_name='gemini-1.5-flash',
+                    model_name='gemini-3.0-flash',
                     system_instruction=system_instruction,
                     tools=get_gemini_tools(),
                     safety_settings=safety_settings
@@ -1047,6 +1246,13 @@ async def chat_with_ai(
                 elif func_name == "get_dashboard_status":
                     result = await get_dashboard_status_tool(
                         db, organization_id, user_role, username
+                    )
+                elif func_name == "get_analytics":
+                    result = await get_analytics_tool(
+                        db, organization_id,
+                        period=func_args.get('period', 'this_month'),
+                        start_date=func_args.get('start_date'),
+                        end_date=func_args.get('end_date'),
                     )
                 else:
                     result = {"success": False, "message": f"❌ Bilinmeyen fonksiyon: {func_name}"}
