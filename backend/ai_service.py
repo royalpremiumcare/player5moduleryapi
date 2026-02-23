@@ -1168,8 +1168,10 @@ async def chat_with_ai(
                         isinstance(e, google_exceptions.ResourceExhausted)
                         or "429" in msg or "quota" in msg.lower() or "rate" in msg.lower()
                     )
+                    if is_429:
+                        logger.warning(f"Gemini 429 tam hata: {msg[:300]}")
                     if is_429 and attempt < max_retries - 1:
-                        wait_sec = 5 * (2 ** attempt)  # 5s, 10s, 20s
+                        wait_sec = 15 * (2 ** attempt)  # 15s, 30s, 60s — RPM penceresi aşılsın
                         logger.warning(f"Gemini 429 rate limit, {wait_sec}s bekleniyor (deneme {attempt+1}/{max_retries})")
                         await asyncio.sleep(wait_sec)
                         continue
