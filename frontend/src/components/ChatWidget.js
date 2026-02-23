@@ -25,6 +25,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const recognitionRef = useRef(null);
+  const voiceActiveRef = useRef(false); // stale closure'dan bağımsız flag
 
   // Kullanıcı rolüne göre örnek sorular
   const sampleQuestions = user?.role === 'admin' 
@@ -144,6 +145,11 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
     }
   };
 
+  const restartRecognition = () => {
+    if (!voiceActiveRef.current || !recognitionRef.current) return;
+    try { recognitionRef.current.start(); } catch (_) {}
+  };
+
   const startVoiceMode = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -159,17 +165,14 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
     recognition.continuous = false;
     recognition.interimResults = false;
 
-    recognition.onstart = () => {
-      setIsListening(true);
-    };
+    recognition.onstart = () => setIsListening(true);
 
     recognition.onresult = async (event) => {
+      if (!voiceActiveRef.current) return;
       const transcript = event.results[0][0].transcript.trim();
       if (!transcript) return;
 
       setIsListening(false);
-
-      // Kullanıcı mesajını ekle ve gönder
       const newMessages = [...messages, { role: 'user', content: transcript }];
       setMessages(newMessages);
       setIsLoading(true);
@@ -185,29 +188,23 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         if (data?.history) setChatHistory(data.history);
         if (data?.usage_info) setUsageInfo(data.usage_info);
 
-        // AI yanıtını sesli oku
-        if (voiceMode && window.speechSynthesis) {
+        if (voiceActiveRef.current && window.speechSynthesis) {
           setIsSpeaking(true);
           const utterance = new SpeechSynthesisUtterance(aiText.replace(/[#*_`]/g, ''));
           utterance.lang = 'tr-TR';
           utterance.onend = () => {
             setIsSpeaking(false);
-            // Tekrar dinle
-            if (recognitionRef.current) {
-              setTimeout(() => recognitionRef.current.start(), 300);
-            }
+            setTimeout(restartRecognition, 300);
           };
           window.speechSynthesis.speak(utterance);
         } else {
-          // TTS kapalıysa hemen tekrar dinle
-          if (recognitionRef.current) {
-            setTimeout(() => recognitionRef.current.start(), 300);
-          }
+          setTimeout(restartRecognition, 300);
         }
       } catch (error) {
         const errMsg = error.response?.data?.detail || error.message || 'Bir hata oluştu.';
         setMessages([...newMessages, { role: 'assistant', content: `❌ ${errMsg}` }]);
         setIsSpeaking(false);
+        setTimeout(restartRecognition, 500);
       } finally {
         setIsLoading(false);
       }
@@ -215,12 +212,11 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
 
     recognition.onerror = (event) => {
       setIsListening(false);
+      if (event.error === 'aborted' || event.error === 'not-allowed') return;
       if (event.error === 'no-speech') {
-        // Sessizlik — tekrar başlat
-        if (recognitionRef.current) setTimeout(() => recognitionRef.current.start(), 500);
+        setTimeout(restartRecognition, 400);
         return;
       }
-      if (event.error === 'aborted') return;
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: `❌ Mikrofon hatası: ${event.error}. Lütfen mikrofon iznini kontrol edin.`
@@ -232,6 +228,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
     };
 
     recognitionRef.current = recognition;
+    voiceActiveRef.current = true;
     setVoiceMode(true);
     setMessages(prev => [...prev, {
       role: 'assistant',
@@ -241,8 +238,9 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
   };
 
   const stopVoiceMode = () => {
+    voiceActiveRef.current = false; // Önce flag'i kapat — tüm restart'lar durur
     if (recognitionRef.current) {
-      recognitionRef.current.abort();
+      try { recognitionRef.current.stop(); } catch (_) {}
       recognitionRef.current = null;
     }
     if (window.speechSynthesis) window.speechSynthesis.cancel();
