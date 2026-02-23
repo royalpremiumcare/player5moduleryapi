@@ -23,7 +23,6 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
   // Voice mode states
   const [voiceMode, setVoiceMode] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const recognitionRef = useRef(null);
   const voiceActiveRef = useRef(false); // stale closure'dan bağımsız flag
 
@@ -188,44 +187,10 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         if (data?.history) setChatHistory(data.history);
         if (data?.usage_info) setUsageInfo(data.usage_info);
 
-        // TTS: arka planda çal, recognition'ı bekleme
-        if (voiceActiveRef.current && window.speechSynthesis) {
-          const speakText = aiText.replace(/[#*_`]/g, '').substring(0, 300);
-          const doSpeak = () => {
-            window.speechSynthesis.cancel();
-            // Chrome paused-state bug fix
-            window.speechSynthesis.resume();
-            const utterance = new SpeechSynthesisUtterance(speakText);
-            // Ses listesi async yükleniyor — yüklenince seç, yoksa varsayılan
-            const voices = window.speechSynthesis.getVoices();
-            if (voices.length > 0) {
-              const trVoice = voices.find(v => v.lang.startsWith('tr'));
-              if (trVoice) { utterance.voice = trVoice; utterance.lang = trVoice.lang; }
-              // TR ses yoksa lang belirtme — tarayıcı kendi default'unu kullansın
-            }
-            utterance.rate = 1.0;
-            utterance.onend = () => setIsSpeaking(false);
-            utterance.onerror = () => setIsSpeaking(false);
-            setIsSpeaking(true);
-            window.speechSynthesis.speak(utterance);
-          };
-          // Sesler henüz yüklenmediyse onvoiceschanged bekle
-          const voices = window.speechSynthesis.getVoices();
-          if (voices.length === 0) {
-            window.speechSynthesis.onvoiceschanged = () => {
-              window.speechSynthesis.onvoiceschanged = null;
-              setTimeout(doSpeak, 100);
-            };
-          } else {
-            setTimeout(doSpeak, 100);
-          }
-        }
-        // TTS bitsin ya da bitmesin, hemen tekrar dinle
         setTimeout(restartRecognition, 300);
       } catch (error) {
         const errMsg = error.response?.data?.detail || error.message || 'Bir hata oluştu.';
         setMessages([...newMessages, { role: 'assistant', content: `❌ ${errMsg}` }]);
-        setIsSpeaking(false);
         setTimeout(restartRecognition, 500);
       } finally {
         setIsLoading(false);
@@ -265,10 +230,8 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
       try { recognitionRef.current.stop(); } catch (_) {}
       recognitionRef.current = null;
     }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
     setVoiceMode(false);
     setIsListening(false);
-    setIsSpeaking(false);
     setMessages(prev => [...prev, { role: 'assistant', content: '🛑 Sesli mod kapatıldı.' }]);
   };
 
@@ -347,7 +310,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
           </div>
         ))}
 
-        {(isLoading || isSpeaking) && (
+        {isLoading && (
           <div className="flex justify-start">
             <div className="bg-white rounded-2xl px-4 py-3 shadow-sm border border-gray-200">
               <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
