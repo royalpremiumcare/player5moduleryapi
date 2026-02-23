@@ -103,5 +103,5 @@ LIMITS = {
     'setup_password': "3/hour",
     'stats': "20/minute",
     'sms': "100/hour",
-    'ai_chat': "20/minute",  # AI chatbot için limit
+    'ai_chat': "300/minute",  # AI chatbot — Cloudflare arkasında tüm kullanıcılar aynı IP paylaşıyor
 }
