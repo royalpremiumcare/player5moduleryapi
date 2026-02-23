@@ -1138,7 +1138,7 @@ async def chat_with_ai(
         
         try:
             model = genai.GenerativeModel(
-                model_name='gemini-3.0-flash',
+                model_name='gemini-2.0-flash',
                 system_instruction=system_instruction,
                 tools=get_gemini_tools(),
                 safety_settings=safety_settings
@@ -1146,7 +1146,7 @@ async def chat_with_ai(
         except Exception:
             try:
                 model = genai.GenerativeModel(
-                    model_name='gemini-3.0-flash',
+                    model_name='gemini-2.0-flash',
                     system_instruction=system_instruction,
                     tools=get_gemini_tools(),
                     safety_settings=safety_settings
@@ -1165,8 +1165,9 @@ async def chat_with_ai(
                 except Exception as e:
                     msg = str(e)
                     is_429 = (
-                        isinstance(e, google_exceptions.ResourceExhausted)
-                        or "429" in msg or "quota" in msg.lower() or "rate" in msg.lower()
+                        (isinstance(e, google_exceptions.ResourceExhausted)
+                        or "429" in msg or "quota" in msg.lower() or "rate" in msg.lower())
+                        and "404" not in msg and "not found" not in msg.lower()
                     )
                     if is_429:
                         logger.warning(f"Gemini 429 tam hata: {msg[:300]}")
