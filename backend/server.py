@@ -459,7 +459,7 @@ async def check_and_send_reminders():
                         import asyncio
                         business = setting or {}
                         settings = business.get('settings') if isinstance(business.get('settings'), dict) else business
-                        location = (settings or {}).get('location', {})
+                        location = (settings or {}).get('location') or {}
                         coords = (location or {}).get('coordinates', {})
                         lat = coords.get('lat')
                         lng = coords.get('lng')
@@ -3998,7 +3998,7 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
     support_phone = settings_data.get("support_phone", "Destek Hattı")
     business = settings_data or {}
     settings = business.get('settings') if isinstance(business.get('settings'), dict) else business
-    location = (settings or {}).get('location', {})
+    location = (settings or {}).get('location') or {}
     coordinates = (location or {}).get('coordinates', {})
     lat = coordinates.get('lat')
     lng = coordinates.get('lng')
@@ -9299,7 +9299,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                 support_phone = settings_data.get("support_phone", "Destek Hattı")
                 business = settings_data or {}
                 settings = business.get('settings') if isinstance(business.get('settings'), dict) else business
-                location = (settings or {}).get('location', {})
+                location = (settings or {}).get('location') or {}
                 coordinates = (location or {}).get('coordinates', {})
                 lat = coordinates.get('lat')
                 lng = coordinates.get('lng')
