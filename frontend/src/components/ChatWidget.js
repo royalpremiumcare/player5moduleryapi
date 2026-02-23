@@ -190,25 +190,34 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
 
         // TTS: arka planda çal, recognition'ı bekleme
         if (voiceActiveRef.current && window.speechSynthesis) {
-          const speakText = aiText.replace(/[#*_`]/g, '').substring(0, 300); // max 300 char
+          const speakText = aiText.replace(/[#*_`]/g, '').substring(0, 300);
           const doSpeak = () => {
+            window.speechSynthesis.cancel();
+            // Chrome paused-state bug fix
+            window.speechSynthesis.resume();
             const utterance = new SpeechSynthesisUtterance(speakText);
-            // En iyi Türkçe ses seç, yoksa varsayılan kullan
+            // Ses listesi async yükleniyor — yüklenince seç, yoksa varsayılan
             const voices = window.speechSynthesis.getVoices();
-            const trVoice = voices.find(v => v.lang.startsWith('tr')) || null;
-            if (trVoice) utterance.voice = trVoice;
-            utterance.lang = trVoice ? trVoice.lang : 'tr-TR';
+            if (voices.length > 0) {
+              const trVoice = voices.find(v => v.lang.startsWith('tr'));
+              if (trVoice) { utterance.voice = trVoice; utterance.lang = trVoice.lang; }
+              // TR ses yoksa lang belirtme — tarayıcı kendi default'unu kullansın
+            }
             utterance.rate = 1.0;
             utterance.onend = () => setIsSpeaking(false);
             utterance.onerror = () => setIsSpeaking(false);
             setIsSpeaking(true);
             window.speechSynthesis.speak(utterance);
           };
-          if (window.speechSynthesis.speaking) {
-            window.speechSynthesis.cancel();
-            setTimeout(doSpeak, 150); // cancel'dan sonra kısa bekle
+          // Sesler henüz yüklenmediyse onvoiceschanged bekle
+          const voices = window.speechSynthesis.getVoices();
+          if (voices.length === 0) {
+            window.speechSynthesis.onvoiceschanged = () => {
+              window.speechSynthesis.onvoiceschanged = null;
+              setTimeout(doSpeak, 100);
+            };
           } else {
-            doSpeak();
+            setTimeout(doSpeak, 100);
           }
         }
         // TTS bitsin ya da bitmesin, hemen tekrar dinle
