@@ -492,6 +492,23 @@ async def check_and_send_reminders():
                 
                 except Exception as e:
                     logging.error(f"Error sending reminder for appointment {apt.get('id')}: {e}", exc_info=True)
+                    try:
+                        import time as _time
+                        _phone = str(apt.get('phone', '')).lstrip('+')
+                        await db.whatsapp_message_logs.update_one(
+                            {"message_id": f"fail_{_phone}_{int(_time.time())}"},
+                            {"$set": {
+                                "recipient": _phone,
+                                "status": "failed",
+                                "timestamp": int(_time.time()),
+                                "recorded_at": datetime.utcnow().isoformat(),
+                                "errors": [{"code": "SEND_ERROR", "title": str(e)[:300]}],
+                                "source": "reminder"
+                            }},
+                            upsert=True
+                        )
+                    except Exception:
+                        pass
         
         logging.info("=== WhatsApp Reminder Check Completed ===")
     
@@ -4029,6 +4046,23 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
         )
     except Exception as whatsapp_error:
         logger.warning(f"⚠️ WhatsApp mesajı gönderilemedi: {whatsapp_error}")
+        try:
+            import time as _time
+            _phone = str(appointment.phone).lstrip('+')
+            await db.whatsapp_message_logs.update_one(
+                {"message_id": f"fail_{_phone}_{int(_time.time())}"},
+                {"$set": {
+                    "recipient": _phone,
+                    "status": "failed",
+                    "timestamp": int(_time.time()),
+                    "recorded_at": datetime.utcnow().isoformat(),
+                    "errors": [{"code": "SEND_ERROR", "title": str(whatsapp_error)[:300]}],
+                    "source": "admin_create"
+                }},
+                upsert=True
+            )
+        except Exception:
+            pass
     
     # Audit log
     await create_audit_log(
@@ -9323,6 +9357,23 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                     logging.info(f"✓ WhatsApp confirmation sent to {appointment.phone}")
                 except Exception as wa_error:
                     logging.error(f"WhatsApp error: {wa_error}")
+                    try:
+                        import time as _time
+                        _phone = str(appointment.phone).lstrip('+')
+                        await db.whatsapp_message_logs.update_one(
+                            {"message_id": f"fail_{_phone}_{int(_time.time())}"},
+                            {"$set": {
+                                "recipient": _phone,
+                                "status": "failed",
+                                "timestamp": int(_time.time()),
+                                "recorded_at": datetime.utcnow().isoformat(),
+                                "errors": [{"code": "SEND_ERROR", "title": str(wa_error)[:300]}],
+                                "source": "public_booking"
+                            }},
+                            upsert=True
+                        )
+                    except Exception:
+                        pass
             
             # Push notification gönder (admin ve ilgili personele)
             try:
