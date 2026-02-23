@@ -190,13 +190,26 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
 
         // TTS: arka planda çal, recognition'ı bekleme
         if (voiceActiveRef.current && window.speechSynthesis) {
-          window.speechSynthesis.cancel(); // önceki varsa temizle
-          const utterance = new SpeechSynthesisUtterance(aiText.replace(/[#*_`]/g, ''));
-          utterance.lang = 'tr-TR';
-          utterance.onend = () => setIsSpeaking(false);
-          utterance.onerror = () => setIsSpeaking(false);
-          setIsSpeaking(true);
-          window.speechSynthesis.speak(utterance);
+          const speakText = aiText.replace(/[#*_`]/g, '').substring(0, 300); // max 300 char
+          const doSpeak = () => {
+            const utterance = new SpeechSynthesisUtterance(speakText);
+            // En iyi Türkçe ses seç, yoksa varsayılan kullan
+            const voices = window.speechSynthesis.getVoices();
+            const trVoice = voices.find(v => v.lang.startsWith('tr')) || null;
+            if (trVoice) utterance.voice = trVoice;
+            utterance.lang = trVoice ? trVoice.lang : 'tr-TR';
+            utterance.rate = 1.0;
+            utterance.onend = () => setIsSpeaking(false);
+            utterance.onerror = () => setIsSpeaking(false);
+            setIsSpeaking(true);
+            window.speechSynthesis.speak(utterance);
+          };
+          if (window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel();
+            setTimeout(doSpeak, 150); // cancel'dan sonra kısa bekle
+          } else {
+            doSpeak();
+          }
         }
         // TTS bitsin ya da bitmesin, hemen tekrar dinle
         setTimeout(restartRecognition, 300);
