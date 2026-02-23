@@ -652,9 +652,9 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       <Dialog open={showImportChoiceDialog} onOpenChange={setShowImportChoiceDialog}>
         <DialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-xl font-black text-zinc-900">Rehberden Aktar</DialogTitle>
+            <DialogTitle className="text-xl font-black text-zinc-900">{t('customers.importDialog.title')}</DialogTitle>
             <DialogDescription className="text-zinc-600 font-medium">
-              Müşterilerinizi rehberden nasıl aktarmak istersiniz?
+              {t('customers.importDialog.desc')}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-6">
@@ -668,8 +668,8 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                   <Users className="w-6 h-6 text-white" />
                 </div>
                 <div className="flex flex-col items-start text-left flex-1">
-                  <span className="font-black text-white text-lg mb-1">Tümünü Aktar</span>
-                  <span className="text-sm text-white/90 font-medium">Rehberdeki tüm kişileri tek seferde ekler. Hızlı ve pratik.</span>
+                  <span className="font-black text-white text-lg mb-1">{t('customers.importDialog.importAll')}</span>
+                  <span className="text-sm text-white/90 font-medium">{t('customers.importDialog.importAllDesc')}</span>
                 </div>
               </div>
               <div className="absolute top-2 right-2">
@@ -689,8 +689,8 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                   <CheckSquare className="w-6 h-6 text-green-600" />
                 </div>
                 <div className="flex flex-col items-start text-left flex-1">
-                  <span className="font-black text-zinc-900 text-lg mb-1">Seçerek Aktar</span>
-                  <span className="text-sm text-zinc-600 font-medium">Listeden istediklerinizi seçip eklersiniz. Daha kontrollü.</span>
+                  <span className="font-black text-zinc-900 text-lg mb-1">{t('customers.importDialog.importSelect')}</span>
+                  <span className="text-sm text-zinc-600 font-medium">{t('customers.importDialog.importSelectDesc')}</span>
                 </div>
               </div>
               <div className="absolute top-2 right-2">
@@ -701,7 +701,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
             </button>
           </div>
           <DialogFooter className="border-t border-white/30 pt-4">
-            <Button variant="outline" onClick={() => setShowImportChoiceDialog(false)} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">İptal</Button>
+            <Button variant="outline" onClick={() => setShowImportChoiceDialog(false)} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">{t('common.cancel')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -711,9 +711,9 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         <DialogContent className="h-[80vh] flex flex-col sm:max-w-md p-0 overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
           <DialogHeader className="px-6 py-4 border-b border-white/30 pr-12">
             <DialogTitle className="flex flex-col space-y-1">
-              <span className="font-black text-zinc-900">Kişileri Seç</span>
+              <span className="font-black text-zinc-900">{t('appointments.form.contactDialog.title')}</span>
               <span className="text-xs font-bold text-zinc-600">
-                {selectedContactPhones.size} kişi seçildi
+                {t('appointments.form.contactDialog.selected', { count: selectedContactPhones.size })}
               </span>
             </DialogTitle>
           </DialogHeader>
@@ -722,7 +722,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400" />
               <Input 
-                placeholder="İsim veya numara ile ara..." 
+                placeholder={t('appointments.form.contactDialog.search')} 
                 value={contactSearchTerm}
                 onChange={(e) => setContactSearchTerm(e.target.value)}
                 className="pl-9 h-10 backdrop-blur-md bg-white/60 border-white/40 rounded-xl font-medium"
@@ -732,7 +732,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           
           <div className="flex-1 overflow-y-auto px-6 py-2">
             {filteredFetchedContacts.length === 0 ? (
-              <p className="text-center text-zinc-500 py-8 font-medium">Sonuç bulunamadı.</p>
+              <p className="text-center text-zinc-500 py-8 font-medium">{t('appointments.form.contactDialog.noResults')}</p>
             ) : (
               filteredFetchedContacts.map((contact, index) => {
                 const isSelected = selectedContactPhones.has(contact.phone);
@@ -760,10 +760,10 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
 
           <DialogFooter className="px-6 py-4 border-t border-white/30 backdrop-blur-md bg-white/50">
             <Button variant="outline" onClick={() => setShowContactSelectionDialog(false)} className="mr-2 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">
-              İptal
+              {t('appointments.form.contactDialog.cancel')}
             </Button>
             <Button onClick={handleSaveSelectedContacts} className="bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg">
-              Seçilenleri Ekle ({selectedContactPhones.size})
+              {t('customers.importDialog.addSelected', { count: selectedContactPhones.size })}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -773,36 +773,36 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       <Dialog open={showNotSupportedDialog} onOpenChange={setShowNotSupportedDialog}>
         <DialogContent className="sm:max-w-md backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
           <DialogHeader className="border-b border-zinc-200 pb-4">
-            <DialogTitle className="text-xl font-black text-zinc-900">Özellik Kullanılamıyor</DialogTitle>
+            <DialogTitle className="text-xl font-black text-zinc-900">{t('appointments.form.contactDialog.notSupported')}</DialogTitle>
           </DialogHeader>
           <div className="py-6 space-y-4">
             <p className="text-sm text-zinc-700 font-medium leading-relaxed">
-              Bu tarayıcı veya cihaz "Rehberden Aktarma" özelliğini desteklemiyor.
+              {t('appointments.form.contactDialog.notSupportedDesc')}
             </p>
             
             <div className="space-y-3">
-              <p className="text-xs font-bold text-zinc-900 uppercase tracking-wider">Bu özellik şuralarda çalışır:</p>
+              <p className="text-xs font-bold text-zinc-900 uppercase tracking-wider">{t('appointments.form.contactDialog.worksOn')}</p>
               <ul className="space-y-2">
                 <li className="flex items-start gap-2 text-sm text-zinc-700">
                   <span className="text-zinc-400 mt-0.5">•</span>
-                  <span className="font-medium">Android Telefonlar (Chrome Tarayıcı)</span>
+                  <span className="font-medium">{t('appointments.form.contactDialog.worksOnAndroid')}</span>
                 </li>
                 <li className="flex items-start gap-2 text-sm text-zinc-700">
                   <span className="text-zinc-400 mt-0.5">•</span>
-                  <span className="font-medium">PLANN Mobil Uygulaması (APK/iOS App)</span>
+                  <span className="font-medium">{t('appointments.form.contactDialog.worksOnApp')}</span>
                 </li>
               </ul>
               
               <div className="pt-2 mt-2 border-t border-zinc-200">
                 <p className="text-xs text-zinc-500 font-medium italic leading-relaxed">
-                  *iPhone (iOS) tarayıcılarında Apple kısıtlaması nedeniyle çalışmaz. Lütfen uygulamamızı indirin.
+                  {t('appointments.form.contactDialog.iOSNote')}
                 </p>
               </div>
             </div>
           </div>
           <DialogFooter className="border-t border-zinc-200 pt-4">
             <Button onClick={() => setShowNotSupportedDialog(false)} className="w-full bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg h-11">
-              Anladım
+              {t('appointments.form.contactDialog.understood')}
             </Button>
           </DialogFooter>
         </DialogContent>

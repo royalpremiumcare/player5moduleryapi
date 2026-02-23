@@ -39,7 +39,7 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
       setSettings(res.data || {});
       setLocation(res.data?.location || null);
     } catch (_) {
-      toast.error("Ayarlar yüklenemedi.");
+      toast.error(t('settings.profile.settingsLoadError'));
     }
   };
 
@@ -89,13 +89,13 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
 
       // 3. Ayarları kaydet
       await api.put("/settings", settings);
-      toast.success("Kaydedildi.");
+      toast.success(t('settings.profile.settingsSaved'));
       await loadData();
       setLogoFile(null);
       setLogoPreview(null);
       setGalleryFiles([]);
     } catch (_) {
-      toast.error("Kaydedilemedi.");
+      toast.error(t('settings.profile.settingsSaveError'));
     } finally {
       setLoading(false);
     }
@@ -114,8 +114,8 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
             <span className="text-sm font-bold">{t('settings.backToSettings')}</span>
           </button>
           <div>
-            <h2 className="text-xl font-black text-zinc-900">Online Randevu Sayfası</h2>
-            <p className="text-sm text-zinc-600 mt-1 font-medium">Müşterilerin gördüğü randevu sayfanızı yönetin.</p>
+            <h2 className="text-xl font-black text-zinc-900">{t('settings.onlineBookingPage.title')}</h2>
+            <p className="text-sm text-zinc-600 mt-1 font-medium">{t('settings.onlineBookingPage.subtitle')}</p>
           </div>
         </div>
       </div>
@@ -127,7 +127,7 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
           <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
             <div className="flex items-center gap-2 mb-3">
               <Link className="w-5 h-5 text-zinc-900" />
-              <h3 className="text-base font-black text-zinc-900">Randevu Linki</h3>
+              <h3 className="text-base font-black text-zinc-900">{t('settings.onlineBookingPage.bookingLinkTitle')}</h3>
             </div>
             {appointmentLink ? (
               <div className="p-4 backdrop-blur-md bg-white/50 rounded-xl border border-white/30 shadow-sm space-y-2">
@@ -136,8 +136,8 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                   <button
                     type="button"
                     onClick={() => {
-                      try { navigator.clipboard.writeText(appointmentLink); toast.success("Kopyalandı."); }
-                      catch (_) { toast.error("Kopyalanamadı."); }
+                      try { navigator.clipboard.writeText(appointmentLink); toast.success(t('settings.profile.linkCopied')); }
+                      catch (_) { toast.error(t('settings.profile.linkCopyError')); }
                     }}
                     className="px-4 py-2 bg-zinc-900 text-white rounded-lg text-xs font-bold hover:bg-black transition-colors"
                   >
@@ -146,20 +146,20 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                   <button
                     type="button"
                     onClick={() => Browser.open({ url: `https://${appointmentLink}` })}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-1"
+                    className="px-4 py-2 backdrop-blur-md bg-white/60 border border-white/40 text-zinc-700 rounded-lg text-xs font-bold hover:bg-white/80 transition-colors flex items-center gap-1"
                   >
-                    <ExternalLink className="w-3 h-3" /> Aç
+                    <ExternalLink className="w-3 h-3" /> {t('settings.onlineBookingPage.openLink')}
                   </button>
                 </div>
-                <div className="flex items-start gap-2 mt-3 p-3 bg-blue-50/60 border border-blue-100 rounded-xl">
-                  <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-blue-700 font-medium leading-relaxed">
-                    Bu linki kopyalayıp <strong>Instagram biyografinize</strong> veya <strong>WhatsApp profilinize</strong> ekleyin — müşterileriniz doğrudan sizden online randevu alabilsin.
+                <div className="flex items-start gap-2 mt-3 p-3 backdrop-blur-md bg-white/40 border border-white/30 rounded-xl">
+                  <Info className="w-4 h-4 text-zinc-500 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-zinc-700 font-medium leading-relaxed">
+                    {t('settings.onlineBookingPage.linkNote')}
                   </p>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-zinc-500 font-medium">Henüz randevu linki oluşturulmamış. İşletme adını kaydedin.</p>
+              <p className="text-sm text-zinc-500 font-medium">{t('settings.onlineBookingPage.noLink')}</p>
             )}
           </div>
 
@@ -212,7 +212,7 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                 <div className="text-left">
                   <h3 className="text-base font-black text-zinc-900">{t('settings.profile.fields.gallery', 'Galeri Yönetimi')}</h3>
                   <p className="text-sm text-zinc-600 font-medium">
-                    {settings.images?.length > 0 ? `${settings.images.length} görsel` : 'Henüz görsel yok'}
+                    {settings.images?.length > 0 ? t('settings.onlineBookingPage.galleryCount', { count: settings.images.length }) : t('settings.onlineBookingPage.galleryEmpty')}
                   </p>
                 </div>
               </div>
@@ -281,7 +281,7 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                 )}
 
                 {galleryUploading && (
-                  <p className="text-sm text-zinc-600 font-medium">Yükleniyor...</p>
+                  <p className="text-sm text-zinc-600 font-medium">{t('settings.onlineBookingPage.uploading')}</p>
                 )}
               </div>
             )}
@@ -306,18 +306,18 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                   onClick={() => onNavigate && onNavigate("settings-location")}
                   className="px-4 py-2 bg-zinc-900 text-white rounded-lg text-xs font-bold hover:bg-black transition-colors"
                 >
-                  Konumu Düzenle
+                  {t('settings.onlineBookingPage.editLocation')}
                 </button>
               </div>
             ) : (
               <div className="p-4 backdrop-blur-md bg-white/50 rounded-xl border border-white/30 shadow-sm space-y-3">
-                <p className="text-sm text-zinc-500 font-medium">Henüz konum eklenmemiş.</p>
+                <p className="text-sm text-zinc-500 font-medium">{t('settings.onlineBookingPage.noLocation')}</p>
                 <button
                   type="button"
                   onClick={() => onNavigate && onNavigate("settings-location")}
                   className="px-4 py-2 bg-zinc-900 text-white rounded-lg text-xs font-bold hover:bg-black transition-colors"
                 >
-                  Konum Ekle
+                  {t('settings.onlineBookingPage.addLocation')}
                 </button>
               </div>
             )}

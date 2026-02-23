@@ -885,7 +885,7 @@ function App() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-96 max-h-[500px] overflow-y-auto p-0 shadow-lg border border-gray-200 rounded-lg bg-white">
                     <div className="p-4 border-b border-gray-200 bg-gray-50/50 flex items-center justify-between sticky top-0 z-10">
-                      <span className="font-semibold text-gray-900 text-base">Bildirimler</span>
+                      <span className="font-semibold text-gray-900 text-base">{t('notifications.title')}</span>
                       {notifications.length > 0 && (
                         <button 
                           onClick={(e) => {
@@ -900,7 +900,7 @@ function App() {
                           }}
                           className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
                         >
-                          Tümünü okundu işaretle
+                          {t('notifications.markAllRead')}
                         </button>
                       )}
                     </div>
@@ -909,8 +909,8 @@ function App() {
                         <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
                           <Bell className="w-8 h-8 text-gray-400" />
                         </div>
-                        <p className="text-gray-600 font-medium">Henüz bildirim yok</p>
-                        <p className="text-xs text-gray-500 mt-1">Online randevular burada görünecek</p>
+                        <p className="text-gray-600 font-medium">{t('notifications.empty')}</p>
+                        <p className="text-xs text-gray-500 mt-1">{t('notifications.emptyDesc')}</p>
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-100">
@@ -935,10 +935,10 @@ function App() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-start justify-between gap-2 mb-1">
                                   <p className={`font-semibold text-sm ${!notification.read ? 'text-gray-900' : 'text-gray-700'}`}>
-                                    {notification.title}
+                                    {notification.type === 'new_appointment' ? t('notifications.newAppointment') : notification.title}
                                   </p>
                                   <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
-                                    {new Date(notification.time).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                                    {new Date(notification.time).toLocaleTimeString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB', { hour: '2-digit', minute: '2-digit' })}
                                   </span>
                                 </div>
                                 <p className="text-sm text-gray-700 truncate mb-1">{notification.message}</p>

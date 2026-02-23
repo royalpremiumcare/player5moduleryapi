@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Sparkles, X, Send, Loader2, Mic, MicOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import api from '@/api/api';
 
 // Capacitor native plugins (Android/iOS) — web'de graceful fallback
@@ -21,12 +22,12 @@ try {
 
 const isNative = () => CapacitorCore && CapacitorCore.isNativePlatform();
 
-const speakText = async (text) => {
+const speakText = async (text, lang = 'tr-TR') => {
   const clean = text.replace(/[#*_`]/g, '').substring(0, 400);
   if (CapacitorTTS) {
     try {
       await CapacitorTTS.stop();
-      await CapacitorTTS.speak({ text: clean, lang: 'tr-TR', rate: 1.0, pitch: 1.0, volume: 1.0, category: 'ambient' });
+      await CapacitorTTS.speak({ text: clean, lang, rate: 1.0, pitch: 1.0, volume: 1.0, category: 'ambient' });
       return;
     } catch (_) {}
   }
@@ -36,13 +37,15 @@ const speakText = async (text) => {
     window.speechSynthesis.resume();
     const u = new SpeechSynthesisUtterance(clean);
     const voices = window.speechSynthesis.getVoices();
-    const trVoice = voices.find(v => v.lang.startsWith('tr'));
-    if (trVoice) { u.voice = trVoice; u.lang = trVoice.lang; }
+    const voice = voices.find(v => v.lang.startsWith(lang.split('-')[0]));
+    if (voice) { u.voice = voice; u.lang = voice.lang; }
     window.speechSynthesis.speak(u);
   }
 };
 
 const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
+  const { t, i18n } = useTranslation();
+  const ttsLang = i18n.language === 'en' ? 'en-GB' : 'tr-TR';
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
@@ -66,20 +69,16 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
   const recognitionRef = useRef(null);
   const voiceActiveRef = useRef(false); // stale closure'dan bağımsız flag
 
-  // Kullanıcı rolüne göre örnek sorular
-  const sampleQuestions = user?.role === 'admin' 
-    ? [
-        "Bugün durum ne? 📊",
-        "Bu ay kaç randevumuz var?",
-        "Personel performansı nasıl?",
-        "Yarın için randevu oluştur 📅"
-      ]
-    : [
-        "Bugün kaç randevum var?",
-        "Bu ay ne kadar kazandım? 💸",
-        "Yarınki randevularımı göster",
-        "Sistem nasıl kullanılır?"
-      ];
+  const sampleQuestions = useMemo(() => {
+    if (i18n.language === 'en') {
+      return user?.role === 'admin'
+        ? ["What's today's status? 📊", "How many appointments this month?", "How is staff performance?", "Create appointment for tomorrow 📅"]
+        : ["How many appointments do I have today?", "How much did I earn this month? 💸", "Show my tomorrow appointments", "How do I use the system?"];
+    }
+    return user?.role === 'admin'
+      ? ["Bugün durum ne? 📊", "Bu ay kaç randevumuz var?", "Personel performansı nasıl?", "Yarın için randevu oluştur 📅"]
+      : ["Bugün kaç randevum var?", "Bu ay ne kadar kazandım? 💸", "Yarınki randevularımı göster", "Sistem nasıl kullanılır?"];
+  }, [i18n.language, user?.role]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -94,7 +93,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
       // İlk açılışta hoş geldin mesajı
       setMessages([{
         role: 'assistant',
-        content: `Merhaba ${user?.full_name || user?.username}! 👋\n\nBen PLANN akıllı asistanınızım. Size nasıl yardımcı olabilirim?`
+        content: t('chat.welcome', { name: user?.full_name || user?.username })
       }]);
     }
   }, [isOpen, messages.length, user]);
@@ -113,13 +112,14 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
     try {
       const { data } = await api.post('/ai/chat', {
         message: userMessage,
-        history: chatHistory
+        history: chatHistory,
+        language: i18n.language
       });
 
       // AI yanıtını ekle
       setMessages([...newMessages, { 
         role: 'assistant', 
-        content: (data && data.message) || '✅ İşlem tamamlandı.'
+        content: (data && data.message) || t('chat.done')
       }]);
 
       // Chat history'yi güncelle
@@ -135,29 +135,13 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
     } catch (error) {
       console.error('AI chat error:', error);
       
-      // Kota hatasını yakala
-      if (error.message && error.message.includes('limitiniz doldu')) {
-        setMessages([...newMessages, { 
-          role: 'assistant', 
-          content: '❌ Aylık AI kullanım limitiniz doldu. Kesintisiz hizmet için paketinizi yükseltin.' 
-        }]);
-      } else if (error.response && (error.response.data?.detail || error.response.data?.message)) {
+      if (error.response && (error.response.data?.detail || error.response.data?.message)) {
         const serverMsg = error.response.data.detail || error.response.data.message;
-        setMessages([...newMessages, {
-          role: 'assistant',
-          content: `❌ ${serverMsg}`
-        }]);
+        setMessages([...newMessages, { role: 'assistant', content: `❌ ${serverMsg}` }]);
       } else if (error.message) {
-        // Sunucudan gelen açıklayıcı mesajı göster
-        setMessages([...newMessages, {
-          role: 'assistant',
-          content: `❌ ${error.message}`
-        }]);
+        setMessages([...newMessages, { role: 'assistant', content: `❌ ${error.message}` }]);
       } else {
-        setMessages([...newMessages, { 
-          role: 'assistant', 
-          content: '❌ Üzügünüm, bir hata oluştu. Lütfen tekrar deneyin.' 
-        }]);
+        setMessages([...newMessages, { role: 'assistant', content: t('chat.error') }]);
       }
     } finally {
       setIsLoading(false);
@@ -190,14 +174,14 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
     setMessages(newMessages);
     setIsLoading(true);
     try {
-      const { data } = await api.post('/ai/chat', { message: transcript, history: chatHistory });
-      const aiText = (data && data.message) || '✅ İşlem tamamlandı.';
+      const { data } = await api.post('/ai/chat', { message: transcript, history: chatHistory, language: i18n.language });
+      const aiText = (data && data.message) || t('chat.done');
       setMessages([...newMessages, { role: 'assistant', content: aiText }]);
       if (data?.history) setChatHistory(data.history);
       if (data?.usage_info) setUsageInfo(data.usage_info);
-      speakText(aiText).catch(() => {});
+      speakText(aiText, ttsLang).catch(() => {});
     } catch (error) {
-      const errMsg = error.response?.data?.detail || error.message || 'Bir hata oluştu.';
+      const errMsg = error.response?.data?.detail || error.message || t('chat.errorOccurred');
       setMessages([...newMessages, { role: 'assistant', content: `❌ ${errMsg}` }]);
     } finally {
       setIsLoading(false);
@@ -224,7 +208,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
             handleTranscript(match);
           }
         });
-        await CapacitorSTT.start({ language: 'tr-TR', maxResults: 1, partialResults: false, popup: false });
+        await CapacitorSTT.start({ language: ttsLang, maxResults: 1, partialResults: false, popup: false });
       } catch (err) {
         setIsListening(false);
         if (voiceActiveRef.current) setTimeout(startListeningCycle, 800);
@@ -234,7 +218,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
       const WebSTT = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!WebSTT) return;
       const rec = new WebSTT();
-      rec.lang = 'tr-TR';
+      rec.lang = ttsLang;
       rec.continuous = false;
       rec.interimResults = false;
       recognitionRef.current = rec;
@@ -262,18 +246,18 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
       try {
         const perm = await CapacitorSTT.requestPermissions();
         if (perm.speechRecognition !== 'granted') {
-          setMessages(prev => [...prev, { role: 'assistant', content: '❌ Mikrofon izni reddedildi. Ayarlardan izin verin.' }]);
+          setMessages(prev => [...prev, { role: 'assistant', content: t('chat.micDenied') }]);
           return;
         }
       } catch (_) {}
     } else if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
-      setMessages(prev => [...prev, { role: 'assistant', content: '❌ Tarayıcınız sesli komutu desteklemiyor.' }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: t('chat.voiceNotSupported') }]);
       return;
     }
 
     voiceActiveRef.current = true;
     setVoiceMode(true);
-    setMessages(prev => [...prev, { role: 'assistant', content: '🎤 Sesli mod aktif! Konuşabilirsiniz...' }]);
+    setMessages(prev => [...prev, { role: 'assistant', content: t('chat.voiceOn') }]);
     startListeningCycle();
   };
 
@@ -290,7 +274,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
     }
     if (CapacitorTTS) CapacitorTTS.stop().catch(() => {});
     else if (window.speechSynthesis) window.speechSynthesis.cancel();
-    setMessages(prev => [...prev, { role: 'assistant', content: '🛑 Sesli mod kapatıldı.' }]);
+    setMessages(prev => [...prev, { role: 'assistant', content: t('chat.voiceOff') }]);
   };
 
   if (!isOpen) return null;
@@ -306,9 +290,9 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-900">PLANN Asistan</h3>
+              <h3 className="text-sm font-bold text-gray-900">{t('chat.title')}</h3>
               <p className="text-[11px] text-gray-400">
-                {voiceMode ? '🎤 Sesli Mod Aktif' : 'AI destekli yardımcınız'}
+                {voiceMode ? t('chat.voiceModeActive') : t('chat.subtitle')}
               </p>
             </div>
           </div>
@@ -321,7 +305,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
                   ? 'bg-red-50 text-red-600 hover:bg-red-100'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
-              title={voiceMode ? 'Sesli Modu Kapat' : 'Sesli Modu Aç'}
+              title={voiceMode ? t('chat.turnOffVoice') : t('chat.turnOnVoice')}
             >
               {voiceMode ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
             </button>
@@ -338,11 +322,11 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         {usageInfo.limit === -1 ? (
           <div className="mt-2 text-xs bg-amber-50 text-amber-700 border border-amber-100 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
             <Sparkles className="w-3 h-3" />
-            <span>Yapay Zeka Erişiminiz: Sınırsız ✨</span>
+            <span>{t('chat.unlimitedAccess')}</span>
           </div>
         ) : usageInfo.current >= usageInfo.limit * 0.9 ? (
           <div className="mt-2 text-xs bg-orange-50 text-orange-700 border border-orange-100 px-2.5 py-1 rounded-lg">
-            <span>⚠️ Kalan Hakkınız: {usageInfo.current} / {usageInfo.limit}</span>
+            <span>{t('chat.remaining', { current: usageInfo.current, limit: usageInfo.limit })}</span>
           </div>
         ) : null}
       </div>
@@ -379,7 +363,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         {isListening && (
           <div className="flex flex-col items-center space-y-2">
             <div className="bg-red-100 text-red-600 text-xs px-3 py-1 rounded-full animate-pulse">
-              🎤 Dinleniyor...
+              {t('chat.listening')}
             </div>
           </div>
         )}
@@ -387,7 +371,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         {/* Örnek Sorular */}
         {messages.length <= 1 && !isLoading && !voiceMode && (
           <div className="space-y-2">
-            <p className="text-xs text-gray-500 text-center">Örnek sorular:</p>
+            <p className="text-xs text-gray-500 text-center">{t('chat.sampleQuestions')}</p>
             {sampleQuestions.map((q, idx) => (
               <button
                 key={idx}
@@ -413,10 +397,10 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
               onClick={() => window.location.href = '/subscribe'}
               className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl px-4 py-3 hover:shadow-lg transition-all font-semibold"
             >
-              Limit Doldu - Paketi Yükselt 🚀
+              {t('chat.upgradeButton')}
             </button>
             <p className="text-xs text-gray-500 mt-2">
-              Aylık AI kullanım limitiniz doldu. Kesintisiz hizmet için paketinizi yükseltin.
+              {t('chat.upgradeDesc')}
             </p>
           </div>
         ) : (
@@ -427,7 +411,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Mesajınızı yazın..."
+                placeholder={t('chat.placeholder')}
                 disabled={isLoading}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
@@ -440,7 +424,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
               </button>
             </div>
             <p className="text-xs text-gray-400 mt-2 text-center">
-              AI bazen hata yapabilir. Önemli kararlar için doğrulayın.
+              {t('chat.disclaimer')}
             </p>
           </>
         )}

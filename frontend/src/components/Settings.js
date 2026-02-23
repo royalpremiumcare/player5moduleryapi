@@ -258,8 +258,8 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
               
               <SettingItem 
                 icon={Globe} 
-                title="Online Randevu Sayfası"
-                subtitle="Galeri, logo, konum ve randevu linki"
+                title={t('settings.onlineBookingPageTitle')}
+                subtitle={t('settings.onlineBookingPageSubtitle')}
                 onClick={() => onNavigate && onNavigate("settings-online-booking")}
               />
 

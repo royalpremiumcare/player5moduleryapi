@@ -36,7 +36,9 @@
     "upload": "Upload",
     "refresh": "Refresh",
     "backToHome": "← Back to Home",
-    "or": "or"
+    "or": "or",
+    "finish": "Finish",
+    "skip": "Skip Tour"
   },
   "brand": {
     "name": "PLANN",
@@ -349,8 +351,8 @@
       "title": "Today's Appointments",
       "noAppointments": "No appointments today",
       "noAppointmentsShort": "No appointments",
-      "beforeNoon": "Before Noon",
-      "afterNoon": "After Noon",
+      "beforeNoon": "AM",
+      "afterNoon": "PM",
       "allStaff": "All Staff"
     },
     "tomorrowAppointments": {
@@ -454,6 +456,16 @@
     "addValidationNamePhone": "Please enter customer name and phone number",
     "addValidationPhone": "Please enter a valid phone number",
     "saving": "Saving...",
+    "importFromContacts": "Add from Contacts",
+    "importDialog": {
+      "title": "Import from Contacts",
+      "desc": "How would you like to import your customers from contacts?",
+      "importAll": "Import All",
+      "importAllDesc": "Adds all contacts from your phone at once. Quick and practical.",
+      "importSelect": "Import Selected",
+      "importSelectDesc": "Choose which contacts to add. More controlled.",
+      "addSelected": "Add Selected ({{count}})"
+    },
     "staff": "Staff",
     "fields": {
       "name": "Full Name",
@@ -513,6 +525,11 @@
       "notes": "Notes (Optional)",
       "notesPlaceholder": "Additional information...",
       "saving": "Saving...",
+      "importFromContacts": "Add from Contacts",
+      "importFromContactsDesc": "Select contacts from your phone",
+      "selectFromContacts": "Select from Contacts",
+      "loading": "Loading...",
+      "durationUnit": "min",
       "update": "Update",
       "save": "Save",
       "wizard": {
@@ -527,6 +544,21 @@
         "busy": "Busy",
         "staffBusy": "Selected staff is busy at this time",
         "allStaffBusy": "All staff are busy at this time"
+      },
+      "contactDialog": {
+        "title": "Select Contacts",
+        "selected": "{{count}} selected",
+        "search": "Search by name or number...",
+        "noResults": "No results found.",
+        "cancel": "Cancel",
+        "useSelected": "Use Selected ({{count}})",
+        "notSupported": "Feature Unavailable",
+        "notSupportedDesc": "This browser or device does not support the \"Import from Contacts\" feature.",
+        "worksOn": "This feature works on:",
+        "worksOnAndroid": "Android Phones (Chrome Browser)",
+        "worksOnApp": "PLANN Mobile App (APK/iOS App)",
+        "iOSNote": "*Does not work on iPhone (iOS) browsers due to Apple restrictions. Please download our app.",
+        "understood": "Got it"
       }
     },
     "fields": {
@@ -870,6 +902,8 @@
         "logo": "Company Logo",
         "logoNote": "PNG or JPG, maximum 5MB",
         "logoFormatsNote": "PNG, JPG - Max 5MB",
+        "gallery": "Gallery Management",
+        "galleryDrop": "Drag and drop images here or select",
         "businessHours": "General Business Hours",
         "businessHoursNote": "Set the days and times when customers can book online appointments."
       },
@@ -904,7 +938,23 @@
     "language": "Language",
     "theme": "Theme",
     "darkMode": "Dark Mode",
-    "lightMode": "Light Mode"
+    "lightMode": "Light Mode",
+    "onlineBookingPageTitle": "Online Booking Page",
+    "onlineBookingPageSubtitle": "Gallery, logo, location and booking link",
+    "onlineBookingPage": {
+      "title": "Online Booking Page",
+      "subtitle": "Manage the appointment page your customers see.",
+      "bookingLinkTitle": "Appointment Link",
+      "openLink": "Open",
+      "linkNote": "Copy this link and add it to your Instagram bio or WhatsApp profile — so customers can book appointments directly with you online.",
+      "noLink": "No appointment link created yet. Save your business name.",
+      "galleryCount": "{{count}} images",
+      "galleryEmpty": "No images yet",
+      "uploading": "Uploading...",
+      "editLocation": "Edit Location",
+      "noLocation": "No location added yet.",
+      "addLocation": "Add Location"
+    }
   },
   "calendar": {
     "title": "Calendar",
@@ -1078,6 +1128,23 @@
     "subscriptionInfo": "Subscription and billing are managed on our website. When you continue, you’ll be redirected to the subscription page automatically.",
     "goToWebsite": "Go to Website"
   },
+  "tour": {
+    "welcome": "Welcome to PLANN{{name}}! Would you like a quick tour to discover features that will help your business?",
+    "greeting": "This is your control panel. You can see today's date and your personalised notifications here.",
+    "stats": "Daily summary: Your appointment count and estimated revenue are calculated here in real time.",
+    "newAppointment": "Use the + button here to create a new appointment.",
+    "settings": "Before you start, we recommend configuring your business, services and staff from the Settings section.",
+    "breaks": "You can easily add and manage your lunch or rest breaks from here.",
+    "todayFlow": "The flow of today's appointments, split into AM and PM so you can plan your day more easily.",
+    "upcoming": "Track your upcoming appointments for tomorrow and future days from here."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Mark all as read",
+    "empty": "No notifications yet",
+    "emptyDesc": "Online appointments will appear here",
+    "newAppointment": "New Appointment"
+  },
   "publicBooking": {
     "loading": "Loading...",
     "businessNotFound": "Business Not Found",
@@ -1129,5 +1196,29 @@
       "loadError": "Map could not be loaded.",
       "getDirections": "Get Directions"
     }
+  },
+  "chat": {
+    "title": "PLANN Assistant",
+    "subtitle": "Your AI-powered assistant",
+    "voiceModeActive": "Voice Mode Active",
+    "turnOffVoice": "Turn Off Voice Mode",
+    "turnOnVoice": "Turn On Voice Mode",
+    "welcome": "Hello {{name}}! 👋\n\nI am your PLANN smart assistant. How can I help you?",
+    "done": "✅ Done.",
+    "limitReached": "❌ Monthly AI usage limit reached. Upgrade your plan for uninterrupted service.",
+    "error": "❌ Sorry, an error occurred. Please try again.",
+    "errorOccurred": "An error occurred.",
+    "micDenied": "❌ Microphone permission denied. Please allow in settings.",
+    "voiceNotSupported": "❌ Your browser doesn't support voice commands.",
+    "voiceOn": "🎤 Voice mode active! You can speak...",
+    "voiceOff": "🛑 Voice mode stopped.",
+    "listening": "🎤 Listening...",
+    "sampleQuestions": "Sample questions:",
+    "unlimitedAccess": "AI Access: Unlimited ✨",
+    "remaining": "⚠️ Remaining: {{current}} / {{limit}}",
+    "upgradeButton": "Limit Reached - Upgrade Plan 🚀",
+    "upgradeDesc": "Your monthly AI usage limit has been reached. Upgrade your plan for uninterrupted service.",
+    "placeholder": "Type your message...",
+    "disclaimer": "AI can make mistakes. Verify for important decisions."
   }
 }

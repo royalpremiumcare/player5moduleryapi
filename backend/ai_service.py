@@ -117,7 +117,7 @@ Yöntem 3 - AI Asistan ile (bana söyle):
 10. GÜVENLİK: Personel sadece kendi verilerini görebilir.
 """
 
-def get_system_instruction(user_role: str, user_name: str, org_name: str = "İşletme") -> str:
+def get_system_instruction(user_role: str, user_name: str, org_name: str = "İşletme", language: str = "tr") -> str:
     """System instruction for AI"""
     is_staff = user_role.lower() == "staff"
     
@@ -127,8 +127,11 @@ def get_system_instruction(user_role: str, user_name: str, org_name: str = "İş
     today = datetime.now(turkey_tz)
     today_str = today.strftime("%Y-%m-%d")  # 2025-11-19
     today_readable = today.strftime("%d %B %Y")  # 19 Kasım 2025
+
+    lang_directive = "IMPORTANT: You MUST respond ONLY in English. Do not use Turkish in your responses." if language == "en" else "Sadece Türkçe yanıt ver."
     
     base_instruction = f"""Sen PLANN Akıllı Asistanısın. Kullanıcı: {user_name} ({user_role.upper()}), İşletme: {org_name}
+{lang_directive}
 
 📅 BUGÜN: {today_str} | YARIN: {(datetime.now(turkey_tz) + timedelta(days=1)).date().isoformat()}
 ⚠️ TARİH: YYYY-MM-DD | SAAT: HH:MM
@@ -936,7 +939,8 @@ async def chat_with_ai(
     user_role: str,
     username: str,
     organization_id: str,
-    organization_name: str = "İşletme"
+    organization_name: str = "İşletme",
+    language: str = "tr"
 ) -> Dict[str, Any]:
     """
     AI ile sohbet et - Tool calling destekli
@@ -958,7 +962,7 @@ async def chat_with_ai(
             return {"success": False, "message": "❌ AI servisi yapılandırılmamış"}
         
         # System instruction oluştur - Kısa ve net
-        system_instruction = get_system_instruction(user_role, username, organization_name)
+        system_instruction = get_system_instruction(user_role, username, organization_name, language)
         
         # Safety settings - İş uygulaması için rahatlatılmış
         from google.generativeai.types import HarmCategory, HarmBlockThreshold

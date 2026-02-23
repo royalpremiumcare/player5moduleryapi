@@ -130,6 +130,11 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     return raw.filter((s) => String(s?.name || "").toLowerCase().includes(search));
   }, [filteredServices, debouncedServiceSearchTerm]);
 
+  const currencySymbol = useMemo(() => {
+    const phone = (settings?.support_phone || '').replace(/\s/g, '');
+    return (phone.startsWith('+44') || phone.startsWith('44')) ? '£' : '₺';
+  }, [settings]);
+
   useEffect(() => {
     const id = setTimeout(() => setDebouncedCustomerSearchTerm(customerSearchTerm), 150);
     return () => clearTimeout(id);
@@ -410,7 +415,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                 {service.name}
               </h3>
               <p className={`text-sm mt-1 font-medium ${formData.service_id === service.id ? 'text-zinc-200' : 'text-zinc-500'}`}>
-                {Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'} • {service.duration || 30} dk
+{i18n.language === 'en' ? `${currencySymbol}${Math.round(service.price)}` : `${Math.round(service.price)}${currencySymbol}`} • {service.duration || 30} {t('appointments.form.durationUnit')}
               </p>
             </div>
             <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-300
@@ -502,8 +507,8 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                   <Import className="w-7 h-7 text-white" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-zinc-900 text-base">{t('appointments.form.importFromContacts', 'Rehberden Ekle')}</h4>
-                  <p className="text-sm text-zinc-600 font-medium">{t('appointments.form.importFromContactsDesc', 'Telefonunuzdaki kişileri seçin')}</p>
+                  <h4 className="font-bold text-zinc-900 text-base">{t('appointments.form.importFromContacts')}</h4>
+                  <p className="text-sm text-zinc-600 font-medium">{t('appointments.form.importFromContactsDesc')}</p>
                 </div>
               </div>
               <Button 
@@ -515,12 +520,12 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                 {importingContacts ? (
                   <>
                     <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    {t('appointments.form.loading', 'Yükleniyor...')}
+                    {t('appointments.form.loading')}
                   </>
                 ) : (
                   <>
                     <Users className="w-5 h-5 mr-2" />
-                    {t('appointments.form.selectFromContacts', 'Rehberden Seç')}
+                    {t('appointments.form.selectFromContacts')}
                   </>
                 )}
               </Button>
@@ -786,7 +791,9 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
              <div className="flex justify-between items-center mb-4 text-sm">
                 <span className="text-zinc-500 font-bold uppercase tracking-wider">{t('common.total')}</span>
                 <span className="text-2xl font-black text-zinc-900">
-                   {filteredServices.find(s => s.id === formData.service_id)?.price}₺
+                   {i18n.language === 'en'
+                     ? `${currencySymbol}${Math.round(filteredServices.find(s => s.id === formData.service_id)?.price || 0)}`
+                     : `${Math.round(filteredServices.find(s => s.id === formData.service_id)?.price || 0)}${currencySymbol}`}
                 </span>
              </div>
              <Button 
@@ -809,9 +816,9 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         <DialogContent className="h-[80vh] flex flex-col sm:max-w-md p-0 overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
           <DialogHeader className="px-6 py-4 border-b border-white/30 pr-12">
             <DialogTitle className="flex flex-col space-y-1">
-              <span className="font-black text-zinc-900">Kişileri Seç</span>
+              <span className="font-black text-zinc-900">{t('appointments.form.contactDialog.title')}</span>
               <span className="text-xs font-bold text-zinc-600">
-                {selectedContactPhones.size} kişi seçildi
+                {t('appointments.form.contactDialog.selected', { count: selectedContactPhones.size })}
               </span>
             </DialogTitle>
           </DialogHeader>
@@ -821,7 +828,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400" />
               <Input 
-                placeholder="İsim veya numara ile ara..." 
+                placeholder={t('appointments.form.contactDialog.search')} 
                 value={contactSearchTerm}
                 onChange={(e) => setContactSearchTerm(e.target.value)}
                 className="pl-9 h-10 backdrop-blur-md bg-white/60 border-white/40 rounded-xl font-medium"
@@ -832,7 +839,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
           {/* Liste Alanı */}
           <div className="flex-1 overflow-y-auto px-6 py-2">
             {filteredFetchedContacts.length === 0 ? (
-              <p className="text-center text-zinc-500 py-8 font-medium">Sonuç bulunamadı.</p>
+              <p className="text-center text-zinc-500 py-8 font-medium">{t('appointments.form.contactDialog.noResults')}</p>
             ) : (
               filteredFetchedContacts.map((contact, index) => {
                 const isSelected = selectedContactPhones.has(contact.phone);
@@ -860,10 +867,10 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
           <DialogFooter className="px-6 py-4 border-t border-white/30 backdrop-blur-md bg-white/50">
             <Button variant="outline" onClick={() => setShowContactSelectionDialog(false)} className="mr-2 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">
-              İptal
+              {t('appointments.form.contactDialog.cancel')}
             </Button>
             <Button onClick={handleSelectFromContacts} className="bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg">
-              Seçileni Kullan ({selectedContactPhones.size})
+              {t('appointments.form.contactDialog.useSelected', { count: selectedContactPhones.size })}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -873,36 +880,36 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       <Dialog open={showNotSupportedDialog} onOpenChange={setShowNotSupportedDialog}>
         <DialogContent className="sm:max-w-md backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
           <DialogHeader className="border-b border-zinc-200 pb-4">
-            <DialogTitle className="text-xl font-black text-zinc-900">Özellik Kullanılamıyor</DialogTitle>
+            <DialogTitle className="text-xl font-black text-zinc-900">{t('appointments.form.contactDialog.notSupported')}</DialogTitle>
           </DialogHeader>
           <div className="py-6 space-y-4">
             <p className="text-sm text-zinc-700 font-medium leading-relaxed">
-              Bu tarayıcı veya cihaz "Rehberden Aktarma" özelliğini desteklemiyor.
+              {t('appointments.form.contactDialog.notSupportedDesc')}
             </p>
             
             <div className="space-y-3">
-              <p className="text-xs font-bold text-zinc-900 uppercase tracking-wider">Bu özellik şuralarda çalışır:</p>
+              <p className="text-xs font-bold text-zinc-900 uppercase tracking-wider">{t('appointments.form.contactDialog.worksOn')}</p>
               <ul className="space-y-2">
                 <li className="flex items-start gap-2 text-sm text-zinc-700">
                   <span className="text-zinc-400 mt-0.5">•</span>
-                  <span className="font-medium">Android Telefonlar (Chrome Tarayıcı)</span>
+                  <span className="font-medium">{t('appointments.form.contactDialog.worksOnAndroid')}</span>
                 </li>
                 <li className="flex items-start gap-2 text-sm text-zinc-700">
                   <span className="text-zinc-400 mt-0.5">•</span>
-                  <span className="font-medium">PLANN Mobil Uygulaması (APK/iOS App)</span>
+                  <span className="font-medium">{t('appointments.form.contactDialog.worksOnApp')}</span>
                 </li>
               </ul>
               
               <div className="pt-2 mt-2 border-t border-zinc-200">
                 <p className="text-xs text-zinc-500 font-medium italic leading-relaxed">
-                  *iPhone (iOS) tarayıcılarında Apple kısıtlaması nedeniyle çalışmaz. Lütfen uygulamamızı indirin.
+                  {t('appointments.form.contactDialog.iOSNote')}
                 </p>
               </div>
             </div>
           </div>
           <DialogFooter className="border-t border-zinc-200 pt-4">
             <Button onClick={() => setShowNotSupportedDialog(false)} className="w-full bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg h-11">
-              Anladım
+              {t('appointments.form.contactDialog.understood')}
             </Button>
           </DialogFooter>
         </DialogContent>

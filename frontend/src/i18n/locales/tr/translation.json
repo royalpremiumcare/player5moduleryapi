@@ -36,7 +36,9 @@
     "upload": "Yükle",
     "refresh": "Yenile",
     "backToHome": "← Ana Sayfaya Dön",
-    "or": "veya"
+    "or": "veya",
+    "finish": "Bitir",
+    "skip": "Turu Geç"
   },
   "brand": {
     "name": "PLANN",
@@ -456,6 +458,16 @@
     "addValidationNamePhone": "Lütfen müşteri adı ve telefon numarasını girin",
     "addValidationPhone": "Geçerli bir telefon numarası girin",
     "saving": "Kaydediliyor...",
+    "importFromContacts": "Rehberden Ekle",
+    "importDialog": {
+      "title": "Rehberden Aktar",
+      "desc": "Müşterilerinizi rehberden nasıl aktarmak istersiniz?",
+      "importAll": "Tümünü Aktar",
+      "importAllDesc": "Rehberdeki tüm kişileri tek seferde ekler. Hızlı ve pratik.",
+      "importSelect": "Seçerek Aktar",
+      "importSelectDesc": "Listeden istediklerinizi seçip eklersiniz. Daha kontrollü.",
+      "addSelected": "Seçilenleri Ekle ({{count}})"
+    },
     "staff": "Personel",
     "fields": {
       "name": "Ad Soyad",
@@ -515,6 +527,11 @@
       "notes": "Notlar (Opsiyonel)",
       "notesPlaceholder": "Ek bilgiler...",
       "saving": "Kaydediliyor...",
+      "importFromContacts": "Rehberden Ekle",
+      "importFromContactsDesc": "Telefonunuzdaki kişileri seçin",
+      "selectFromContacts": "Rehberden Seç",
+      "loading": "Yükleniyor...",
+      "durationUnit": "dk",
       "update": "Güncelle",
       "save": "Kaydet",
       "wizard": {
@@ -529,6 +546,21 @@
         "busy": "Dolu",
         "staffBusy": "Seçili personel bu saatte dolu",
         "allStaffBusy": "Tüm personeller bu saatte dolu"
+      },
+      "contactDialog": {
+        "title": "Kişileri Seç",
+        "selected": "{{count}} kişi seçildi",
+        "search": "İsim veya numara ile ara...",
+        "noResults": "Sonuç bulunamadı.",
+        "cancel": "İptal",
+        "useSelected": "Seçileni Kullan ({{count}})",
+        "notSupported": "Özellik Kullanılamıyor",
+        "notSupportedDesc": "Bu tarayıcı veya cihaz \"Rehberden Aktarma\" özelliğini desteklemiyor.",
+        "worksOn": "Bu özellik şuralarda çalışır:",
+        "worksOnAndroid": "Android Telefonlar (Chrome Tarayıcı)",
+        "worksOnApp": "PLANN Mobil Uygulaması (APK/iOS App)",
+        "iOSNote": "*iPhone (iOS) tarayıcılarında Apple kısıtlaması nedeniyle çalışmaz. Lütfen uygulamamızı indirin.",
+        "understood": "Anladım"
       }
     },
     "fields": {
@@ -872,6 +904,8 @@
         "logo": "İşletme Logosu",
         "logoNote": "PNG veya JPG, maksimum 5MB",
         "logoFormatsNote": "PNG, JPG - Max 5MB",
+        "gallery": "Galeri Yönetimi",
+        "galleryDrop": "Görselleri buraya sürükleyip bırakın veya seçin",
         "businessHours": "Genel Çalışma Saatleri",
         "businessHoursNote": "Müşterilerinizin online randevu alabileceği gün ve saatleri belirleyin."
       },
@@ -906,7 +940,23 @@
     "language": "Dil",
     "theme": "Tema",
     "darkMode": "Karanlık Mod",
-    "lightMode": "Aydınlık Mod"
+    "lightMode": "Aydınlık Mod",
+    "onlineBookingPageTitle": "Online Randevu Sayfası",
+    "onlineBookingPageSubtitle": "Galeri, logo, konum ve randevu linki",
+    "onlineBookingPage": {
+      "title": "Online Randevu Sayfası",
+      "subtitle": "Müşterilerin gördüğü randevu sayfanızı yönetin.",
+      "bookingLinkTitle": "Randevu Linki",
+      "openLink": "Aç",
+      "linkNote": "Bu linki kopyalayıp Instagram biyografinize veya WhatsApp profilinize ekleyin — müşterileriniz doğrudan sizden online randevu alabilsin.",
+      "noLink": "Henüz randevu linki oluşturulmamış. İşletme adını kaydedin.",
+      "galleryCount": "{{count}} görsel",
+      "galleryEmpty": "Henüz görsel yok",
+      "uploading": "Yükleniyor...",
+      "editLocation": "Konumu Düzenle",
+      "noLocation": "Henüz konum eklenmemiş.",
+      "addLocation": "Konum Ekle"
+    }
   },
   "calendar": {
     "title": "Takvim",
@@ -1080,6 +1130,23 @@
     "subscriptionInfo": "Abonelik ve faturalandırma işlemleri web sitemiz üzerinden yönetilir. Devam ettiğinizde abonelik sayfasına otomatik olarak yönlendirilirsiniz.",
     "goToWebsite": "Web Sitesine Git"
   },
+  "tour": {
+    "welcome": "PLANN'a Hoş Geldiniz{{name}}! İşinizi kolaylaştıracak özellikleri keşfetmek için kısa bir tura ne dersiniz?",
+    "greeting": "Burası sizin kontrol paneliniz. Tarihi ve size özel bildirimleri burada görebilirsiniz.",
+    "stats": "Günün özeti: Randevu sayınız ve tahmini cironuz anlık olarak burada hesaplanır.",
+    "newAppointment": "Yeni randevu oluşturmak için buradaki + butonunu kullanabilirsiniz.",
+    "settings": "Kullanmaya başlamadan önce Ayarlar bölümünden işletme, hizmet ve personel ayarlarınızı yapmanızı tavsiye ederiz.",
+    "breaks": "Yemek veya dinlenme molalarınızı buradan kolayca ekleyip yönetebilirsiniz.",
+    "todayFlow": "Bugünkü randevularınızın akışı. Sabah ve öğleden sonra olarak ayrılır, böylece gününüzü daha kolay planlarsınız.",
+    "upcoming": "Yarın ve sonraki günler için yaklaşan randevularınızı buradan takip edebilirsiniz."
+  },
+  "notifications": {
+    "title": "Bildirimler",
+    "markAllRead": "Tümünü okundu işaretle",
+    "empty": "Henüz bildirim yok",
+    "emptyDesc": "Online randevular burada görünecek",
+    "newAppointment": "Yeni Randevu"
+  },
   "publicBooking": {
     "loading": "Yükleniyor...",
     "businessNotFound": "İşletme Bulunamadı",
@@ -1131,5 +1198,29 @@
       "loadError": "Harita yüklenemedi.",
       "getDirections": "Yol Tarifi Al"
     }
+  },
+  "chat": {
+    "title": "PLANN Asistan",
+    "subtitle": "AI destekli yardımcınız",
+    "voiceModeActive": "Sesli Mod Aktif",
+    "turnOffVoice": "Sesli Modu Kapat",
+    "turnOnVoice": "Sesli Modu Aç",
+    "welcome": "Merhaba {{name}}! 👋\n\nBen PLANN akıllı asistanınızım. Size nasıl yardımcı olabilirim?",
+    "done": "✅ İşlem tamamlandı.",
+    "limitReached": "❌ Aylık AI kullanım limitiniz doldu. Kesintisiz hizmet için paketinizi yükseltin.",
+    "error": "❌ Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.",
+    "errorOccurred": "Bir hata oluştu.",
+    "micDenied": "❌ Mikrofon izni reddedildi. Ayarlardan izin verin.",
+    "voiceNotSupported": "❌ Tarayıcınız sesli komutu desteklemiyor.",
+    "voiceOn": "🎤 Sesli mod aktif! Konuşabilirsiniz...",
+    "voiceOff": "🛑 Sesli mod kapatıldı.",
+    "listening": "🎤 Dinleniyor...",
+    "sampleQuestions": "Örnek sorular:",
+    "unlimitedAccess": "Yapay Zeka Erişiminiz: Sınırsız ✨",
+    "remaining": "⚠️ Kalan Hakkınız: {{current}} / {{limit}}",
+    "upgradeButton": "Limit Doldu - Paketi Yükselt 🚀",
+    "upgradeDesc": "Aylık AI kullanım limitiniz doldu. Kesintisiz hizmet için paketinizi yükseltin.",
+    "placeholder": "Mesajınızı yazın...",
+    "disclaimer": "AI bazen hata yapabilir. Önemli kararlar için doğrulayın."
   }
 }

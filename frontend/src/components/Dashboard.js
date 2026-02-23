@@ -182,39 +182,37 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const tourSteps = [
     {
       target: 'body',
-      content: t('tour.welcome', {
-        defaultValue: `PLANN'a Hoş Geldiniz${currentUserName ? `, ${currentUserName}` : ''}! İşinizi kolaylaştıracak özellikleri keşfetmek için kısa bir tura ne dersiniz?`,
-      }),
+      content: t('tour.welcome', { name: currentUserName ? `, ${currentUserName}` : '' }),
       placement: 'center',
       disableBeacon: true,
     },
     {
       target: '.tour-greeting',
-      content: t('tour.greeting', { defaultValue: 'Burası sizin kontrol paneliniz. Tarihi ve size özel bildirimleri burada görebilirsiniz.' }),
+      content: t('tour.greeting'),
     },
     {
       target: '.tour-stats',
-      content: t('tour.stats', { defaultValue: 'Günün özeti: Randevu sayınız ve tahmini cironuz anlık olarak burada hesaplanır.' }),
+      content: t('tour.stats'),
     },
     {
       target: '.tour-new-appointment',
-      content: t('tour.newAppointment', { defaultValue: 'Yeni randevu oluşturmak için buradaki + butonunu kullanabilirsiniz.' }),
+      content: t('tour.newAppointment'),
     },
     ...(userRole === 'admin' ? [{
       target: '.tour-settings',
-      content: t('tour.settings', { defaultValue: 'Kullanmaya başlamadan önce Ayarlar bölümünden işletme, hizmet ve personel ayarlarınızı yapmanızı tavsiye ederiz.' }),
+      content: t('tour.settings'),
     }] : []),
     ...(userRole === 'staff' ? [{
       target: '.tour-breaks',
-      content: t('tour.breaks', { defaultValue: 'Yemek veya dinlenme molalarınızı buradan kolayca ekleyip yönetebilirsiniz.' }),
+      content: t('tour.breaks'),
     }] : []),
     {
       target: '.tour-today-flow',
-      content: t('tour.todayFlow', { defaultValue: 'Bugünkü randevularınızın akışı. Sabah ve öğleden sonra olarak ayrılır, böylece gününüzü daha kolay planlarsınız.' }),
+      content: t('tour.todayFlow'),
     },
     {
       target: '.tour-upcoming',
-      content: t('tour.upcoming', { defaultValue: 'Yarın ve sonraki günler için yaklaşan randevularınızı buradan takip edebilirsiniz.' }),
+      content: t('tour.upcoming')
     }
   ];
 
@@ -255,6 +253,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     : personnelStats?.total_revenue_generated || 0;
 
   const greeting = getTimeBasedGreeting();
+  const currencySymbol = ((settings?.support_phone || '').replace(/\s/g, '').startsWith('+44') || (settings?.support_phone || '').replace(/\s/g, '').startsWith('44')) ? '£' : '₺';
 
   const renderAppointmentCard = (apt) => {
     const isCancelled = apt.status === "İptal" || apt.status === t('dashboard.status.cancelled');
@@ -411,7 +410,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               <TrendingUp className="w-3 h-3 text-gray-400" />
               <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{t('dashboard.summary.todayRevenue')}</span>
             </div>
-            <p className="text-xl font-bold text-gray-900">{displayRevenue?.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')}₺</p>
+            <p className="text-xl font-bold text-gray-900">{i18n.language === 'en' ? `${currencySymbol}${Math.round(displayRevenue || 0).toLocaleString('en-GB')}` : `${(displayRevenue || 0).toLocaleString('tr-TR')}${currencySymbol}`}</p>
           </div>
         </div>
       </div>

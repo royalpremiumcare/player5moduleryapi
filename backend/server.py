@@ -415,6 +415,19 @@ async def check_and_send_reminders():
         
         turkey_tz = ZoneInfo("Europe/Istanbul")
         now = datetime.now(turkey_tz)
+
+        # DISTRIBUTED LOCK: multi-worker duplicate send prevention
+        redis_client = getattr(_app_instance, 'redis_client', None)
+        if redis_client:
+            try:
+                lock_key = f"reminder_lock:{now.strftime('%Y%m%d%H%M')}"
+                if not await redis_client.set(lock_key, "1", nx=True, ex=300):
+                    logging.info("Reminder check skipped - another worker holds the lock")
+                    return
+                logging.info(f"Distributed lock acquired: {lock_key}")
+            except Exception as lock_err:
+                logging.warning(f"Redis lock unavailable, proceeding without lock: {lock_err}")
+
         logging.info(f"Current time (Turkey): {now.strftime('%Y-%m-%d %H:%M:%S')}")
         
         # Tüm organization'ların ayarlarını al
@@ -454,8 +467,15 @@ async def check_and_send_reminders():
                     
                     # Hatırlatma zamanı geldi mi?
                     if reminder_time_start <= apt_datetime <= reminder_time_end:
-                        logging.info(f"  ✓ Appointment {apt.get('id')} is in reminder window! Sending WhatsApp...")
-                        # WhatsApp hatırlatma mesajı gönder (Content API)
+                        # Atomic claim: only one worker can proceed (race condition fix)
+                        claimed = await db.appointments.find_one_and_update(
+                            {"id": apt['id'], "reminder_sent": {"$ne": True}},
+                            {"$set": {"reminder_sent": True}},
+                        )
+                        if claimed is None:
+                            logging.info(f"  Appointment {apt.get('id')} already claimed by another worker, skipping")
+                            continue
+                        logging.info(f"  Appointment {apt.get('id')} claimed. Sending WhatsApp...")
                         import asyncio
                         business = setting or {}
                         settings = business.get('settings') if isinstance(business.get('settings'), dict) else business
@@ -463,47 +483,32 @@ async def check_and_send_reminders():
                         coords = (location or {}).get('coordinates', {})
                         lat = coords.get('lat')
                         lng = coords.get('lng')
-                        wa_result = await asyncio.to_thread(
-                            send_whatsapp_template,
-                            apt['phone'],
-                            "REMINDER",
-                            apt['customer_name'],
-                            company_name,
-                            apt['appointment_date'],
-                            apt['appointment_time'],
-                            apt['service_name'],
-                            support_phone,
-                            business_lat=lat,
-                            business_lng=lng,
-                            business_address=location.get('address'),
-                        )
-                        
-                        if wa_result:
-                            # Hatırlatma gönderildi olarak işaretle
-                            await db.appointments.update_one(
-                                {"id": apt['id']},
-                                {"$set": {"reminder_sent": True}}
+                        try:
+                            wa_result = await asyncio.to_thread(
+                                send_whatsapp_template,
+                                apt['phone'], "REMINDER", apt['customer_name'],
+                                company_name, apt['appointment_date'], apt['appointment_time'],
+                                apt['service_name'], support_phone,
+                                business_lat=lat, business_lng=lng,
+                                business_address=location.get('address'),
                             )
-                            logging.info(f"  ✓ WhatsApp reminder sent successfully to {apt['customer_name']} ({apt['phone']}) for appointment {apt['id']}")
+                            logging.info(f"  WhatsApp reminder sent to {apt['customer_name']} ({apt['phone']}) apt={apt['id']}")
                             try:
                                 import time as _time
                                 _phone = str(apt['phone']).lstrip('+')
                                 await db.whatsapp_message_logs.update_one(
                                     {"message_id": wa_result},
-                                    {"$set": {
-                                        "message_id": wa_result,
-                                        "recipient": _phone,
-                                        "status": "sent",
-                                        "timestamp": int(_time.time()),
-                                        "recorded_at": datetime.utcnow().isoformat(),
-                                        "source": "reminder"
-                                    }},
+                                    {"$set": {"message_id": wa_result, "recipient": _phone,
+                                              "status": "sent", "timestamp": int(_time.time()),
+                                              "recorded_at": datetime.utcnow().isoformat(), "source": "reminder"}},
                                     upsert=True
                                 )
                             except Exception:
                                 pass
-                        else:
-                            logging.error(f"  ✗ Failed to send WhatsApp to {apt['customer_name']} ({apt['phone']}) for appointment {apt['id']}")
+                        except Exception as send_err:
+                            # Rollback so next scheduler run can retry
+                            await db.appointments.update_one({"id": apt['id']}, {"$set": {"reminder_sent": False}})
+                            raise send_err
                     else:
                         logging.debug(f"  - Appointment {apt.get('id')} is not in reminder window (time: {apt_datetime.strftime('%Y-%m-%d %H:%M:%S')})")
                 
@@ -9958,6 +9963,7 @@ async def get_whatsapp_message_logs(
 class AIChatRequest(BaseModel):
     message: str
     history: Optional[List[Dict]] = []
+    language: Optional[str] = "tr"
 
 @api_router.post("/ai/chat")
 @rate_limit(LIMITS["ai_chat"])
@@ -10029,7 +10035,8 @@ async def ai_chat_endpoint(
             user_role=user_role,
             username=username,
             organization_id=organization_id,
-            organization_name=organization_name
+            organization_name=organization_name,
+            language=body.language or "tr"
         )
         
         if not result.get('success'):
