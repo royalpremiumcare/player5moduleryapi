@@ -1138,7 +1138,7 @@ async def chat_with_ai(
         
         try:
             model = genai.GenerativeModel(
-                model_name='gemini-2.0-flash-lite',
+                model_name='gemini-3.0-flash',
                 system_instruction=system_instruction,
                 tools=get_gemini_tools(),
                 safety_settings=safety_settings
@@ -1146,7 +1146,7 @@ async def chat_with_ai(
         except Exception:
             try:
                 model = genai.GenerativeModel(
-                    model_name='gemini-1.5-flash',
+                    model_name='gemini-2.0-flash-lite',
                     system_instruction=system_instruction,
                     tools=get_gemini_tools(),
                     safety_settings=safety_settings
