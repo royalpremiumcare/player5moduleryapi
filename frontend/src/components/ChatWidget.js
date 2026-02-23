@@ -2,12 +2,24 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, X, Send, Loader2, Mic, MicOff } from 'lucide-react';
 import api from '@/api/api';
 
-// Capacitor native TTS (Android/iOS) — web'de graceful fallback
+// Capacitor native plugins (Android/iOS) — web'de graceful fallback
 let CapacitorTTS = null;
+let CapacitorSTT = null;
+let CapacitorCore = null;
 try {
   const ttsModule = require('@capacitor-community/text-to-speech');
   CapacitorTTS = ttsModule.TextToSpeech;
 } catch (_) {}
+try {
+  const sttModule = require('@capacitor-community/speech-recognition');
+  CapacitorSTT = sttModule.SpeechRecognition;
+} catch (_) {}
+try {
+  const coreModule = require('@capacitor/core');
+  CapacitorCore = coreModule.Capacitor;
+} catch (_) {}
+
+const isNative = () => CapacitorCore && CapacitorCore.isNativePlatform();
 
 const speakText = async (text) => {
   const clean = text.replace(/[#*_`]/g, '').substring(0, 400);
@@ -163,105 +175,121 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
     }
   };
 
-  // === VOICE MODE (Web Speech API) ===
+  // === VOICE MODE ===
   const toggleVoiceMode = () => {
-    if (voiceMode) {
-      stopVoiceMode();
-    } else {
-      startVoiceMode();
+    if (voiceMode) stopVoiceMode();
+    else startVoiceMode();
+  };
+
+  // Transkripti AI'ya gönder ve yanıt al
+  const handleTranscript = async (transcript) => {
+    if (!voiceActiveRef.current || !transcript.trim()) return;
+    setIsListening(false);
+
+    const newMessages = [...messages, { role: 'user', content: transcript }];
+    setMessages(newMessages);
+    setIsLoading(true);
+    try {
+      const { data } = await api.post('/ai/chat', { message: transcript, history: chatHistory });
+      const aiText = (data && data.message) || '✅ İşlem tamamlandı.';
+      setMessages([...newMessages, { role: 'assistant', content: aiText }]);
+      if (data?.history) setChatHistory(data.history);
+      if (data?.usage_info) setUsageInfo(data.usage_info);
+      speakText(aiText).catch(() => {});
+    } catch (error) {
+      const errMsg = error.response?.data?.detail || error.message || 'Bir hata oluştu.';
+      setMessages([...newMessages, { role: 'assistant', content: `❌ ${errMsg}` }]);
+    } finally {
+      setIsLoading(false);
+      // Bir sonraki dinleme turu
+      if (voiceActiveRef.current) setTimeout(() => startListeningCycle(), 400);
     }
   };
 
-  const restartRecognition = () => {
-    if (!voiceActiveRef.current || !recognitionRef.current) return;
-    try { recognitionRef.current.start(); } catch (_) {}
+  // Tek bir dinleme turu başlat (native veya web)
+  const startListeningCycle = async () => {
+    if (!voiceActiveRef.current) return;
+
+    if (isNative() && CapacitorSTT) {
+      // === NATIVE (Android / iOS) ===
+      try {
+        setIsListening(true);
+        // partialResults listener temizle, yeni ekle
+        await CapacitorSTT.removeAllListeners();
+        await CapacitorSTT.addListener('partialResults', async (data) => {
+          if (!voiceActiveRef.current) return;
+          const match = data.matches && data.matches[0];
+          if (match) {
+            await CapacitorSTT.stop().catch(() => {});
+            handleTranscript(match);
+          }
+        });
+        await CapacitorSTT.start({ language: 'tr-TR', maxResults: 1, partialResults: false, popup: false });
+      } catch (err) {
+        setIsListening(false);
+        if (voiceActiveRef.current) setTimeout(startListeningCycle, 800);
+      }
+    } else {
+      // === WEB (Chrome/Edge) ===
+      const WebSTT = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!WebSTT) return;
+      const rec = new WebSTT();
+      rec.lang = 'tr-TR';
+      rec.continuous = false;
+      rec.interimResults = false;
+      recognitionRef.current = rec;
+
+      rec.onstart = () => setIsListening(true);
+      rec.onresult = (e) => {
+        const t = e.results[0][0].transcript.trim();
+        handleTranscript(t);
+      };
+      rec.onerror = (e) => {
+        setIsListening(false);
+        if (e.error === 'aborted' || e.error === 'not-allowed') return;
+        if (e.error === 'no-speech' && voiceActiveRef.current) {
+          setTimeout(startListeningCycle, 400);
+        }
+      };
+      rec.onend = () => setIsListening(false);
+      try { rec.start(); } catch (_) {}
+    }
   };
 
-  const startVoiceMode = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: '❌ Tarayıcınız sesli komutu desteklemiyor. Chrome veya Edge kullanın.'
-      }]);
+  const startVoiceMode = async () => {
+    // Native izin kontrolü
+    if (isNative() && CapacitorSTT) {
+      try {
+        const perm = await CapacitorSTT.requestPermissions();
+        if (perm.speechRecognition !== 'granted') {
+          setMessages(prev => [...prev, { role: 'assistant', content: '❌ Mikrofon izni reddedildi. Ayarlardan izin verin.' }]);
+          return;
+        }
+      } catch (_) {}
+    } else if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '❌ Tarayıcınız sesli komutu desteklemiyor.' }]);
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'tr-TR';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-
-    recognition.onstart = () => setIsListening(true);
-
-    recognition.onresult = async (event) => {
-      if (!voiceActiveRef.current) return;
-      const transcript = event.results[0][0].transcript.trim();
-      if (!transcript) return;
-
-      setIsListening(false);
-      const newMessages = [...messages, { role: 'user', content: transcript }];
-      setMessages(newMessages);
-      setIsLoading(true);
-
-      try {
-        const { data } = await api.post('/ai/chat', {
-          message: transcript,
-          history: chatHistory
-        });
-
-        const aiText = (data && data.message) || '✅ İşlem tamamlandı.';
-        setMessages([...newMessages, { role: 'assistant', content: aiText }]);
-        if (data?.history) setChatHistory(data.history);
-        if (data?.usage_info) setUsageInfo(data.usage_info);
-
-        // Sesli yanıt (native Capacitor TTS → web fallback)
-        speakText(aiText).catch(() => {});
-        setTimeout(restartRecognition, 300);
-      } catch (error) {
-        const errMsg = error.response?.data?.detail || error.message || 'Bir hata oluştu.';
-        setMessages([...newMessages, { role: 'assistant', content: `❌ ${errMsg}` }]);
-        setTimeout(restartRecognition, 500);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    recognition.onerror = (event) => {
-      setIsListening(false);
-      if (event.error === 'aborted' || event.error === 'not-allowed') return;
-      if (event.error === 'no-speech') {
-        setTimeout(restartRecognition, 400);
-        return;
-      }
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `❌ Mikrofon hatası: ${event.error}. Lütfen mikrofon iznini kontrol edin.`
-      }]);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
     voiceActiveRef.current = true;
     setVoiceMode(true);
-    setMessages(prev => [...prev, {
-      role: 'assistant',
-      content: '🎤 Sesli mod aktif! Konuşabilirsiniz...'
-    }]);
-    recognition.start();
+    setMessages(prev => [...prev, { role: 'assistant', content: '🎤 Sesli mod aktif! Konuşabilirsiniz...' }]);
+    startListeningCycle();
   };
 
-  const stopVoiceMode = () => {
-    voiceActiveRef.current = false; // Önce flag'i kapat — tüm restart'lar durur
-    if (recognitionRef.current) {
+  const stopVoiceMode = async () => {
+    voiceActiveRef.current = false;
+    setVoiceMode(false);
+    setIsListening(false);
+    if (isNative() && CapacitorSTT) {
+      await CapacitorSTT.stop().catch(() => {});
+      await CapacitorSTT.removeAllListeners().catch(() => {});
+    } else if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (_) {}
       recognitionRef.current = null;
     }
-    setVoiceMode(false);
-    setIsListening(false);
+    if (CapacitorTTS) CapacitorTTS.stop().catch(() => {});
+    else if (window.speechSynthesis) window.speechSynthesis.cancel();
     setMessages(prev => [...prev, { role: 'assistant', content: '🛑 Sesli mod kapatıldı.' }]);
   };
 
