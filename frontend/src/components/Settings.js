@@ -257,6 +257,13 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
             <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
               
               <SettingItem 
+                icon={Globe} 
+                title="Online Randevu Sayfası"
+                subtitle="Galeri, logo, konum ve randevu linki"
+                onClick={() => onNavigate && onNavigate("settings-online-booking")}
+              />
+
+              <SettingItem 
                 icon={UserCog} 
                 title={t('settings.staffManagement')}
                 subtitle={t('settings.staffManagementSubtitle')}
@@ -275,20 +282,6 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                 title={t('settings.financeManagement')}
                 subtitle={t('settings.financeManagementSubtitle')}
                 onClick={() => onNavigate && onNavigate("settings-finance")}
-              />
-
-              <SettingItem 
-                icon={MapPin} 
-                title={t('settings.location')}
-                subtitle={t('settings.locationSubtitle')}
-                onClick={() => onNavigate && onNavigate("settings-location")}
-              />
-
-              <SettingItem 
-                icon={Globe} 
-                title="Online Randevu Sayfası"
-                subtitle="Galeri, logo, konum ve randevu linki"
-                onClick={() => onNavigate && onNavigate("settings-online-booking")}
               />
             </div>
           </>
