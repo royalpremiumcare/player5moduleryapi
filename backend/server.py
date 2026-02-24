@@ -8443,12 +8443,16 @@ async def get_availability(request: Request, organization_id: str, service_id: s
     logging.info(f"📋 Availability: staff_members count: {len(staff_members)}, staff_ids: {staff_ids}, staff_id param: {staff_id}")
     
     # Personellerin o gün için TÜM randevularını al (tüm hizmetler dahil) - başlangıç ve bitiş saatleriyle
+    # staff_member_id=None (atanmamış) randevuları da dahil et — tek kişilik org'larda çakışma kaçmasın
     all_staff_appointments = await db.appointments.find(
         {
             "organization_id": organization_id,
             "appointment_date": date,
             "status": {"$ne": "İptal"},
-            "staff_member_id": {"$in": staff_ids}
+            "$or": [
+                {"staff_member_id": {"$in": staff_ids}},
+                {"staff_member_id": None}
+            ]
         },
         {"_id": 0, "appointment_time": 1, "staff_member_id": 1, "service_name": 1, "service_id": 1}
     ).to_list(1000)
@@ -9217,10 +9221,14 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             # Boş personel bul (duration'a göre çakışma kontrolü ile)
             for staff in qualified_staff:
                 # Bu personelin o tarihteki tüm randevularını çek
+                # staff_member_id=None (atanmamış) randevuları da dahil et — tek kişilik org'larda çakışma kaçmasın
                 existing_appointments = await db.appointments.find(
                     {
                         "organization_id": organization_id,
-                        "staff_member_id": staff['username'],
+                        "$or": [
+                            {"staff_member_id": staff['username']},
+                            {"staff_member_id": None}
+                        ],
                         "appointment_date": appointment.appointment_date,
                         "status": {"$ne": "İptal"}
                     },
