@@ -9169,9 +9169,49 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                 {"_id": 0, "username": 1, "role": 1, "permitted_service_ids": 1}
             )
             if admin_user and appointment.service_id in (admin_user.get('permitted_service_ids') or []):
-                # Admin bu hizmeti verebiliyorsa, admin'i kullan
-                assigned_staff_id = admin_user['username']
-                logging.info(f"ℹ️ customer_can_choose_staff and admin_provides_service are both disabled, but using admin: {admin_user['username']}")
+                # Çakışma kontrolü — admin'in VE atanmamış randevuları kontrol et
+                admin_username = admin_user['username']
+                conflict_appts = await db.appointments.find(
+                    {
+                        "organization_id": organization_id,
+                        "$or": [
+                            {"staff_member_id": admin_username},
+                            {"staff_member_id": None}
+                        ],
+                        "appointment_date": appointment.appointment_date,
+                        "status": {"$ne": "İptal"}
+                    },
+                    {"_id": 0, "appointment_time": 1, "service_id": 1}
+                ).to_list(100)
+
+                has_conflict = False
+                for ca in conflict_appts:
+                    ca_start = ca.get('appointment_time', '')
+                    if not ca_start:
+                        continue
+                    ca_svc = await db.services.find_one({"id": ca.get('service_id', '')}, {"_id": 0, "duration": 1})
+                    ca_dur = ca_svc.get('duration', 30) if ca_svc else 30
+                    ca_sh, ca_sm = map(int, ca_start.split(':'))
+                    ca_em = ca_sm + ca_dur
+                    ca_eh = ca_sh + ca_em // 60
+                    ca_em = ca_em % 60
+                    ca_end = f"{str(ca_eh).zfill(2)}:{str(ca_em).zfill(2)}"
+                    if appointment.appointment_time < ca_end and new_end_time > ca_start:
+                        has_conflict = True
+                        logging.info(f"⚠️ Public conflict (no-staff-setting): {appointment.appointment_time}-{new_end_time} overlaps {ca_start}-{ca_end}")
+                        break
+
+                if has_conflict:
+                    plan_doc = await db.organization_plans.find_one({"organization_id": organization_id})
+                    if plan_doc:
+                        await db.organization_plans.update_one(
+                            {"organization_id": organization_id},
+                            {"$inc": {"quota_usage": -1}}
+                        )
+                    raise HTTPException(status_code=400, detail="Bu saat dilimi doludur. Lütfen başka bir saat seçin.")
+
+                assigned_staff_id = admin_username
+                logging.info(f"ℹ️ customer_can_choose_staff and admin_provides_service are both disabled, but using admin: {admin_username}")
             else:
                 # Admin bu hizmeti veremiyorsa, personel atama yapma
                 logging.info(f"ℹ️ customer_can_choose_staff and admin_provides_service are both disabled, and admin cannot provide this service")
