@@ -6150,7 +6150,29 @@ async def subscribe_push(request: Request, subscription_data: PushSubscriptionCr
             await db.push_subscriptions.delete_one({"_id": existing_any["_id"]})
             existing_any = None
     
-    # Mevcut aboneliği kontrol et (aynı endpoint, aynı kullanıcı, aynı organization)
+    platform = subscription.get("platform", "web")
+    
+    # Native platformlar (ios/android) için: aynı kullanıcı+platform için eski token'ı güncelle
+    # Token her app restart'ta değişebilir, endpoint bazlı değil user+platform bazlı eşleştir
+    if platform in ('ios', 'android'):
+        existing_native = await db.push_subscriptions.find_one({
+            "organization_id": current_user.organization_id,
+            "user_id": current_user.username,
+            "platform": platform
+        })
+        if existing_native:
+            await db.push_subscriptions.update_one(
+                {"_id": existing_native["_id"]},
+                {"$set": {
+                    "endpoint": endpoint,
+                    "keys": subscription["keys"],
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+            logger.info(f"✅ Push subscription updated (token refresh) for user: {current_user.username}, platform: {platform}")
+            return {"message": "Push subscription updated"}
+    
+    # Web için: aynı endpoint bazlı eşleştir
     existing = await db.push_subscriptions.find_one({
         "organization_id": current_user.organization_id,
         "user_id": current_user.username,
@@ -6158,16 +6180,15 @@ async def subscribe_push(request: Request, subscription_data: PushSubscriptionCr
     })
     
     if existing:
-        # Güncelle
         await db.push_subscriptions.update_one(
             {"_id": existing["_id"]},
             {"$set": {
                 "keys": subscription["keys"], 
-                "platform": subscription.get("platform", "web"),
+                "platform": platform,
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }}
         )
-        logger.info(f"✅ Push subscription updated for user: {current_user.username}, platform: {subscription.get('platform', 'web')}")
+        logger.info(f"✅ Push subscription updated for user: {current_user.username}, platform: {platform}")
         return {"message": "Push subscription updated"}
     
     # Yeni abonelik oluştur
