@@ -27,13 +27,12 @@ workflows:
           cd frontend
           npx cap sync ios
       - name: Apple Sertifikalarini Hazirla
-        script: xcode-project use-profiles
+        script: xcode-project use-profiles --team-id 9V42VGDN9U
       - name: iOS Uygulamasini (IPA) Derle
         script: |
           xcode-project build-ipa \
             --workspace "frontend/ios/App/App.xcworkspace" \
-            --scheme "App" \
-            --bundle-id "co.plannapp.app"
+            --scheme "App"
     publishing:
       app_store_connect:
         auth: integration
