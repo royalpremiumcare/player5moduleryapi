@@ -43,17 +43,7 @@ from slowapi import _rate_limit_exceeded_handler
 import firebase_admin
 from firebase_admin import credentials, messaging
 
-# Firebase Initialization
-try:
-    firebase_cred_path = os.path.join(os.path.dirname(__file__), "firebase-admin-key.json")
-    if os.path.exists(firebase_cred_path):
-        cred = credentials.Certificate(firebase_cred_path)
-        firebase_admin.initialize_app(cred)
-        logging.info("✅ Firebase Admin SDK initialized")
-    else:
-        logging.warning("⚠️ firebase-admin-key.json not found - Native push notifications disabled")
-except Exception as e:
-    logging.error(f"❌ Firebase initialization failed: {e}")
+# Firebase Initialization moved to lifespan() for proper logging
 
 # AI Service Import
 import ai_service
@@ -814,6 +804,23 @@ async def lifespan(app: FastAPI):
             logging.warning("Step 5 SKIPPED: Database not available")
     except Exception as e:
         logging.warning(f"WARNING during Index creation: {type(e).__name__}: {str(e)}")
+
+    # Step 6: Firebase Admin SDK
+    try:
+        logging.info("Step 6: Initializing Firebase Admin SDK...")
+        if not firebase_admin._apps:
+            firebase_cred_path = os.path.join(os.path.dirname(__file__), "firebase-admin-key.json")
+            logging.info(f"  Firebase key path: {firebase_cred_path}, exists: {os.path.exists(firebase_cred_path)}")
+            if os.path.exists(firebase_cred_path):
+                cred = credentials.Certificate(firebase_cred_path)
+                firebase_admin.initialize_app(cred)
+                logging.info("Step 6 SUCCESS: ✅ Firebase Admin SDK initialized")
+            else:
+                logging.warning("Step 6 SKIPPED: ⚠️ firebase-admin-key.json not found")
+        else:
+            logging.info("Step 6 SUCCESS: Firebase Admin SDK already initialized")
+    except Exception as e:
+        logging.error(f"Step 6 FAILED: ❌ Firebase initialization error: {e}", exc_info=True)
 
     yield
 
