@@ -12,6 +12,7 @@
     "@capacitor/browser": "^7.0.2",
     "@capacitor/cli": "^6.2.1",
     "@capacitor/core": "^7.4.4",
+    "@capacitor/haptics": "^7.0.1",
     "@capacitor/ios": "^7.4.4",
     "@capacitor/push-notifications": "^7.0.3",
     "@dnd-kit/core": "^6.3.1",
