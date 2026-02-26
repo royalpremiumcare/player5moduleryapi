@@ -295,47 +295,67 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   const startImportProcess = async ({ mode }) => {
     if (Capacitor.isNativePlatform()) {
       setImportingContacts(true);
-      let dialogOpened = false;
       try {
-        const permission = await Contacts.requestPermissions();
-        if (permission.contacts !== 'granted' && permission.contacts !== 'limited') {
-          toast.error("Rehber izni verilmedi. Ayarlardan izin verin.");
-          return;
-        }
+        if (mode === 'SELECT') {
+          // pickContacts() her seferinde native iOS rehber picker'ını açar
+          // Limited Access sorunu olmaz - kullanıcı her seferinde farklı kişi seçebilir
+          const result = await Contacts.pickContacts({
+            projection: { name: true, phones: true }
+          });
 
-        const result = await Contacts.getContacts({
-          projection: { name: true, phones: true }
-        });
+          if (!result.contacts || result.contacts.length === 0) {
+            toast.info("Kişi seçilmedi.");
+            return;
+          }
 
-        if (!result.contacts || result.contacts.length === 0) {
-          toast.info("Rehber boş.");
-          return;
-        }
+          const normalizedContacts = result.contacts
+            .map(c => ({
+              name: c.name?.display || ((c.name?.given || '') + " " + (c.name?.family || '')).trim(),
+              phone: c.phones?.[0]?.number
+            }))
+            .filter(c => c.name && c.phone);
 
-        const normalizedContacts = result.contacts
-          .map(c => ({
-            name: c.name?.display || ((c.name?.given || '') + " " + (c.name?.family || '')).trim(),
-            phone: c.phones?.[0]?.number
-          }))
-          .filter(c => c.name && c.phone);
+          if (normalizedContacts.length === 0) {
+            toast.warning("Seçilen kişilerin telefon numarası bulunamadı.");
+            return;
+          }
 
-        if (mode === 'ALL') {
           await saveContactsBatch(normalizedContacts);
+
         } else {
-          setFetchedContacts(normalizedContacts);
-          setSelectedContactPhones(new Set());
-          setContactSearchTerm("");
-          setShowContactSelectionDialog(true);
-          dialogOpened = true;
+          // ALL mode: tüm rehbere erişim iste
+          const permission = await Contacts.requestPermissions();
+          if (permission.contacts !== 'granted' && permission.contacts !== 'limited') {
+            toast.error("Rehber izni verilmedi. Ayarlardan izin verin.");
+            return;
+          }
+
+          const result = await Contacts.getContacts({
+            projection: { name: true, phones: true }
+          });
+
+          if (!result.contacts || result.contacts.length === 0) {
+            toast.info("Rehber boş veya erişim izni verilmedi.");
+            return;
+          }
+
+          const normalizedContacts = result.contacts
+            .map(c => ({
+              name: c.name?.display || ((c.name?.given || '') + " " + (c.name?.family || '')).trim(),
+              phone: c.phones?.[0]?.number
+            }))
+            .filter(c => c.name && c.phone);
+
+          await saveContactsBatch(normalizedContacts);
         }
 
       } catch (error) {
         console.error("Contacts error:", error);
-        toast.error("Rehber okunurken hata oluştu: " + (error.message || ''));
-      } finally {
-        if (!dialogOpened) {
-          setImportingContacts(false);
+        if (!error.message?.includes('canceled') && !error.message?.includes('cancelled')) {
+          toast.error("Rehber okunurken hata oluştu: " + (error.message || ''));
         }
+      } finally {
+        setImportingContacts(false);
       }
     }
     else if ('contacts' in navigator && 'ContactsManager' in window) {

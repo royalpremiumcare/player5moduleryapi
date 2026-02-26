@@ -239,39 +239,39 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     if (Capacitor.isNativePlatform()) {
       setImportingContacts(true);
       try {
-        const permission = await Contacts.requestPermissions();
-        if (permission.contacts !== 'granted' && permission.contacts !== 'limited') {
-          toast.error("İzin verilmedi.");
-          setImportingContacts(false);
-          return;
-        }
-
-        const result = await Contacts.getContacts({
+        // pickContacts() her seferinde native iOS rehber picker'ını açar
+        const result = await Contacts.pickContacts({
           projection: { name: true, phones: true }
         });
 
         if (!result.contacts || result.contacts.length === 0) {
-          toast.info("Rehber boş.");
-          setImportingContacts(false);
+          toast.info("Kişi seçilmedi.");
           return;
         }
 
         const normalizedContacts = result.contacts
           .map(c => ({
-            name: c.name?.display || (c.name?.given + " " + (c.name?.family || "")),
+            name: c.name?.display || ((c.name?.given || '') + " " + (c.name?.family || '')).trim(),
             phone: c.phones?.[0]?.number
           }))
           .filter(c => c.name && c.phone);
 
+        if (normalizedContacts.length === 0) {
+          toast.warning("Seçilen kişinin telefon numarası bulunamadı.");
+          return;
+        }
+
         setFetchedContacts(normalizedContacts);
-        setSelectedContactPhones(new Set());
+        setSelectedContactPhones(new Set(normalizedContacts.map(c => c.phone)));
         setContactSearchTerm("");
         setShowContactSelectionDialog(true);
-        setImportingContacts(false);
 
       } catch (error) {
-        console.error(error);
-        toast.error("Rehber okunurken hata oluştu.");
+        console.error("Contacts error:", error);
+        if (!error.message?.includes('canceled') && !error.message?.includes('cancelled')) {
+          toast.error("Rehber okunurken hata oluştu: " + (error.message || ''));
+        }
+      } finally {
         setImportingContacts(false);
       }
     }
