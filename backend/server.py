@@ -843,25 +843,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Randevu SaaS API", description="... (Açıklamanız buradaydı) ...", version="1.4.2 (Final Fixes)", lifespan=lifespan)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# === CORS MIDDLEWARE ===
-cors_origins_env = os.environ.get('CORS_ORIGINS', '*')
-if cors_origins_env == '*':
-    cors_allow_origins = ["*"]
-else:
-    cors_allow_origins = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
-# Capacitor iOS/Android origins
-cors_allow_origins_set = set(cors_allow_origins)
-cors_allow_origins_set.update(["capacitor://localhost", "https://localhost", "http://localhost"])
-cors_allow_origins = list(cors_allow_origins_set)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_allow_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # === SOCKET.IO SETUP ===
 # Get CORS origins for Socket.IO (same as FastAPI CORS)
 cors_origins_for_socketio = os.environ.get('CORS_ORIGINS', '*')
