@@ -18,6 +18,12 @@ workflows:
         script: |
           cd frontend
           npm install --legacy-peer-deps
+      - name: Create env file
+        script: |
+          cd frontend
+          echo "REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL" > .env.production
+          echo "REACT_APP_GOOGLE_MAPS_API_KEY=$REACT_APP_GOOGLE_MAPS_API_KEY" >> .env.production
+          cat .env.production
       - name: Build web assets
         script: |
           cd frontend
