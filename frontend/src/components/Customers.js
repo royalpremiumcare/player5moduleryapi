@@ -386,26 +386,40 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   const saveContactsBatch = async (contactList) => {
     toast.info(`${contactList.length} kişi işleniyor...`);
     let successCount = 0;
+    let duplicateCount = 0;
+    let lastError = null;
 
     for (const contact of contactList) {
       let cleanPhone = contact.phone.replace(/\D/g, "");
       if (cleanPhone.length === 10) cleanPhone = '90' + cleanPhone;
       else if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) cleanPhone = '90' + cleanPhone.substring(1);
+      else if (cleanPhone.length === 12 && cleanPhone.startsWith('90')) { /* already correct */ }
+      else if (cleanPhone.length === 13 && cleanPhone.startsWith('090')) cleanPhone = cleanPhone.substring(1);
 
       if (cleanPhone.length >= 10) {
         try {
           await api.post("/customers", { name: contact.name.trim(), phone: cleanPhone });
           successCount++;
-        } catch (e) { }
+        } catch (e) {
+          const detail = e.response?.data?.detail || '';
+          if (detail.includes('zaten var') || e.response?.status === 400) {
+            duplicateCount++;
+          } else {
+            lastError = detail || e.message;
+          }
+          console.log(`Contact import error for ${contact.name} (${cleanPhone}):`, detail);
+        }
       }
     }
 
     setImportingContacts(false);
     if (successCount > 0) {
-      toast.success(`${successCount} kişi eklendi!`);
+      toast.success(`${successCount} kişi eklendi!${duplicateCount > 0 ? ` (${duplicateCount} zaten mevcut)` : ''}`);
       await loadCustomers();
+    } else if (duplicateCount > 0) {
+      toast.info(`${duplicateCount} kişi zaten kayıtlı.`);
     } else {
-      toast.warning("Yeni kişi eklenmedi.");
+      toast.error(lastError || "Kişiler eklenemedi.");
     }
   };
 

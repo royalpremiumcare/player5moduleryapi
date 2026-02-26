@@ -7473,9 +7473,18 @@ async def create_customer(request: Request, customer_data: CustomerCreate, curre
     if len(clean_phone) < 10:
         raise HTTPException(status_code=400, detail="Geçerli bir telefon numarası girin")
     
+    # Telefon varyasyonlarını oluştur (farklı formatlarla kaydedilmiş olabilir)
+    phone_variants = [clean_phone]
+    if clean_phone.startswith('90') and len(clean_phone) == 12:
+        phone_variants.append(clean_phone[2:])           # 5362231743
+        phone_variants.append('0' + clean_phone[2:])     # 05362231743
+    elif len(clean_phone) == 10 and not clean_phone.startswith('0'):
+        phone_variants.append('90' + clean_phone)        # 905362231743
+        phone_variants.append('0' + clean_phone)         # 05362231743
+    
     # Aynı telefon numarasına sahip müşteri var mı kontrol et (randevulardan ve customers collection'ından)
     existing_appointment = await db.appointments.find_one(
-        {"organization_id": current_user.organization_id, "phone": phone},
+        {"organization_id": current_user.organization_id, "phone": {"$in": phone_variants}},
         {"_id": 0, "id": 1}
     )
     
@@ -7484,7 +7493,7 @@ async def create_customer(request: Request, customer_data: CustomerCreate, curre
     
     # customers collection'ında da kontrol et
     existing_customer = await db.customers.find_one(
-        {"organization_id": current_user.organization_id, "phone": phone},
+        {"organization_id": current_user.organization_id, "phone": {"$in": phone_variants}},
         {"_id": 0, "id": 1}
     )
     
@@ -7496,7 +7505,7 @@ async def create_customer(request: Request, customer_data: CustomerCreate, curre
         "id": str(uuid.uuid4()),
         "organization_id": current_user.organization_id,
         "name": name,
-        "phone": phone,
+        "phone": clean_phone,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "notes": ""
     }
