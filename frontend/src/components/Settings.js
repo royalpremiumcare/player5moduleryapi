@@ -92,31 +92,33 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
       try {
         const permStatus = await PushNotifications.requestPermissions();
         if (permStatus.receive === 'granted') {
-          await PushNotifications.register();
-          PushNotifications.addListener('registration', async (token) => {
-            let pushToken = token.value;
-            const platform = Capacitor.getPlatform();
+          const platform = Capacitor.getPlatform();
 
-            // iOS: APNs token yerine FCM token al
-            if (platform === 'ios' && FCMTokenPlugin) {
-              try {
-                const fcmResult = await FCMTokenPlugin.getToken();
-                if (fcmResult && fcmResult.token) {
-                  pushToken = fcmResult.token;
+          if (platform === 'ios' && FCMTokenPlugin) {
+            // iOS: FCMTokenPlugin ile doğrudan FCM token al
+            const fcmResult = await FCMTokenPlugin.registerAndGetToken();
+            if (fcmResult && fcmResult.token) {
+              await api.post('/push/subscribe', {
+                subscription: {
+                  endpoint: fcmResult.token,
+                  keys: { p256dh: '', auth: '' },
+                  platform: 'ios'
                 }
-              } catch (fcmError) {
-                console.error('FCM token error:', fcmError);
-              }
+              });
             }
-
-            await api.post('/push/subscribe', {
-              subscription: {
-                endpoint: pushToken,
-                keys: { p256dh: '', auth: '' },
-                platform: platform
-              }
+          } else {
+            // Android: Capacitor registration event kullan
+            await PushNotifications.register();
+            PushNotifications.addListener('registration', async (token) => {
+              await api.post('/push/subscribe', {
+                subscription: {
+                  endpoint: token.value,
+                  keys: { p256dh: '', auth: '' },
+                  platform: platform
+                }
+              });
             });
-          });
+          }
           setNotificationStatus('granted');
           toast.success(t('settings.notificationsEnabledSuccess'));
         } else {

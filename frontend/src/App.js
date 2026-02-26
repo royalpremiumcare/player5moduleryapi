@@ -379,53 +379,60 @@ function App() {
     
     if (isNative) {
       // Native (Android/iOS) Push Notification Logic
+      const platform = Capacitor.getPlatform();
       try {
         const permissionStatus = await PushNotifications.requestPermissions();
+        console.log('📱 Push permission status:', permissionStatus.receive);
         
         if (permissionStatus.receive === 'granted') {
-          // Token almak için kayıt ol
-          await PushNotifications.register();
-          
-          // Token dinleyicisi
-          PushNotifications.addListener('registration', async (token) => {
-            console.log('📱 Native Push Token (APNs/FCM):', token.value);
-            let pushToken = token.value;
-            const platform = Capacitor.getPlatform();
 
-            // iOS: APNs token yerine FCM token al
-            if (platform === 'ios' && FCMTokenPlugin) {
-              try {
-                const fcmResult = await FCMTokenPlugin.getToken();
-                if (fcmResult && fcmResult.token) {
-                  console.log('📱 iOS FCM Token:', fcmResult.token);
-                  pushToken = fcmResult.token;
-                }
-              } catch (fcmError) {
-                console.error('⚠️ FCM token error, using APNs token:', fcmError);
+          // iOS: FCMTokenPlugin ile doğrudan FCM token al (registration event'a bağımlı değil)
+          if (platform === 'ios' && FCMTokenPlugin) {
+            try {
+              console.log('📱 iOS: Calling registerAndGetToken...');
+              const fcmResult = await FCMTokenPlugin.registerAndGetToken();
+              if (fcmResult && fcmResult.token) {
+                console.log('📱 iOS FCM Token:', fcmResult.token);
+                await api.post('/push/subscribe', {
+                  subscription: {
+                    endpoint: fcmResult.token,
+                    keys: { p256dh: '', auth: '' },
+                    platform: 'ios'
+                  }
+                });
+                setPushSubscribed(true);
+                console.log('✅ iOS Push subscription successful');
+              } else {
+                console.error('❌ iOS FCM token empty');
               }
+            } catch (fcmError) {
+              console.error('❌ iOS FCM Error:', fcmError);
             }
-
-            // Backend'e token gönder
-            await api.post('/push/subscribe', {
-              subscription: {
-                endpoint: pushToken,
-                keys: { p256dh: '', auth: '' },
-                platform: platform
-              }
+          } else {
+            // Android: Capacitor registration event kullan
+            await PushNotifications.register();
+            
+            PushNotifications.addListener('registration', async (token) => {
+              console.log('📱 Android Push Token:', token.value);
+              await api.post('/push/subscribe', {
+                subscription: {
+                  endpoint: token.value,
+                  keys: { p256dh: '', auth: '' },
+                  platform: platform
+                }
+              });
+              setPushSubscribed(true);
+              console.log('✅ Android Push subscription successful');
             });
-            setPushSubscribed(true);
-            console.log('✅ Native Push subscription successful');
-          });
 
-          // Hata dinleyicisi
-          PushNotifications.addListener('registrationError', (error) => {
-             console.error('❌ Native Push registration error:', error);
-          });
+            PushNotifications.addListener('registrationError', (error) => {
+               console.error('❌ Native Push registration error:', error);
+            });
+          }
 
-          // Bildirim alındığında
+          // Bildirim alındığında (hem iOS hem Android)
           PushNotifications.addListener('pushNotificationReceived', (notification) => {
              console.log('🔔 Native Notification received:', notification);
-             // Bildirim içeriğini in-app olarak göster veya state'i güncelle
              setNotifications(prev => [{
                id: notification.id || Date.now().toString(),
                read: false,
@@ -440,7 +447,6 @@ function App() {
           // Bildirime tıklandığında
           PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
              console.log('👆 Notification clicked:', notification);
-             // Gerekirse ilgili sayfaya yönlendir
           });
         } else {
           console.log('❌ Native Push permission denied');
