@@ -376,37 +376,46 @@ function App() {
   // Push Notification Subscription
   const subscribeToPush = useCallback(async () => {
     const isNative = Capacitor.isNativePlatform();
+    const debugPush = async (step, data, error) => {
+      try { await api.post('/push/debug', { step, data, error: error ? String(error) : null, platform: Capacitor.getPlatform() }); } catch(e) {}
+    };
     
     if (isNative) {
       // Native (Android/iOS) Push Notification Logic
       const platform = Capacitor.getPlatform();
+      await debugPush('start', { platform, isNative });
       try {
         const permissionStatus = await PushNotifications.requestPermissions();
-        console.log('📱 Push permission status:', permissionStatus.receive);
+        await debugPush('permission', { receive: permissionStatus.receive });
         
         if (permissionStatus.receive === 'granted') {
 
           // iOS: FCMTokenPlugin ile doğrudan FCM token al (registration event'a bağımlı değil)
-          if (platform === 'ios' && FCMTokenPlugin) {
-            try {
-              console.log('📱 iOS: Calling registerAndGetToken...');
-              const fcmResult = await FCMTokenPlugin.registerAndGetToken();
-              if (fcmResult && fcmResult.token) {
-                console.log('📱 iOS FCM Token:', fcmResult.token);
-                await api.post('/push/subscribe', {
-                  subscription: {
-                    endpoint: fcmResult.token,
-                    keys: { p256dh: '', auth: '' },
-                    platform: 'ios'
-                  }
-                });
-                setPushSubscribed(true);
-                console.log('✅ iOS Push subscription successful');
-              } else {
-                console.error('❌ iOS FCM token empty');
+          if (platform === 'ios') {
+            await debugPush('ios_branch', { hasFCMPlugin: !!FCMTokenPlugin });
+            if (FCMTokenPlugin) {
+              try {
+                await debugPush('ios_calling_registerAndGetToken', {});
+                const fcmResult = await FCMTokenPlugin.registerAndGetToken();
+                await debugPush('ios_token_result', { hasToken: !!(fcmResult && fcmResult.token), tokenPrefix: fcmResult?.token?.substring(0, 20) });
+                if (fcmResult && fcmResult.token) {
+                  await api.post('/push/subscribe', {
+                    subscription: {
+                      endpoint: fcmResult.token,
+                      keys: { p256dh: '', auth: '' },
+                      platform: 'ios'
+                    }
+                  });
+                  setPushSubscribed(true);
+                  await debugPush('ios_subscribe_success', {});
+                } else {
+                  await debugPush('ios_token_empty', {});
+                }
+              } catch (fcmError) {
+                await debugPush('ios_fcm_error', {}, fcmError?.message || String(fcmError));
               }
-            } catch (fcmError) {
-              console.error('❌ iOS FCM Error:', fcmError);
+            } else {
+              await debugPush('ios_no_plugin', {});
             }
           } else {
             // Android: Capacitor registration event kullan
@@ -422,7 +431,6 @@ function App() {
                 }
               });
               setPushSubscribed(true);
-              console.log('✅ Android Push subscription successful');
             });
 
             PushNotifications.addListener('registrationError', (error) => {
@@ -449,10 +457,10 @@ function App() {
              console.log('👆 Notification clicked:', notification);
           });
         } else {
-          console.log('❌ Native Push permission denied');
+          await debugPush('permission_denied', { receive: permissionStatus.receive });
         }
       } catch (error) {
-        console.error('❌ Native Push Error:', error);
+        await debugPush('native_error', {}, error?.message || String(error));
       }
       return;
     }

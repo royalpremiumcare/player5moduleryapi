@@ -6192,6 +6192,21 @@ async def unsubscribe_push(request: Request, current_user: UserInDB = Depends(ge
     
     return {"message": f"Deleted {result.deleted_count} subscriptions"}
 
+@api_router.post("/push/debug")
+async def push_debug(request: Request):
+    """iOS push debug - her adımı logla"""
+    try:
+        body = await request.json()
+        step = body.get("step", "unknown")
+        data = body.get("data", {})
+        error = body.get("error", None)
+        platform = body.get("platform", "unknown")
+        logger.info(f"📲 PUSH DEBUG [{platform}] Step: {step} | Data: {data} | Error: {error}")
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Push debug error: {e}")
+        return {"ok": False}
+
 @api_router.post("/push/test")
 async def test_push_notification(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """Test push notification - sadece admin için"""
