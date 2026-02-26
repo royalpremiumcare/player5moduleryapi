@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
 import usePlacesAutocomplete, { getDetails } from "use-places-autocomplete";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -67,6 +67,7 @@ const LocationSettings = ({ onNavigate }) => {
   const [settings, setSettings] = useState(null);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   const [activePredictionIndex, setActivePredictionIndex] = useState(-1);
 
@@ -238,6 +239,24 @@ const LocationSettings = ({ onNavigate }) => {
     setMarkerPos({ lat, lng });
   }, []);
 
+  const handleRemoveLocation = async () => {
+    setRemoving(true);
+    try {
+      await api.delete("/settings/location");
+      setAddress("");
+      setValue("", false);
+      setMarkerPos(null);
+      clearSuggestions();
+      toast.success(t('settings.locationPage.removed'));
+      await loadSettings();
+    } catch (err) {
+      const msg = err?.response?.data?.detail || t('settings.locationPage.removeError');
+      toast.error(msg);
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!address || !markerPos) {
       toast.error(t('settings.locationPage.selectAddressError'));
@@ -371,7 +390,18 @@ const LocationSettings = ({ onNavigate }) => {
               />
             </div>
 
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-end gap-2">
+              {settings?.location?.address && (
+                <Button
+                  onClick={handleRemoveLocation}
+                  disabled={removing || saving || loadingSettings}
+                  variant="outline"
+                  className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                >
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  {removing ? t('settings.locationPage.removing') : t('settings.locationPage.remove')}
+                </Button>
+              )}
               <Button onClick={handleSave} disabled={saving || loadingSettings} className="bg-blue-600 hover:bg-blue-700">
                 {saving ? t('settings.locationPage.saving') : t('settings.locationPage.save')}
               </Button>

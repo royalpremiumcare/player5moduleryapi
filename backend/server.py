@@ -6375,6 +6375,39 @@ async def update_settings_location(request: Request, data: SettingsLocationUpdat
 
     return {"location": new_location}
 
+
+@api_router.delete("/settings/location")
+async def delete_settings_location(request: Request, current_user: UserInDB = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+
+    db = await get_db_from_request(request)
+    query = {"organization_id": current_user.organization_id}
+
+    current_settings = await db.settings.find_one(query, {"_id": 0})
+    old_location = current_settings.get("location") if current_settings else None
+
+    await db.settings.update_one(
+        query,
+        {"$unset": {"location": ""}},
+        upsert=False
+    )
+
+    await create_audit_log(
+        db=db,
+        organization_id=current_user.organization_id,
+        user_id=current_user.username,
+        user_full_name=current_user.full_name or current_user.username,
+        action="DELETE",
+        resource_type="SETTINGS_LOCATION",
+        resource_id=current_user.organization_id,
+        old_value=old_location,
+        new_value=None,
+        ip_address=request.client.host if request.client else None
+    )
+
+    return {"message": "Konum kaldırıldı"}
+
 # === ONBOARDING ENDPOINTS ===
 @api_router.get("/onboarding/info")
 async def get_onboarding_info(request: Request, current_user: UserInDB = Depends(get_current_user)):

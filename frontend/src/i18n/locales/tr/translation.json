@@ -783,7 +783,11 @@
       "coordinateError": "Konum koordinatları alınamadı",
       "selectAddressError": "Lütfen bir adres seçin",
       "saved": "Konum kaydedildi",
-      "saveError": "Konum kaydedilemedi"
+      "saveError": "Konum kaydedilemedi",
+      "remove": "Kaldır",
+      "removing": "Kaldırılıyor...",
+      "removed": "Konum kaldırıldı",
+      "removeError": "Konum kaldırılamadı"
     },
     "subscriptionPage": {
       "title": "Abonelik ve Faturalandırma",

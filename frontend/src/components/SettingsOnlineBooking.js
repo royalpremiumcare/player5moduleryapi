@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Save, Image, Upload, MapPin, Link, ChevronDown, ChevronUp, ExternalLink, Info } from "lucide-react";
+import { ArrowLeft, Save, Image, Upload, MapPin, Link, ChevronDown, ChevronUp, ExternalLink, Info, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -301,13 +301,31 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                     {Number(location.coordinates.lat).toFixed(6)}, {Number(location.coordinates.lng).toFixed(6)}
                   </p>
                 )}
-                <button
-                  type="button"
-                  onClick={() => onNavigate && onNavigate("settings-location")}
-                  className="px-4 py-2 bg-zinc-900 text-white rounded-lg text-xs font-bold hover:bg-black transition-colors"
-                >
-                  {t('settings.onlineBookingPage.editLocation')}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onNavigate && onNavigate("settings-location")}
+                    className="px-4 py-2 bg-zinc-900 text-white rounded-lg text-xs font-bold hover:bg-black transition-colors"
+                  >
+                    {t('settings.onlineBookingPage.editLocation')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await api.delete("/settings/location");
+                        setLocation(null);
+                        toast.success(t('settings.locationPage.removed'));
+                      } catch (err) {
+                        toast.error(err?.response?.data?.detail || t('settings.locationPage.removeError'));
+                      }
+                    }}
+                    className="px-4 py-2 bg-red-500 text-white rounded-lg text-xs font-bold hover:bg-red-600 transition-colors flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    {t('settings.locationPage.remove')}
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="p-4 backdrop-blur-md bg-white/50 rounded-xl border border-white/30 shadow-sm space-y-3">
