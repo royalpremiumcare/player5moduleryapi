@@ -26,10 +26,6 @@ workflows:
         script: |
           cd frontend
           npx cap sync ios
-      - name: Sertifika ve Profili Zorla Uret
-        script: app-store-connect fetch-signing-files "co.plannapp.app" --type IOS_APP_STORE --create
-      - name: Apple Sertifikalarini Ayarla
-        script: xcode-project use-profiles
       - name: iOS Uygulamasini (IPA) Derle
         script: xcode-project build-ipa --workspace "frontend/ios/App/App.xcworkspace" --scheme "App"
     publishing:
