@@ -98,8 +98,8 @@ async def list_appointments(
     # Build query
     query = {"organization_id": current_user.organization_id}
     
-    # Staff users only see their appointments
-    if current_user.role == "staff" and current_user.staff_member_id:
+    # Staff users only see their appointments (unless they have can_view_all_appointments permission)
+    if current_user.role == "staff" and current_user.staff_member_id and not current_user.can_view_all_appointments:
         query["staff_member_id"] = current_user.staff_member_id
     
     # Status filter
@@ -236,8 +236,8 @@ async def get_appointment(
         "organization_id": current_user.organization_id
     }
     
-    # Staff can only see their appointments
-    if current_user.role == "staff" and current_user.staff_member_id:
+    # Staff can only see their appointments (unless they have can_view_all_appointments permission)
+    if current_user.role == "staff" and current_user.staff_member_id and not current_user.can_view_all_appointments:
         query["staff_member_id"] = current_user.staff_member_id
     
     apt = await db.appointments.find_one(query, {"_id": 0})
@@ -266,8 +266,8 @@ async def update_appointment(
         "organization_id": current_user.organization_id
     }
     
-    # Staff can only update their appointments
-    if current_user.role == "staff" and current_user.staff_member_id:
+    # Staff can only update their appointments (unless they have can_view_all_appointments permission)
+    if current_user.role == "staff" and current_user.staff_member_id and not current_user.can_view_all_appointments:
         query["staff_member_id"] = current_user.staff_member_id
     
     # Check if appointment exists

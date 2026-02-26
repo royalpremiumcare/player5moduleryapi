@@ -10,6 +10,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState(null);
+  const [canViewAll, setCanViewAll] = useState(false);
 
   useEffect(() => {
     // Önce localStorage'dan kontrol et, yoksa sessionStorage'dan
@@ -19,6 +20,10 @@ export const AuthProvider = ({ children }) => {
       setToken(storedToken);
       setUserRole(storedRole);
       setIsAuthenticated(true);
+      try {
+        const payload = JSON.parse(atob(storedToken.split('.')[1]));
+        setCanViewAll(payload.can_view_all_appointments || false);
+      } catch (e) {}
     }
   }, []);
 
@@ -46,6 +51,7 @@ export const AuthProvider = ({ children }) => {
 
       setToken(access_token);
       setUserRole(role);
+      setCanViewAll(tokenPayload.can_view_all_appointments || false);
       
       // rememberMe durumuna göre localStorage veya sessionStorage kullan
       if (rememberMe) {
@@ -86,6 +92,7 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(false);
       setToken(null);
       setUserRole(null);
+      setCanViewAll(false);
       localStorage.removeItem('authToken');
       localStorage.removeItem('userRole');
       sessionStorage.removeItem('authToken');
@@ -145,6 +152,7 @@ export const AuthProvider = ({ children }) => {
     // State'leri temizle
     setToken(null);
     setUserRole(null);
+    setCanViewAll(false);
     setIsAuthenticated(false);
     
     // Sadece auth bilgilerini sil - is_app_mode'u KORUYORUZ
@@ -162,7 +170,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated, userRole, login, register, logout }}>
+    <AuthContext.Provider value={{ token, isAuthenticated, userRole, canViewAll, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

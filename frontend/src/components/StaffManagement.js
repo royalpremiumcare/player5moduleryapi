@@ -398,6 +398,26 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
     }
   };
 
+  const handleTogglePermission = async (staffMember) => {
+    try {
+      const newValue = !staffMember.can_view_all_appointments;
+      await api.put(`/staff/${encodeURIComponent(staffMember.username)}/toggle-permission`, {
+        can_view_all_appointments: newValue
+      });
+      
+      setStaff(prev => prev.map(s => 
+        s.username === staffMember.username 
+          ? { ...s, can_view_all_appointments: newValue }
+          : s
+      ));
+      
+      toast.success(newValue ? t('staff.management.permissionGranted') : t('staff.management.permissionRevoked'));
+    } catch (error) {
+      console.error("Yetki güncelleme hatası:", error);
+      toast.error(t('staff.management.permissionUpdateError'));
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 pb-20">
@@ -1131,6 +1151,21 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                             </DialogContent>
                           </Dialog>
                         </>
+                      )}
+
+                      {staffMember.role !== 'admin' && (
+                        <Button
+                          variant="outline"
+                          onClick={() => handleTogglePermission(staffMember)}
+                          className={`flex-1 w-full sm:w-auto backdrop-blur-md border-white/40 rounded-xl h-11 font-bold shadow-sm ${
+                            staffMember.can_view_all_appointments
+                              ? "bg-green-50 border-green-300 text-green-700 hover:bg-green-100"
+                              : "bg-white/60 hover:bg-white/80"
+                          }`}
+                        >
+                          <ShieldCheck className="w-4 h-4 mr-2" />
+                          {staffMember.can_view_all_appointments ? t('staff.management.permissionActive') : t('staff.management.permissionInactive')}
+                        </Button>
                       )}
                   
                       {canEdit && (

@@ -45,8 +45,13 @@ api.interceptors.response.use(
   async (error) => {
     // 401 Unauthorized hatası geldiğinde otomatik logout
     if (error.response && error.response.status === 401) {
-      // Stripe confirm endpoint'i best-effort: token yoksa/expire olduysa kullanıcıyı zorla logout etme
+      // push/unsubscribe isteği zaten 401 dönerse sonsuz döngüye girmesin
       const requestUrl = error.config?.url || '';
+      if (requestUrl.includes('/push/unsubscribe')) {
+        return Promise.reject(error);
+      }
+
+      // Stripe confirm endpoint'i best-effort: token yoksa/expire olduysa kullanıcıyı zorla logout etme
       if (requestUrl.includes('/payments/confirm-checkout-session')) {
         return Promise.reject(error);
       }

@@ -54,7 +54,8 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const Calendar = ({ onEditAppointment, onNewAppointment }) => {
-  const { userRole, token } = useAuth();
+  const { userRole, token, canViewAll } = useAuth();
+  const effectiveRole = (userRole === 'staff' && canViewAll) ? 'admin' : userRole;
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
   const [appointments, setAppointments] = useState([]);
@@ -127,10 +128,10 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
 
   useEffect(() => {
     loadSettings();
-    if (userRole === 'staff') {
+    if (userRole === 'staff' && !canViewAll) {
       loadCurrentStaffUsername();
     }
-  }, [userRole]);
+  }, [userRole, canViewAll]);
 
   useEffect(() => {
     if (settings !== null) {
@@ -159,7 +160,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
   };
 
   const loadStaffMembers = async () => {
-    if (userRole !== 'admin') return;
+    if (userRole !== 'admin' && !canViewAll) return;
     try {
       const response = await api.get("/users");
       let staff = (response.data || []).filter(u => u.role === 'staff');
@@ -209,9 +210,9 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
       };
 
       // Staff için filtreleme
-      if (userRole === 'staff' && currentStaffUsername) {
+      if (userRole === 'staff' && !canViewAll && currentStaffUsername) {
         params.staff_member_id = currentStaffUsername;
-      } else if (userRole === 'admin' && selectedStaffFilter !== 'all') {
+      } else if ((userRole === 'admin' || canViewAll) && selectedStaffFilter !== 'all') {
         params.staff_member_id = selectedStaffFilter;
       }
 
@@ -223,7 +224,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
       }));
 
       // Staff için ekstra filtreleme (güvenlik)
-      if (userRole === 'staff' && currentStaffUsername) {
+      if (userRole === 'staff' && !canViewAll && currentStaffUsername) {
         filteredAppointments = filteredAppointments.filter(
           apt => apt.staff_member_id === currentStaffUsername
         );
@@ -235,7 +236,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
     } finally {
       setLoading(false);
     }
-  }, [currentDate, viewMode, userRole, currentStaffUsername, selectedStaffFilter]);
+  }, [currentDate, viewMode, userRole, canViewAll, currentStaffUsername, selectedStaffFilter]);
 
   // WebSocket için ref
   const loadAppointmentsRef = useRef(loadAppointments);
@@ -402,7 +403,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
   };
 
   const canDeleteAppointment = (apt) => {
-    if (userRole === 'admin') return true;
+    if (userRole === 'admin' || canViewAll) return true;
     if (userRole === 'staff' && currentStaffUsername) {
       return apt.staff_member_id === currentStaffUsername;
     }
@@ -466,7 +467,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   <Card
                     key={apt.id}
                     className={`mb-2 sm:mb-2 p-3 sm:p-3 cursor-pointer hover:shadow-md transition-shadow ${
-                      userRole === 'admin' ? getStaffColor(apt.staff_member_id) : 'bg-white border-gray-200'
+                      (userRole === 'admin' || canViewAll) ? getStaffColor(apt.staff_member_id) : 'bg-white border-gray-200'
                     }`}
                     onClick={() => handleAppointmentClick(apt)}
                   >
@@ -485,7 +486,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                         </div>
                         <p className="text-sm sm:text-sm font-semibold text-gray-900 mb-1 truncate">{apt.customer_name}</p>
                         <p className="text-sm text-gray-600 mt-0.5 truncate">{apt.service_name}</p>
-                        {userRole === 'admin' && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
+                        {(userRole === 'admin' || canViewAll) && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
                           <div className="flex items-center gap-1 mt-2 sm:mt-2">
                             <User className="w-4 h-4 text-gray-500 flex-shrink-0" />
                             <span className="text-sm text-gray-600 truncate">{getStaffName(apt.staff_member_id)}</span>
@@ -562,7 +563,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   <Card
                     key={apt.id}
                     className={`p-3 sm:p-2 cursor-pointer hover:shadow-md transition-shadow text-sm sm:text-xs ${
-                      userRole === 'admin' ? getStaffColor(apt.staff_member_id) : 'bg-white border-gray-200'
+                      (userRole === 'admin' || canViewAll) ? getStaffColor(apt.staff_member_id) : 'bg-white border-gray-200'
                     }`}
                     onClick={() => handleAppointmentClick(apt)}
                   >
@@ -580,7 +581,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                     </div>
                     <p className="font-semibold text-base sm:text-xs text-gray-900 mb-1 truncate">{apt.customer_name}</p>
                     <p className="text-sm sm:text-xs text-gray-600 truncate">{apt.service_name}</p>
-                    {userRole === 'admin' && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
+                    {(userRole === 'admin' || canViewAll) && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
                       <div className="flex items-center gap-1 mt-2 sm:mt-1">
                         <User className="w-4 h-4 sm:w-3 sm:h-3 text-gray-500 flex-shrink-0" />
                         <span className="text-sm sm:text-xs truncate">{getStaffName(apt.staff_member_id)}</span>
@@ -663,7 +664,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                 {dayAppointments.length > 0 && (
                   <div 
                     className={`text-[10px] sm:text-xs p-1.5 sm:p-1 rounded cursor-pointer hover:shadow-sm text-center ${
-                      userRole === 'admin' && dayAppointments.length > 0 
+                      (userRole === 'admin' || canViewAll) && dayAppointments.length > 0 
                         ? getStaffColor(dayAppointments[0].staff_member_id) 
                         : 'bg-blue-100 text-blue-700'
                     }`}
@@ -718,7 +719,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
           <Card
             key={apt.id}
             className={`p-4 sm:p-4 cursor-pointer hover:shadow-md transition-shadow ${
-              userRole === 'admin' ? getStaffColor(apt.staff_member_id) : 'bg-white border-gray-200'
+              (userRole === 'admin' || canViewAll) ? getStaffColor(apt.staff_member_id) : 'bg-white border-gray-200'
             }`}
             onClick={() => handleAppointmentClick(apt)}
           >
@@ -742,7 +743,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                 </div>
                 <p className="text-base sm:text-base font-semibold text-gray-900 mb-1 sm:mb-1 truncate">{apt.customer_name}</p>
                 <p className="text-sm sm:text-sm text-gray-600 mb-2 sm:mb-2 truncate">{apt.service_name}</p>
-                {userRole === 'admin' && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
+                {(userRole === 'admin' || canViewAll) && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
                   <div className="flex items-center gap-2 mt-2 sm:mt-2">
                     <User className="w-4 h-4 sm:w-4 sm:h-4 text-gray-500 flex-shrink-0" />
                     <span className="text-sm sm:text-sm text-gray-600 truncate">{getStaffName(apt.staff_member_id)}</span>
@@ -802,7 +803,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
             {/* View Mode & Filters */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
               {/* Staff Filter (Admin only) */}
-              {userRole === 'admin' && staffMembers.length > 0 && (
+              {(userRole === 'admin' || canViewAll) && staffMembers.length > 0 && (
                 <select
                   value={selectedStaffFilter}
                   onChange={(e) => setSelectedStaffFilter(e.target.value)}
@@ -943,7 +944,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   </div>
                 )}
 
-                {userRole === 'admin' && selectedAppointment.staff_member_id && getStaffName(selectedAppointment.staff_member_id) && (
+                {(userRole === 'admin' || canViewAll) && selectedAppointment.staff_member_id && getStaffName(selectedAppointment.staff_member_id) && (
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">{t('customers.staff')}</span>
                     <span className="text-sm font-semibold text-gray-900">
@@ -1036,7 +1037,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   <Card
                     key={apt.id}
                     className={`p-4 cursor-pointer hover:shadow-md transition-shadow ${
-                      userRole === 'admin' ? getStaffColor(apt.staff_member_id) : 'bg-white border-gray-200'
+                      (userRole === 'admin' || canViewAll) ? getStaffColor(apt.staff_member_id) : 'bg-white border-gray-200'
                     }`}
                     onClick={() => {
                       setShowDayAppointmentsDialog(false);
@@ -1060,7 +1061,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                         </div>
                         <p className="text-base font-semibold text-gray-900 mb-1">{apt.customer_name}</p>
                         <p className="text-sm text-gray-600 mb-2">{apt.service_name}</p>
-                        {userRole === 'admin' && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
+                        {(userRole === 'admin' || canViewAll) && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
                           <div className="flex items-center gap-1 mt-2">
                             <User className="w-4 h-4 text-gray-500 flex-shrink-0" />
                             <span className="text-sm text-gray-600">{getStaffName(apt.staff_member_id)}</span>

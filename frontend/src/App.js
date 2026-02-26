@@ -643,8 +643,8 @@ function App() {
         const appointment = data?.appointment;
         const user = currentUserRef.current;
         
-        // Personel ise sadece kendi randevuları için bildirim göster
-        if (user?.role === 'staff' && appointment?.staff_member_id !== user?.username) {
+        // Personel ise sadece kendi randevuları için bildirim göster (can_view_all_appointments yetkisi yoksa)
+        if (user?.role === 'staff' && !user?.can_view_all_appointments && appointment?.staff_member_id !== user?.username) {
           console.log("🔕 Bildirim gösterilmedi - başka personelin randevusu");
           return;
         }

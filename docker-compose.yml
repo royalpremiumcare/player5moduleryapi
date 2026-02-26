@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # 1. Veritabanı (MongoDB)
+  mongodb:
+    image: mongo:latest
+    container_name: plann_mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  # 2. Redis (Backend için gerekli)
+  redis:
+    image: redis:alpine
+    container_name: plann_redis
+    restart: always
+    # Dışarıdan erişime gerek yok, sadece backend görse yeterli
+
+  # 3. FastAPI Backend
+  backend:
+    build: ./backend
+    container_name: plann_backend
+    restart: always
+    ports:
+      - "8002:8002"
+    depends_on:
+      - mongodb
+      - redis
+    # .env dosyasını Docker'a tanıtıyoruz
+    env_file:
+      - ./backend/.env
+
+  # 4. React Frontend
+  frontend:
+    build: ./frontend
+    container_name: plann_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongodb_data:

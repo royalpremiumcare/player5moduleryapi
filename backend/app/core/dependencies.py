@@ -32,6 +32,7 @@ class UserInDB(BaseModel):
     onboarding_completed: bool = False
     staff_member_id: Optional[str] = None
     created_at: Optional[str] = None
+    can_view_all_appointments: bool = False
 
 
 async def get_current_user(

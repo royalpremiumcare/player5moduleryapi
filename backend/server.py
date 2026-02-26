@@ -1744,7 +1744,7 @@ async def create_audit_log(
 # === VERİ MODELLERİ (Aynı kaldı) ===
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    id: Optional[str] = None; username: str; full_name: Optional[str] = None; language: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=list); onboarding_completed: bool = False; breaks: List[dict] = Field(default_factory=list)
+    id: Optional[str] = None; username: str; full_name: Optional[str] = None; language: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=list); onboarding_completed: bool = False; breaks: List[dict] = Field(default_factory=list); can_view_all_appointments: bool = False
 class UserInDB(User): hashed_password: Optional[str] = None
 class UserCreate(BaseModel): username: str; password: str; full_name: Optional[str] = None; organization_name: Optional[str] = None; support_phone: Optional[str] = None; sector: Optional[str] = None
 class Token(BaseModel): access_token: str; token_type: str
@@ -2334,7 +2334,8 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
             "org_id": user.organization_id, 
             "role": user.role, 
             "onboarding_completed": user.onboarding_completed,
-            "full_name": user.full_name or None
+            "full_name": user.full_name or None,
+            "can_view_all_appointments": user.can_view_all_appointments
         }
         access_token = create_access_token(data=token_data, expires_delta=access_token_expires)
         return {"access_token": access_token, "token_type": "bearer"}
@@ -2411,7 +2412,8 @@ async def exchange_sso_code(request: Request, body: SsoExchangeRequest, db = Dep
             "org_id": user.organization_id,
             "role": user.role,
             "onboarding_completed": user.onboarding_completed,
-            "full_name": user.full_name or None
+            "full_name": user.full_name or None,
+            "can_view_all_appointments": user.can_view_all_appointments
         }
         access_token = create_access_token(data=token_data, expires_delta=access_token_expires)
         return {"access_token": access_token, "token_type": "bearer"}
@@ -3629,8 +3631,8 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             )
         raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
     
-    # PERSONEL KONTROL: Staff ise sadece kendi hizmetlerine randevu alabilir
-    if current_user.role == "staff":
+    # PERSONEL KONTROL: Staff ise sadece kendi hizmetlerine randevu alabilir (can_view_all_appointments yetkisi yoksa)
+    if current_user.role == "staff" and not current_user.can_view_all_appointments:
         if service["id"] not in current_user.permitted_service_ids:
             # Kota artırıldı ama yetki yok, geri al
             plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
@@ -4147,10 +4149,10 @@ async def get_appointments(
     db = await get_db_from_request(request)
     query = {"organization_id": current_user.organization_id}
     
-    # Personel sadece kendine atanan randevuları görebilir
-    if current_user.role == "staff":
+    # Personel sadece kendine atanan randevuları görebilir (can_view_all_appointments yetkisi yoksa)
+    if current_user.role == "staff" and not current_user.can_view_all_appointments:
         query['staff_member_id'] = current_user.username
-    elif staff_member_id and current_user.role == "admin":
+    elif staff_member_id and (current_user.role == "admin" or current_user.can_view_all_appointments):
         # Admin için personel filtresi
         if staff_member_id != "all" and staff_member_id != "unassigned":
             query['staff_member_id'] = staff_member_id
@@ -6957,6 +6959,29 @@ async def update_staff_days_off(request: Request, staff_id: str, days_off_data: 
     logging.info(f"Personel tatil günleri güncellendi: {staff_id}, days_off={days_off}")
     
     return {"message": "Personel tatil günleri güncellendi", "staff_id": staff_id, "days_off": days_off}
+
+@api_router.put("/staff/{staff_id}/toggle-permission")
+async def toggle_staff_permission(request: Request, staff_id: str, permission_data: dict, current_user: UserInDB = Depends(get_current_user)):
+    """Admin, personelin tüm randevuları görme yetkisini açıp kapatabilir"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    
+    db = await get_db_from_request(request)
+    
+    staff = await db.users.find_one({"username": staff_id, "organization_id": current_user.organization_id})
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı veya erişim yok")
+    
+    can_view_all = permission_data.get('can_view_all_appointments', False)
+    
+    await db.users.update_one(
+        {"username": staff_id, "organization_id": current_user.organization_id},
+        {"$set": {"can_view_all_appointments": bool(can_view_all)}}
+    )
+    
+    logging.info(f"Personel yetki güncellendi: {staff_id}, can_view_all_appointments={can_view_all}")
+    
+    return {"message": "Personel yetkisi güncellendi", "staff_id": staff_id, "can_view_all_appointments": can_view_all}
 
 @api_router.delete("/staff/{staff_id}")
 async def delete_staff(request: Request, staff_id: str, current_user: UserInDB = Depends(get_current_user)):
@@ -10084,7 +10109,8 @@ async def ai_chat_endpoint(
             username=username,
             organization_id=organization_id,
             organization_name=organization_name,
-            language=body.language or "tr"
+            language=body.language or "tr",
+            can_view_all_appointments=getattr(current_user, 'can_view_all_appointments', False)
         )
         
         if not result.get('success'):

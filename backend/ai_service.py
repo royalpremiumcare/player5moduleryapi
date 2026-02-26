@@ -524,7 +524,7 @@ async def delete_customer_tool(db, org_id: str, phone: str) -> Dict:
         return {"success": False, "message": f"❌ Hata: {str(e)}"}
 
 
-async def get_dashboard_status_tool(db, org_id: str, user_role: str, username: str) -> Dict:
+async def get_dashboard_status_tool(db, org_id: str, user_role: str, username: str, can_view_all_appointments: bool = False) -> Dict:
     """Dashboard durum bilgisi - Rol bazlı (+ Hizmet listesi)"""
     try:
         turkey_tz = ZoneInfo("Europe/Istanbul")
@@ -552,7 +552,7 @@ async def get_dashboard_status_tool(db, org_id: str, user_role: str, username: s
             for c in customers
         ]
         
-        if user_role.lower() == "staff":
+        if user_role.lower() == "staff" and not can_view_all_appointments:
             # Personel: Sadece kendi verileri (bugün + yakın tarihler)
             from datetime import timedelta
             tomorrow = (datetime.now(turkey_tz) + timedelta(days=1)).date().isoformat()
@@ -940,7 +940,8 @@ async def chat_with_ai(
     username: str,
     organization_id: str,
     organization_name: str = "İşletme",
-    language: str = "tr"
+    language: str = "tr",
+    can_view_all_appointments: bool = False
 ) -> Dict[str, Any]:
     """
     AI ile sohbet et - Tool calling destekli
@@ -1270,7 +1271,7 @@ async def chat_with_ai(
                     )
                 elif func_name == "get_dashboard_status":
                     result = await get_dashboard_status_tool(
-                        db, organization_id, user_role, username
+                        db, organization_id, user_role, username, can_view_all_appointments
                     )
                 elif func_name == "get_analytics":
                     result = await get_analytics_tool(

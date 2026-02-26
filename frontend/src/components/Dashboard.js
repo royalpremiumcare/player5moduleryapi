@@ -31,7 +31,7 @@ const WhatsAppIcon = ({ className }) => (
 );
 
 const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate, onOpenChat }) => {
-  const { token } = useAuth();
+  const { token, canViewAll } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
   // State
@@ -106,7 +106,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   };
 
   const loadStaffMembers = async () => {
-    if (userRole !== 'admin') return;
+    if (userRole !== 'admin' && !canViewAll) return;
     try {
       const res = await api.get("/users");
       let staff = (res.data || []).filter(u => u.role === 'staff');
@@ -135,7 +135,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     loadSettings();
     loadTodayBreaks();
     loadCurrentStaffUsername();
-    if (userRole === 'staff') {
+    if (userRole === 'staff' && !canViewAll) {
       loadPersonnelStats();
     }
     
@@ -147,7 +147,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   }, [userRole, loadPersonnelStats, dashboardTourStorageKey]);
 
   useEffect(() => { if (settings !== null) loadStaffMembers(); }, [settings, userRole]);
-  useEffect(() => { if (userRole === 'staff') loadPersonnelStats(); }, [appointments.length, userRole, loadPersonnelStats]);
+  useEffect(() => { if (userRole === 'staff' && !canViewAll) loadPersonnelStats(); }, [appointments.length, userRole, canViewAll, loadPersonnelStats]);
 
   useEffect(() => {
     if (!socketRef.current && token) {
@@ -155,9 +155,9 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       const socket = io(socketUrl, { path: '/api/socket.io', transports: ['websocket', 'polling'], auth: { token: token } });
       socketRef.current = socket;
       socket.on('connect', () => { try { const p = JSON.parse(atob(token.split('.')[1])); if (p.org_id) socket.emit('join_organization', { organization_id: p.org_id }); } catch (e) {} });
-      socket.on('appointment_created', () => { if (onRefresh) onRefresh(); if (userRole === 'staff') loadPersonnelStats(); });
-      socket.on('appointment_updated', () => { if (onRefresh) onRefresh(); if (userRole === 'staff') loadPersonnelStats(); });
-      socket.on('appointment_deleted', () => { if (onRefresh) onRefresh(); if (userRole === 'staff') loadPersonnelStats(); });
+      socket.on('appointment_created', () => { if (onRefresh) onRefresh(); if (userRole === 'staff' && !canViewAll) loadPersonnelStats(); });
+      socket.on('appointment_updated', () => { if (onRefresh) onRefresh(); if (userRole === 'staff' && !canViewAll) loadPersonnelStats(); });
+      socket.on('appointment_deleted', () => { if (onRefresh) onRefresh(); if (userRole === 'staff' && !canViewAll) loadPersonnelStats(); });
     }
     return () => { if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; } };
   }, [token, onRefresh, userRole, loadPersonnelStats]);
@@ -220,7 +220,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const todayAppointments = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
     if (!aptDate || aptDate !== today) return false;
-    if (userRole === 'staff' && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
+    if (userRole === 'staff' && !canViewAll && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
     return true;
   });
 
@@ -235,20 +235,20 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const filteredTomorrow = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
     if (!aptDate || aptDate !== tomorrow) return false;
-    if (userRole === 'staff' && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
+    if (userRole === 'staff' && !canViewAll && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
     return true;
   });
   const upcoming = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
     if (!aptDate || aptDate <= tomorrow) return false;
-    if (userRole === 'staff' && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
+    if (userRole === 'staff' && !canViewAll && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
     return true;
   }).filter(apt => staffFilter === "all" || apt.staff_member_id === staffFilter).sort((a, b) => (a.appointment_date || a.date).localeCompare(b.appointment_date || b.date));
 
   const getStaffName = (id) => { const staff = staffMembers.find(s => s.username === id); return staff?.full_name || staff?.username; };
 
-  const displayCount = userRole === 'admin' ? stats?.today_appointments || 0 : todayAppointments.length;
-  const displayRevenue = userRole === 'admin'
+  const displayCount = (userRole === 'admin' || canViewAll) ? stats?.today_appointments || 0 : todayAppointments.length;
+  const displayRevenue = (userRole === 'admin' || canViewAll)
     ? stats?.bugunku_toplam_hizmet_tutari || 0
     : personnelStats?.total_revenue_generated || 0;
 
@@ -298,7 +298,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><WhatsAppIcon className="w-4 h-4" /></button>
               </div>
               <div className="flex items-center gap-2">
-                {userRole === 'admin' && getStaffName(apt.staff_member_id) && (
+                {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
                   <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded text-gray-600 border border-gray-100 shadow-sm">
                     <User className="w-3 h-3" />
                     <span className="text-xs font-bold">{getStaffName(apt.staff_member_id)}</span>
@@ -367,7 +367,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
           {/* Sağ Taraf: PERSONEL MOLA ALANI (sadece staff için) */}
           {userRole === 'staff' && (
-            <div className="mt-4 md:mt-0 w-full md:w-auto md:min-w-[280px] tour-breaks"> {/* CLASS EKLENDI */}
+            <div className="mt-4 md:mt-0 w-full md:w-auto md:min-w-[280px] md:mr-16 tour-breaks"> {/* CLASS EKLENDI */}
               <div className="bg-white border border-orange-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -417,7 +417,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
       <div className="p-4 md:p-6 space-y-6">
         {/* 2. STAFF FILTER */}
-        {userRole === 'admin' && staffMembers.length > 0 && (
+        {(userRole === 'admin' || canViewAll) && staffMembers.length > 0 && (
           <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide py-3 px-1">
             <button onClick={() => setStaffFilter("all")} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all border shadow-sm hover:shadow-md hover:scale-105 active:scale-95 ${staffFilter === "all" ? "bg-black text-white border-black" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}>{t('dashboard.todayFlow.allStaff')}</button>
             {staffMembers.map((staff) => (

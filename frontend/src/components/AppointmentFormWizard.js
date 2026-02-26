@@ -30,7 +30,7 @@ const publicApi = axios.create({
 });
 
 const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
-  const { userRole } = useAuth();
+  const { userRole, canViewAll } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
   const dateScrollerRef = useRef(null);
@@ -110,7 +110,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   }, [formData.service_id, formData.appointment_date, formData.staff_member_id, step]);
 
   useEffect(() => {
-    if (userRole === 'staff' && currentUser && services.length > 0) {
+    if (userRole === 'staff' && !canViewAll && currentUser && services.length > 0) {
       const allowed = services.filter(s => currentUser.permitted_service_ids?.includes(s.id));
       setFilteredServices(allowed);
     } else {
@@ -176,7 +176,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   // --- API CALLS ---
 
   const loadCurrentUser = async () => {
-    if (userRole === 'staff') {
+    if (userRole === 'staff' && !canViewAll) {
       try {
         const res = await api.get("/users");
         const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
@@ -208,7 +208,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       if (formData.staff_member_id) params.staff_id = formData.staff_member_id;
 
       let res;
-      if (userRole === 'admin') {
+      if (userRole === 'admin' || canViewAll) {
         res = await api.get('/availability', { params });
       } else {
         const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
@@ -349,7 +349,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     
     try {
       const payload = { ...formData, appointment_date: format(formData.appointment_date, "yyyy-MM-dd") };
-      if (userRole === 'staff' && currentUser && !payload.staff_member_id) payload.staff_member_id = currentUser.username;
+      if (userRole === 'staff' && !canViewAll && currentUser && !payload.staff_member_id) payload.staff_member_id = currentUser.username;
       if (!payload.staff_member_id) delete payload.staff_member_id;
 
       if (appointment) {
@@ -604,7 +604,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       <div className="space-y-8 animate-in slide-in-from-right duration-300 pb-24">
         
         {/* Personel Seçimi */}
-        {userRole === 'admin' && qualifiedStaff.length > 0 && (
+        {(userRole === 'admin' || canViewAll) && qualifiedStaff.length > 0 && (
           <div>
              <label className="block text-sm font-bold text-zinc-700 mb-3 uppercase tracking-wider">{t('appointments.form.selectStaff')}</label>
              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -743,7 +743,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-white md:bg-black/35 md:backdrop-blur-[1px] md:flex md:items-center md:justify-center p-0 md:p-4 animate-in fade-in duration-200">
-      <div className="w-full h-full md:h-auto md:max-h-[90vh] md:max-w-[500px] bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 md:rounded-[32px] md:shadow-2xl flex flex-col overflow-hidden relative">
+      <div className="w-full h-full md:h-auto md:max-h-[90vh] md:max-w-[500px] bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 md:from-gray-50/40 md:via-white md:to-white md:rounded-[32px] md:shadow-2xl flex flex-col overflow-hidden relative">
         
         {/* HEADER */}
         <div className="px-6 pt-12 pb-4 md:pt-6 border-b border-white/20 flex items-center justify-between backdrop-blur-2xl bg-white/70 sticky top-0 z-20 shrink-0 shadow-sm">
