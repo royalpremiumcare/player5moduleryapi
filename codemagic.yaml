@@ -15,17 +15,23 @@ workflows:
       cocoapods: default
     scripts:
       - name: Install dependencies
-        script: npm install --legacy-peer-deps
+        script: |
+          cd frontend
+          npm install --legacy-peer-deps
       - name: Build web assets
-        script: npm run build
+        script: |
+          cd frontend
+          npm run build
       - name: Sync Capacitor
-        script: npx cap sync ios
+        script: |
+          cd frontend
+          npx cap sync ios
       - name: Sertifika ve Profili Zorla Uret
         script: app-store-connect fetch-signing-files "co.plannapp.app" --type IOS_APP_STORE --create
       - name: Apple Sertifikalarini Ayarla
         script: xcode-project use-profiles
       - name: iOS Uygulamasini (IPA) Derle
-        script: xcode-project build-ipa --workspace "ios/App/App.xcworkspace" --scheme "App"
+        script: xcode-project build-ipa --workspace "frontend/ios/App/App.xcworkspace" --scheme "App"
     publishing:
       app_store_connect:
         auth: integration
