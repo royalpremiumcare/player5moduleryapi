@@ -295,11 +295,11 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   const startImportProcess = async ({ mode }) => {
     if (Capacitor.isNativePlatform()) {
       setImportingContacts(true);
+      let dialogOpened = false;
       try {
         const permission = await Contacts.requestPermissions();
         if (permission.contacts !== 'granted' && permission.contacts !== 'limited') {
-          toast.error("İzin verilmedi.");
-          setImportingContacts(false);
+          toast.error("Rehber izni verilmedi. Ayarlardan izin verin.");
           return;
         }
 
@@ -309,13 +309,12 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
 
         if (!result.contacts || result.contacts.length === 0) {
           toast.info("Rehber boş.");
-          setImportingContacts(false);
           return;
         }
 
         const normalizedContacts = result.contacts
           .map(c => ({
-            name: c.name?.display || (c.name?.given + " " + (c.name?.family || "")),
+            name: c.name?.display || ((c.name?.given || '') + " " + (c.name?.family || '')).trim(),
             phone: c.phones?.[0]?.number
           }))
           .filter(c => c.name && c.phone);
@@ -327,13 +326,16 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           setSelectedContactPhones(new Set());
           setContactSearchTerm("");
           setShowContactSelectionDialog(true);
-          setImportingContacts(false);
+          dialogOpened = true;
         }
 
       } catch (error) {
-        console.error(error);
-        toast.error("Rehber okunurken hata oluştu.");
-        setImportingContacts(false);
+        console.error("Contacts error:", error);
+        toast.error("Rehber okunurken hata oluştu: " + (error.message || ''));
+      } finally {
+        if (!dialogOpened) {
+          setImportingContacts(false);
+        }
       }
     }
     else if ('contacts' in navigator && 'ContactsManager' in window) {
@@ -346,10 +348,10 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
             phone: c.tel?.[0]
           }));
           await saveContactsBatch(normalized);
-        } else {
-          setImportingContacts(false);
         }
       } catch (e) {
+        console.error("Web contacts error:", e);
+      } finally {
         setImportingContacts(false);
       }
     }
@@ -365,7 +367,14 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
 
     setShowContactSelectionDialog(false);
     setImportingContacts(true);
-    await saveContactsBatch(selectedList);
+    try {
+      await saveContactsBatch(selectedList);
+    } catch (err) {
+      console.error("saveContactsBatch error:", err);
+      toast.error("Kişiler eklenirken hata oluştu.");
+    } finally {
+      setImportingContacts(false);
+    }
   };
 
   const toggleContactSelection = (phone) => {
@@ -412,7 +421,6 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       }
     }
 
-    setImportingContacts(false);
     if (successCount > 0) {
       toast.success(`${successCount} kişi eklendi!${duplicateCount > 0 ? ` (${duplicateCount} zaten mevcut)` : ''}`);
       await loadCustomers();
