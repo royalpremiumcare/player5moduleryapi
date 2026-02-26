@@ -297,7 +297,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       setImportingContacts(true);
       try {
         const permission = await Contacts.requestPermissions();
-        if (permission.contacts !== 'granted') {
+        if (permission.contacts !== 'granted' && permission.contacts !== 'limited') {
           toast.error("İzin verilmedi.");
           setImportingContacts(false);
           return;
