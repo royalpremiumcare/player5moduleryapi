@@ -466,7 +466,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                     {t('staff.management.addDescription')}
                   </DialogDescription>
                 </DialogHeader>
-                <div className="flex-1 overflow-y-auto py-4 pr-2">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden py-4 px-1">
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
