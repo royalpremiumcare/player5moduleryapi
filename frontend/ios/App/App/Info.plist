@@ -45,5 +45,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSContactsUsageDescription</key>
+	<string>PLANN, randevu oluştururken rehberinizdeki kişileri seçmenize olanak tanımak için kişilerinize erişim izni ister.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>PLANN, sesli asistan özelliğini kullanabilmeniz için mikrofon erişimi ister.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>PLANN, sesli komutlarınızı metne dönüştürmek için konuşma tanıma erişimi ister.</string>
 </dict>
 </plist>
