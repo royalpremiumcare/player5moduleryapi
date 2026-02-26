@@ -31,6 +31,10 @@ workflows:
         script: |
           cd frontend
           npx cap sync ios
+      - name: Install CocoaPods
+        script: |
+          cd frontend/ios/App
+          pod install --repo-update
       - name: Apple Sertifikalarini Hazirla
         script: xcode-project use-profiles
       - name: iOS Uygulamasini (IPA) Derle
