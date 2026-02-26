@@ -6,7 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { useAuth } from "./context/AuthContext";
 import { io } from "socket.io-client";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 
 import Dashboard from "@/components/Dashboard";
@@ -41,6 +41,10 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { PushNotifications } from '@capacitor/push-notifications';
+
+const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
+  ? registerPlugin('FCMTokenPlugin')
+  : null;
 
 function App() {
   const { logout, userRole, token } = useAuth();
@@ -384,13 +388,29 @@ function App() {
           
           // Token dinleyicisi
           PushNotifications.addListener('registration', async (token) => {
-            console.log('📱 Native Push Token:', token.value);
-            // Backend'e native token gönder (type: 'android' veya 'ios')
+            console.log('📱 Native Push Token (APNs/FCM):', token.value);
+            let pushToken = token.value;
+            const platform = Capacitor.getPlatform();
+
+            // iOS: APNs token yerine FCM token al
+            if (platform === 'ios' && FCMTokenPlugin) {
+              try {
+                const fcmResult = await FCMTokenPlugin.getToken();
+                if (fcmResult && fcmResult.token) {
+                  console.log('📱 iOS FCM Token:', fcmResult.token);
+                  pushToken = fcmResult.token;
+                }
+              } catch (fcmError) {
+                console.error('⚠️ FCM token error, using APNs token:', fcmError);
+              }
+            }
+
+            // Backend'e token gönder
             await api.post('/push/subscribe', {
               subscription: {
-                endpoint: token.value, // FCM token endpoint olarak kullanılır
-                keys: { p256dh: '', auth: '' }, // Native'de key gerekmez ama şema için boş string
-                platform: Capacitor.getPlatform() // 'android' veya 'ios'
+                endpoint: pushToken,
+                keys: { p256dh: '', auth: '' },
+                platform: platform
               }
             });
             setPushSubscribed(true);

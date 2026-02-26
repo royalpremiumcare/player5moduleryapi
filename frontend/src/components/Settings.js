@@ -7,8 +7,12 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
+
+const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
+  ? registerPlugin('FCMTokenPlugin')
+  : null;
 
 // --- YARDIMCI BİLEŞEN: AYAR SATIRI ---
 // Tasarım Dili: Minimalist & Kurumsal
@@ -90,11 +94,26 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
         if (permStatus.receive === 'granted') {
           await PushNotifications.register();
           PushNotifications.addListener('registration', async (token) => {
+            let pushToken = token.value;
+            const platform = Capacitor.getPlatform();
+
+            // iOS: APNs token yerine FCM token al
+            if (platform === 'ios' && FCMTokenPlugin) {
+              try {
+                const fcmResult = await FCMTokenPlugin.getToken();
+                if (fcmResult && fcmResult.token) {
+                  pushToken = fcmResult.token;
+                }
+              } catch (fcmError) {
+                console.error('FCM token error:', fcmError);
+              }
+            }
+
             await api.post('/push/subscribe', {
               subscription: {
-                endpoint: token.value,
+                endpoint: pushToken,
                 keys: { p256dh: '', auth: '' },
-                platform: Capacitor.getPlatform()
+                platform: platform
               }
             });
           });
