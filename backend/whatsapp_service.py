@@ -2,9 +2,9 @@
 WhatsApp Bildirim Servisi — Meta WhatsApp Cloud API (Direkt HTTP)
 
 Şablon Mimarisi (8 onaylı şablon):
-  CONFIRMATION x TR x Konumlu  → randevu_onay_konumlu
+  CONFIRMATION x TR x Konumlu  → randevu_onay_konumlu_v2
   CONFIRMATION x TR x Metin    → randevu_onay_metin
-  CONFIRMATION x EN x Konumlu  → randevu_onay_konumlu_eng
+  CONFIRMATION x EN x Konumlu  → randevu_onay_konumlu_eng_v2
   CONFIRMATION x EN x Metin    → randevu_onay_metin_eng_v2
   REMINDER     x TR x Konumlu  → randevu_hatirlatma_konumlu
   REMINDER     x TR x Metin    → randevu_hatirlatma_metin_v2
@@ -43,12 +43,12 @@ logger = logging.getLogger(__name__)
 TEMPLATES: Dict[str, Dict[str, Dict[str, str]]] = {
     "CONFIRMATION": {
         "TR": {
-            "with_location":    "randevu_onay_konumlu",
+            "with_location":    "randevu_onay_konumlu_v2",
             "without_location": "randevu_onay_metin",
             "lang_code":        "tr",
         },
         "EN": {
-            "with_location":    "randevu_onay_konumlu_eng",
+            "with_location":    "randevu_onay_konumlu_eng_v2",
             "without_location": "randevu_onay_metin_eng_v2",
             "lang_code":        "en",
         },
@@ -282,8 +282,8 @@ def send_whatsapp_template(
     Senaryo A (koordinat VARSA):
       Şablon: randevu_*_konumlu[_eng]
       Header: location (lat, lng, işletme adı, açık adres)
-      CONFIRMATION body: {{1}} müşteri  {{2}} işletme  {{3}} tarih  {{4}} saat  {{5}} hizmet
-      REMINDER body:     {{1}}-{{5}} + {{6}} iletişim
+      CONFIRMATION body: {{1}} müşteri  {{2}} işletme  {{3}} tarih  {{4}} saat  {{5}} hizmet  {{6}} iletişim
+      REMINDER body:     {{1}}-{{6}} aynı
 
     Senaryo B (koordinat YOKSA):
       Şablon: randevu_*_metin[_v2][_eng]
@@ -316,17 +316,11 @@ def send_whatsapp_template(
             template_name = template_info["with_location"]
             header = _build_location_header(lat, lng, company_name, addr_text)
 
-            if template_type_upper == "CONFIRMATION":
-                body = _build_body([
-                    customer_name, company_name,
-                    formatted_date, appointment_time, service_name,
-                ])
-            else:  # REMINDER
-                body = _build_body([
-                    customer_name, company_name,
-                    formatted_date, appointment_time, service_name,
-                    support_phone,
-                ])
+            body = _build_body([
+                customer_name, company_name,
+                formatted_date, appointment_time, service_name,
+                support_phone,
+            ])
         else:
             # ── SENARYO B: Metin şablon ────────────────────────────────────
             template_name = template_info["without_location"]
