@@ -18,16 +18,15 @@ workflows:
         script: |
           cd frontend
           npm install --legacy-peer-deps
-      - name: Create env file
+      - name: Create env and build
         script: |
           cd frontend
-          echo "REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL" > .env.production
+          echo "REACT_APP_BACKEND_URL=https://plannapp.co" > .env.production
           echo "REACT_APP_GOOGLE_MAPS_API_KEY=$REACT_APP_GOOGLE_MAPS_API_KEY" >> .env.production
+          echo "--- .env.production content ---"
           cat .env.production
-      - name: Build web assets
-        script: |
-          cd frontend
-          npm run build
+          echo "--- end ---"
+          REACT_APP_BACKEND_URL=https://plannapp.co npm run build
       - name: Sync Capacitor
         script: |
           cd frontend
