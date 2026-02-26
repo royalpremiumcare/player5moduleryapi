@@ -6,8 +6,9 @@ import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 
 // --- HİBRİT YAPI İÇİN GEREKLİ IMPORTLAR ---
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Contacts } from '@capacitor-community/contacts';
+const ContactPicker = registerPlugin('ContactPickerPlugin');
 // ------------------------------------------
 
 import { Button } from "@/components/ui/button";
@@ -297,11 +298,9 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       setImportingContacts(true);
       try {
         if (mode === 'SELECT') {
-          // pickContacts() her seferinde native iOS rehber picker'ını açar
-          // Limited Access sorunu olmaz - kullanıcı her seferinde farklı kişi seçebilir
-          const result = await Contacts.pickContacts({
-            projection: { name: true, phones: true }
-          });
+          // Custom native plugin: CNContactPickerViewController açar
+          // İzin gerektirmez, her seferinde picker açılır
+          const result = await ContactPicker.pickContacts();
 
           if (!result.contacts || result.contacts.length === 0) {
             toast.info("Kişi seçilmedi.");
@@ -310,8 +309,8 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
 
           const normalizedContacts = result.contacts
             .map(c => ({
-              name: c.name?.display || ((c.name?.given || '') + " " + (c.name?.family || '')).trim(),
-              phone: c.phones?.[0]?.number
+              name: c.name || '',
+              phone: c.phone || ''
             }))
             .filter(c => c.name && c.phone);
 

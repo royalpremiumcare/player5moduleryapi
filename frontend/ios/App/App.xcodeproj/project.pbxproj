@@ -19,6 +19,8 @@
 		F1B2C3D4E5F60718A9B0C1D4 /* FCMTokenPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1D5 /* FCMTokenPlugin.swift */; };
 		F1B2C3D4E5F60718A9B0C1D6 /* FCMTokenPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1D7 /* FCMTokenPlugin.m */; };
 		F1B2C3D4E5F60718A9B0C1E2 /* MyViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1E1 /* MyViewController.swift */; };
+		F1B2C3D4E5F60718A9B0C1F0 /* ContactPickerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1F1 /* ContactPickerPlugin.swift */; };
+		F1B2C3D4E5F60718A9B0C1F2 /* ContactPickerPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1F3 /* ContactPickerPlugin.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +41,8 @@
 		F1B2C3D4E5F60718A9B0C1D7 /* FCMTokenPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FCMTokenPlugin.m; sourceTree = "<group>"; };
 		F1B2C3D4E5F60718A9B0C1E0 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		F1B2C3D4E5F60718A9B0C1E1 /* MyViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyViewController.swift; sourceTree = "<group>"; };
+		F1B2C3D4E5F60718A9B0C1F1 /* ContactPickerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactPickerPlugin.swift; sourceTree = "<group>"; };
+		F1B2C3D4E5F60718A9B0C1F3 /* ContactPickerPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ContactPickerPlugin.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -93,6 +97,8 @@
 				F1B2C3D4E5F60718A9B0C1D5 /* FCMTokenPlugin.swift */,
 				F1B2C3D4E5F60718A9B0C1D7 /* FCMTokenPlugin.m */,
 				F1B2C3D4E5F60718A9B0C1E1 /* MyViewController.swift */,
+				F1B2C3D4E5F60718A9B0C1F1 /* ContactPickerPlugin.swift */,
+				F1B2C3D4E5F60718A9B0C1F3 /* ContactPickerPlugin.m */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
@@ -228,6 +234,8 @@
 				F1B2C3D4E5F60718A9B0C1D4 /* FCMTokenPlugin.swift in Sources */,
 				F1B2C3D4E5F60718A9B0C1D6 /* FCMTokenPlugin.m in Sources */,
 				F1B2C3D4E5F60718A9B0C1E2 /* MyViewController.swift in Sources */,
+				F1B2C3D4E5F60718A9B0C1F0 /* ContactPickerPlugin.swift in Sources */,
+				F1B2C3D4E5F60718A9B0C1F2 /* ContactPickerPlugin.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -367,7 +375,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEVELOPMENT_TEAM = 9V42VGDN9U;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -389,7 +397,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEVELOPMENT_TEAM = 9V42VGDN9U;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;

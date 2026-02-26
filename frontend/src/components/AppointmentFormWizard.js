@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input";
 import axios from "axios";
 
 // --- REHBER & TİTREŞİM ENTEGRASYONU ---
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Contacts } from '@capacitor-community/contacts';
 import { Haptics, NotificationType } from '@capacitor/haptics'; // TİTREŞİM EKLENDİ
+const ContactPicker = registerPlugin('ContactPickerPlugin');
 // --------------------------------------
 
 import {
@@ -239,10 +240,9 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     if (Capacitor.isNativePlatform()) {
       setImportingContacts(true);
       try {
-        // pickContacts() her seferinde native iOS rehber picker'ını açar
-        const result = await Contacts.pickContacts({
-          projection: { name: true, phones: true }
-        });
+        // Custom native plugin: CNContactPickerViewController açar
+        // İzin gerektirmez, her seferinde picker açılır
+        const result = await ContactPicker.pickContacts();
 
         if (!result.contacts || result.contacts.length === 0) {
           toast.info("Kişi seçilmedi.");
@@ -251,8 +251,8 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
         const normalizedContacts = result.contacts
           .map(c => ({
-            name: c.name?.display || ((c.name?.given || '') + " " + (c.name?.family || '')).trim(),
-            phone: c.phones?.[0]?.number
+            name: c.name || '',
+            phone: c.phone || ''
           }))
           .filter(c => c.name && c.phone);
 
