@@ -805,7 +805,8 @@
       "changePlan": "Change Plan",
       "manageSubscription": "Manage Subscription",
       "redirecting": "Redirecting...",
-      "portalError": "Could not open Stripe portal"
+      "portalError": "Could not open Stripe portal",
+      "unlimited": "Unlimited"
     },
     "subscribePage": {
       "title": "Subscription Packages",

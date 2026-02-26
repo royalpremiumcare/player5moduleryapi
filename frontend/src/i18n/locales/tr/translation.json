@@ -807,7 +807,8 @@
       "changePlan": "Paketi Değiştir",
       "manageSubscription": "Aboneliği Yönet",
       "redirecting": "Yönlendiriliyor...",
-      "portalError": "Stripe portal açılamadı"
+      "portalError": "Stripe portal açılamadı",
+      "unlimited": "Sınırsız"
     },
     "subscribePage": {
       "title": "Abonelik Paketleri",

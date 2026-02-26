@@ -80,9 +80,10 @@ const SettingsSubscription = ({ onNavigate }) => {
     return null;
   }
 
-  const quotaPercentage = (planInfo.quota_usage / planInfo.quota_limit * 100) || 0;
-  const isLowQuota = quotaPercentage >= 90;
-  const quotaRemaining = Math.max(0, planInfo.quota_limit - planInfo.quota_usage);
+  const isUnlimited = planInfo.quota_limit === -1;
+  const quotaPercentage = isUnlimited ? 0 : ((planInfo.quota_usage / planInfo.quota_limit * 100) || 0);
+  const isLowQuota = !isUnlimited && quotaPercentage >= 90;
+  const quotaRemaining = isUnlimited ? null : Math.max(0, planInfo.quota_limit - planInfo.quota_usage);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -134,23 +135,30 @@ const SettingsSubscription = ({ onNavigate }) => {
                   <span className={`font-semibold ${
                     isLowQuota ? 'text-red-600' : 'text-gray-900'
                   }`}>
-                    {planInfo.quota_usage.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} / {planInfo.quota_limit.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')}
+                    {isUnlimited 
+                      ? t('settings.subscriptionPage.unlimited', 'Sınırsız')
+                      : `${planInfo.quota_usage.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} / ${planInfo.quota_limit.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')}`
+                    }
                   </span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div
-                    className={`h-2.5 rounded-full ${
-                      isLowQuota
-                        ? 'bg-gradient-to-r from-yellow-400 to-red-500'
-                        : 'bg-blue-600'
-                    }`}
-                    style={{ width: `${Math.min(quotaPercentage, 100)}%` }}
-                  ></div>
-                </div>
+                {!isUnlimited && (
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div
+                      className={`h-2.5 rounded-full ${
+                        isLowQuota
+                          ? 'bg-gradient-to-r from-yellow-400 to-red-500'
+                          : 'bg-blue-600'
+                      }`}
+                      style={{ width: `${Math.min(quotaPercentage, 100)}%` }}
+                    ></div>
+                  </div>
+                )}
                 <p className="text-xs text-gray-600">
-                  {t('settings.subscriptionPage.remaining')}: <span className="font-semibold">{quotaRemaining.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')}</span> {t('settings.subscriptionPage.appointments')} 
-                  {/* Yıllık paket için de "thisMonth" göster ama yanında yeşil badge var zaten */}
-                  {planInfo.is_trial ? '' : ` ${t('settings.subscriptionPage.thisMonth')}`}
+                  {isUnlimited 
+                    ? <><span className="font-semibold text-green-600">{t('settings.subscriptionPage.unlimited', 'Sınırsız')}</span> {t('settings.subscriptionPage.appointments')}</>
+                    : <>{t('settings.subscriptionPage.remaining')}: <span className="font-semibold">{quotaRemaining.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')}</span> {t('settings.subscriptionPage.appointments')} 
+                    {planInfo.is_trial ? '' : ` ${t('settings.subscriptionPage.thisMonth')}`}</>
+                  }
                 </p>
               </div>
 
