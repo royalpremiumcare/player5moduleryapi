@@ -51,6 +51,8 @@
 	</array>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSContactsUsageDescription</key>
 	<string>PLANN, randevu oluştururken rehberinizdeki kişileri seçmenize olanak tanımak için kişilerinize erişim izni ister.</string>
 	<key>NSMicrophoneUsageDescription</key>
