@@ -240,24 +240,51 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     if (Capacitor.isNativePlatform()) {
       setImportingContacts(true);
       try {
-        // Custom native plugin: CNContactPickerViewController açar
-        // İzin gerektirmez, her seferinde picker açılır
-        const result = await ContactPicker.pickContacts();
+        const platform = Capacitor.getPlatform(); // 'ios' veya 'android'
+        let normalizedContacts = [];
 
-        if (!result.contacts || result.contacts.length === 0) {
-          toast.info("Kişi seçilmedi.");
-          return;
+        if (platform === 'ios') {
+          // iOS: Custom native plugin (CNContactPickerViewController) açar
+          const result = await ContactPicker.pickContacts();
+
+          if (!result.contacts || result.contacts.length === 0) {
+            toast.info("Kişi seçilmedi.");
+            return;
+          }
+
+          normalizedContacts = result.contacts
+            .map(c => ({
+              name: c.name || '',
+              phone: c.phone || ''
+            }))
+            .filter(c => c.name && c.phone);
+        } else {
+          // Android: Contacts.getContacts() kullan
+          const permission = await Contacts.requestPermissions();
+          if (permission.contacts !== 'granted') {
+            toast.error("Rehber izni verilmedi. Ayarlardan izin verin.");
+            return;
+          }
+
+          const result = await Contacts.getContacts({
+            projection: { name: true, phones: true }
+          });
+
+          if (!result.contacts || result.contacts.length === 0) {
+            toast.info("Rehber boş.");
+            return;
+          }
+
+          normalizedContacts = result.contacts
+            .map(c => ({
+              name: c.name?.display || ((c.name?.given || '') + " " + (c.name?.family || '')).trim(),
+              phone: c.phones?.[0]?.number
+            }))
+            .filter(c => c.name && c.phone);
         }
 
-        const normalizedContacts = result.contacts
-          .map(c => ({
-            name: c.name || '',
-            phone: c.phone || ''
-          }))
-          .filter(c => c.name && c.phone);
-
         if (normalizedContacts.length === 0) {
-          toast.warning("Seçilen kişinin telefon numarası bulunamadı.");
+          toast.warning("Kişilerin telefon numarası bulunamadı.");
           return;
         }
 
@@ -286,7 +313,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
           })).filter(c => c.name && c.phone);
           
           setFetchedContacts(normalized);
-          setSelectedContactPhones(new Set());
+          setSelectedContactPhones(new Set(normalized.map(c => c.phone)));
           setContactSearchTerm("");
           setShowContactSelectionDialog(true);
         }

@@ -280,7 +280,13 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       return;
     }
     
-    setShowImportChoiceDialog(true);
+    if (Capacitor.isNativePlatform()) {
+      // Native: seçim dialogu göster (Tümünü Aktar / Seçerek Aktar)
+      setShowImportChoiceDialog(true);
+    } else {
+      // Web: browser picker direkt açılır, seçim dialogu anlamsız
+      startImportProcess({ mode: 'SELECT' });
+    }
   };
 
   const handleImportAll = async () => {
@@ -296,9 +302,12 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   const startImportProcess = async ({ mode }) => {
     if (Capacitor.isNativePlatform()) {
       setImportingContacts(true);
+      let dialogOpened = false;
       try {
-        if (mode === 'SELECT') {
-          // Custom native plugin: CNContactPickerViewController açar
+        const platform = Capacitor.getPlatform(); // 'ios' veya 'android'
+
+        if (mode === 'SELECT' && platform === 'ios') {
+          // iOS: Custom native plugin (CNContactPickerViewController) açar
           // İzin gerektirmez, her seferinde picker açılır
           const result = await ContactPicker.pickContacts();
 
@@ -321,8 +330,38 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
 
           await saveContactsBatch(normalizedContacts);
 
+        } else if (mode === 'SELECT' && platform === 'android') {
+          // Android: Contacts.getContacts() + seçim dialogu göster
+          const permission = await Contacts.requestPermissions();
+          if (permission.contacts !== 'granted') {
+            toast.error("Rehber izni verilmedi. Ayarlardan izin verin.");
+            return;
+          }
+
+          const result = await Contacts.getContacts({
+            projection: { name: true, phones: true }
+          });
+
+          if (!result.contacts || result.contacts.length === 0) {
+            toast.info("Rehber boş.");
+            return;
+          }
+
+          const normalizedContacts = result.contacts
+            .map(c => ({
+              name: c.name?.display || ((c.name?.given || '') + " " + (c.name?.family || '')).trim(),
+              phone: c.phones?.[0]?.number
+            }))
+            .filter(c => c.name && c.phone);
+
+          setFetchedContacts(normalizedContacts);
+          setSelectedContactPhones(new Set());
+          setContactSearchTerm("");
+          setShowContactSelectionDialog(true);
+          dialogOpened = true;
+
         } else {
-          // ALL mode: tüm rehbere erişim iste
+          // ALL mode: tüm rehbere erişim iste (her iki platform)
           const permission = await Contacts.requestPermissions();
           if (permission.contacts !== 'granted' && permission.contacts !== 'limited') {
             toast.error("Rehber izni verilmedi. Ayarlardan izin verin.");
@@ -354,7 +393,9 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
           toast.error("Rehber okunurken hata oluştu: " + (error.message || ''));
         }
       } finally {
-        setImportingContacts(false);
+        if (!dialogOpened) {
+          setImportingContacts(false);
+        }
       }
     }
     else if ('contacts' in navigator && 'ContactsManager' in window) {
