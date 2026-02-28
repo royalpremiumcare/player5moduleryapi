@@ -48,7 +48,7 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
     const phone = settings.support_phone || "";
     const clean = phone.replace(/\s/g, "");
     const domain = (clean.startsWith('+44') || clean.startsWith('44')) ? 'plannapp.co.uk' : 'plannapp.co';
-    return `${domain}/${settings.slug}`;
+    return `https://${domain}/${settings.slug}`;
   })();
 
   const handleSave = async (e) => {
@@ -145,7 +145,7 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => Browser.open({ url: `https://${appointmentLink}` })}
+                    onClick={() => Browser.open({ url: appointmentLink })}
                     className="px-4 py-2 backdrop-blur-md bg-white/60 border border-white/40 text-zinc-700 rounded-lg text-xs font-bold hover:bg-white/80 transition-colors flex items-center gap-1"
                   >
                     <ExternalLink className="w-3 h-3" /> {t('settings.onlineBookingPage.openLink')}
