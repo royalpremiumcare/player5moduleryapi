@@ -146,11 +146,21 @@ async def invalidate_cache(request: Request, prefix: str, current_user: Any):
     if org_id:
         cache_key = get_cache_key(prefix, org_id)
         try:
+            deleted_exact = 0
+            try:
+                deleted_exact = await redis_client.delete(cache_key)
+            except Exception as exact_delete_error:
+                logger.error(f"Redis Silme Hatası (exact key): {exact_delete_error}")
+
             # Pattern matching ile bu prefix'e ait her şeyi sil
             # Örn: plann:org_123:dashboard_stats*
             keys = await redis_client.keys(f"{cache_key}*")
             if keys:
                 await redis_client.delete(*keys)
                 logger.info(f"🧹 CACHE TEMİZLENDİ: {len(keys)} adet '{prefix}' kaydı silindi.")
+            elif deleted_exact:
+                logger.info(f"🧹 CACHE TEMİZLENDİ: 1 adet '{prefix}' kaydı silindi.")
+            else:
+                logger.info(f"🧹 CACHE TEMİZ: '{prefix}' için silinecek kayıt bulunamadı.")
         except Exception as e:
             logger.error(f"Redis Silme Hatası: {e}")
