@@ -7536,6 +7536,11 @@ async def create_customer(request: Request, customer_data: CustomerCreate, curre
     )
     
     logging.info(f"New customer created: {name} ({phone}) for org {current_user.organization_id}")
+
+    try:
+        await invalidate_cache(request, "customers_list", current_user)
+    except Exception as e:
+        logging.warning(f"Customer cache invalidation failed: {e}")
     
     return {
         "id": customer_doc["id"],
@@ -7615,6 +7620,12 @@ async def delete_customer(request: Request, phone: str, current_user: UserInDB =
         messages.append(f"{appointment_result.deleted_count} randevu")
     if transaction_result.deleted_count > 0:
         messages.append(f"{transaction_result.deleted_count} işlem")
+
+    try:
+        await invalidate_cache(request, "customers_list", current_user)
+        await invalidate_cache(request, "dashboard_stats", current_user)
+    except Exception as e:
+        logging.warning(f"Customer cache invalidation failed: {e}")
     
     message = " ve ".join(messages) + " silindi"
     
@@ -7825,6 +7836,11 @@ async def update_customer_notes(request: Request, phone: str, notes_data: dict, 
         {"$set": {"notes": notes, "updated_at": datetime.now(timezone.utc).isoformat()}},
         upsert=True
     )
+
+    try:
+        await invalidate_cache(request, "customers_list", current_user)
+    except Exception as e:
+        logging.warning(f"Customer cache invalidation failed: {e}")
     
     return {"message": "Notlar güncellendi", "notes": notes}
 
