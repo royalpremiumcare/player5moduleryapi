@@ -958,6 +958,14 @@ async def connect(sid, environ, *args):
             'role': payload.get('role')
         })
         logger.info(f"✓ [CONNECT] Authenticated: {username}")
+
+        try:
+            room_name = f"org_{organization_id}"
+            await sio.enter_room(sid, room_name)
+            logger.info(f"✓ [CONNECT] Auto-joined {sid} to room: {room_name}")
+            await sio.emit('joined_organization', {'organization_id': organization_id}, room=sid)
+        except Exception as join_error:
+            logger.error(f"✗ [CONNECT] Failed to auto-join org room: {join_error}", exc_info=True)
         return True
         
     except (JWTError, Exception) as e:
