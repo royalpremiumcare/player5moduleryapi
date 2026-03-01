@@ -3,11 +3,23 @@ import ReactDOM from 'react-dom/client';
 import { HashRouter, BrowserRouter } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { HelmetProvider } from 'react-helmet-async';
+import * as Sentry from '@sentry/react';
 import './index.css';
 import './i18n'; // i18n configuration
 import AppRouter from './AppRouter';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+
+// === SENTRY ERROR TRACKING ===
+Sentry.init({
+  dsn: "https://de29a57c7caa511eaad0db256c48d28e@o4510971460845568.ingest.de.sentry.io/4510971496890448",
+  sendDefaultPii: true,
+  tracesSampleRate: 0.2,
+  replaysSessionSampleRate: 0.0,
+  replaysOnErrorSampleRate: 1.0,
+  environment: process.env.NODE_ENV || 'production',
+  enabled: process.env.NODE_ENV === 'production' || Capacitor.isNativePlatform(),
+});
 
 // Suppress ResizeObserver errors (known React 19 + Radix UI issue)
 const originalError = console.error;

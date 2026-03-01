@@ -91,4 +91,5 @@ wsproto==1.2.0
 yarl==1.22.0
 google-generativeai==0.8.3
 google-genai==0.2.2
+sentry-sdk[fastapi]==2.22.0
 sib-api-v3-sdk==7.6.0

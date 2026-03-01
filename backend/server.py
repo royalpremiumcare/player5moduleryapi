@@ -43,6 +43,16 @@ from slowapi import _rate_limit_exceeded_handler
 import firebase_admin
 from firebase_admin import credentials, messaging
 
+# === SENTRY ERROR TRACKING ===
+import sentry_sdk
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN", ""),
+    send_default_pii=True,
+    traces_sample_rate=0.2,  # %20 performance tracing (production için yeterli)
+    profiles_sample_rate=0.1,
+    environment=os.environ.get("SENTRY_ENV", "production"),
+)
+
 # Firebase Initialization moved to lifespan() for proper logging
 
 # AI Service Import

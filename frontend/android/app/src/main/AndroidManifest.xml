@@ -10,6 +10,16 @@
         android:theme="@style/AppTheme">
 
         <meta-data
+            android:name="io.sentry.dsn"
+            android:value="https://de29a57c7caa511eaad0db256c48d28e@o4510971460845568.ingest.de.sentry.io/4510971496890448" />
+        <meta-data
+            android:name="io.sentry.traces-sample-rate"
+            android:value="0.2" />
+        <meta-data
+            android:name="io.sentry.send-default-pii"
+            android:value="true" />
+
+        <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_stat_icon" />
         <meta-data

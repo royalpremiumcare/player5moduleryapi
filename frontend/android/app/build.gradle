@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+apply plugin: 'io.sentry.android.gradle'
 
 android {
     namespace "co.plannapp.app"
@@ -7,8 +8,8 @@ android {
         applicationId "co.plannapp.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 20
+        versionName "2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -40,6 +41,13 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    implementation 'io.sentry:sentry-android:7.19.1'
+}
+
+sentry {
+    org = "plann-t6"
+    projectName = "plann-android"
+    autoUploadProguardMapping = false
 }
 
 apply from: 'capacitor.build.gradle'
