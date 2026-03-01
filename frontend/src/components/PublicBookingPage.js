@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import { useParams } from "react-router-dom";
 import { format } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
-import { Calendar as CalendarIcon, Clock, Check, AlertCircle, User, ArrowRight, ArrowLeft, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Check, AlertCircle, User, ArrowRight, ArrowLeft, Loader2, ChevronLeft, ChevronRight, X } from "lucide-react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,8 @@ const publicApi = axios.create({
 const BusinessGallery = memo(({ images }) => {
   const validImages = useMemo(() => (Array.isArray(images) ? images.filter(Boolean) : []), [images]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const total = validImages.length;
 
   useEffect(() => { setActiveIndex(0); }, [total]);
@@ -33,15 +35,31 @@ const BusinessGallery = memo(({ images }) => {
   const goPrev = useCallback(() => setActiveIndex((i) => (i - 1 + total) % total), [total]);
   const goNext = useCallback(() => setActiveIndex((i) => (i + 1) % total), [total]);
 
+  const openLightbox = useCallback((idx) => { setLightboxIndex(idx); setLightboxOpen(true); }, []);
+  const closeLightbox = useCallback(() => setLightboxOpen(false), []);
+  const lightboxPrev = useCallback(() => setLightboxIndex((i) => (i - 1 + total) % total), [total]);
+  const lightboxNext = useCallback(() => setLightboxIndex((i) => (i + 1) % total), [total]);
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const handleKey = (e) => {
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') lightboxPrev();
+      if (e.key === 'ArrowRight') lightboxNext();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [lightboxOpen, closeLightbox, lightboxPrev, lightboxNext]);
+
   if (!validImages.length) return null;
 
   const prevIdx = (activeIndex - 1 + total) % total;
   const nextIdx = (activeIndex + 1) % total;
-  // Sadece active + prev + next yükle; diğerleri src yok (yüklenmez)
   const visibleSet = new Set([activeIndex, prevIdx, nextIdx]);
 
   return (
-    <div className="relative aspect-video rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950">
+    <>
+    <div className="relative aspect-video rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950 cursor-pointer" onClick={() => openLightbox(activeIndex)}>
       {validImages.map((src, idx) => (
         <img
           key={idx}
@@ -56,10 +74,9 @@ const BusinessGallery = memo(({ images }) => {
 
       {total > 1 && (
         <>
-          {/* Butonlar her zaman görünür — mobil/touch 1 tıkta çalışır */}
           <button
             type="button"
-            onClick={goPrev}
+            onClick={(e) => { e.stopPropagation(); goPrev(); }}
             className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full border border-zinc-700 bg-zinc-950/80 text-white backdrop-blur-sm flex items-center justify-center active:scale-95 transition-transform"
             aria-label="Previous"
           >
@@ -67,7 +84,7 @@ const BusinessGallery = memo(({ images }) => {
           </button>
           <button
             type="button"
-            onClick={goNext}
+            onClick={(e) => { e.stopPropagation(); goNext(); }}
             className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full border border-zinc-700 bg-zinc-950/80 text-white backdrop-blur-sm flex items-center justify-center active:scale-95 transition-transform"
             aria-label="Next"
           >
@@ -79,7 +96,7 @@ const BusinessGallery = memo(({ images }) => {
               <button
                 key={idx}
                 type="button"
-                onClick={() => setActiveIndex(idx)}
+                onClick={(e) => { e.stopPropagation(); setActiveIndex(idx); }}
                 className={`h-2 w-2 rounded-full transition-all ${idx === activeIndex ? 'bg-white scale-125' : 'bg-zinc-600'}`}
                 aria-label={`Go to slide ${idx + 1}`}
               />
@@ -88,6 +105,59 @@ const BusinessGallery = memo(({ images }) => {
         </>
       )}
     </div>
+
+    {/* Lightbox */}
+    {lightboxOpen && (
+      <div 
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200"
+        onClick={closeLightbox}
+      >
+        <button
+          onClick={closeLightbox}
+          className="absolute right-4 z-10 h-11 w-11 rounded-full bg-black/60 hover:bg-black/80 border border-white/30 backdrop-blur-md text-white flex items-center justify-center transition-all active:scale-90"
+          style={{ top: 'max(16px, env(safe-area-inset-top, 16px))' }}
+        >
+          <X className="h-6 w-6" strokeWidth={2.5} />
+        </button>
+
+        <img
+          key={lightboxIndex}
+          src={validImages[lightboxIndex]}
+          alt=""
+          className="max-h-[85vh] max-w-[92vw] object-contain rounded-lg"
+          onClick={(e) => e.stopPropagation()}
+          draggable={false}
+        />
+
+        {total > 1 && (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); lightboxPrev(); }}
+              className="absolute left-3 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md text-white flex items-center justify-center transition-all active:scale-90"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); lightboxNext(); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md text-white flex items-center justify-center transition-all active:scale-90"
+            >
+              <ChevronRight className="h-6 w-6" />
+            </button>
+
+            <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-2">
+              {validImages.map((_, idx) => (
+                <button
+                  key={idx}
+                  onClick={(e) => { e.stopPropagation(); setLightboxIndex(idx); }}
+                  className={`h-2.5 w-2.5 rounded-full transition-all duration-200 ${idx === lightboxIndex ? 'bg-white scale-125' : 'bg-white/40 hover:bg-white/60'}`}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    )}
+    </>
   );
 });
 
@@ -570,13 +640,13 @@ const PublicBookingPage = () => {
       {/* LEFT PANEL */}
       <div className="w-full lg:w-[400px] xl:w-[480px] bg-zinc-950 text-white flex flex-col justify-between py-4 px-5 lg:p-12 lg:min-h-screen lg:fixed lg:left-0 lg:top-0 z-50 shrink-0">
         <div>
-          <div className="flex items-center gap-4 mb-0 lg:mb-12">
+          <div className="flex items-center gap-4 mb-5 lg:mb-12">
             {business.logo_url ? (
-              <div className="w-16 h-16 lg:w-16 lg:h-16 bg-white rounded-xl p-1 flex items-center justify-center flex-shrink-0">
+              <div className="w-16 h-16 lg:w-16 lg:h-16 rounded-xl overflow-hidden flex-shrink-0">
                 <img 
                   src={getLogoUrl(business.logo_url)}
                   alt={business.business_name}
-                  className="w-full h-full object-contain"
+                  className="w-full h-full object-cover"
                 />
               </div>
             ) : (
@@ -594,7 +664,7 @@ const PublicBookingPage = () => {
 
           <BusinessGallery images={business?.images} />
 
-          <div className="hidden lg:block space-y-4">
+          <div className="hidden lg:block space-y-4 mt-8">
             <h2 className="text-3xl xl:text-4xl font-extrabold tracking-tight text-white">
               {/* BURADA currentVisualStep kullanıyoruz */}
               {currentStep === 1 && t('publicBooking.step1')} 

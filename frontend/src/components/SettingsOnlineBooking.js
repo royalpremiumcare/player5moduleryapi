@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { ArrowLeft, Save, Image, Upload, MapPin, Link, ChevronDown, ChevronUp, ExternalLink, Info, Trash2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { ArrowLeft, Save, Image, Upload, MapPin, Link, ChevronDown, ChevronUp, ExternalLink, Info, Trash2, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,8 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
   const [galleryFiles, setGalleryFiles] = useState([]);
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const dragItem = useRef(null);
+  const dragOverItem = useRef(null);
 
   const [location, setLocation] = useState(null);
 
@@ -262,19 +264,45 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                   )}
                 </div>
 
-                {/* Mevcut Görseller */}
+                {/* Mevcut Görseller — sürükle-bırak ile sıralama */}
                 {settings.images?.length > 0 && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {settings.images.map((url) => (
-                      <div key={url} className="relative rounded-xl overflow-hidden border border-white/30 bg-white/40">
-                        <img src={getFullUrl(url)} alt="" className="w-full aspect-video object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => setSettings(prev => ({ ...prev, images: prev.images.filter(x => x !== url) }))}
-                          className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-zinc-900 text-white text-xs font-bold shadow-md"
-                        >
-                          {t('common.delete', 'Sil')}
-                        </button>
+                    {settings.images.map((url, index) => (
+                      <div
+                        key={url}
+                        draggable
+                        onDragStart={() => { dragItem.current = index; }}
+                        onDragEnter={() => { dragOverItem.current = index; }}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDragEnd={() => {
+                          if (dragItem.current === null || dragOverItem.current === null || dragItem.current === dragOverItem.current) {
+                            dragItem.current = null;
+                            dragOverItem.current = null;
+                            return;
+                          }
+                          const reordered = [...settings.images];
+                          const [removed] = reordered.splice(dragItem.current, 1);
+                          reordered.splice(dragOverItem.current, 0, removed);
+                          setSettings(prev => ({ ...prev, images: reordered }));
+                          dragItem.current = null;
+                          dragOverItem.current = null;
+                        }}
+                        className="relative rounded-xl overflow-hidden border border-white/30 bg-white/40 cursor-grab active:cursor-grabbing active:opacity-70 active:scale-95 transition-all duration-150 group"
+                      >
+                        <img src={getFullUrl(url)} alt="" className="w-full aspect-video object-cover pointer-events-none" />
+                        <div className="absolute top-2 left-2 h-7 w-7 rounded-lg bg-black/50 backdrop-blur-sm text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity">
+                          <GripVertical className="w-4 h-4" />
+                        </div>
+                        <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                          <span className="h-6 min-w-[24px] px-1.5 rounded-md bg-black/50 backdrop-blur-sm text-white text-[10px] font-bold flex items-center justify-center">{index + 1}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSettings(prev => ({ ...prev, images: prev.images.filter(x => x !== url) })); }}
+                            className="h-7 w-7 rounded-lg bg-red-600/90 hover:bg-red-700 text-white flex items-center justify-center shadow-md transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

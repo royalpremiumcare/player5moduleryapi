@@ -44,6 +44,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const [staffFilter, setStaffFilter] = useState("all");
   const socketRef = useRef(null);
   const [expandedNoteId, setExpandedNoteId] = useState(null);
+  const [upcomingVisibleCount, setUpcomingVisibleCount] = useState(10);
   // Break States
   const [todayBreaks, setTodayBreaks] = useState([]);
   const [showBreakDialog, setShowBreakDialog] = useState(false);
@@ -264,7 +265,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       <div
         key={apt.id}
         onClick={() => hasNote && toggleNote(apt.id)}
-        className={`bg-white rounded-xl p-4 border border-gray-200 border-l-4 shadow-sm hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 ${isCancelled ? 'opacity-60' : ''} ${hasNote ? 'cursor-pointer' : ''} ${apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'border-l-orange-500' : apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed') ? 'border-l-green-500' : apt.status === "İptal" || apt.status === t('dashboard.status.cancelled') ? 'border-l-red-500' : 'border-l-gray-300'}`}
+        className={`bg-white rounded-xl p-4 border border-gray-200 border-l-4 shadow-sm hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 ${isCancelled ? 'opacity-60' : ''} ${hasNote ? 'cursor-pointer' : ''} ${apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'border-l-amber-400' : apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed') ? 'border-l-green-500' : apt.status === "İptal" || apt.status === t('dashboard.status.cancelled') ? 'border-l-red-500' : 'border-l-gray-300'}`}
       >
         <div className="flex gap-4">
           <div className="flex flex-col items-center justify-center min-w-[60px] border-r border-gray-100 pr-4">
@@ -467,11 +468,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         {filteredTomorrow.length > 0 && (
           <>
             {filteredToday.length > 0 && (
-              <div className="flex items-center gap-4 my-8">
-                <div className="flex-1 h-[2px] bg-gradient-to-r from-transparent via-gray-400 to-transparent"></div>
-                <div className="text-sm font-black text-gray-500 uppercase tracking-wider">•</div>
-                <div className="flex-1 h-[2px] bg-gradient-to-r from-transparent via-gray-400 to-transparent"></div>
-              </div>
+              <div className="my-6" />
             )}
             
             <div className="tour-tomorrow">
@@ -479,9 +476,38 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               <h2 className="text-base md:text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">{t('dashboard.tomorrowAppointments.title')}</h2>
               <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full shadow-sm">{filteredTomorrow.length} {t('common.appointments')}</span>
             </div>
-            <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4">
-              {filteredTomorrow.map(apt => renderAppointmentCard(apt))}
-            </div>
+            {(() => {
+              const tomorrowMorning = filteredTomorrow.filter(apt => apt.appointment_time < "12:00");
+              const tomorrowAfternoon = filteredTomorrow.filter(apt => apt.appointment_time >= "12:00");
+              const tomorrowShouldSplit = tomorrowMorning.length > 0 && tomorrowAfternoon.length > 0;
+              return (
+                <>
+                  {/* Mobil: her zaman tek liste */}
+                  <div className="space-y-4 md:hidden">
+                    {filteredTomorrow.map(apt => renderAppointmentCard(apt))}
+                  </div>
+                  {/* Masaüstü: split varsa 2 sütun */}
+                  <div className="hidden md:block">
+                    {tomorrowShouldSplit ? (
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2 text-sm font-bold text-orange-600 uppercase tracking-wider mb-4"><Sun className="w-4 h-4" /> {t('dashboard.todayFlow.beforeNoon')}</div>
+                          {tomorrowMorning.map(apt => renderAppointmentCard(apt))}
+                        </div>
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase tracking-wider mb-4"><Moon className="w-4 h-4" /> {t('dashboard.todayFlow.afterNoon')}</div>
+                          {tomorrowAfternoon.map(apt => renderAppointmentCard(apt))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {filteredTomorrow.map(apt => renderAppointmentCard(apt))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
           </>
         )}
@@ -491,7 +517,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <div className="tour-upcoming"> {/* CLASS EKLENDI */}
             <h2 className="text-base md:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2 uppercase tracking-wider mt-8">{t('dashboard.upcomingAppointments.title')}</h2>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100 overflow-hidden md:grid md:grid-cols-2 md:divide-y-0 md:gap-4 md:bg-transparent md:border-0 md:shadow-none">
-              {upcoming.slice(0, 5).map((apt) => (
+              {upcoming.slice(0, upcomingVisibleCount).map((apt) => (
                 (() => {
                   const hasNote = apt.notes && apt.notes.trim().length > 0;
                   const isExpanded = expandedNoteId === apt.id;
@@ -543,7 +569,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   );
                 })()
               ))}
-              {upcoming.length > 5 && <div className="p-3 text-center bg-gray-50 text-xs md:text-sm font-medium text-gray-500 md:col-span-2 shadow-sm">+ {upcoming.length - 5} {t('common.more')}</div>}
+              {upcoming.length > upcomingVisibleCount && (
+                <button 
+                  onClick={() => setUpcomingVisibleCount(prev => prev + 10)}
+                  className="p-3 text-center bg-gray-50 hover:bg-gray-100 text-xs md:text-sm font-medium text-gray-500 md:col-span-2 rounded-xl border border-gray-200 transition-colors cursor-pointer w-full"
+                >
+                  + {upcoming.length - upcomingVisibleCount} {t('common.more')}
+                </button>
+              )}
             </div>
           </div>
         )}
