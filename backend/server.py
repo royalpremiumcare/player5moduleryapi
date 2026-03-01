@@ -7584,6 +7584,12 @@ async def delete_customer(request: Request, phone: str, current_user: UserInDB =
     # Eğer ne müşteri ne de randevu bulunamadıysa hata ver
     if customer_result.deleted_count == 0 and appointment_result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Bu telefon numarasına ait müşteri veya randevu bulunamadı")
+
+    try:
+        await invalidate_cache(request, "customers_list", current_user)
+        await invalidate_cache(request, "dashboard_stats", current_user)
+    except Exception as e:
+        logging.warning(f"Customer cache invalidation failed: {e}")
     
     # Audit log
     await create_audit_log(
@@ -7641,12 +7647,6 @@ async def delete_customer(request: Request, phone: str, current_user: UserInDB =
         messages.append(f"{appointment_result.deleted_count} randevu")
     if transaction_result.deleted_count > 0:
         messages.append(f"{transaction_result.deleted_count} işlem")
-
-    try:
-        await invalidate_cache(request, "customers_list", current_user)
-        await invalidate_cache(request, "dashboard_stats", current_user)
-    except Exception as e:
-        logging.warning(f"Customer cache invalidation failed: {e}")
     
     message = " ve ".join(messages) + " silindi"
     
