@@ -7611,6 +7611,19 @@ async def delete_customer(request: Request, phone: str, current_user: UserInDB =
         logger.info(f"Successfully emitted customer_deleted for org: {current_user.organization_id}")
     except Exception as emit_error:
         logger.error(f"Failed to emit customer_deleted: {emit_error}", exc_info=True)
+
+    try:
+        if appointment_result.deleted_count > 0:
+            await emit_to_organization(
+                current_user.organization_id,
+                'appointment_deleted',
+                {
+                    'deleted_count': appointment_result.deleted_count,
+                    'phone': phone,
+                }
+            )
+    except Exception as emit_error:
+        logger.error(f"Failed to emit appointment_deleted after customer delete: {emit_error}", exc_info=True)
     
     # Mesaj oluştur
     messages = []
