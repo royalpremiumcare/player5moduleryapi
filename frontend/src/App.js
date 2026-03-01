@@ -874,7 +874,7 @@ function App() {
 
       {/* TopBar - Üst Navigasyon Barı */}
       {!showForm && (
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm" style={{ fontFamily: 'Inter, sans-serif' }}>
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm" style={{ fontFamily: 'Inter, sans-serif', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <div className="container mx-auto px-4 py-3">
             <div className="flex items-center justify-between">
               {/* Sol Bölüm: PLANN Logosu */}
@@ -917,46 +917,39 @@ function App() {
                       )}
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-96 max-h-[500px] overflow-y-auto p-0 shadow-lg border border-gray-200 rounded-lg bg-white">
-                    <div className="p-4 border-b border-gray-200 bg-gray-50/50 flex items-center justify-between sticky top-0 z-10">
-                      <span className="font-semibold text-gray-900 text-base">{t('notifications.title')}</span>
+                  <DropdownMenuContent align="end" sideOffset={8} className="w-72 sm:w-80 max-h-[60vh] overflow-y-auto p-0 rounded-xl border border-gray-200 bg-white shadow-xl">
+                    <div className="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between sticky top-0 z-10 bg-white rounded-t-xl">
+                      <span className="font-bold text-gray-900 text-sm">{t('notifications.title')}</span>
                       {notifications.length > 0 && (
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            // Tüm bildirimleri okundu olarak işaretle
                             setNotifications(prev => prev.map(n => ({...n, read: true})));
-                            // localStorage'a kaydet
                             const allIds = notifications.map(n => n.id);
                             const existingIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
-                            const mergedIds = [...new Set([...existingIds, ...allIds])];
-                            localStorage.setItem('readNotificationIds', JSON.stringify(mergedIds));
+                            localStorage.setItem('readNotificationIds', JSON.stringify([...new Set([...existingIds, ...allIds])]));
                           }}
-                          className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+                          className="text-[11px] font-medium text-blue-600 hover:text-blue-700 transition-colors"
                         >
                           {t('notifications.markAllRead')}
                         </button>
                       )}
                     </div>
                     {notifications.length === 0 ? (
-                      <div className="p-8 text-center">
-                        <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
-                          <Bell className="w-8 h-8 text-gray-400" />
-                        </div>
-                        <p className="text-gray-600 font-medium">{t('notifications.empty')}</p>
-                        <p className="text-xs text-gray-500 mt-1">{t('notifications.emptyDesc')}</p>
+                      <div className="py-8 px-4 text-center">
+                        <Bell className="w-6 h-6 text-gray-300 mx-auto mb-2" />
+                        <p className="text-xs text-gray-400">{t('notifications.empty')}</p>
                       </div>
                     ) : (
-                      <div className="divide-y divide-gray-100">
+                      <div>
                         {notifications.map(notification => (
                           <DropdownMenuItem 
                             key={notification.id} 
-                            className={`p-0 cursor-pointer focus:bg-gray-50 ${!notification.read ? 'bg-blue-50/30' : 'bg-white hover:bg-gray-50'}`}
+                            className={`px-3 py-2.5 cursor-pointer border-b border-gray-50 last:border-0 rounded-none focus:bg-gray-50 ${!notification.read ? 'bg-blue-50/40' : ''}`}
                             onClick={() => {
                               setNotifications(prev => prev.map(n => 
                                 n.id === notification.id ? {...n, read: true} : n
                               ));
-                              // localStorage'a kaydet
                               const existingIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
                               if (!existingIds.includes(notification.id)) {
                                 localStorage.setItem('readNotificationIds', JSON.stringify([...existingIds, notification.id]));
@@ -964,20 +957,17 @@ function App() {
                               setShowNotifications(false);
                             }}
                           >
-                            <div className="flex items-start gap-3 p-4 w-full">
-                              <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!notification.read ? 'bg-blue-600' : 'bg-gray-300'}`} />
+                            <div className="flex items-start gap-2 w-full">
+                              <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${!notification.read ? 'bg-blue-500' : 'bg-transparent'}`} />
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-start justify-between gap-2 mb-1">
-                                  <p className={`font-semibold text-sm ${!notification.read ? 'text-gray-900' : 'text-gray-700'}`}>
-                                    {notification.type === 'new_appointment' ? t('notifications.newAppointment') : notification.title}
-                                  </p>
-                                  <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-xs font-semibold text-gray-800 truncate">{notification.message}</p>
+                                  <span className="text-[10px] text-gray-400 flex-shrink-0">
                                     {new Date(notification.time).toLocaleTimeString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB', { hour: '2-digit', minute: '2-digit' })}
                                   </span>
                                 </div>
-                                <p className="text-sm text-gray-700 truncate mb-1">{notification.message}</p>
                                 {notification.details && (
-                                  <p className="text-xs text-gray-500 font-medium">{notification.details}</p>
+                                  <p className="text-[11px] text-gray-500 truncate mt-0.5">{notification.details}</p>
                                 )}
                               </div>
                             </div>
@@ -1201,6 +1191,7 @@ function App() {
             zIndex: 1000,
             width: '100%',
             maxWidth: '100vw',
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
             WebkitTransform: 'translateZ(0)',
             transform: 'translateZ(0)',
             WebkitBackfaceVisibility: 'hidden',

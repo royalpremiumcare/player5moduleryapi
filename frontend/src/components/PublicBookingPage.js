@@ -568,9 +568,9 @@ const PublicBookingPage = () => {
       <Toaster position="top-center" richColors theme="light" />
       
       {/* LEFT PANEL */}
-      <div className="w-full lg:w-[400px] xl:w-[480px] bg-zinc-950 text-white flex flex-col justify-between p-6 lg:p-12 lg:min-h-screen lg:fixed lg:left-0 lg:top-0 z-50 shrink-0">
+      <div className="w-full lg:w-[400px] xl:w-[480px] bg-zinc-950 text-white flex flex-col justify-between py-4 px-5 lg:p-12 lg:min-h-screen lg:fixed lg:left-0 lg:top-0 z-50 shrink-0">
         <div>
-          <div className="flex items-center gap-4 mb-8 lg:mb-12">
+          <div className="flex items-center gap-4 mb-0 lg:mb-12">
             {business.logo_url ? (
               <div className="w-16 h-16 lg:w-16 lg:h-16 bg-white rounded-xl p-1 flex items-center justify-center flex-shrink-0">
                 <img 
@@ -633,7 +633,7 @@ const PublicBookingPage = () => {
         <div className="max-w-3xl mx-auto w-full">
 
             {/* BACK BUTTON */}
-            <div className="mb-6 flex items-center justify-between min-h-[40px]">
+            <div className="mb-2 lg:mb-6 flex items-center justify-between min-h-0 lg:min-h-[40px]">
                 {currentVisualStep > 1 ? (
                     <Button
                         type="button"
@@ -650,7 +650,7 @@ const PublicBookingPage = () => {
             </div>
             
             {/* Progress Bar (Visual Step Kullanımı) */}
-            <div className="mb-8 lg:mb-12">
+            <div className="mb-4 lg:mb-12">
                <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-zinc-500 mb-2">
                  <span>
                    {currentLang === 'en' 

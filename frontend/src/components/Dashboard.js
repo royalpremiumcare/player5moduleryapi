@@ -335,8 +335,8 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       {/* --- TUR BİLEŞENİ --- */}
       <TourGuide run={runTour} steps={tourSteps} onFinish={handleTourFinish} />
 
-      {/* 1. HEADER & SUMMARY */}
-      <div className="px-5 pt-8 pb-4 bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm relative">
+      {/* 1. HEADER — Karşılama (scroll ile kayar) */}
+      <div className="px-5 pt-8 pb-4 bg-white relative">
 
         {/* AI Asistan Badge — sağ üst köşe */}
         {onOpenChat && (
@@ -354,7 +354,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           </button>
         )}
 
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           {/* Sol Taraf: Karşılama */}
           <div className="tour-greeting"> {/* CLASS EKLENDI */}
             <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
@@ -392,11 +392,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             </div>
           )}
         </div>
+      </div>
 
-        {/* İstatistik Kartları */}
-        <div className="grid grid-cols-2 gap-2.5 mt-4 px-2 py-1 tour-stats"> {/* CLASS EKLENDI */}
+      {/* 1b. İSTATİSTİK KARTLARI — Sticky (scroll'da sabit kalır) */}
+      <div className="sticky z-10 bg-white/90 backdrop-blur-lg border-b border-gray-100 shadow-sm px-5 py-2" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 57px)' }}>
+        <div className="grid grid-cols-2 gap-2.5 tour-stats"> {/* CLASS EKLENDI */}
           {/* Randevu Sayısı */}
-          <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all hover:scale-105 active:scale-95 cursor-default">
+          <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all cursor-default">
             <div className="flex items-center gap-1.5 mb-0.5">
               <CalendarDays className="w-3 h-3 text-gray-400" />
               <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{t('dashboard.summary.todayAppointments')}</span>
@@ -405,7 +407,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           </div>
 
           {/* Ciro */}
-          <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all hover:scale-105 active:scale-95 cursor-default">
+          <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all cursor-default">
             <div className="flex items-center gap-1.5 mb-0.5">
               <TrendingUp className="w-3 h-3 text-gray-400" />
               <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{t('dashboard.summary.todayRevenue')}</span>

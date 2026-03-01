@@ -723,10 +723,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.warning(f"WARNING during MongoDB connection: {type(e).__name__}: {str(e)}"); app.mongodb_client = None; app.db = None
     try:
-        logging.info("Step 2: Initializing Redis..."); app.redis_client = await init_redis()
-        if app.redis_client:
-            try: await app.redis_client.ping(); logging.info("Step 2 SUCCESS: Redis initialized and ping successful.")
-            except Exception as redis_ping_error: logging.warning(f"Redis ping failed: {redis_ping_error}"); app.redis_client = None
+        logging.info("Step 2: Initializing Redis..."); app.state.redis_client = await init_redis() # <--- BURASI DEĞİŞTİ
+        if app.state.redis_client:
+            try: await app.state.redis_client.ping(); logging.info("Step 2 SUCCESS: Redis initialized and ping successful.")
+            except Exception as redis_ping_error: logging.warning(f"Redis ping failed: {redis_ping_error}"); app.state.redis_client = None
         else: logging.warning("WARNING: Redis client could not be initialized (init_redis returned None).")
     except Exception as e:
         logging.warning(f"WARNING during Redis connection: {type(e).__name__}: {str(e)}"); app.redis_client = None
@@ -841,9 +841,10 @@ async def lifespan(app: FastAPI):
         logging.info("Closing MongoDB connection...")
         try: app.mongodb_client.close()
         except: pass
-    if app.redis_client:
+    # hasattr veya getattr kullanarak güvenli bir şekilde kapatıyoruz
+    if getattr(app.state, 'redis_client', None):
         logging.info("Closing Redis connection...")
-        try: await app.redis_client.close()
+        try: await app.state.redis_client.close()
         except: pass
 
 # Create the main app
@@ -858,11 +859,14 @@ if cors_origins_for_socketio == '*':
 else:
     socketio_cors_origins = [origin.strip() for origin in cors_origins_for_socketio.split(',') if origin.strip()]
 
+mgr = socketio.AsyncRedisManager('redis://plann_redis:6379/0')
+
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins=socketio_cors_origins,
+    cors_allowed_origins="*",
+    client_manager=mgr,  # 🚀 İŞTE BU! 4 işçiyi birbirine bağlayan hat.
     logger=True,
-    engineio_logger=True  # Enable Engine.IO logs for debugging
+    engineio_logger=True
 )
 socket_app = socketio.ASGIApp(sio, socketio_path='/api/socket.io', other_asgi_app=app)
 
@@ -934,26 +938,22 @@ async def connect(sid, environ, *args):
         organization_id = payload.get("org_id")
         
         if not username or not organization_id:
-            logger.warning(f"✗ [CONNECT] Invalid token payload from {sid}")
-            return False
+            logger.warning(f"⚠️ [CONNECT] Eksik payload, public'e düşürülüyor: {sid}")
+            await sio.save_session(sid, {'is_public': True}) # Buraya ekle
+            return True # False'u True yap!
         
-        # Session'a kullanıcı bilgilerini kaydet
         await sio.save_session(sid, {
             'username': username,
             'organization_id': organization_id,
             'role': payload.get('role')
         })
-        
-        logger.info(f"✓ [CONNECT] Authenticated user {username} (org: {organization_id})")
-        await sio.emit('connection_established', {'status': 'connected'}, room=sid)
+        logger.info(f"✓ [CONNECT] Authenticated: {username}")
         return True
         
-    except JWTError as e:
-        logger.error(f"✗ [CONNECT] Token validation failed for {sid}: {e}")
-        return False  # Bağlantıyı reddet
-    except Exception as e:
-        logger.error(f"✗ [CONNECT] Unexpected error during authentication for {sid}: {e}", exc_info=True)
-        return False  # Bağlantıyı reddet
+    except (JWTError, Exception) as e:
+        logger.warning(f"⚠️ [CONNECT] Auth hatası ({type(e).__name__}), public devam ediliyor: {sid}")
+        await sio.save_session(sid, {'is_public': True})
+        return True
 
 @sio.event
 async def disconnect(sid):
@@ -3621,6 +3621,28 @@ async def check_break_conflict(db, staff_id: str, date: str, start_time: str, en
 async def create_appointment(request: Request, appointment: AppointmentCreate, current_user: UserInDB = Depends(get_current_user)):
     db = await get_db_from_request(request)
     
+    # ---------------------------------------------------------
+    # 🔒 ADIM 1: REDIS LOCK (ÇİFTE REZERVASYON ENGELLEYİCİ)
+    # ---------------------------------------------------------
+    # Aynı personelin aynı saatine aynı anda sızılmasını milisaniyeler içinde engeller.
+    redis_client = getattr(request.app.state, 'redis_client', None)
+    
+    if redis_client:
+        # Kilit anahtarı: plann:lock:appt:orgID:staffID:date:time
+        staff_id = appointment.staff_member_id or "unassigned"
+        lock_key = f"plann:lock:appt:{current_user.organization_id}:{staff_id}:{appointment.appointment_date}:{appointment.appointment_time}"
+        
+        # setnx: Anahtar yoksa oluşturur. Varsa False döner.
+        acquired = await redis_client.setnx(lock_key, "locked")
+        if not acquired:
+            raise HTTPException(
+                status_code=409, 
+                detail="Bu randevu saati için şu an başka bir işlem yapılıyor. Lütfen 10 saniye sonra tekrar deneyin veya farklı bir saat seçin."
+            )
+        # Kilidin asılı kalmaması için 5 saniyelik ömür veriyoruz.
+        await redis_client.expire(lock_key, 5)
+    # ---------------------------------------------------------
+    
     # KOTA KONTROLÜ - Randevu oluşturmadan önce kontrol et
     quota_ok, quota_error = await check_quota_and_increment(db, current_user.organization_id)
     if not quota_ok:
@@ -3702,13 +3724,26 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
         # Bu personelin o tarihteki tüm randevularını çek
         existing_appointments = await db.appointments.find(
             {
-        "organization_id": current_user.organization_id,
-        "staff_member_id": appointment.staff_member_id,
-        "appointment_date": appointment.appointment_date,
-        "status": {"$ne": "İptal"}
+                "organization_id": current_user.organization_id,
+                "staff_member_id": appointment.staff_member_id,
+                "appointment_date": appointment.appointment_date,
+                "status": {"$ne": "İptal"}
             },
             {"_id": 0, "appointment_time": 1, "service_id": 1}
         ).to_list(100)
+        
+        # --- PERFORMANS DOKUNUŞU: BULK FETCH ---
+        # 1. Mevcut randevulardaki benzersiz hizmet ID'lerini topla
+        unique_service_ids = list(set(appt.get('service_id') for appt in existing_appointments if appt.get('service_id')))
+        
+        # 2. Tüm bu hizmetlerin sürelerini TEK BİR sorguyla çek
+        services_data = await db.services.find(
+            {"id": {"$in": unique_service_ids}, "organization_id": current_user.organization_id},
+            {"id": 1, "duration": 1, "_id": 0}
+        ).to_list(len(unique_service_ids))
+        
+        # 3. Hızlı arama için bir harita (Map) oluştur
+        duration_map = {s['id']: s.get('duration', 30) for s in services_data}
         
         # Her randevunun bitiş saatini hesapla ve çakışma kontrolü yap
         has_conflict = False
@@ -3716,12 +3751,8 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             existing_start_time = existing_appt['appointment_time']
             existing_service_id = existing_appt.get('service_id')
             
-            # Mevcut randevunun hizmet süresini bul
-            if existing_service_id:
-                existing_service = await db.services.find_one({"id": existing_service_id}, {"_id": 0, "duration": 1})
-                existing_duration = existing_service.get('duration', 30) if existing_service else 30
-            else:
-                existing_duration = 30
+            # Veritabanına gitmek yerine sözlükten (hafızadan) süreyi al
+            existing_duration = duration_map.get(existing_service_id, 30)
             
             # Mevcut randevunun bitiş saatini hesapla
             existing_start_hour, existing_start_minute = map(int, existing_start_time.split(':'))
@@ -3989,7 +4020,25 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
     appointment_obj = Appointment(**appointment_data, organization_id=current_user.organization_id)
     doc = appointment_obj.model_dump(); doc['created_at'] = doc['created_at'].isoformat()
     await db.appointments.insert_one(doc)
-    
+    # ---------------------------------------------------------
+    # 🧹 ADIM 2: SÜPÜRGE (Cache Invalidation)
+    # ---------------------------------------------------------
+    # Veritabanına kayıt başarılı! Şimdi Redis'teki eski verileri temizleme vakti.
+    try:
+        # Dashboard ve Müşteri listesini siliyoruz ki yeni veri anında görünsün
+        await invalidate_cache(request, "dashboard_stats", current_user)
+        await invalidate_cache(request, "customers_list", current_user)
+        
+        # 🔑 İşimiz bitti, en başta koyduğumuz kilidi (Lock) artık kaldırabiliriz
+        redis_client = getattr(request.app.state, 'redis_client', None)
+        if redis_client:
+            # Fonksiyonun başında tanımladığımız lock_key'i siliyoruz
+            await redis_client.delete(lock_key)
+            logging.info(f"🔑 Lock released and cache cleared for org: {current_user.organization_id}")
+            
+    except Exception as e:
+        logging.error(f"❌ Süpürge işlemi sırasında hata oluştu: {e}")
+    # ---------------------------------------------------------
     # Müşteriyi customers collection'ına ekle (eğer yoksa)
     try:
         # Aynı telefon numarasına sahip müşterileri bul
@@ -4190,7 +4239,7 @@ async def get_appointments(
             {'phone': {'$regex': search, '$options': 'i'}}
         ]
     
-    appointments_from_db = await db.appointments.find(query, {"_id": 0}).to_list(1000)
+    appointments_from_db = await db.appointments.find(query, {"_id": 0}).sort([("appointment_date", 1), ("appointment_time", 1)]).to_list(1000)
     try:
         turkey_tz = ZoneInfo("Europe/Istanbul"); now = datetime.now(turkey_tz)
     except Exception:
@@ -5872,165 +5921,114 @@ async def process_recurring_payment(request: Request, organization_id: str, curr
 
 @api_router.get("/stats/dashboard")
 async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends(get_current_user)):
-    # Sadece admin ve superadmin görebilir
+    # 1. Yetki Kontrolü
     if current_user.role not in ["admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
     
-    # SuperAdmin için özel response döndür
+    # 2. SuperAdmin için sabit response
     if current_user.role == "superadmin":
         return {
-            "bugunku_randevular": 0,
-            "bugunku_tamamlanan": 0,
-            "bugunku_gelir": 0,
-            "bu_ayki_gelir": 0,
-            "quota": None  # SuperAdmin için kota yok
+            "today_appointments": 0, "today_completed": 0, "today_income": 0,
+            "bugunku_toplam_hizmet_tutari": 0, "month_income": 0, "quota": None
         }
     
     logger.info(f"📊 Stats endpoint çağrıldı - Organization: {current_user.organization_id}")
-    db = await get_db_from_request(request); turkey_tz = ZoneInfo("Europe/Istanbul"); today = datetime.now(turkey_tz).date().isoformat(); now = datetime.now(turkey_tz)
-    logger.info(f"📅 Bugünün tarihi: {today}, Şu anki zaman: {now}")
+    db = await get_db_from_request(request)
+    turkey_tz = ZoneInfo("Europe/Istanbul")
+    now = datetime.now(turkey_tz)
+    today = now.date().isoformat()
     base_query = {"organization_id": current_user.organization_id}
     
-    # ÖNCE: Bugünkü "Bekliyor" status'ündeki randevuları otomatik tamamla
+    # --- OTOMATİK TAMAMLAMA MANTIĞI ---
+    # Süresi geçen "Bekliyor" randevuları bul
     today_waiting_appointments = await db.appointments.find(
         {**base_query, "appointment_date": today, "status": "Bekliyor"},
-        {"_id": 0, "id": 1, "appointment_date": 1, "appointment_time": 1, "service_price": 1, "customer_name": 1, "service_name": 1, "service_id": 1}
+        {"_id": 0, "id": 1, "appointment_date": 1, "appointment_time": 1, "service_price": 1, "customer_name": 1, "service_name": 1, "service_id": 1, "staff_member_id": 1}
     ).to_list(1000)
-    logger.info(f"⏳ Bugünkü 'Bekliyor' randevular: {len(today_waiting_appointments)}")
-    
-    # Servisleri çek (duration bilgisi için)
-    service_ids = [appt.get('service_id') for appt in today_waiting_appointments if appt.get('service_id')]
-    services_dict = {}
-    if service_ids:
-        services = await db.services.find(
-            {"id": {"$in": list(set(service_ids))}, "organization_id": current_user.organization_id},
-            {"_id": 0, "id": 1, "duration": 1}
-        ).to_list(1000)
-        services_dict = {s['id']: s.get('duration', 30) for s in services}
-    
-    ids_to_update = []
-    transactions_to_create = []
-    for appt in today_waiting_appointments:
-        try:
-            dt_str = f"{appt['appointment_date']} {appt['appointment_time']}"
-            naive_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
-            appointment_dt = naive_dt.replace(tzinfo=turkey_tz)
-            # Randevu bitiş saatini hesapla (başlangıç saati + hizmet süresi)
-            service_duration_minutes = services_dict.get(appt.get('service_id'), 30)
-            completion_threshold = appointment_dt + timedelta(minutes=service_duration_minutes)
-            if now >= completion_threshold:
-                ids_to_update.append(appt['id'])
-                transaction = Transaction(
-                    organization_id=current_user.organization_id,
-                    appointment_id=appt['id'],
-                    customer_name=appt['customer_name'],
-                    service_name=appt['service_name'],
-                    amount=appt.get('service_price', 0),
-                    date=appt['appointment_date'],
-                    staff_member_id=appt.get('staff_member_id')
-                )
-                trans_doc = transaction.model_dump()
-                trans_doc['created_at'] = trans_doc['created_at'].isoformat()
-                transactions_to_create.append(trans_doc)
-        except (ValueError, TypeError) as e:
-            logging.warning(f"Randevu {appt['id']} için tarih ayrıştırılamadı: {e}")
-    
-    # Otomatik tamamlanan randevuları güncelle
-    if ids_to_update:
-        logger.info(f"✅ {len(ids_to_update)} randevu otomatik tamamlanacak")
-        await db.appointments.update_many(
-            {"organization_id": current_user.organization_id, "id": {"$in": ids_to_update}},
-            {"$set": {"status": "Tamamlandı", "completed_at": datetime.now(timezone.utc).isoformat()}}
-        )
-    # Otomatik tamamlanan randevular için transaction oluştur
-    if transactions_to_create:
-        logger.info(f"💰 {len(transactions_to_create)} transaction oluşturulacak")
-        await db.transactions.insert_many(transactions_to_create)
-    
-    # ŞİMDİ: Güncel istatistikleri hesapla
-    today_appointments = await db.appointments.count_documents({**base_query, "appointment_date": today})
-    today_completed = await db.appointments.count_documents({**base_query, "appointment_date": today, "status": "Tamamlandı"})
-    today_transactions = await db.transactions.find({**base_query, "date": today}, {"_id": 0}).to_list(1000)
-    today_income = sum(t['amount'] for t in today_transactions)
-    
-    # Bugünkü tamamlanan randevuların toplam hizmet tutarı
-    today_completed_appointments = await db.appointments.find(
+
+    if today_waiting_appointments:
+        # Servis sürelerini toplu çek
+        service_ids = list(set(appt.get('service_id') for appt in today_waiting_appointments if appt.get('service_id')))
+        services_dict = {}
+        if service_ids:
+            services = await db.services.find(
+                {"id": {"$in": service_ids}, "organization_id": current_user.organization_id},
+                {"_id": 0, "id": 1, "duration": 1}
+            ).to_list(100)
+            services_dict = {s['id']: s.get('duration', 30) for s in services}
+
+        ids_to_update = []
+        transactions_to_create = []
+        for appt in today_waiting_appointments:
+            try:
+                dt_str = f"{appt['appointment_date']} {appt['appointment_time']}"
+                appointment_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M").replace(tzinfo=turkey_tz)
+                duration = services_dict.get(appt.get('service_id'), 30)
+                if now >= (appointment_dt + timedelta(minutes=duration)):
+                    ids_to_update.append(appt['id'])
+                    transactions_to_create.append(Transaction(
+                        organization_id=current_user.organization_id,
+                        appointment_id=appt['id'],
+                        customer_name=appt['customer_name'],
+                        service_name=appt['service_name'],
+                        amount=appt.get('service_price', 0) or 0,
+                        date=appt['appointment_date'],
+                        staff_member_id=appt.get('staff_member_id')
+                    ).model_dump(mode='json'))
+            except Exception as e:
+                logging.warning(f"Randevu {appt['id']} işlenirken hata: {e}")
+
+        if ids_to_update:
+            await db.appointments.update_many(
+                {"organization_id": current_user.organization_id, "id": {"$in": ids_to_update}},
+                {"$set": {"status": "Tamamlandı", "completed_at": datetime.now(timezone.utc).isoformat()}}
+            )
+        if transactions_to_create:
+            for t in transactions_to_create: t['created_at'] = datetime.now(timezone.utc).isoformat() if 'created_at' not in t else t['created_at']
+            await db.transactions.insert_many(transactions_to_create)
+
+    # --- İSTATİSTİK HESAPLAMA ---
+    today_appointments = await db.appointments.count_documents({**base_query, "appointment_date": today, "status": {"$ne": "İptal"}})
+    today_completed_list = await db.appointments.find(
         {**base_query, "appointment_date": today, "status": "Tamamlandı"},
-        {"_id": 0, "service_price": 1, "id": 1, "appointment_time": 1}
+        {"service_price": 1}
     ).to_list(1000)
-    # service_price değerlerini kontrol et
-    for apt in today_completed_appointments:
-        if apt.get('service_price') is None or apt.get('service_price') == 0:
-            logger.warning(f"⚠️ Randevu {apt.get('id')} için service_price eksik veya 0: {apt.get('service_price')}")
     
-    bugunku_toplam_hizmet_tutari = sum(apt.get('service_price', 0) or 0 for apt in today_completed_appointments)
-    logger.info(f"📊 Bugünkü tamamlanan randevular: {len(today_completed_appointments)}, Toplam hizmet tutarı: {bugunku_toplam_hizmet_tutari}")
-    if today_completed_appointments:
-        logger.info(f"📋 Tamamlanan randevular (ilk 5): {[(apt.get('id')[:8] if apt.get('id') else 'N/A', apt.get('appointment_time'), apt.get('service_price')) for apt in today_completed_appointments[:5]]}")
-    else:
-        logger.warning(f"⚠️ Bugünkü tamamlanan randevu bulunamadı! Bugünkü tarih: {today}, Organization: {current_user.organization_id}")
+    today_completed = len(today_completed_list)
+    bugunku_toplam_hizmet_tutari = sum(apt.get('service_price', 0) or 0 for apt in today_completed_list)
     
-    month_start = datetime.now(turkey_tz).date().replace(day=1).isoformat()
-    month_transactions = await db.transactions.find({**base_query, "date": {"$gte": month_start}}, {"_id": 0}).to_list(1000)
-    month_income = sum(t['amount'] for t in month_transactions)
+    today_transactions = await db.transactions.find({**base_query, "date": today}).to_list(1000)
+    today_income = sum(t.get('amount', 0) or 0 for t in today_transactions)
     
-    # Plan ve kota bilgisi
+    month_start = now.date().replace(day=1).isoformat()
+    month_transactions = await db.transactions.find({**base_query, "date": {"$gte": month_start}}).to_list(2000)
+    month_income = sum(t.get('amount', 0) or 0 for t in month_transactions)
+
+    # --- KOTA BİLGİSİ ---
     plan_doc = await get_organization_plan(db, current_user.organization_id)
     quota_info = None
     if plan_doc:
         plan_id = plan_doc.get('plan_id', 'tier_trial')
         plan_info = await get_plan_info(plan_id)
         if plan_info:
-            # Billing cycle bilgisi
-            billing_cycle = plan_doc.get('billing_cycle', 'monthly')
-            is_yearly = billing_cycle == 'yearly'
-            
             quota_usage = plan_doc.get('quota_usage', 0)
-            # quota_limit zaten database'de aylık olarak tutuluyor (lazy quota reset mekanizması ile)
-            # Yıllık plan için de aylık gösterilecek, sadece badge'de "Yıllık Plan" yazacak
-            quota_limit = plan_doc.get('quota_limit')
-            if not quota_limit:
-                # Fallback: Eğer database'de quota_limit yoksa plan_info'dan al (aylık)
-                quota_limit = plan_info.get('quota_monthly_appointments', 50)
-            if quota_limit == -1:
-                quota_remaining = -1  # sınırsız
-                quota_percentage = 0.0
-            else:
-                quota_remaining = max(0, quota_limit - quota_usage)
-                quota_percentage = (quota_usage / quota_limit * 100) if quota_limit > 0 else 0
+            quota_limit = plan_doc.get('quota_limit') or plan_info.get('quota_monthly_appointments', 50)
+            quota_remaining = -1 if quota_limit == -1 else max(0, quota_limit - quota_usage)
+            quota_percentage = (quota_usage / quota_limit * 100) if quota_limit > 0 else 0
             
             quota_info = {
-                "plan_id": plan_id,
-                "plan_name": plan_info.get('name'),
-                "quota_usage": quota_usage,
-                "quota_limit": quota_limit,
-                "quota_remaining": quota_remaining,
-                "quota_percentage": round(quota_percentage, 2),
-                "is_trial": plan_id == 'tier_trial',
-                "is_low_quota": quota_percentage >= 90,  # %90'dan fazla kullanıldıysa uyarı
-                "billing_cycle": billing_cycle,
-                "is_yearly": is_yearly
+                "plan_id": plan_id, "plan_name": plan_info.get('name'),
+                "quota_usage": quota_usage, "quota_limit": quota_limit,
+                "quota_remaining": quota_remaining, "quota_percentage": round(quota_percentage, 2),
+                "is_trial": plan_id == 'tier_trial', "is_low_quota": quota_percentage >= 90
             }
-            
-            # Kalan gün hesapla
-            if plan_id == 'tier_trial':
-                trial_end = plan_doc.get('trial_end_date')
-                if isinstance(trial_end, str):
-                    trial_end = datetime.fromisoformat(trial_end.replace('Z', '+00:00'))
-                if trial_end:
-                    days_remaining = max(0, (trial_end - datetime.now(timezone.utc)).days)
-                    quota_info['trial_days_remaining'] = days_remaining
-                    quota_info['days_remaining'] = days_remaining
-            else:
-                # Ücretli paketler için quota_reset_date'den hesapla
-                quota_reset = plan_doc.get('quota_reset_date')
-                if quota_reset:
-                    if isinstance(quota_reset, str):
-                        quota_reset = datetime.fromisoformat(quota_reset.replace('Z', '+00:00'))
-                    quota_info['days_remaining'] = max(0, (quota_reset - datetime.now(timezone.utc)).days)
-    
+
     return {
-        "today_appointments": today_appointments, "today_completed": today_completed, "today_income": today_income, "bugunku_toplam_hizmet_tutari": bugunku_toplam_hizmet_tutari, "month_income": month_income,
+        "today_appointments": today_appointments,
+        "today_completed": today_completed,
+        "today_income": today_income,
+        "bugunku_toplam_hizmet_tutari": bugunku_toplam_hizmet_tutari,
+        "month_income": month_income,
         "quota": quota_info
     }
 
@@ -7397,6 +7395,7 @@ async def admin_delete_staff_break(
 
 # === CUSTOMERS ROUTES ===
 @api_router.get("/customers")
+@cache_result(prefix="customers_list", ttl=300)  # <-- EKLENEN SİHİRLİ SATIR
 async def get_customers(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """Tüm unique müşterileri listele (organization bazlı)"""
     db = await get_db_from_request(request)
@@ -8535,6 +8534,9 @@ async def get_availability(request: Request, organization_id: str, service_id: s
     try:
         open_hour, open_minute = map(int, open_time_str.split(':'))
         close_hour, close_minute = map(int, close_time_str.split(':'))
+        # "00:00" gece yarısı demek — 24:00 olarak işle (günün sonu)
+        if close_hour == 0 and close_minute == 0:
+            close_hour = 24
     except (ValueError, AttributeError):
         # Varsayılan saatler
         open_hour, open_minute = 9, 0
@@ -8877,6 +8879,9 @@ async def get_internal_availability(
             try:
                 open_hour, open_minute = map(int, open_time_str.split(':'))
                 close_hour, close_minute = map(int, close_time_str.split(':'))
+                # "00:00" gece yarısı demek — 24:00 olarak işle (günün sonu)
+                if close_hour == 0 and close_minute == 0:
+                    close_hour = 24
             except (ValueError, AttributeError):
                 open_hour, open_minute = 9, 0
                 close_hour, close_minute = 18, 0
@@ -9002,6 +9007,9 @@ async def get_internal_availability(
     try:
         open_hour, open_minute = map(int, open_time_str.split(':'))
         close_hour, close_minute = map(int, close_time_str.split(':'))
+        # "00:00" gece yarısı demek — 24:00 olarak işle (günün sonu)
+        if close_hour == 0 and close_minute == 0:
+            close_hour = 24
     except (ValueError, AttributeError):
         open_hour, open_minute = 9, 0
         close_hour, close_minute = 18, 0
@@ -9157,6 +9165,26 @@ async def get_internal_availability(
 async def create_public_appointment(request: Request, appointment: AppointmentCreate, organization_id: str):
     """Model D: Public randevu oluştur - Akıllı personel atama"""
     db = await get_db_from_request(request)
+
+    # ---------------------------------------------------------
+    # 🔒 ADIM 1: REDIS LOCK (ÇİFTE REZERVASYON ENGELLEYİCİ)
+    # ---------------------------------------------------------
+    redis_client = getattr(request.app.state, 'redis_client', None)
+    lock_key = None # Hata durumunda silmek için dışarıda tanımlıyoruz
+
+    if redis_client:
+        # Eğer personel seçilmemişse "auto" kullanıyoruz
+        staff_id_lock = appointment.staff_member_id or "auto"
+        lock_key = f"plann:lock:appt:{organization_id}:{staff_id_lock}:{appointment.appointment_date}:{appointment.appointment_time}"
+        
+        acquired = await redis_client.setnx(lock_key, "locked")
+        if not acquired:
+            # Milisaniyelik farkla başkası tıkladı!
+            raise HTTPException(
+                status_code=409, 
+                detail="Bu saat dilimi şu an başka bir müşteri tarafından dolduruluyor. Lütfen 10 saniye sonra tekrar deneyin."
+            )
+        await redis_client.expire(lock_key, 15) # Public tarafta işlem süresi (WhatsApp vs.) uzun sürebilir, 15sn ideal.
     
     # DEBUG: Frontend'ten gelen veriyi logla
     logging.info(f"🔍 PUBLIC APPOINTMENT REQUEST - staff_member_id: {appointment.staff_member_id}, service_id: {appointment.service_id}")
@@ -9475,6 +9503,21 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     doc['created_at'] = doc['created_at'].isoformat()
     await db.appointments.insert_one(doc)
     
+    # 🔒 Redis lock'u sil (başarılı randevu — diğer müşteriler beklemek zorunda kalmasın)
+    if redis_client and lock_key:
+        try:
+            await redis_client.delete(lock_key)
+        except Exception:
+            pass
+    
+    # 🧹 Cache temizliği (Dashboard + Müşteri listesi güncellensin)
+    try:
+        mock_user = type('obj', (object,), {'organization_id': organization_id})
+        await invalidate_cache(request, "dashboard_stats", mock_user)
+        await invalidate_cache(request, "customers_list", mock_user)
+        logging.info(f"🧹 Public randevu sonrası admin cache temizlendi: {organization_id}")
+    except Exception as e:
+        logging.error(f"❌ Public süpürge hatası: {e}")
     # Müşteriyi customers collection'ına ekle (eğer yoksa)
     try:
         # Aynı telefon numarasına sahip müşterileri bul
