@@ -7588,8 +7588,15 @@ async def delete_customer(request: Request, phone: str, current_user: UserInDB =
     try:
         await invalidate_cache(request, "customers_list", current_user)
         await invalidate_cache(request, "dashboard_stats", current_user)
+        
+        if hasattr(request.app.state, 'redis') and request.app.state.redis:
+            redis_client = request.app.state.redis
+            cache_key = f"plann:org_{current_user.organization_id}:customers_list"
+            await redis_client.delete(cache_key)
+            logger.info(f"Cache deleted: {cache_key}")
+            
     except Exception as e:
-        logging.warning(f"Customer cache invalidation failed: {e}")
+        logger.warning(f"Customer cache invalidation failed: {e}")
     
     # Audit log
     await create_audit_log(
