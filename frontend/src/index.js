@@ -40,6 +40,11 @@ window.addEventListener('error', (e) => {
   }
 });
 
+// Android WebView performance: backdrop-blur'u CSS override ile kapat
+if (Capacitor.getPlatform() === 'android') {
+  document.body.classList.add('android-platform');
+}
+
 // Native için HashRouter, Web için BrowserRouter
 const Router = Capacitor.isNativePlatform() ? HashRouter : BrowserRouter;
 

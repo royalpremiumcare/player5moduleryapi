@@ -23,6 +23,8 @@ import hmac
 import base64
 import json
 import secrets
+import io
+from PIL import Image as PilImage
 
 from contextlib import asynccontextmanager
 from passlib.context import CryptContext
@@ -543,7 +545,7 @@ async def check_and_process_recurring_payments():
     try:
         logging.info("=== Recurring Payment Check Started ===")
         
-        if not _app_instance or not _app_instance.db:
+        if _app_instance is None or _app_instance.db is None:
             logging.warning("Database not available for recurring payment check")
             return
         
@@ -739,7 +741,7 @@ async def lifespan(app: FastAPI):
             except Exception as redis_ping_error: logging.warning(f"Redis ping failed: {redis_ping_error}"); app.state.redis_client = None
         else: logging.warning("WARNING: Redis client could not be initialized (init_redis returned None).")
     except Exception as e:
-        logging.warning(f"WARNING during Redis connection: {type(e).__name__}: {str(e)}"); app.redis_client = None
+        logging.warning(f"WARNING during Redis connection: {type(e).__name__}: {str(e)}"); app.state.redis_client = None
     try:
         logging.info("Step 3: Initializing Rate Limiter...")
         if app.redis_client is None: logging.warning("WARNING: Using dummy Rate Limiter due to failed Redis connection.")
@@ -2373,20 +2375,24 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
 @rate_limit(LIMITS.get('sso_create', LIMITS['login']))
 async def create_sso_code(request: Request, current_user: UserInDB = Depends(get_current_user)):
     try:
-        redis_client = getattr(request.app, 'redis_client', None)
-        if redis_client is None:
-            raise HTTPException(status_code=503, detail="SSO temporarily unavailable")
+        redis_client = getattr(getattr(request.app, 'state', None), 'redis_client', None) or getattr(request.app, 'redis_client', None)
 
         ttl_seconds = int(os.environ.get('SSO_CODE_TTL_SECONDS', '60'))
         code = secrets.token_urlsafe(32)
-        redis_key = f"sso:{code}"
-
         payload = {
             "sub": current_user.username,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
-
-        await redis_client.set(redis_key, json.dumps(payload), ex=ttl_seconds)
+        if redis_client:
+            redis_key = f"sso:{code}"
+            await redis_client.set(redis_key, json.dumps(payload), ex=ttl_seconds)
+        else:
+            db_inst = getattr(request.app, 'db', None)
+            if db_inst is not None:
+                from datetime import timedelta
+                await db_inst.sso_codes.insert_one({"code": code, "payload": json.dumps(payload), "expire_at": datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)})
+            else:
+                raise HTTPException(status_code=503, detail="SSO unavailable")
         return {"code": code, "expires_in": ttl_seconds}
     except HTTPException:
         raise
@@ -2398,23 +2404,27 @@ async def create_sso_code(request: Request, current_user: UserInDB = Depends(get
 @rate_limit(LIMITS.get('sso_exchange', LIMITS['login']))
 async def exchange_sso_code(request: Request, body: SsoExchangeRequest, db = Depends(get_db)):
     try:
-        redis_client = getattr(request.app, 'redis_client', None)
-        if redis_client is None:
-            raise HTTPException(status_code=503, detail="SSO temporarily unavailable")
+        redis_client = getattr(getattr(request.app, 'state', None), 'redis_client', None) or getattr(request.app, 'redis_client', None)
 
         code = (body.code or '').strip()
         if not code or len(code) < 10:
             raise HTTPException(status_code=400, detail="Invalid code")
 
-        redis_key = f"sso:{code}"
-
         raw = None
-        try:
-            raw = await redis_client.getdel(redis_key)
-        except Exception:
-            raw = await redis_client.get(redis_key)
-            if raw is not None:
-                await redis_client.delete(redis_key)
+        if redis_client:
+            redis_key = f"sso:{code}"
+            try:
+                raw = await redis_client.getdel(redis_key)
+            except Exception:
+                raw = await redis_client.get(redis_key)
+                if raw is not None:
+                    await redis_client.delete(redis_key)
+        else:
+            sso_doc = await db.sso_codes.find_one_and_delete({"code": code})
+            if sso_doc:
+                expire_at = sso_doc.get("expire_at")
+                if expire_at and expire_at.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
+                    raw = sso_doc.get("payload")
 
         if not raw:
             raise HTTPException(status_code=400, detail="Code expired or already used")
@@ -6764,12 +6774,17 @@ async def upload_image(request: Request, file: UploadFile = File(...), current_u
     static_dir = ROOT_DIR / "static" / "gallery"
     static_dir.mkdir(parents=True, exist_ok=True)
 
-    file_extension = (file.filename or "image").split('.')[-1]
-    unique_filename = f"{current_user.organization_id}_{str(uuid.uuid4())[:8]}.{file_extension}"
+    unique_filename = f"{current_user.organization_id}_{str(uuid.uuid4())[:8]}.jpg"
     file_path = static_dir / unique_filename
 
-    with open(file_path, "wb") as f:
-        f.write(file_content)
+    try:
+        img = PilImage.open(io.BytesIO(file_content))
+        img = img.convert("RGB")
+        img.thumbnail((900, 600), PilImage.LANCZOS)
+        img.save(file_path, "JPEG", quality=82, optimize=True)
+    except Exception:
+        with open(file_path, "wb") as f:
+            f.write(file_content)
 
     url = f"/api/static/gallery/{unique_filename}"
     return {"url": url}
@@ -10382,6 +10397,16 @@ async def whatsapp_webhook_verify(request: Request):
     raise HTTPException(status_code=403, detail="Webhook doğrulama başarısız.")
 
 
+@app.get("/api/webhook")
+async def whatsapp_webhook_verify_api_app(request: Request):
+    return await whatsapp_webhook_verify(request)
+
+
+@api_router.get("/webhook")
+async def whatsapp_webhook_verify_api(request: Request):
+    return await whatsapp_webhook_verify(request)
+
+
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     """
@@ -10466,6 +10491,16 @@ async def whatsapp_webhook(request: Request):
         logger.error(f"Webhook işleme hatası: {e}")
 
     return Response(status_code=200)
+
+
+@app.post("/api/webhook")
+async def whatsapp_webhook_api_app(request: Request):
+    return await whatsapp_webhook(request)
+
+
+@api_router.post("/webhook")
+async def whatsapp_webhook_api(request: Request):
+    return await whatsapp_webhook(request)
 
 # === CORS Preflight için OPTIONS handler (router'dan SONRA) ===
 @app.options("/api/{path:path}")

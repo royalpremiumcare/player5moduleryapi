@@ -61,7 +61,7 @@ const SortableServiceCard = ({ service, i18n, t, onEdit, onDelete }) => {
     <div ref={setNodeRef} style={style}>
       <div
         data-testid={`service-card-${service.id}`}
-        className={`backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg transition-all duration-300 ${
+        className={`backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg transition-[box-shadow,background-color,opacity,transform] duration-200 ${
           isDragging ? 'opacity-80 ring-2 ring-blue-500 shadow-2xl scale-105' : 'hover:shadow-xl hover:bg-white/50'
         }`}
       >

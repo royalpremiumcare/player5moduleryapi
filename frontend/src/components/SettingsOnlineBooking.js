@@ -287,14 +287,24 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                           dragItem.current = null;
                           dragOverItem.current = null;
                         }}
-                        className="relative rounded-xl overflow-hidden border border-white/30 bg-white/40 cursor-grab active:cursor-grabbing active:opacity-70 active:scale-95 transition-all duration-150 group"
+                        className="relative rounded-xl overflow-hidden border border-white/30 bg-zinc-100 cursor-grab active:cursor-grabbing active:opacity-70 active:scale-95 transition-[opacity,transform] duration-150 group"
                       >
-                        <img src={getFullUrl(url)} alt="" className="w-full aspect-video object-cover pointer-events-none" />
-                        <div className="absolute top-2 left-2 h-7 w-7 rounded-lg bg-black/50 backdrop-blur-sm text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity">
+                        <div className="w-full aspect-video bg-zinc-100">
+                          <img
+                            src={getFullUrl(url)}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            width="400"
+                            height="225"
+                            className="w-full h-full object-cover pointer-events-none"
+                          />
+                        </div>
+                        <div className="absolute top-2 left-2 h-7 w-7 rounded-lg bg-black/50 text-white flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity">
                           <GripVertical className="w-4 h-4" />
                         </div>
                         <div className="absolute top-2 right-2 flex items-center gap-1.5">
-                          <span className="h-6 min-w-[24px] px-1.5 rounded-md bg-black/50 backdrop-blur-sm text-white text-[10px] font-bold flex items-center justify-center">{index + 1}</span>
+                          <span className="h-6 min-w-[24px] px-1.5 rounded-md bg-black/50 text-white text-[10px] font-bold flex items-center justify-center">{index + 1}</span>
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setSettings(prev => ({ ...prev, images: prev.images.filter(x => x !== url) })); }}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { format, addDays, isSameDay } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import axios from "axios";
+import { Virtuoso } from 'react-virtuoso';
 
 // --- REHBER & TİTREŞİM ENTEGRASYONU ---
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -72,7 +73,6 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   const [debouncedCustomerSearchTerm, setDebouncedCustomerSearchTerm] = useState("");
   const [isNewCustomerMode, setIsNewCustomerMode] = useState(false);
   const customerListRef = useRef(null);
-  const [customerListScrollTop, setCustomerListScrollTop] = useState(0);
 
   // --- REHBER ENTEGRASYONU STATE'LERİ ---
   const [importingContacts, setImportingContacts] = useState(false);
@@ -335,10 +335,10 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     setSelectedContactPhones(newSet);
   };
 
-  const filteredFetchedContacts = fetchedContacts.filter(contact => 
-    contact.name.toLowerCase().includes(contactSearchTerm.toLowerCase()) || 
+  const filteredFetchedContacts = useMemo(() => fetchedContacts.filter(contact =>
+    contact.name.toLowerCase().includes(contactSearchTerm.toLowerCase()) ||
     contact.phone.replace(/\D/g, "").includes(contactSearchTerm)
-  );
+  ), [fetchedContacts, contactSearchTerm]);
 
   const handleSelectFromContacts = () => {
     const selectedList = fetchedContacts.filter(c => selectedContactPhones.has(c.phone));
@@ -409,6 +409,30 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     }
   };
 
+  // --- MEMOIZED COMPUTATIONS (renderStep dışında) ---
+
+  const days = useMemo(() => Array.from({ length: 14 }, (_, i) => addDays(new Date(), i)), []);
+
+  const allSlots = useMemo(
+    () => [...new Set([...availableSlots, ...busySlots])].sort(),
+    [availableSlots, busySlots]
+  );
+
+  const scrollDatesBy = useCallback((delta) => {
+    const el = dateScrollerRef.current;
+    if (!el) return;
+    el.scrollBy({ left: delta, behavior: 'smooth' });
+  }, []);
+
+  const handleDateScrollerWheel = useCallback((e) => {
+    const el = dateScrollerRef.current;
+    if (!el) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    }
+  }, []);
+
   // --- RENDER STEPS ---
 
   // ADIM 1: HİZMET SEÇİMİ
@@ -431,7 +455,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               setFormData(prev => ({ ...prev, service_id: service.id }));
               setStep(2);
             }}
-            className={`group p-5 backdrop-blur-xl border rounded-2xl shadow-lg hover:shadow-xl cursor-pointer transition-all duration-300 active:scale-[0.99] flex justify-between items-center
+            className={`group p-5 backdrop-blur-xl border rounded-2xl shadow-lg hover:shadow-xl cursor-pointer transition-[background-color,border-color,box-shadow] duration-200 active:scale-[0.99] flex justify-between items-center
               ${formData.service_id === service.id 
                 ? 'bg-zinc-900/90 border-zinc-900 text-white' 
                 : 'bg-white/40 md:bg-white/70 border-white/20 hover:bg-white/60 md:hover:bg-white/80 hover:border-white/40'}
@@ -460,17 +484,6 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // ADIM 2: MÜŞTERİ SEÇİMİ
   const renderStep2 = () => {
-    const LIST_HEIGHT = 420;
-    const ITEM_HEIGHT = 78;
-    const OVERSCAN = 6;
-
-    const total = filteredCustomers.length;
-    const startIndex = Math.max(0, Math.floor(customerListScrollTop / ITEM_HEIGHT) - OVERSCAN);
-    const endIndex = Math.min(total, Math.ceil((customerListScrollTop + LIST_HEIGHT) / ITEM_HEIGHT) + OVERSCAN);
-    const visible = filteredCustomers.slice(startIndex, endIndex);
-    const offsetY = startIndex * ITEM_HEIGHT;
-    const totalHeight = total * ITEM_HEIGHT;
-
     return (
       <div className="space-y-6 animate-in slide-in-from-right duration-300 pb-20">
         <div className="relative">
@@ -479,14 +492,11 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
              value={customerSearchTerm}
              onChange={(e) => {
                setCustomerSearchTerm(e.target.value);
-               setCustomerListScrollTop(0);
-               if (customerListRef.current) {
-                 customerListRef.current.scrollTop = 0;
-               }
+               if (customerListRef.current) customerListRef.current.scrollToIndex(0);
                if(isNewCustomerMode) setIsNewCustomerMode(false);
              }}
              placeholder={t('appointments.form.searchCustomer')}
-             className="w-full pl-12 pr-4 py-3 backdrop-blur-xl bg-white/40 border border-white/30 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:bg-white/60 outline-none transition-all shadow-sm"
+             className="w-full pl-12 pr-4 py-3 backdrop-blur-xl bg-white/40 border border-white/30 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:bg-white/60 outline-none transition-colors shadow-sm"
            />
         </div>
 
@@ -569,38 +579,34 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         )}
 
         {!isNewCustomerMode && (
-          <div
+          <Virtuoso
             ref={customerListRef}
-            onScroll={(e) => setCustomerListScrollTop(e.currentTarget.scrollTop)}
-            className="max-h-[420px] overflow-y-auto pr-1"
-            style={{ height: LIST_HEIGHT }}
-          >
-            <div style={{ height: totalHeight, position: 'relative' }}>
-              <div style={{ transform: `translateY(${offsetY}px)` }} className="space-y-3">
-                {visible.map((c) => (
-                  <div
-                    key={c.phone}
-                    onClick={() => {
-                      setFormData((prev) => ({ ...prev, customer_name: c.name, phone: c.phone }));
-                      setStep(3);
-                    }}
-                    className="flex items-center justify-between p-4 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl hover:bg-white/60 hover:border-white/40 hover:shadow-lg cursor-pointer group transition-all duration-300"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-xl backdrop-blur-md bg-zinc-500/10 border border-white/30 flex items-center justify-center text-zinc-700 font-bold text-lg group-hover:bg-zinc-900 group-hover:text-white transition-all duration-300 shadow-sm">
-                        {(c.name || '').charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-bold text-zinc-900">{c.name}</p>
-                        <p className="text-xs text-zinc-500 font-medium">{c.phone}</p>
-                      </div>
+            style={{ height: 420 }}
+            data={filteredCustomers}
+            overscan={200}
+            itemContent={(_, c) => (
+              <div className="pb-3">
+                <div
+                  onClick={() => {
+                    setFormData((prev) => ({ ...prev, customer_name: c.name, phone: c.phone }));
+                    setStep(3);
+                  }}
+                  className="flex items-center justify-between p-4 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl hover:bg-white/60 hover:border-white/40 hover:shadow-lg cursor-pointer group transition-colors duration-200"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-700 font-bold text-lg group-hover:bg-zinc-900 group-hover:text-white transition-colors duration-200 shadow-sm">
+                      {(c.name || '').charAt(0).toUpperCase()}
                     </div>
-                    <Check className={`w-5 h-5 transition-colors ${formData.phone === c.phone ? 'text-zinc-900' : 'text-zinc-300'}`} strokeWidth={2.5} />
+                    <div>
+                      <p className="font-bold text-zinc-900">{c.name}</p>
+                      <p className="text-xs text-zinc-500 font-medium">{c.phone}</p>
+                    </div>
                   </div>
-                ))}
+                  <Check className={`w-5 h-5 transition-colors ${formData.phone === c.phone ? 'text-zinc-900' : 'text-zinc-300'}`} strokeWidth={2.5} />
+                </div>
               </div>
-            </div>
-          </div>
+            )}
+          />
         )}
       </div>
     );
@@ -608,25 +614,6 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // ADIM 3: TARİH VE SAAT
   const renderStep3 = () => {
-    const days = Array.from({ length: 14 }, (_, i) => addDays(new Date(), i));
-    const scrollDatesBy = (delta) => {
-      const el = dateScrollerRef.current;
-      if (!el) return;
-      el.scrollBy({ left: delta, behavior: 'smooth' });
-    };
-
-    const handleDateScrollerWheel = (e) => {
-      const el = dateScrollerRef.current;
-      if (!el) return;
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        e.preventDefault();
-        el.scrollLeft += e.deltaY;
-      }
-    };
-
-    // Tüm saatleri birleştir ve sırala
-    const allSlots = [...new Set([...availableSlots, ...busySlots])].sort();
-
     return (
       <div className="space-y-8 animate-in slide-in-from-right duration-300 pb-24">
         
@@ -638,7 +625,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                 <button
                    type="button"
                    onClick={() => setFormData(prev => ({ ...prev, staff_member_id: "" }))}
-                   className={`px-4 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-all shadow-sm backdrop-blur-md
+                   className={`px-4 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-colors shadow-sm backdrop-blur-md
                      ${!formData.staff_member_id 
                        ? 'bg-zinc-900 text-white border-zinc-900 shadow-lg' 
                        : 'bg-white/40 text-zinc-600 border-white/30 hover:bg-white/60'}
@@ -651,7 +638,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                      key={staff.username}
                      type="button"
                      onClick={() => setFormData(prev => ({ ...prev, staff_member_id: staff.username }))}
-                     className={`px-4 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 shadow-sm backdrop-blur-md
+                     className={`px-4 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-colors flex items-center gap-2 shadow-sm backdrop-blur-md
                        ${formData.staff_member_id === staff.username 
                          ? 'bg-zinc-900 text-white border-zinc-900 shadow-lg' 
                          : 'bg-white/40 text-zinc-600 border-white/30 hover:bg-white/60'}
@@ -673,7 +660,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
              <button
                type="button"
                onClick={() => scrollDatesBy(-320)}
-               className="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white transition-all"
+               className="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white transition-colors"
                aria-label="Scroll dates left"
              >
                <ChevronLeft className="w-5 h-5 text-zinc-700" />
@@ -681,7 +668,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
              <button
                type="button"
                onClick={() => scrollDatesBy(320)}
-               className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white transition-all"
+               className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white transition-colors"
                aria-label="Scroll dates right"
              >
                <ChevronLeft className="w-5 h-5 text-zinc-700 rotate-180" />
@@ -699,7 +686,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                   type="button"
                   key={i}
                   onClick={() => setFormData(prev => ({ ...prev, appointment_date: date, appointment_time: "" }))}
-                  className={`flex flex-col items-center justify-center min-w-[72px] h-[84px] rounded-2xl border transition-all duration-300 shrink-0 shadow-sm
+                  className={`flex flex-col items-center justify-center min-w-[72px] h-[84px] rounded-2xl border transition-[background-color,border-color,box-shadow,color] duration-200 shrink-0 shadow-sm
                     ${isSelected 
                       ? 'bg-zinc-900 border-zinc-900 text-white shadow-xl' 
                       : 'backdrop-blur-xl bg-white/40 border-white/30 text-zinc-600 hover:bg-white/60 hover:border-white/40 hover:shadow-lg'}
@@ -737,7 +724,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                     type="button"
                     onClick={() => isAvailable && setFormData(prev => ({ ...prev, appointment_time: time }))}
                     disabled={isBusy}
-                    className={`py-3 rounded-xl text-sm font-bold transition-all duration-300 border shadow-sm relative
+                    className={`py-3 rounded-xl text-sm font-bold transition-[background-color,border-color,box-shadow,transform,color] duration-200 border shadow-sm relative
                       ${isSelected 
                         ? 'bg-blue-600 border-blue-600 text-white shadow-lg scale-105' 
                         : isBusy 
@@ -757,7 +744,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         <div>
            <label className="block text-sm font-bold text-zinc-700 mb-3 uppercase tracking-wider">{t('appointments.form.notes')}</label>
            <textarea 
-             className="w-full p-4 backdrop-blur-xl bg-white/40 border border-white/30 rounded-2xl focus:ring-2 focus:ring-zinc-900 focus:bg-white/60 outline-none text-sm font-medium transition-all shadow-sm"
+             className="w-full p-4 backdrop-blur-xl bg-white/40 border border-white/30 rounded-2xl focus:ring-2 focus:ring-zinc-900 focus:bg-white/60 outline-none text-sm font-medium transition-colors shadow-sm"
              rows="3"
              placeholder={t('appointments.form.notesPlaceholder')}
              value={formData.notes}
@@ -776,11 +763,11 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         <div className="px-6 pt-12 pb-4 md:pt-6 border-b border-white/20 flex items-center justify-between backdrop-blur-2xl bg-white/70 sticky top-0 z-20 shrink-0 shadow-sm">
           <div className="flex items-center gap-4">
             {step > 1 ? (
-              <button onClick={() => setStep(step - 1)} className="p-2 -ml-2 hover:bg-white/50 rounded-xl transition-all duration-300">
+              <button onClick={() => setStep(step - 1)} className="p-2 -ml-2 hover:bg-white/50 rounded-xl transition-colors duration-200">
                 <ChevronLeft className="w-6 h-6 text-zinc-900" strokeWidth={2} />
               </button>
             ) : (
-              <button onClick={onCancel} className="p-2 -ml-2 hover:bg-white/50 rounded-xl transition-all duration-300 md:hidden">
+              <button onClick={onCancel} className="p-2 -ml-2 hover:bg-white/50 rounded-xl transition-colors duration-200 md:hidden">
                  <X className="w-6 h-6 text-zinc-900" strokeWidth={2} />
               </button>
             )}

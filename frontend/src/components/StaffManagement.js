@@ -754,7 +754,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
               const canDelete = !isSelf && !isFounder && (isTargetAdmin ? isCurrentUserFounder : true);
             
               return (
-                <div key={staffMember.username} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+                <div key={staffMember.username} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-[box-shadow,background-color] duration-200">
                   <div className="space-y-4">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
@@ -821,7 +821,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                               </Button>
                             </DialogTrigger>
                       
-                            <DialogContent className="max-w-md max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+                            {editingPaymentStaff?.username === staffMember.username && <DialogContent className="max-w-md max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
                               <DialogHeader>
                                 <DialogTitle className="text-xl font-black text-zinc-900">
                                   {t('staff.management.editPaymentTitle', { name: editingPaymentStaff?.full_name || editingPaymentStaff?.username })}
@@ -940,7 +940,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                                   {savingPayment ? t('settings.profile.buttons.saving') : t('common.save')}
                                 </Button>
                               </div>
-                            </DialogContent>
+                            </DialogContent>}
                           </Dialog>
 
                           {/* Time Blocks Dialog */}
@@ -965,7 +965,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                               </Button>
                             </DialogTrigger>
 
-                            <DialogContent className="max-w-md max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+                            {timeBlocksStaff?.username === staffMember.username && <DialogContent className="max-w-md max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
                               <DialogHeader>
                                 <DialogTitle className="text-xl font-black text-zinc-900">
                                   {t('staff.management.blockTimeTitle')}
@@ -1061,7 +1061,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                                   {t('common.close')}
                                 </Button>
                               </div>
-                            </DialogContent>
+                            </DialogContent>}
                           </Dialog>
 
                           {/* Days Off Dialog */}
@@ -1085,7 +1085,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                               </Button>
                             </DialogTrigger>
                         
-                            <DialogContent className="max-w-md max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+                            {editingDaysOffStaff?.username === staffMember.username && <DialogContent className="max-w-md max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
                               <DialogHeader>
                                 <DialogTitle className="text-xl font-black text-zinc-900">
                                   {t('staff.management.editDaysOffTitle', { name: editingDaysOffStaff?.full_name || editingDaysOffStaff?.username })}
@@ -1148,7 +1148,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                                   {savingDaysOff ? t('settings.profile.buttons.saving') : t('common.save')}
                                 </Button>
                               </div>
-                            </DialogContent>
+                            </DialogContent>}
                           </Dialog>
                         </>
                       )}
@@ -1189,7 +1189,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                             </Button>
                           </DialogTrigger>
                     
-                          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+                          {editingStaff?.username === staffMember.username && <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
                             <DialogHeader>
                               <DialogTitle className="text-xl font-black text-zinc-900">
                                 {t('staff.management.serviceAssignmentTitle', { name: editingStaff?.full_name || editingStaff?.username })}
@@ -1255,7 +1255,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                                 {saving ? t('settings.profile.buttons.saving') : t('common.save')}
                               </Button>
                             </div>
-                          </DialogContent>
+                          </DialogContent>}
                         </Dialog>
                       )}
                   

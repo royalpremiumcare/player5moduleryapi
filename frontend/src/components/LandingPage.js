@@ -648,11 +648,10 @@ const LandingPage = () => {
             </h2>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <a
-                href="#"
-                onClick={(e) => e.preventDefault()}
-                aria-disabled="true"
-                className="inline-flex items-center justify-center cursor-not-allowed"
-                title={i18n.language === 'tr' ? 'Yakında' : 'Coming soon'}
+                href="https://apps.apple.com/us/app/plann-randevu-asistan%C4%B1/id6759719891"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center"
               >
                 <img
                   src={i18n.language === 'tr'
