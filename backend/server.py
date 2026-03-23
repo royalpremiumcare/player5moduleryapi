@@ -1794,7 +1794,7 @@ class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[floa
 class Appointment(BaseModel):
     model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None; source: Optional[str] = None
 class AppointmentCreate(BaseModel):
-    customer_name: str; phone: str; service_id: str; appointment_date: str; appointment_time: str; notes: str = ""; staff_member_id: Optional[str] = None
+    customer_name: str; phone: str; service_id: str; appointment_date: str; appointment_time: str; notes: str = ""; staff_member_id: Optional[str] = None; turnstile_token: Optional[str] = None
 class AppointmentUpdate(BaseModel):
     customer_name: Optional[str] = None; phone: Optional[str] = None; address: Optional[str] = None; service_id: Optional[str] = None; appointment_date: Optional[str] = None; appointment_time: Optional[str] = None; notes: Optional[str] = None; status: Optional[str] = None; staff_member_id: Optional[str] = None
 class Transaction(BaseModel):
@@ -9230,15 +9230,221 @@ async def get_internal_availability(
         "message": "OK"
     }
 
+# ═══════════════════════════════════════════════════════════════════════
+# 🔒 PLANN GÜVENLİK — Yardımcı Fonksiyonlar (5 Katmanlı Savunma)
+# ═══════════════════════════════════════════════════════════════════════
+
+async def verify_turnstile(token: str, client_ip: str = "") -> bool:
+    """Cloudflare Turnstile token doğrulama — Katman 1"""
+    secret = os.getenv("TURNSTILE_SECRET_KEY", "")
+    if not secret:
+        logging.warning("TURNSTILE_SECRET_KEY eksik — Turnstile atlanıyor (dev mode)")
+        return True
+    if not token:
+        return False
+    try:
+        def _check():
+            resp = requests.post(
+                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                data={"secret": secret, "response": token, "remoteip": client_ip},
+                timeout=5.0,
+            )
+            return resp.json().get("success", False)
+        return await asyncio.to_thread(_check)
+    except Exception as e:
+        logging.error(f"Turnstile doğrulama hatası: {e}")
+        return False
+
+_PHONE_COUNTRY_MAP = {
+    "90": "TR", "44": "GB", "1": "US", "49": "DE",
+    "33": "FR", "39": "IT", "34": "ES", "31": "NL",
+    "7": "RU", "86": "CN", "81": "JP", "82": "KR",
+    "61": "AU", "55": "BR", "91": "IN",
+}
+
+def get_phone_country(phone: str) -> str:
+    """Telefon numarasından ülke kodu tahmin et — Katman 4"""
+    digits = re.sub(r"\D", "", phone)
+    if digits.startswith("0") and len(digits) == 11:
+        return "TR"
+    for prefix_len in (3, 2, 1):
+        country = _PHONE_COUNTRY_MAP.get(digits[:prefix_len])
+        if country:
+            return country
+    return ""
+
+async def get_geo_country(redis_client, ip: str) -> str:
+    """IP → ülke kodu (Redis 24h cache, ip-api.com) — Katman 4"""
+    if not ip or ip in ("127.0.0.1", "::1", ""):
+        return ""
+    cache_key = f"plann:geo:{ip}"
+    try:
+        if redis_client:
+            cached = await redis_client.get(cache_key)
+            if cached:
+                return cached.decode() if isinstance(cached, bytes) else cached
+        def _fetch():
+            resp = requests.get(
+                f"http://ip-api.com/json/{ip}?fields=countryCode",
+                timeout=3.0,
+            )
+            return resp.json().get("countryCode", "")
+        country = await asyncio.to_thread(_fetch)
+        if redis_client and country:
+            await redis_client.setex(cache_key, 86400, country)
+        return country
+    except Exception:
+        return ""
+
+async def create_pending_verification(redis_client, phone: str, org_id: str, appointment_data: dict) -> str:
+    """
+    WhatsApp doğrulama için Redis'e kayıt yaz (TTL 15 dk).
+    Aynı numara için eski pending varsa EZİLİR — upsert mantığı.
+    APScheduler gerekmez, Redis TTL otomatik temizler.
+    """
+    code = f"RND-{secrets.randbelow(90000) + 10000}"
+    phone_map_key = f"plann:pending:phone:{phone}:{org_id}"
+    ttl = 900  # 15 dakika
+    if redis_client:
+        old_code = await redis_client.get(phone_map_key)
+        if old_code:
+            old_str = old_code.decode() if isinstance(old_code, bytes) else old_code
+            await redis_client.delete(f"plann:pending:{old_str}")
+        code_key = f"plann:pending:{code}"
+        await redis_client.hset(code_key, mapping={
+            "phone": phone,
+            "org_id": org_id,
+            "appointment_data": json.dumps(appointment_data, ensure_ascii=False),
+        })
+        await redis_client.expire(code_key, ttl)
+        await redis_client.setex(phone_map_key, ttl, code)
+    return code
+
+
 @api_router.post("/public/appointments")
 async def create_public_appointment(request: Request, appointment: AppointmentCreate, organization_id: str):
-    """Model D: Public randevu oluştur - Akıllı personel atama"""
+    """Model D: Public randevu oluştur — 5 Katmanlı Güvenlik + Akıllı personel atama"""
     db = await get_db_from_request(request)
+    redis_client = getattr(request.app.state, 'redis_client', None)
+
+    # Gerçek istemci IP'si (Cloudflare proxy arkasında da doğru çalışır)
+    client_ip = (
+        request.headers.get("CF-Connecting-IP") or
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or
+        (request.client.host if request.client else "")
+    )
+
+    # ═══════════════════════════════════════════════════════════
+    # 🔒 KATMAN 1: CLOUDFLARE TURNSTILE
+    # ═══════════════════════════════════════════════════════════
+    turnstile_ok = await verify_turnstile(appointment.turnstile_token or "", client_ip)
+    if not turnstile_ok:
+        raise HTTPException(
+            status_code=400,
+            detail="Güvenlik doğrulaması başarısız. Lütfen sayfayı yenileyip tekrar deneyin.",
+        )
+
+    # ═══════════════════════════════════════════════════════════
+    # 🔒 KATMAN 2: IP RATE LIMIT (15 istek / 12 saat)
+    # ═══════════════════════════════════════════════════════════
+    if redis_client and client_ip and client_ip not in ("127.0.0.1", "::1"):
+        ip_key = f"plann:rate:ip:{client_ip}"
+        ip_count = await redis_client.incr(ip_key)
+        if ip_count == 1:
+            await redis_client.expire(ip_key, 43200)  # 12 saat
+        if ip_count > 50:
+            raise HTTPException(
+                status_code=429,
+                detail="Bu ağdan çok fazla randevu talebi geldi. Lütfen daha sonra tekrar deneyin.",
+            )
+
+    # ═══════════════════════════════════════════════════════════
+    # 🔒 KATMAN 3: TANINIK MÜŞTERİ BYPASS (MongoDB customers)
+    # ═══════════════════════════════════════════════════════════
+    existing_customer = await db.customers.find_one({
+        "organization_id": organization_id,
+        "phone": appointment.phone,
+    })
+
+    # ═══════════════════════════════════════════════════════════
+    # 🔒 KATMAN 4: COĞRAFİ RİSK SKORU (ip-api.com, Redis 24h cache)
+    # ═══════════════════════════════════════════════════════════
+    high_risk = False
+    if not existing_customer:
+        geo_country = await get_geo_country(redis_client, client_ip)
+        phone_country = get_phone_country(appointment.phone)
+        if geo_country and phone_country and geo_country != phone_country:
+            high_risk = True
+            logging.info(f"🌍 Geo uyuşmazlık: IP={geo_country}, tel={phone_country} → yüksek risk")
+
+    # KATMAN 3 KARAR: VIP bypass mı, WhatsApp doğrulama mı?
+    skip_verification = False
+    if existing_customer and not high_risk:
+        if redis_client:
+            known_key = f"plann:rate:known:{appointment.phone}"
+            known_count = await redis_client.incr(known_key)
+            if known_count == 1:
+                await redis_client.expire(known_key, 86400)  # 24 saat
+            if known_count <= 3:
+                skip_verification = True
+                logging.info(f"✅ Tanıdık müşteri bypass: {appointment.phone} ({known_count}/3 bugün)")
+            else:
+                logging.info(f"⚠️ Tanıdık müşteri günlük limit ({known_count}/3), WhatsApp zorunlu")
+        else:
+            skip_verification = True  # Redis yoksa bypass ver
+
+    # ═══════════════════════════════════════════════════════════
+    # 🔒 KATMAN 5: WHATSAPP NUMARA DOĞRULAMA
+    # ═══════════════════════════════════════════════════════════
+    if not skip_verification:
+        # WA flood kontrolü (5 kod / 1 saat)
+        if redis_client:
+            wa_key = f"plann:rate:wa_req:{appointment.phone}"
+            wa_count = await redis_client.incr(wa_key)
+            if wa_count == 1:
+                await redis_client.expire(wa_key, 3600)
+            if wa_count > 5:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Çok fazla doğrulama kodu istediniz. Lütfen 1 saat sonra tekrar deneyin.",
+                )
+
+        appointment_payload = {
+            "customer_name": appointment.customer_name,
+            "phone": appointment.phone,
+            "service_id": appointment.service_id,
+            "appointment_date": appointment.appointment_date,
+            "appointment_time": appointment.appointment_time,
+            "notes": appointment.notes,
+            "staff_member_id": appointment.staff_member_id,
+        }
+        code = await create_pending_verification(
+            redis_client, appointment.phone, organization_id, appointment_payload
+        )
+
+        wa_business_number = os.getenv("WHATSAPP_BUSINESS_NUMBER", "")
+        wa_number_clean = re.sub(r"\D", "", wa_business_number)
+        wa_link = (
+            f"https://wa.me/{wa_number_clean}?text=Randevu+onay%C4%B1:+{code}"
+            if wa_number_clean else ""
+        )
+        logging.info(f"📱 WhatsApp doğrulama: {appointment.phone} → {code}")
+
+        return {
+            "needs_verification": True,
+            "code": code,
+            "wa_number": wa_business_number,
+            "wa_link": wa_link,
+            "message": "Lütfen WhatsApp'tan doğrulama kodunu gönderin.",
+        }
+
+    # ═══════════════════════════════════════════════════════════
+    # ✅ GÜVENLİK KATMANLARI ONAYLADI — RANDEVU OLUŞTURMA
+    # ═══════════════════════════════════════════════════════════
 
     # ---------------------------------------------------------
     # 🔒 ADIM 1: REDIS LOCK (ÇİFTE REZERVASYON ENGELLEYİCİ)
     # ---------------------------------------------------------
-    redis_client = getattr(request.app.state, 'redis_client', None)
     lock_key = None # Hata durumunda silmek için dışarıda tanımlıyoruz
 
     if redis_client:
@@ -9766,6 +9972,28 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     asyncio.create_task(send_notifications_background())
     
     return {"message": "Randevu başarıyla oluşturuldu", "appointment": appointment_obj}
+
+
+@api_router.get("/public/verify-status")
+async def check_verification_status(code: str, request: Request):
+    """WhatsApp doğrulama durumunu sorgula (frontend 3sn polling)"""
+    redis_client = getattr(request.app.state, 'redis_client', None)
+    if not redis_client:
+        raise HTTPException(status_code=503, detail="Servis geçici olarak kullanılamıyor.")
+
+    # Webhook tarafından tamamlandı mı? (5 dk TTL flag)
+    is_verified = await redis_client.get(f"plann:verified:{code}")
+    if is_verified:
+        return {"status": "verified", "message": "Doğrulama tamamlandı, randevunuz oluşturuldu."}
+
+    # Pending kayıt hala var mı?
+    exists = await redis_client.exists(f"plann:pending:{code}")
+    if exists:
+        return {"status": "pending", "message": "Doğrulama bekleniyor."}
+
+    # Kod yok ve verified da değil → süresi dolmuş
+    return {"status": "expired", "message": "Doğrulama kodunun süresi doldu. Lütfen tekrar deneyin."}
+
 
 # === SUPER ADMIN ENDPOINT'LERİ ===
 @api_router.get("/superadmin/stats")
@@ -10407,6 +10635,175 @@ async def whatsapp_webhook_verify_api(request: Request):
     return await whatsapp_webhook_verify(request)
 
 
+async def _process_whatsapp_verification(db, redis_client, from_wa_number: str, code: str) -> dict:
+    """
+    Webhook'tan gelen RND kodunu doğrula ve randevuyu oluştur.
+    from_wa_number: Meta API'den gelen gönderenin numarası (90XXXXXXXXXX formatı)
+    """
+    if not redis_client:
+        return {"reply": "Sistem geçici olarak kullanılamıyor."}
+
+    pending_key = f"plann:pending:{code}"
+    raw = await redis_client.hgetall(pending_key)
+
+    if not raw:
+        lang = detect_language_from_phone(from_wa_number)
+        if lang == "TR":
+            return {"reply": f"❌ '{code}' kodu bulunamadı veya süresi doldu. Lütfen yeniden randevu talebinde bulunun."}
+        return {"reply": f"❌ Code '{code}' not found or expired. Please submit a new appointment request."}
+
+    data = {
+        (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+        for k, v in raw.items()
+    }
+    stored_phone = data.get("phone", "")
+    org_id = data.get("org_id", "")
+
+    def _norm(p: str) -> str:
+        return re.sub(r"\D", "", p).lstrip("0")
+
+    if _norm(from_wa_number)[-9:] != _norm(stored_phone)[-9:]:
+        lang = detect_language_from_phone(from_wa_number)
+        if lang == "TR":
+            return {"reply": "❌ Bu numara randevu formundaki telefon numarasıyla eşleşmiyor. Lütfen randevuyu oluşturduğunuz numara ile mesaj gönderin."}
+        return {"reply": "❌ This number does not match the booking form's phone number."}
+
+    try:
+        apt_dict = json.loads(data.get("appointment_data", "{}"))
+    except Exception:
+        return {"reply": "❌ Randevu verisi işlenirken hata oluştu."}
+
+    try:
+        quota_ok, quota_error = await check_quota_and_increment(db, org_id)
+        if not quota_ok:
+            return {"reply": f"❌ {quota_error}"}
+
+        service = await db.services.find_one({"id": apt_dict.get("service_id")}, {"_id": 0})
+        if not service:
+            await db.organization_plans.update_one(
+                {"organization_id": org_id}, {"$inc": {"quota_usage": -1}}
+            )
+            return {"reply": "❌ Hizmet bulunamadı. Lütfen tekrar randevu alın."}
+
+        apt_obj = Appointment(**{
+            **apt_dict,
+            "organization_id": org_id,
+            "service_name": service.get("name", ""),
+            "service_price": service.get("price", 0),
+            "service_duration": service.get("duration", 30),
+            "source": "public_booking_wa_verified",
+            "status": "Bekliyor",
+        })
+        doc = apt_obj.model_dump()
+        doc["created_at"] = doc["created_at"].isoformat()
+        await db.appointments.insert_one(doc)
+
+        await db.customers.update_one(
+            {"organization_id": org_id, "phone": apt_dict.get("phone", "")},
+            {
+                "$set": {
+                    "name": apt_dict.get("customer_name", ""),
+                    "phone": apt_dict.get("phone", ""),
+                    "organization_id": org_id,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                "$setOnInsert": {
+                    "id": str(uuid.uuid4()),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "notes": "",
+                },
+            },
+            upsert=True,
+        )
+
+        phone_map_key = f"plann:pending:phone:{stored_phone}:{org_id}"
+        await redis_client.delete(pending_key)
+        await redis_client.delete(phone_map_key)
+        await redis_client.setex(f"plann:verified:{code}", 300, "1")
+
+        try:
+            apt_clean = {k: v for k, v in doc.items() if k != "_id"}
+            await emit_to_organization(org_id, "appointment_created", {"appointment": apt_clean})
+        except Exception:
+            pass
+
+        # ── Push notifications → admin + personel ───────────────────
+        try:
+            apt_date_raw = apt_dict.get("appointment_date", "")
+            try:
+                _d = apt_date_raw.split("-")
+                apt_date_fmt_push = f"{_d[2]}.{_d[1]}.{_d[0]}"
+            except Exception:
+                apt_date_fmt_push = apt_date_raw
+            notif_body = (
+                f"{apt_dict.get('customer_name', '')} - {service.get('name', '')} "
+                f"({apt_date_fmt_push} {apt_dict.get('appointment_time', '')})"
+            )
+            notif_data = {
+                "type": "new_appointment",
+                "appointment_id": doc.get("id"),
+                "source": "public_booking_wa_verified",
+            }
+            admins = await db.users.find({"organization_id": org_id, "role": "admin"}).to_list(100)
+            for admin in admins:
+                await send_push_notification(
+                    db=db,
+                    organization_id=org_id,
+                    title="🔔 Yeni Online Randevu!",
+                    body=notif_body,
+                    data=notif_data,
+                    user_id=admin["username"],
+                )
+            assigned = apt_dict.get("staff_member_id")
+            if assigned:
+                staff_doc = await db.users.find_one({"username": assigned, "organization_id": org_id})
+                if staff_doc and staff_doc.get("role") != "admin":
+                    await send_push_notification(
+                        db=db,
+                        organization_id=org_id,
+                        title="🔔 Yeni Randevu Atandı!",
+                        body=notif_body,
+                        data=notif_data,
+                        user_id=assigned,
+                    )
+            logging.info(f"✓ Push notifications sent for WA-verified appointment {doc.get('id')}")
+        except Exception as _push_err:
+            logging.error(f"WA verified push notification hatası: {_push_err}")
+
+        settings_data = await db.settings.find_one({"organization_id": org_id})
+        company_name  = (settings_data or {}).get("company_name", "İşletmeniz")
+        support_phone = (settings_data or {}).get("support_phone", "")
+        location      = (settings_data or {}).get("location") or {}
+        coords        = location.get("coordinates") or {}
+        lat           = coords.get("lat")
+        lng           = coords.get("lng")
+        address       = location.get("address", "")
+
+        try:
+            await asyncio.to_thread(
+                send_whatsapp_template,
+                apt_dict.get("phone", ""),
+                "CONFIRMATION",
+                apt_dict.get("customer_name", ""),
+                company_name,
+                apt_dict.get("appointment_date", ""),
+                apt_dict.get("appointment_time", ""),
+                service.get("name", ""),
+                support_phone,
+                business_lat=lat,
+                business_lng=lng,
+                business_address=address,
+            )
+        except Exception as _wa_err:
+            logging.warning(f"WA onay template gönderilemedi: {_wa_err}")
+
+        return {"reply": ""}  # Template gönderildi, ek düz metin gerekmez
+
+    except Exception as e:
+        logging.error(f"WA doğrulama randevu hatası: {e}", exc_info=True)
+        return {"reply": "❌ Randevu oluşturulurken bir hata oluştu. Lütfen tekrar deneyin."}
+
+
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     """
@@ -10421,14 +10818,14 @@ async def whatsapp_webhook(request: Request):
 
     logger.info(f"📩 Meta Webhook gövdesi: {body}")
 
-    db = getattr(request.app.state, "db", None)
+    db = await get_db_from_request(request)
 
     try:
         for entry in body.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
 
-                # ── 1. Gelen müşteri mesajları → otomatik yanıt ──────────────
+                # ── 1. Gelen müşteri mesajları ──────────────────────────────
                 for message in value.get("messages", []):
                     from_number = message.get("from")
                     msg_type    = message.get("type", "")
@@ -10438,6 +10835,21 @@ async def whatsapp_webhook(request: Request):
                     ):
                         continue
                     logger.info(f"📩 Gelen WA mesajı: from={from_number} type={msg_type}")
+
+                    # ── RND doğrulama kodu kontrolü ──────────────────────────
+                    if msg_type == "text":
+                        text_body = message.get("text", {}).get("body", "")
+                        rnd_match = re.search(r"\bRND-\d{5}\b", text_body.upper())
+                        if rnd_match:
+                            redis_client_wh = getattr(request.app.state, "redis_client", None)
+                            result = await _process_whatsapp_verification(
+                                db, redis_client_wh, from_number, rnd_match.group(0)
+                            )
+                            if result.get("reply"):
+                                _send_whatsapp_text_reply(from_number, result["reply"])
+                            continue
+
+                    # ── Varsayılan otomatik yanıt ────────────────────────────
                     lang = detect_language_from_phone(from_number)
                     if lang == "TR":
                         reply = (

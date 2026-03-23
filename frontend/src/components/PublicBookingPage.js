@@ -2,7 +2,9 @@ import { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import { useParams } from "react-router-dom";
 import { format } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
-import { Calendar as CalendarIcon, Clock, Check, AlertCircle, User, ArrowRight, ArrowLeft, Loader2, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Check, AlertCircle, User, ArrowRight, ArrowLeft, Loader2, ChevronLeft, ChevronRight, X, MessageCircle, QrCode as QrCodeIcon } from "lucide-react";
+import { Turnstile } from "@marsidev/react-turnstile";
+import { QRCodeSVG } from "qrcode.react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -209,8 +211,17 @@ const PublicBookingPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState(null);
+  const [verificationPending, setVerificationPending] = useState(false);
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationWaLink, setVerificationWaLink] = useState("");
+  const [verificationWaNumber, setVerificationWaNumber] = useState("");
+  const [verificationStatus, setVerificationStatus] = useState("pending");
+
   const resetTimeoutRef = useRef(null);
   const socketRef = useRef(null);
+  const pollIntervalRef = useRef(null);
 
   // --- HELPER: GÖRÜNEN ADIM HESAPLAMA ---
   // Eğer personel seçimi kapalıysa toplam adım 3, açıksa 4 olmalı.
@@ -327,7 +338,7 @@ const PublicBookingPage = () => {
 
   const loadAvailableSlots = async () => {
     if (!selectedService || !selectedDate || !business) return;
-    
+    setSlotsLoading(true);
     try {
       const dateStr = format(selectedDate, "yyyy-MM-dd");
       const params = {
@@ -374,6 +385,8 @@ const PublicBookingPage = () => {
       setAvailableSlots([]);
       setBusySlots([]);
       setAllSlots([]);
+    } finally {
+      setSlotsLoading(false);
     }
   };
 
@@ -459,6 +472,59 @@ const PublicBookingPage = () => {
     }, 300);
   };
 
+  const triggerSuccessReset = useCallback(() => {
+    if (resetTimeoutRef.current) clearTimeout(resetTimeoutRef.current);
+    resetTimeoutRef.current = setTimeout(() => {
+      resetTimeoutRef.current = null;
+      setSuccess(false);
+      setCurrentStep(1);
+      setSelectedService(null);
+      setSelectedStaff(null);
+      setSelectedDate(new Date());
+      setSelectedTime("");
+      setAvailableSlots([]);
+      setBusySlots([]);
+      setAllSlots([]);
+      setRememberMe(false);
+    }, 20000);
+  }, []);
+
+  const startVerificationPolling = useCallback((code, savedFullName, savedPhone) => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+
+    const timeoutId = setTimeout(() => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      setVerificationStatus("expired");
+    }, 15 * 60 * 1000);
+
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const res = await publicApi.get('/public/verify-status', { params: { code } });
+        if (res.data.status === "verified") {
+          clearInterval(pollIntervalRef.current);
+          clearTimeout(timeoutId);
+          pollIntervalRef.current = null;
+          setVerificationStatus("verified");
+          setVerificationPending(false);
+          if (rememberMe) {
+            localStorage.setItem('plann_user', JSON.stringify({ fullName: savedFullName, phone: savedPhone }));
+          }
+          setSuccess(true);
+          toast.success(t('publicBooking.appointmentCreated'));
+          triggerSuccessReset();
+        } else if (res.data.status === "expired") {
+          clearInterval(pollIntervalRef.current);
+          clearTimeout(timeoutId);
+          pollIntervalRef.current = null;
+          setVerificationStatus("expired");
+        }
+      } catch (_) {}
+    }, 3000);
+  }, [rememberMe, t, triggerSuccessReset]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -488,40 +554,33 @@ const PublicBookingPage = () => {
         appointment_date: format(selectedDate, "yyyy-MM-dd"),
         appointment_time: selectedTime,
         notes: "",
-        staff_member_id: selectedStaff || null
+        staff_member_id: selectedStaff || null,
+        turnstile_token: turnstileToken,
       };
 
-      await publicApi.post(`/public/appointments`, payload, {
+      const response = await publicApi.post(`/public/appointments`, payload, {
         params: { organization_id: business.organization_id }
       });
+
+      if (response.data.needs_verification) {
+        const { code, wa_link, wa_number } = response.data;
+        setVerificationCode(code);
+        setVerificationWaLink(wa_link || "");
+        setVerificationWaNumber(wa_number || "");
+        setVerificationStatus("pending");
+        setVerificationPending(true);
+        startVerificationPolling(code, fullName, phone.trim());
+        return;
+      }
       
       if (rememberMe) {
-        const userData = {
-          fullName: fullName,
-          phone: phone.trim()
-        };
+        const userData = { fullName: fullName, phone: phone.trim() };
         localStorage.setItem('plann_user', JSON.stringify(userData));
       }
       
       setSuccess(true);
       toast.success(t('publicBooking.appointmentCreated'));
-      
-      if (resetTimeoutRef.current) {
-        clearTimeout(resetTimeoutRef.current);
-      }
-      resetTimeoutRef.current = setTimeout(() => {
-        resetTimeoutRef.current = null;
-        setSuccess(false);
-        setCurrentStep(1);
-        setSelectedService(null);
-        setSelectedStaff(null);
-        setSelectedDate(new Date());
-        setSelectedTime("");
-        setAvailableSlots([]);
-        setBusySlots([]);
-        setAllSlots([]);
-        setRememberMe(false);
-      }, 20000);
+      triggerSuccessReset();
     } catch (error) {
       const errorMessage = error.response?.data?.detail || t('publicBooking.errorCreateAppointment');
       toast.error(errorMessage);
@@ -569,6 +628,122 @@ const PublicBookingPage = () => {
           <h2 className="text-xl font-bold text-zinc-900 mb-2 tracking-tight">{t('publicBooking.businessNotFound')}</h2>
           <p className="text-zinc-500">{t('publicBooking.businessNotFoundDesc')}</p>
         </Card>
+      </div>
+    );
+  }
+
+  if (verificationPending) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <Toaster position="top-center" richColors theme="light" />
+        <div className="w-full max-w-md space-y-5 animate-in fade-in zoom-in duration-300">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-[#25D366] rounded-full flex items-center justify-center mx-auto mb-4">
+              <MessageCircle className="w-8 h-8 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">
+              {currentLang === 'en' ? 'Verify via WhatsApp' : 'WhatsApp ile Doğrulayın'}
+            </h2>
+            <p className="text-zinc-500 mt-2 text-sm">
+              {currentLang === 'en'
+                ? 'Send the code below to confirm your appointment.'
+                : 'Randevunuzu onaylamak için aşağıdaki kodu gönderin.'}
+            </p>
+          </div>
+
+          <div className="bg-zinc-950 rounded-xl p-6 text-center">
+            <p className="text-zinc-400 text-xs uppercase tracking-wider mb-2">
+              {currentLang === 'en' ? 'Your code' : 'Doğrulama kodunuz'}
+            </p>
+            <p className="text-white text-3xl font-mono font-bold tracking-widest">{verificationCode}</p>
+            <p className="text-zinc-500 text-xs mt-3">
+              {currentLang === 'en' ? 'Valid for 15 minutes' : '15 dakika geçerli'}
+            </p>
+          </div>
+
+          {verificationWaLink && (
+  <div className="space-y-2">
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        
+        // Güvenlik önlemi: Eğer backend numarayı göndermeyi unutursa eski düzende aç.
+        if (!verificationWaNumber) {
+          window.open(verificationWaLink, '_blank');
+          return;
+        }
+
+        const message = encodeURIComponent(`Randevu doğrulama kodum: ${verificationCode}`);
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        
+        if (isAndroid) {
+          // Android Intent: Instagram vb. tarayıcıları %100 deler ve WhatsApp'ı zorla açar
+          window.location.href = `intent://send/?phone=${verificationWaNumber}&text=${message}#Intent;scheme=whatsapp;package=com.whatsapp;end`;
+        } else {
+          // iOS Deep Link
+          window.location.href = `whatsapp://send?phone=${verificationWaNumber}&text=${message}`;
+        }
+      }}
+      className="flex items-center justify-center gap-3 w-full bg-[#25D366] hover:bg-[#1fb558] text-white font-bold h-14 rounded-xl text-lg transition-colors shadow-sm"
+    >
+      <MessageCircle className="w-6 h-6" />
+      {currentLang === 'en' ? "Open WhatsApp" : "WhatsApp'ı Aç"}
+    </button>
+    <p className="text-zinc-500 text-[11px] text-center px-2">
+      {currentLang === 'en' 
+        ? "WhatsApp will open automatically. Please hit the send button in the chat." 
+        : "Butona tıkladığınızda WhatsApp otomatik açılacaktır. Lütfen mesajı gönder tuşuna basınız."}
+    </p>
+  </div>
+)}
+
+          {verificationWaLink && (
+            <div className="hidden md:block bg-zinc-50 border border-zinc-200 rounded-xl p-5 text-center">
+              <div className="flex items-center gap-2 justify-center mb-3 text-zinc-500 text-sm font-medium">
+                <QrCodeIcon className="w-4 h-4" />
+                {currentLang === 'en' ? 'On desktop? Scan this QR code' : 'Bilgisayardaysanız QR kodu okutun'}
+              </div>
+              <div className="flex justify-center">
+                <QRCodeSVG value={verificationWaLink} size={160} bgColor="#ffffff" fgColor="#18181b" level="M" />
+              </div>
+            </div>
+          )}
+
+          {verificationStatus === "expired" ? (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+              <p className="text-red-600 font-semibold text-sm">
+                {currentLang === 'en' ? 'Code expired. Please try again.' : 'Kodun süresi doldu. Lütfen tekrar deneyin.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => { setVerificationPending(false); setVerificationStatus("pending"); }}
+                className="mt-2 text-sm underline text-zinc-700 hover:text-zinc-900"
+              >
+                {currentLang === 'en' ? 'Back to form' : 'Forma dön'}
+              </button>
+            </div>
+          ) : (
+            <div className="bg-zinc-50 border border-zinc-100 rounded-lg p-4 text-center">
+              <div className="flex items-center justify-center gap-2 text-zinc-400 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {currentLang === 'en' ? 'Waiting for your message...' : 'Mesajınız bekleniyor...'}
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+              setVerificationPending(false);
+              setVerificationStatus("pending");
+            }}
+            className="w-full text-sm text-zinc-400 hover:text-zinc-600 py-2 transition-colors"
+          >
+            {currentLang === 'en' ? 'Cancel and go back' : 'İptal et ve geri dön'}
+          </button>
+        </div>
       </div>
     );
   }
@@ -856,7 +1031,12 @@ const PublicBookingPage = () => {
                           <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">{t('publicBooking.availableSlots')}</span>
                       </div>
                       
-                      {availableSlots.length > 0 ? (
+                      {slotsLoading ? (
+                        <div className="h-48 flex flex-col items-center justify-center">
+                          <Loader2 className="w-8 h-8 text-zinc-300 animate-spin mb-2" />
+                          <p className="text-zinc-400 text-sm">{currentLang === 'en' ? 'Loading slots...' : 'Saatler yükleniyor...'}</p>
+                        </div>
+                      ) : availableSlots.length > 0 ? (
                         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                           {availableSlots.map((slot) => {
                             const isSelected = selectedTime === slot;
@@ -1003,6 +1183,13 @@ const PublicBookingPage = () => {
                              )}
                           </div>
 
+                          <Turnstile
+                            siteKey={process.env.REACT_APP_TURNSTILE_SITE_KEY || "0x4AAAAAACuhfhSBvGXOLpdW"}
+                            onSuccess={(token) => setTurnstileToken(token)}
+                            onExpire={() => setTurnstileToken(null)}
+                            onError={() => setTurnstileToken(null)}
+                            options={{ size: "invisible" }}
+                          />
                           <Button
                             type="submit"
                             disabled={submitting || !canGoNext()}
