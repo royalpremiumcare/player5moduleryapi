@@ -224,6 +224,17 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
         delete payload.staff_member_id;
       }
 
+      // Seans paketi: ilk randevuya session alanlarını ekle
+      if (!appointment) {
+        const selectedService = services.find(s => s.id === formData.service_id);
+        if (selectedService?.session_count && selectedService.session_count > 1) {
+          payload.session_group_id = crypto.randomUUID();
+          payload.session_number = 1;
+          payload.session_total = selectedService.session_count;
+          payload.payment_status = 'package_included';
+        }
+      }
+
       if (appointment) {
         await api.put(`/appointments/${appointment.id}`, payload);
         toast.success(t('appointments.form.updated'));
@@ -421,7 +432,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                 <SelectContent>
                   {filteredServices.map((service) => (
                     <SelectItem key={service.id} value={service.id}>
-                      {service.name} - {Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}
+                      {service.name} - {Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}{service.session_count > 1 && ` (${service.session_count} ${i18n.language === 'tr' ? 'seans' : 'sessions'})`}
                     </SelectItem>
                   ))}
                 </SelectContent>

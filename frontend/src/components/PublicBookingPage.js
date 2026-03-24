@@ -941,6 +941,13 @@ const PublicBookingPage = () => {
                            )}
                         </div>
                         
+                        {service.session_count && service.session_count > 1 && (
+                          <div className="mb-2">
+                            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                              {service.session_count} {currentLang === 'tr' ? 'Seanslık Paket' : 'Session Package'}
+                            </span>
+                          </div>
+                        )}
                         <div className="mt-auto flex items-center justify-between w-full pt-4 border-t border-dashed border-zinc-200">
                             {settings?.show_service_duration_on_public !== false && (
                                 <span className="text-sm font-medium text-zinc-500 bg-zinc-100 px-2 py-1 rounded">
@@ -1071,6 +1078,24 @@ const PublicBookingPage = () => {
               {currentStep === 4 && (
                 <div key="step4" className="space-y-8 animate-in slide-in-from-right-8 fade-in duration-300">
                     <h2 className="lg:hidden text-2xl font-bold text-zinc-900 tracking-tight">{t('publicBooking.step4')}</h2>
+
+                    {selectedService?.session_count && selectedService.session_count > 1 && (
+                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-bold text-blue-900">
+                            {currentLang === 'tr' 
+                              ? `Bu hizmet ${selectedService.session_count} seanslık bir pakettir.`
+                              : `This service is a ${selectedService.session_count}-session package.`}
+                          </p>
+                          <p className="text-xs text-blue-700 mt-1">
+                            {currentLang === 'tr'
+                              ? 'Şu an ilk seans için randevu alıyorsunuz. Kalan seanslar işletme tarafından planlanacaktır.'
+                              : 'You are booking the first session. Remaining sessions will be scheduled by the business.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
                       <div className="space-y-6">

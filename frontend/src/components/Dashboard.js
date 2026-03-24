@@ -23,6 +23,9 @@ import {
 import TourGuide from "../components/TourGuide"; 
 // --------------------------
 
+// --- SEANS PLANLAYICI ---
+import SessionPlannerDialog from "./SessionPlannerDialog";
+
 // --- WHATSAPP ICON ---
 const WhatsAppIcon = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -45,6 +48,10 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const socketRef = useRef(null);
   const [expandedNoteId, setExpandedNoteId] = useState(null);
   const [upcomingVisibleCount, setUpcomingVisibleCount] = useState(10);
+  // Session Planner States
+  const [showSessionPlanner, setShowSessionPlanner] = useState(false);
+  const [sessionPlannerAppointment, setSessionPlannerAppointment] = useState(null);
+
   // Break States
   const [todayBreaks, setTodayBreaks] = useState([]);
   const [showBreakDialog, setShowBreakDialog] = useState(false);
@@ -291,6 +298,11 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             </div>
             <div className="flex items-center gap-2 mb-3">
               <p className="text-sm text-gray-600 truncate">{apt.service_name}</p>
+              {apt.session_number && apt.session_total && (
+                <span className="text-[10px] bg-zinc-800 text-white px-1.5 py-0.5 rounded font-semibold tracking-wide whitespace-nowrap">
+                  {apt.session_number}/{apt.session_total}
+                </span>
+              )}
               {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
             </div>
             <div className="flex items-center justify-between mt-auto">
@@ -310,6 +322,11 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   <DropdownMenuContent align="end" className="w-48">
                     {!isCancelled && !isCompleted && <DropdownMenuItem onClick={() => handleStatusChange(apt.id, t('dashboard.status.cancelled'))} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>}
                     <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> {t('common.edit')}</DropdownMenuItem>
+                    {apt.session_group_id && apt.session_number && apt.session_total && apt.session_number < apt.session_total && !isCancelled && (
+                      <DropdownMenuItem onClick={() => { setSessionPlannerAppointment(apt); setShowSessionPlanner(true); }} className="text-blue-600">
+                        <CalendarDays className="w-4 h-4 mr-2"/> {i18n.language === 'tr' ? 'Kalan Seansları Planla' : 'Plan Remaining Sessions'}
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> {t('common.delete')}</DropdownMenuItem>
                   </DropdownMenuContent>
@@ -588,6 +605,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <AlertDialogFooter><AlertDialogCancel className="rounded-xl transition-all hover:scale-105 active:scale-95">{t('dashboard.deleteDialog.cancel')}</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete(deleteDialog?.id)} className="bg-red-600 hover:bg-red-700 rounded-xl transition-all hover:scale-105 active:scale-95">{t('dashboard.deleteDialog.delete')}</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Seans Planlama Dialog */}
+      <SessionPlannerDialog
+        open={showSessionPlanner}
+        onOpenChange={setShowSessionPlanner}
+        appointment={sessionPlannerAppointment}
+        onSuccess={onRefresh}
+      />
 
       {showBreakDialog && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">

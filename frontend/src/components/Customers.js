@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
-import { Search, Phone, MessageSquare, ChevronRight, Plus, ArrowLeft, Trash2, Import, Users, CheckSquare, X } from "lucide-react";
+import { Search, Phone, MessageSquare, ChevronRight, Plus, ArrowLeft, Trash2, Import, Users, CheckSquare, X, Edit2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
@@ -57,6 +57,16 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   const [newCustomerData, setNewCustomerData] = useState({ name: "", phone: "" });
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [settings, setSettings] = useState(null);
+  
+  // Müşteri Düzenleme
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editData, setEditData] = useState({ name: "", phone: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
+  
+  // Seans Toplu İptal
+  const [cancelSessionDialogOpen, setCancelSessionDialogOpen] = useState(false);
+  const [sessionGroupToCancel, setSessionGroupToCancel] = useState(null);
+  const [cancellingSession, setCancellingSession] = useState(false);
   
   // --- REHBER ENTEGRASYONU STATE'LERİ ---
   const [importingContacts, setImportingContacts] = useState(false);
@@ -231,8 +241,11 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       if (selectedCustomer && selectedCustomer.phone === customerToDelete.phone) {
         setSelectedCustomer(null); setCustomerHistory(null); setCustomerNotes("");
       }
-      await loadCustomers();
+      // Optimistik silme — hemen local state'den kaldır
+      setCustomers(prev => prev.filter(c => c.phone !== customerToDelete.phone));
       setDeleteDialogOpen(false); setCustomerToDelete(null);
+      // Arka planda tam listeyi yenile
+      loadCustomers();
     } catch (error) {
       toast.error(error.response?.data?.detail || t('customers.deleteError'));
     } finally {
@@ -258,13 +271,66 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
       });
       toast.success(response.data?.message || t('customers.addSuccess'));
       setNewCustomerDialogOpen(false);
+      // Optimistik güncelleme — hemen local state'e ekle
+      const newCust = { name: newCustomerData.name.trim(), phone: newCustomerData.phone.replace(/\D/g, ''), totalAppointments: 0, isPending: true };
+      setCustomers(prev => [newCust, ...prev]);
       setNewCustomerData({ name: "", phone: "" });
-      await loadCustomers();
+      // Arka planda tam listeyi de yenile
+      loadCustomers();
     } catch (error) {
       const errorMessage = error.response?.data?.detail || t('customers.addError');
       toast.error(errorMessage);
     } finally {
       setSavingCustomer(false);
+    }
+  };
+
+  // --- MÜŞTERİ DÜZENLEME ---
+  const handleOpenEditDialog = () => {
+    if (!selectedCustomer) return;
+    setEditData({ name: selectedCustomer.name, phone: selectedCustomer.phone });
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedCustomer || !editData.name.trim()) {
+      toast.error(i18n.language === 'tr' ? 'Müşteri adı boş olamaz' : 'Customer name cannot be empty');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await api.put(`/customers/${selectedCustomer.phone}`, {
+        name: editData.name.trim(),
+        phone: editData.phone.trim() !== selectedCustomer.phone ? editData.phone.trim() : undefined
+      });
+      toast.success(i18n.language === 'tr' ? 'Müşteri güncellendi' : 'Customer updated');
+      setEditDialogOpen(false);
+      const updatedPhone = editData.phone.trim() || selectedCustomer.phone;
+      setSelectedCustomer({ ...selectedCustomer, name: editData.name.trim(), phone: updatedPhone });
+      await loadCustomers();
+      await loadCustomerHistory(updatedPhone);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || (i18n.language === 'tr' ? 'Güncelleme başarısız' : 'Update failed'));
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // --- SEANS TOPLU İPTAL ---
+  const handleCancelSessionGroup = async () => {
+    if (!sessionGroupToCancel) return;
+    setCancellingSession(true);
+    try {
+      const response = await api.post(`/appointments/session-group/${sessionGroupToCancel}/cancel-remaining`);
+      toast.success(response.data?.message || (i18n.language === 'tr' ? 'Kalan seanslar iptal edildi' : 'Remaining sessions cancelled'));
+      setCancelSessionDialogOpen(false);
+      setSessionGroupToCancel(null);
+      if (selectedCustomer) await loadCustomerHistory(selectedCustomer.phone);
+      await loadCustomers();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || (i18n.language === 'tr' ? 'İptal başarısız' : 'Cancellation failed'));
+    } finally {
+      setCancellingSession(false);
     }
   };
 
@@ -492,7 +558,7 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   };
 
   const filteredCustomers = customers.filter(customer =>
-    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    customer.name.toLocaleLowerCase('tr').includes(searchTerm.toLocaleLowerCase('tr')) ||
     customer.phone.includes(searchTerm)
   );
 
@@ -524,9 +590,14 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                 </Button>
               </div>
               {userRole === 'admin' && (
-                <Button onClick={() => { setCustomerToDelete(selectedCustomer); setDeleteDialogOpen(true); }} variant="outline" className="w-full max-w-xs mt-3 backdrop-blur-md bg-white/60 border-red-300 text-red-600 hover:bg-red-50 rounded-xl font-bold shadow-sm">
-                  <Trash2 className="w-4 h-4 mr-2" /> {t('customers.deleteButton')}
-                </Button>
+                <div className="flex gap-2 w-full max-w-xs mt-3">
+                  <Button onClick={handleOpenEditDialog} variant="outline" className="flex-1 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 text-zinc-700 rounded-xl font-bold shadow-sm">
+                    <Edit2 className="w-4 h-4 mr-2" /> {i18n.language === 'tr' ? 'Düzenle' : 'Edit'}
+                  </Button>
+                  <Button onClick={() => { setCustomerToDelete(selectedCustomer); setDeleteDialogOpen(true); }} variant="outline" className="flex-1 backdrop-blur-md bg-white/60 border-red-300 text-red-600 hover:bg-red-50 rounded-xl font-bold shadow-sm">
+                    <Trash2 className="w-4 h-4 mr-2" /> {t('customers.deleteButton')}
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -550,10 +621,32 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                       {userRole === 'admin' && apt.staff_member_id && (!settings || settings.customer_can_choose_staff || settings.admin_provides_service) && (
                         <p className="text-xs text-zinc-500 mt-1 font-medium">{t('customers.staff')}: {apt.staff_member_id}</p>
                       )}
+                      {apt.session_number && apt.session_total && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">
+                            {i18n.language === 'tr' ? 'Seans' : 'Session'} {apt.session_number}/{apt.session_total}
+                          </span>
+                          {apt.payment_status === 'package_included' && (
+                            <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-bold">
+                              {i18n.language === 'tr' ? 'Paket Dahil' : 'Package'}
+                            </span>
+                          )}
+                          {userRole === 'admin' && apt.session_group_id && apt.session_number < apt.session_total && apt.status !== 'İptal Edildi' && apt.status !== 'Cancelled' && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setSessionGroupToCancel(apt.session_group_id); setCancelSessionDialogOpen(true); }}
+                              className="text-xs text-red-600 hover:text-red-800 font-bold underline"
+                            >
+                              {i18n.language === 'tr' ? 'Kalan Seansları İptal Et' : 'Cancel Remaining'}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
                       apt.status === t('dashboard.status.completed') || apt.status === 'Tamamlandı' ? 'bg-green-100 text-green-700' :
                       apt.status === t('dashboard.status.pending') || apt.status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-700' :
+                      apt.status === 'İptal Edildi' || apt.status === 'Cancelled' ? 'bg-red-100 text-red-700' :
                       'bg-gray-100 text-gray-700'
                     }`}>
                       {apt.status}
@@ -594,6 +687,70 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
               <AlertDialogCancel disabled={deleting} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">{t('common.cancel')}</AlertDialogCancel>
               <AlertDialogAction onClick={handleDeleteCustomer} disabled={deleting} className="bg-red-600 hover:bg-red-700 rounded-xl font-bold shadow-lg">
                 {deleting ? t('customers.deleting') : t('customers.actions.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Müşteri Düzenleme Dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-black text-zinc-900">
+                {i18n.language === 'tr' ? 'Müşteri Düzenle' : 'Edit Customer'}
+              </DialogTitle>
+              <DialogDescription className="text-zinc-600 font-medium">
+                {i18n.language === 'tr' ? 'Müşteri bilgilerini güncelleyin' : 'Update customer information'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>{i18n.language === 'tr' ? 'Ad Soyad' : 'Full Name'}</Label>
+                <Input
+                  value={editData.name}
+                  onChange={(e) => setEditData(prev => ({ ...prev, name: e.target.value }))}
+                  className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>{i18n.language === 'tr' ? 'Telefon' : 'Phone'}</Label>
+                <Input
+                  value={editData.phone}
+                  onChange={(e) => setEditData(prev => ({ ...prev, phone: e.target.value }))}
+                  className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditDialogOpen(false)} disabled={savingEdit} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={handleSaveEdit} disabled={savingEdit} className="bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg">
+                {savingEdit ? (i18n.language === 'tr' ? 'Kaydediliyor...' : 'Saving...') : t('common.save')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Seans Toplu İptal Dialog */}
+        <AlertDialog open={cancelSessionDialogOpen} onOpenChange={setCancelSessionDialogOpen}>
+          <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-xl font-black text-zinc-900">
+                {i18n.language === 'tr' ? 'Kalan Seansları İptal Et' : 'Cancel Remaining Sessions'}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-zinc-600 font-medium">
+                {i18n.language === 'tr' 
+                  ? 'Bu seans grubundaki bekleyen tüm seanslar iptal edilecektir. Bu işlem geri alınamaz.'
+                  : 'All pending sessions in this session group will be cancelled. This action cannot be undone.'}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={cancellingSession} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">
+                {t('common.cancel')}
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={handleCancelSessionGroup} disabled={cancellingSession} className="bg-red-600 hover:bg-red-700 rounded-xl font-bold shadow-lg">
+                {cancellingSession ? (i18n.language === 'tr' ? 'İptal ediliyor...' : 'Cancelling...') : (i18n.language === 'tr' ? 'Evet, İptal Et' : 'Yes, Cancel')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

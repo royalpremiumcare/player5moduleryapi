@@ -16,6 +16,10 @@ class AppointmentCreate(BaseModel):
     appointment_time: str = Field(..., description="HH:MM format")
     staff_member_id: Optional[str] = None
     notes: Optional[str] = None
+    session_group_id: Optional[str] = None
+    session_number: Optional[int] = None
+    session_total: Optional[int] = None
+    payment_status: Optional[str] = None
 
 
 class AppointmentUpdate(BaseModel):
@@ -28,6 +32,10 @@ class AppointmentUpdate(BaseModel):
     staff_member_id: Optional[str] = None
     status: Optional[Literal["Bekliyor", "Tamamlandı", "İptal Edildi", "Gelmedi"]] = None
     notes: Optional[str] = None
+    session_group_id: Optional[str] = None
+    session_number: Optional[int] = None
+    session_total: Optional[int] = None
+    payment_status: Optional[str] = None
 
 
 class AppointmentResponse(BaseModel):
@@ -45,6 +53,10 @@ class AppointmentResponse(BaseModel):
     notes: Optional[str] = None
     created_at: Optional[str] = None
     organization_id: str
+    session_group_id: Optional[str] = None
+    session_number: Optional[int] = None
+    session_total: Optional[int] = None
+    payment_status: Optional[str] = None
 
 
 class AppointmentListResponse(BaseModel):

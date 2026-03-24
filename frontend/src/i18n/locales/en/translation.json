@@ -1207,6 +1207,41 @@
       "getDirections": "Get Directions"
     }
   },
+  "session": {
+    "package": "Session Package",
+    "sessionCount": "{{count}} Sessions",
+    "sessionOf": "Session {{current}}/{{total}}",
+    "packageIncluded": "Package Included",
+    "planRemaining": "Plan Remaining Sessions",
+    "cancelRemaining": "Cancel Remaining Sessions",
+    "cancelRemainingConfirm": "All pending sessions in this session group will be cancelled. This action cannot be undone.",
+    "cancelRemainingSuccess": "Remaining sessions cancelled",
+    "cancelRemainingError": "Cancellation failed",
+    "cancelling": "Cancelling...",
+    "yesCancel": "Yes, Cancel",
+    "infoFirstSession": "This service is a {{count}}-session package.",
+    "infoFirstSessionDesc": "You are selecting date and time for the first session. You can plan remaining sessions later.",
+    "plannerTitle": "Plan Remaining Sessions",
+    "plannerDesc": "Set date and time for remaining sessions below.",
+    "checkAvailability": "Check Availability",
+    "available": "Available",
+    "conflict": "Conflict",
+    "alternativeTime": "Alternative Time",
+    "createAll": "Create All Sessions",
+    "creating": "Creating...",
+    "allCreated": "All sessions created successfully!",
+    "active": "Active"
+  },
+  "customerEdit": {
+    "title": "Edit Customer",
+    "description": "Update customer information",
+    "fullName": "Full Name",
+    "phone": "Phone",
+    "saving": "Saving...",
+    "updated": "Customer updated",
+    "nameRequired": "Customer name cannot be empty",
+    "updateFailed": "Update failed"
+  },
   "chat": {
     "title": "PLANN Assistant",
     "subtitle": "Your AI-powered assistant",

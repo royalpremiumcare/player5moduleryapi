@@ -1209,6 +1209,41 @@
       "getDirections": "Yol Tarifi Al"
     }
   },
+  "session": {
+    "package": "Seans Paketi",
+    "sessionCount": "{{count}} Seans",
+    "sessionOf": "Seans {{current}}/{{total}}",
+    "packageIncluded": "Paket Dahil",
+    "planRemaining": "Kalan Seansları Planla",
+    "cancelRemaining": "Kalan Seansları İptal Et",
+    "cancelRemainingConfirm": "Bu seans grubundaki bekleyen tüm seanslar iptal edilecektir. Bu işlem geri alınamaz.",
+    "cancelRemainingSuccess": "Kalan seanslar iptal edildi",
+    "cancelRemainingError": "İptal başarısız",
+    "cancelling": "İptal ediliyor...",
+    "yesCancel": "Evet, İptal Et",
+    "infoFirstSession": "Bu hizmet {{count}} seanslık bir pakettir.",
+    "infoFirstSessionDesc": "Şu an ilk seans için tarih ve saat seçiyorsunuz. Kalan seansları daha sonra planlayabilirsiniz.",
+    "plannerTitle": "Kalan Seansları Planla",
+    "plannerDesc": "Aşağıdan kalan seanslar için tarih ve saat belirleyin.",
+    "checkAvailability": "Uygunluk Kontrolü",
+    "available": "Müsait",
+    "conflict": "Çakışma",
+    "alternativeTime": "Alternatif Saat",
+    "createAll": "Tüm Seansları Oluştur",
+    "creating": "Oluşturuluyor...",
+    "allCreated": "Tüm seanslar başarıyla oluşturuldu!",
+    "active": "Aktif"
+  },
+  "customerEdit": {
+    "title": "Müşteri Düzenle",
+    "description": "Müşteri bilgilerini güncelleyin",
+    "fullName": "Ad Soyad",
+    "phone": "Telefon",
+    "saving": "Kaydediliyor...",
+    "updated": "Müşteri güncellendi",
+    "nameRequired": "Müşteri adı boş olamaz",
+    "updateFailed": "Güncelleme başarısız"
+  },
   "chat": {
     "title": "PLANN Asistan",
     "subtitle": "AI destekli yardımcınız",

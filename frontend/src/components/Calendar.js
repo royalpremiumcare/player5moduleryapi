@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday, addDays, subDays, addMonths, subMonths, parseISO } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { io } from "socket.io-client";
+import SessionPlannerDialog from "./SessionPlannerDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -344,6 +345,35 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
     return colors[index] || "bg-gray-100 border-gray-300 text-gray-800";
   };
 
+  // Aktif randevu tespiti (pulse dot için)
+  const [nowMinutes, setNowMinutes] = useState(() => {
+    const n = new Date(); return n.getHours() * 60 + n.getMinutes();
+  });
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const n = new Date(); setNowMinutes(n.getHours() * 60 + n.getMinutes());
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+  const todayStr = useMemo(() => format(new Date(), 'yyyy-MM-dd'), [nowMinutes]);
+
+  const isAppointmentActive = useCallback((apt) => {
+    const dateStr = apt.appointment_date || apt.date;
+    if (dateStr !== todayStr) return false;
+    const code = getStatusCode(apt.status);
+    if (code === 'completed' || code === 'cancelled') return false;
+    const timeStr = apt.appointment_time || apt.time;
+    if (!timeStr) return false;
+    const [h, m] = timeStr.split(':').map(Number);
+    const startMin = h * 60 + m;
+    const dur = apt.service_duration || 30;
+    return nowMinutes >= startMin && nowMinutes < startMin + dur;
+  }, [nowMinutes, todayStr]);
+
+  // SessionPlannerDialog state
+  const [showSessionPlanner, setShowSessionPlanner] = useState(false);
+  const [sessionPlannerAppointment, setSessionPlannerAppointment] = useState(null);
+
   const getStatusCode = (status) => {
     if (!status) return null;
     const s = String(status).trim().toLowerCase();
@@ -459,44 +489,53 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
 
           return (
             <div key={hour} className="flex border-b border-gray-100">
-              <div className="w-14 sm:w-16 text-sm sm:text-sm text-gray-600 py-2 sm:py-2 px-2 sm:px-2 font-medium">
+              <div className="w-12 sm:w-16 text-xs sm:text-sm text-gray-600 py-1.5 sm:py-2 px-1 sm:px-2 font-medium flex-shrink-0">
                 {hour.toString().padStart(2, '0')}:00
               </div>
-              <div className="flex-1 py-2 sm:py-2 px-2 sm:px-2">
+              <div className="flex-1 min-w-0 py-1.5 sm:py-2 px-1 sm:px-2">
                 {hourAppointments.map((apt) => (
                   <Card
                     key={apt.id}
-                    className={`mb-2 sm:mb-2 p-3 sm:p-3 cursor-pointer hover:shadow-md transition-shadow ${
+                    className={`mb-2 p-2.5 sm:p-3 cursor-pointer hover:shadow-md transition-shadow overflow-hidden ${
                       (userRole === 'admin' || canViewAll) ? getStaffColor(apt.staff_member_id) : 'bg-white border-gray-200'
                     }`}
                     onClick={() => handleAppointmentClick(apt)}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 sm:gap-2 mb-2 sm:mb-1">
-                          <Clock className="w-4 h-4 sm:w-4 sm:h-4 text-gray-500 flex-shrink-0" />
-                          <div>
-                            <span className="text-sm sm:text-sm font-semibold text-gray-900">{apt.appointment_time || apt.time || '--:--'}</span>
-                            {apt.service_duration && calculateEndTime(apt.appointment_time || apt.time, apt.service_duration) && (
-                              <span className="text-sm text-gray-500 ml-1">
-                                - {calculateEndTime(apt.appointment_time || apt.time, apt.service_duration)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <p className="text-sm sm:text-sm font-semibold text-gray-900 mb-1 truncate">{apt.customer_name}</p>
-                        <p className="text-sm text-gray-600 mt-0.5 truncate">{apt.service_name}</p>
-                        {(userRole === 'admin' || canViewAll) && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
-                          <div className="flex items-center gap-1 mt-2 sm:mt-2">
-                            <User className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                            <span className="text-sm text-gray-600 truncate">{getStaffName(apt.staff_member_id)}</span>
-                          </div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Clock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                      <span className="text-sm font-semibold text-gray-900">{apt.appointment_time || apt.time || '--:--'}</span>
+                      {apt.service_duration && calculateEndTime(apt.appointment_time || apt.time, apt.service_duration) && (
+                        <span className="text-xs text-gray-500">- {calculateEndTime(apt.appointment_time || apt.time, apt.service_duration)}</span>
+                      )}
+                      <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                        {apt.session_number && apt.session_total && (
+                          <span className="text-[10px] bg-zinc-800 text-white px-1.5 py-0.5 rounded font-semibold tracking-wide">
+                            {apt.session_number}/{apt.session_total}
+                          </span>
+                        )}
+                        {isAppointmentActive(apt) ? (
+                          <span className="text-[10px] text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                            <span className="relative flex h-1.5 w-1.5">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500" />
+                            </span>
+                            {i18n.language === 'tr' ? 'Aktif' : 'Active'}
+                          </span>
+                        ) : (
+                          <Badge className={`text-[10px] px-1.5 py-0 h-5 ${getStatusColor(apt.status)}`}>
+                            {getStatusLabel(apt.status)}
+                          </Badge>
                         )}
                       </div>
-                      <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
-                        {getStatusLabel(apt.status)}
-                      </Badge>
                     </div>
+                    <p className="text-sm font-semibold text-gray-900 truncate">{apt.customer_name}</p>
+                    <p className="text-xs text-gray-600 truncate">{apt.service_name}</p>
+                    {(userRole === 'admin' || canViewAll) && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <User className="w-3 h-3 text-gray-500 flex-shrink-0" />
+                        <span className="text-xs text-gray-600 truncate">{getStaffName(apt.staff_member_id)}</span>
+                      </div>
+                    )}
                   </Card>
                 ))}
               </div>
@@ -545,7 +584,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
               ref={(el) => {
                 if (el) dayRefs.current[dayKey] = el;
               }}
-              className="flex-shrink-0 w-[85vw] sm:w-auto border border-gray-200 rounded-lg bg-white min-h-[300px] sm:min-h-[400px] snap-start sm:snap-none"
+              className="flex-shrink-0 w-[85vw] sm:w-auto border border-gray-200 rounded-lg bg-white snap-start sm:snap-none"
             >
               {/* Header - Daha büyük padding mobilde */}
               <div className={`p-3 sm:p-2 text-center border-b border-gray-200 ${
@@ -558,7 +597,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
               </div>
               
               {/* Randevular - Daha büyük kartlar mobilde */}
-              <div className="p-2 sm:p-2 space-y-2 sm:space-y-1 overflow-y-auto max-h-[250px] sm:max-h-[350px]">
+              <div className="p-2 sm:p-2 space-y-2 sm:space-y-1">
                 {dayAppointments.map((apt) => (
                   <Card
                     key={apt.id}
@@ -587,6 +626,22 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                         <span className="text-sm sm:text-xs truncate">{getStaffName(apt.staff_member_id)}</span>
                       </div>
                     )}
+                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                      {apt.session_number && apt.session_total && (
+                        <span className="text-[10px] bg-zinc-800 text-white px-1.5 py-0.5 rounded font-semibold tracking-wide">
+                          {apt.session_number}/{apt.session_total}
+                        </span>
+                      )}
+                      {isAppointmentActive(apt) && (
+                        <span className="text-xs text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500" />
+                          </span>
+                          {i18n.language === 'tr' ? 'Aktif' : 'Active'}
+                        </span>
+                      )}
+                    </div>
                   </Card>
                 ))}
               </div>
@@ -750,9 +805,24 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   </div>
                 )}
               </div>
-              <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
-                {getStatusLabel(apt.status)}
-              </Badge>
+              {apt.session_number && apt.session_total && (
+                <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">
+                  {apt.session_number}/{apt.session_total}
+                </span>
+              )}
+              {isAppointmentActive(apt) ? (
+                <Badge className="text-xs flex-shrink-0 text-green-700 bg-green-50 border-green-200 flex items-center gap-1">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                  </span>
+                  {t('appointments.status.active', i18n.language === 'tr' ? 'İşlemde' : 'Active')}
+                </Badge>
+              ) : (
+                <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
+                  {getStatusLabel(apt.status)}
+                </Badge>
+              )}
             </div>
           </Card>
         ))}
@@ -763,7 +833,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
   return (
     <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
       <div className="px-2 sm:px-4 pt-3 sm:pt-6 pb-2 sm:pb-4">
-        <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-3 sm:p-6">
+        <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-3 sm:p-6 overflow-visible">
           {/* Header Controls */}
           <div className="flex flex-col gap-3 mb-4 sm:mb-6">
             {/* Date Navigation */}
@@ -955,10 +1025,29 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
 
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">{t('appointments.fields.status')}</span>
-                  <Badge className={getStatusColor(selectedAppointment.status)}>
-                    {getStatusLabel(selectedAppointment.status)}
-                  </Badge>
+                  {isAppointmentActive(selectedAppointment) ? (
+                    <Badge className="text-green-700 bg-green-50 border-green-200 flex items-center gap-1">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                      </span>
+                      {t('appointments.status.active', i18n.language === 'tr' ? 'İşlemde' : 'Active')}
+                    </Badge>
+                  ) : (
+                    <Badge className={getStatusColor(selectedAppointment.status)}>
+                      {getStatusLabel(selectedAppointment.status)}
+                    </Badge>
+                  )}
                 </div>
+
+                {selectedAppointment.session_number && selectedAppointment.session_total && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">{i18n.language === 'tr' ? 'Seans' : 'Session'}</span>
+                    <span className="text-sm font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                      {selectedAppointment.session_number}/{selectedAppointment.session_total}
+                    </span>
+                  </div>
+                )}
 
                 {selectedAppointment.notes && (
                   <div className="pt-2 border-t border-gray-200">
@@ -967,6 +1056,24 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   </div>
                 )}
               </div>
+
+              {/* Kalan Seansları Planla Butonu */}
+              {selectedAppointment.session_group_id && selectedAppointment.session_number && selectedAppointment.session_total && 
+               selectedAppointment.session_number < selectedAppointment.session_total && canDeleteAppointment(selectedAppointment) && (
+                <div className="pt-4 border-t border-gray-200">
+                  <Button
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold"
+                    onClick={() => {
+                      setSessionPlannerAppointment(selectedAppointment);
+                      setShowAppointmentDialog(false);
+                      setShowSessionPlanner(true);
+                    }}
+                  >
+                    <CalendarIcon className="w-4 h-4 mr-2" />
+                    {i18n.language === 'tr' ? 'Kalan Seansları Planla' : 'Plan Remaining Sessions'}
+                  </Button>
+                </div>
+              )}
 
               {/* Silme Butonu */}
               {canDeleteAppointment(selectedAppointment) && (
@@ -1068,9 +1175,24 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                           </div>
                         )}
                       </div>
-                      <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
-                        {apt.status}
-                      </Badge>
+                      {apt.session_number && apt.session_total && (
+                        <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">
+                          {apt.session_number}/{apt.session_total}
+                        </span>
+                      )}
+                      {isAppointmentActive(apt) ? (
+                        <Badge className="text-xs flex-shrink-0 text-green-700 bg-green-50 border-green-200 flex items-center gap-1">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                          </span>
+                          {t('appointments.status.active', i18n.language === 'tr' ? 'İşlemde' : 'Active')}
+                        </Badge>
+                      ) : (
+                        <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
+                          {getStatusLabel(apt.status)}
+                        </Badge>
+                      )}
                     </div>
                   </Card>
                 ))
@@ -1078,6 +1200,14 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Seans Planlama Dialog */}
+      <SessionPlannerDialog
+        open={showSessionPlanner}
+        onOpenChange={setShowSessionPlanner}
+        appointment={sessionPlannerAppointment}
+        onSuccess={loadAppointments}
+      />
     </div>
   );
 };

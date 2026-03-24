@@ -1788,15 +1788,15 @@ class PlanUpdateRequest(BaseModel):
 class ContactRequest(BaseModel): name: str = Field(..., min_length=1); phone: str = Field(..., min_length=10); email: Optional[str] = None; message: Optional[str] = None
 class ContactStatusUpdate(BaseModel): status: Literal["pending", "contacted", "resolved"]
 class Service(BaseModel):
-    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); name: str; price: float; duration: int = 30; order: Optional[int] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-class ServiceCreate(BaseModel): name: str; price: float; duration: int = 30; order: Optional[int] = None
-class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[float] = None; duration: Optional[int] = None; order: Optional[int] = None
+    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); name: str; price: float; duration: int = 30; order: Optional[int] = None; session_count: Optional[int] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+class ServiceCreate(BaseModel): name: str; price: float; duration: int = 30; order: Optional[int] = None; session_count: Optional[int] = None
+class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[float] = None; duration: Optional[int] = None; order: Optional[int] = None; session_count: Optional[int] = None
 class Appointment(BaseModel):
-    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None; source: Optional[str] = None
+    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None; source: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None
 class AppointmentCreate(BaseModel):
-    customer_name: str; phone: str; service_id: str; appointment_date: str; appointment_time: str; notes: str = ""; staff_member_id: Optional[str] = None; turnstile_token: Optional[str] = None
+    customer_name: str; phone: str; service_id: str; appointment_date: str; appointment_time: str; notes: str = ""; staff_member_id: Optional[str] = None; turnstile_token: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None
 class AppointmentUpdate(BaseModel):
-    customer_name: Optional[str] = None; phone: Optional[str] = None; address: Optional[str] = None; service_id: Optional[str] = None; appointment_date: Optional[str] = None; appointment_time: Optional[str] = None; notes: Optional[str] = None; status: Optional[str] = None; staff_member_id: Optional[str] = None
+    customer_name: Optional[str] = None; phone: Optional[str] = None; address: Optional[str] = None; service_id: Optional[str] = None; appointment_date: Optional[str] = None; appointment_time: Optional[str] = None; notes: Optional[str] = None; status: Optional[str] = None; staff_member_id: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None
 class Transaction(BaseModel):
     model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); appointment_id: str; customer_name: str; service_name: str; amount: float; date: str; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 class TransactionUpdate(BaseModel): amount: float
@@ -4099,6 +4099,12 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             await db.customers.insert_one(customer_doc)
             logging.info(f"Customer auto-added: {appointment.customer_name} ({appointment.phone}) for org {current_user.organization_id}")
             
+            # Cache invalidation SONRASI müşteri eklendi — tekrar temizle (race condition fix)
+            try:
+                await invalidate_cache(request, "customers_list", current_user)
+            except Exception:
+                pass
+            
             # WebSocket event gönder (müşteriler listesini güncellemek için)
             try:
                 await emit_to_organization(
@@ -4218,6 +4224,358 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
         logger.error(f"Failed to emit appointment_created: {emit_error}", exc_info=True)
     
     return appointment_obj
+
+# === SESSION PACKAGE MODELS ===
+class SessionSlot(BaseModel):
+    date: str
+    time: str
+
+class BulkSessionCreate(BaseModel):
+    customer_name: str; phone: str; service_id: str; staff_member_id: Optional[str] = None; notes: str = ""
+    session_group_id: Optional[str] = None; starting_session_number: int = 1; session_total: Optional[int] = None
+    sessions: list[SessionSlot]
+
+class BulkCheckRequest(BaseModel):
+    service_id: str; staff_id: Optional[str] = None; slots: list[str]
+
+# === SESSION PACKAGE ENDPOINTS ===
+
+def _time_to_minutes(time_str: str) -> int:
+    try:
+        hour, minute = map(int, time_str.split(':'))
+        return hour * 60 + minute
+    except (ValueError, AttributeError):
+        return 0
+
+def _minutes_to_time(minutes: int) -> str:
+    return f"{str(minutes // 60).zfill(2)}:{str(minutes % 60).zfill(2)}"
+
+async def _check_slot_conflict(db, organization_id: str, staff_id: str, date: str, time: str, service_duration: int) -> bool:
+    """Belirtilen slotun çakışma durumunu kontrol eder. True = çakışma var."""
+    new_start_min = _time_to_minutes(time)
+    new_end_min = new_start_min + service_duration
+    query = {"organization_id": organization_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi"]}}
+    if staff_id:
+        query["staff_member_id"] = staff_id
+    existing = await db.appointments.find(
+        query,
+        {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1}
+    ).to_list(200)
+    for appt in existing:
+        ex_start = _time_to_minutes(appt.get('appointment_time', '00:00'))
+        ex_dur = appt.get('service_duration') or 30
+        ex_end = ex_start + ex_dur
+        if new_start_min < ex_end and new_end_min > ex_start:
+            return True
+    return False
+
+async def _find_alternative_slots(db, organization_id: str, staff_id: str, date: str, preferred_time: str, service_duration: int, max_alternatives: int = 3) -> list[str]:
+    """Çakışan slot için aynı günden en yakın müsait saatleri bulur."""
+    preferred_min = _time_to_minutes(preferred_time)
+    existing = await db.appointments.find(
+        {"organization_id": organization_id, "staff_member_id": staff_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi"]}},
+        {"_id": 0, "appointment_time": 1, "service_duration": 1}
+    ).to_list(200)
+    busy_ranges = []
+    for appt in existing:
+        s = _time_to_minutes(appt.get('appointment_time', '00:00'))
+        d = appt.get('service_duration') or 30
+        busy_ranges.append((s, s + d))
+    # Molalar da kontrol
+    if staff_id:
+        staff_doc = await db.users.find_one({"username": staff_id, "organization_id": organization_id}, {"_id": 0, "breaks": 1})
+        if staff_doc:
+            for brk in staff_doc.get('breaks', []):
+                if brk.get('date') == date:
+                    bs = _time_to_minutes(brk.get('start_time', '00:00'))
+                    be = _time_to_minutes(brk.get('end_time', '00:00'))
+                    busy_ranges.append((bs, be))
+    def is_free(start_min):
+        end_min = start_min + service_duration
+        for bs, be in busy_ranges:
+            if start_min < be and end_min > bs:
+                return False
+        return True
+    alternatives = []
+    # Tercih edilen saatten 30'ar dk uzaklaşarak ara
+    for offset in range(1, 20):
+        for delta in [offset * 30, -offset * 30]:
+            candidate = preferred_min + delta
+            if candidate < 480 or candidate > 1200:  # 08:00 - 20:00 arası
+                continue
+            if is_free(candidate):
+                alternatives.append(_minutes_to_time(candidate))
+                if len(alternatives) >= max_alternatives:
+                    return alternatives
+    return alternatives
+
+async def _find_available_staff_for_slot(db, organization_id: str, service_id: str, date: str, time: str, service_duration: int, exclude_staff_id: str = None) -> str | None:
+    """Belirtilen slotta bu hizmeti verebilen müsait bir personel bulur. Bulamazsa None döner."""
+    # Bu hizmeti verebilen tüm personelleri bul
+    staff_query = {"organization_id": organization_id, "role": {"$in": ["staff", "admin"]}, "permitted_service_ids": service_id}
+    staff_members = await db.users.find(staff_query, {"_id": 0, "username": 1}).to_list(50)
+    
+    for staff in staff_members:
+        sid = staff.get("username")
+        if not sid or sid == exclude_staff_id:
+            continue
+        # Çakışma kontrolü
+        has_conflict = await _check_slot_conflict(db, organization_id, sid, date, time, service_duration)
+        if has_conflict:
+            continue
+        # Mola kontrolü
+        end_time = _minutes_to_time(_time_to_minutes(time) + service_duration)
+        has_break = await check_break_conflict(db, sid, date, time, end_time, organization_id)
+        if has_break:
+            continue
+        return sid
+    return None
+
+@api_router.post("/appointments/bulk-session")
+async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current_user: UserInDB = Depends(get_current_user)):
+    """Seans paketi oluştur — atomik toplu randevu oluşturma"""
+    db = await get_db_from_request(request)
+    if not bulk.sessions:
+        raise HTTPException(status_code=400, detail="En az bir seans slotu gereklidir")
+    
+    # Hizmet doğrulama
+    service = await db.services.find_one({"id": bulk.service_id, "organization_id": current_user.organization_id}, {"_id": 0})
+    if not service:
+        raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
+    service_duration = service.get('duration', 30)
+    
+    # Personel doğrulama
+    assigned_staff_id = bulk.staff_member_id
+    if current_user.role == "staff" and not current_user.can_view_all_appointments:
+        if service["id"] not in (current_user.permitted_service_ids or []):
+            raise HTTPException(status_code=403, detail="Bu hizmete randevu alma yetkiniz yok")
+        assigned_staff_id = current_user.username
+    
+    # Kota kontrolü (toplam seans sayısı kadar)
+    total_sessions = len(bulk.sessions)
+    for i in range(total_sessions):
+        quota_ok, quota_error = await check_quota_and_increment(db, current_user.organization_id)
+        if not quota_ok:
+            # Artırılan kotaları geri al
+            if i > 0:
+                await db.organization_plans.update_one(
+                    {"organization_id": current_user.organization_id},
+                    {"$inc": {"quota_usage": -i}}
+                )
+            raise HTTPException(status_code=403, detail=quota_error)
+    
+    # Her slot için çakışma kontrolü
+    redis_client = getattr(request.app.state, 'redis_client', None)
+    lock_keys = []
+    staff_assignments = {}  # idx -> staff_id (çakışma durumunda farklı personel atanabilir)
+    try:
+        for idx, session in enumerate(bulk.sessions):
+            # Redis lock
+            if redis_client and assigned_staff_id:
+                lk = f"plann:lock:appt:{current_user.organization_id}:{assigned_staff_id}:{session.date}:{session.time}"
+                acquired = await redis_client.setnx(lk, "locked")
+                if not acquired:
+                    raise HTTPException(status_code=409, detail=f"Seans {idx+1} ({session.date} {session.time}) için başka bir işlem yapılıyor.")
+                await redis_client.expire(lk, 10)
+                lock_keys.append(lk)
+            
+            # Çakışma kontrolü — çakışma varsa otomatik başka personele ata
+            slot_staff = assigned_staff_id
+            has_conflict = await _check_slot_conflict(db, current_user.organization_id, slot_staff, session.date, session.time, service_duration)
+            has_break = False
+            if slot_staff and not has_conflict:
+                end_time = _minutes_to_time(_time_to_minutes(session.time) + service_duration)
+                has_break = await check_break_conflict(db, slot_staff, session.date, session.time, end_time, current_user.organization_id)
+            if has_conflict or has_break:
+                alt_staff = await _find_available_staff_for_slot(db, current_user.organization_id, bulk.service_id, session.date, session.time, service_duration, exclude_staff_id=slot_staff)
+                if alt_staff:
+                    slot_staff = alt_staff
+                else:
+                    raise HTTPException(status_code=400, detail=f"Seans {idx+1}: {session.date} {session.time} saatinde hiç müsait personel yok.")
+            staff_assignments[idx] = slot_staff
+        
+        # Tümü geçti — randevuları oluştur
+        group_id = bulk.session_group_id or str(uuid.uuid4())
+        session_total = bulk.session_total or total_sessions
+        created_appointments = []
+        
+        for idx, session in enumerate(bulk.sessions):
+            session_number = bulk.starting_session_number + idx
+            is_first_session = (session_number == 1)
+            
+            # Tarih/saat ile status hesapla
+            turkey_tz = ZoneInfo("Europe/Istanbul")
+            now = datetime.now(turkey_tz)
+            try:
+                naive_dt = datetime.strptime(f"{session.date} {session.time}", "%Y-%m-%d %H:%M")
+                appointment_dt = naive_dt.replace(tzinfo=turkey_tz)
+                completion_threshold = appointment_dt + timedelta(minutes=service_duration)
+                apt_status = 'Tamamlandı' if now >= completion_threshold else 'Bekliyor'
+            except (ValueError, TypeError):
+                apt_status = 'Bekliyor'
+            
+            apt_doc = {
+                "id": str(uuid.uuid4()),
+                "organization_id": current_user.organization_id,
+                "customer_name": bulk.customer_name,
+                "phone": bulk.phone,
+                "service_id": bulk.service_id,
+                "service_name": service['name'],
+                "service_price": service['price'] if is_first_session else 0,
+                "appointment_date": session.date,
+                "appointment_time": session.time,
+                "notes": bulk.notes,
+                "status": apt_status,
+                "staff_member_id": staff_assignments.get(idx, assigned_staff_id),
+                "service_duration": service_duration,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "session_group_id": group_id,
+                "session_number": session_number,
+                "session_total": session_total,
+                "payment_status": "paid" if is_first_session else "package_included",
+                "source": "admin_bulk"
+            }
+            if apt_status == 'Tamamlandı':
+                apt_doc['completed_at'] = datetime.now(timezone.utc).isoformat()
+            created_appointments.append(apt_doc)
+        
+        # Atomik insert
+        if created_appointments:
+            await db.appointments.insert_many(created_appointments)
+        
+        # Müşteri kaydı (upsert)
+        try:
+            existing_customer = await db.customers.find_one({"phone": bulk.phone, "organization_id": current_user.organization_id})
+            if not existing_customer:
+                await db.customers.insert_one({
+                    "id": str(uuid.uuid4()), "organization_id": current_user.organization_id,
+                    "name": bulk.customer_name, "phone": bulk.phone,
+                    "created_at": datetime.now(timezone.utc).isoformat(), "notes": ""
+                })
+        except Exception as e:
+            logging.warning(f"Customer upsert error in bulk-session: {e}")
+        
+        # Cache invalidation
+        try:
+            await invalidate_cache(request, "dashboard_stats", current_user)
+            await invalidate_cache(request, "customers_list", current_user)
+        except Exception as e:
+            logging.warning(f"Cache invalidation error: {e}")
+        
+        # WebSocket emit
+        try:
+            await emit_to_organization(current_user.organization_id, 'appointments_bulk_created', {
+                'session_group_id': group_id, 'count': len(created_appointments)
+            })
+        except Exception as e:
+            logging.warning(f"WebSocket emit error: {e}")
+        
+        logging.info(f"✅ Bulk session created: {len(created_appointments)} appointments, group={group_id}")
+        # MongoDB insert_many _id ekler, response'tan temizle
+        clean_appointments = [{k: v for k, v in apt.items() if k != '_id'} for apt in created_appointments]
+        return {"message": f"{len(created_appointments)} seans başarıyla oluşturuldu", "session_group_id": group_id, "appointments": clean_appointments}
+    
+    except HTTPException:
+        # Kota geri al
+        await db.organization_plans.update_one(
+            {"organization_id": current_user.organization_id},
+            {"$inc": {"quota_usage": -total_sessions}}
+        )
+        raise
+    finally:
+        # Lock'ları temizle
+        if redis_client and lock_keys:
+            for lk in lock_keys:
+                try:
+                    await redis_client.delete(lk)
+                except Exception:
+                    pass
+
+@api_router.post("/availability/bulk-check")
+async def bulk_check_availability(request: Request, check: BulkCheckRequest, current_user: UserInDB = Depends(get_current_user)):
+    """Birden fazla tarih/saat slotunun müsaitliğini kontrol eder ve alternatif önerir."""
+    db = await get_db_from_request(request)
+    service = await db.services.find_one({"id": check.service_id, "organization_id": current_user.organization_id}, {"_id": 0})
+    if not service:
+        raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
+    service_duration = service.get('duration', 30)
+    staff_id = check.staff_id
+    results = []
+    for slot_str in check.slots:
+        try:
+            parts = slot_str.split('T')
+            date = parts[0]
+            time = parts[1] if len(parts) > 1 else "00:00"
+        except (IndexError, ValueError):
+            results.append({"slot": slot_str, "available": False, "alternatives": [], "error": "Geçersiz format"})
+            continue
+        conflict = await _check_slot_conflict(db, current_user.organization_id, staff_id, date, time, service_duration)
+        break_conflict = False
+        if staff_id:
+            end_time = _minutes_to_time(_time_to_minutes(time) + service_duration)
+            break_conflict = await check_break_conflict(db, staff_id, date, time, end_time, current_user.organization_id)
+        available = not conflict and not break_conflict
+        alternatives = []
+        suggested_staff = None
+        suggested_staff_name = None
+        if not available:
+            # Aynı saatte başka müsait personel var mı?
+            alt_staff = await _find_available_staff_for_slot(db, current_user.organization_id, check.service_id, date, time, service_duration, exclude_staff_id=staff_id)
+            if alt_staff:
+                suggested_staff = alt_staff
+                staff_doc = await db.users.find_one({"username": alt_staff, "organization_id": current_user.organization_id}, {"_id": 0, "full_name": 1})
+                suggested_staff_name = staff_doc.get("full_name", alt_staff) if staff_doc else alt_staff
+                available = True  # Başka personel müsait → slot kullanılabilir
+            elif staff_id:
+                alternatives = await _find_alternative_slots(db, current_user.organization_id, staff_id, date, time, service_duration)
+        result_item = {"date": date, "time": time, "available": available, "alternatives": alternatives}
+        if suggested_staff:
+            result_item["suggested_staff"] = suggested_staff
+            result_item["suggested_staff_name"] = suggested_staff_name
+        results.append(result_item)
+    return results
+
+@api_router.post("/appointments/session-group/{group_id}/cancel-remaining")
+async def cancel_remaining_sessions(request: Request, group_id: str, current_user: UserInDB = Depends(get_current_user)):
+    """Seans grubundaki tarihi gelmemiş tüm randevuları toplu iptal eder."""
+    db = await get_db_from_request(request)
+    turkey_tz = ZoneInfo("Europe/Istanbul")
+    today_str = datetime.now(turkey_tz).strftime("%Y-%m-%d")
+    # Personel yetki kontrolü
+    query = {
+        "session_group_id": group_id,
+        "organization_id": current_user.organization_id,
+        "appointment_date": {"$gte": today_str},
+        "status": {"$nin": ["İptal", "İptal Edildi", "Tamamlandı"]}
+    }
+    if current_user.role == "staff" and not current_user.can_view_all_appointments:
+        query["staff_member_id"] = current_user.username
+    future_sessions = await db.appointments.find(query, {"_id": 0, "id": 1}).to_list(100)
+    if not future_sessions:
+        raise HTTPException(status_code=404, detail="İptal edilecek bekleyen seans bulunamadı")
+    cancel_count = len(future_sessions)
+    ids_to_cancel = [s['id'] for s in future_sessions]
+    await db.appointments.update_many(
+        {"id": {"$in": ids_to_cancel}, "organization_id": current_user.organization_id},
+        {"$set": {"status": "İptal Edildi"}}
+    )
+    # Kota geri iadesi
+    try:
+        await db.organization_plans.update_one(
+            {"organization_id": current_user.organization_id},
+            {"$inc": {"quota_usage": -cancel_count}}
+        )
+    except Exception as e:
+        logging.warning(f"Quota refund error: {e}")
+    # Cache + WebSocket
+    try:
+        await invalidate_cache(request, "dashboard_stats", current_user)
+        await invalidate_cache(request, "customers_list", current_user)
+        await emit_to_organization(current_user.organization_id, 'appointments_bulk_updated', {'session_group_id': group_id, 'cancelled': cancel_count})
+    except Exception as e:
+        logging.warning(f"Post-cancel cleanup error: {e}")
+    logging.info(f"✅ Cancelled {cancel_count} remaining sessions for group {group_id}")
+    return {"message": f"{cancel_count} seans iptal edildi", "cancelled_count": cancel_count, "session_group_id": group_id}
 
 @api_router.get("/appointments", response_model=List[Appointment])
 async def get_appointments(
@@ -7428,7 +7786,7 @@ async def admin_delete_staff_break(
 
 # === CUSTOMERS ROUTES ===
 @api_router.get("/customers")
-@cache_result(prefix="customers_list", ttl=300)  # <-- EKLENEN SİHİRLİ SATIR
+@cache_result(prefix="customers_list", ttl=120)
 async def get_customers(request: Request, current_user: UserInDB = Depends(get_current_user)):
     """Tüm unique müşterileri listele (organization bazlı)"""
     db = await get_db_from_request(request)
@@ -7460,8 +7818,8 @@ async def get_customers(request: Request, current_user: UserInDB = Depends(get_c
     try:
         db_customers = await db.customers.find(
             {"organization_id": current_user.organization_id},
-            {"_id": 0}
-        ).to_list(1000)
+            {"_id": 0, "name": 1, "phone": 1}
+        ).to_list(50000)
         
         for db_customer in db_customers:
             phone = db_customer.get('phone')
@@ -7478,8 +7836,9 @@ async def get_customers(request: Request, current_user: UserInDB = Depends(get_c
     
     # Liste olarak döndür
     customers = list(customer_map.values())
-    customers.sort(key=lambda x: x['total_appointments'], reverse=True)
+    customers.sort(key=lambda x: (x.get('name') or '').lower())
     
+    logging.info(f"📋 GET /customers: {len(customers)} müşteri döndürülüyor (org: {current_user.organization_id[:8]})")
     return customers
 
 class CustomerCreate(BaseModel):
@@ -7565,12 +7924,77 @@ async def create_customer(request: Request, customer_data: CustomerCreate, curre
     except Exception as e:
         logging.warning(f"Customer cache invalidation failed: {e}")
     
+    try:
+        await emit_to_organization(current_user.organization_id, 'customer_added', {'customer': customer_doc})
+    except Exception as e:
+        logging.warning(f"Failed to emit customer_added event: {e}")
+    
     return {
         "id": customer_doc["id"],
         "name": name,
         "phone": phone,
         "message": "Müşteri başarıyla eklendi"
     }
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+
+@api_router.put("/customers/{phone}")
+async def update_customer(request: Request, phone: str, update_data: CustomerUpdate, current_user: UserInDB = Depends(get_current_user)):
+    """Müşteri bilgilerini güncelle (ad, telefon). Admin ve personel kullanabilir."""
+    db = await get_db_from_request(request)
+    customer = await db.customers.find_one({"phone": phone, "organization_id": current_user.organization_id}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Müşteri bulunamadı")
+    
+    updates = {}
+    if update_data.name and update_data.name.strip():
+        updates["name"] = update_data.name.strip()
+    
+    new_phone = None
+    if update_data.phone and update_data.phone.strip():
+        new_phone = re.sub(r'\D', '', update_data.phone.strip())
+        if len(new_phone) < 10:
+            raise HTTPException(status_code=400, detail="Geçerli bir telefon numarası girin")
+        if new_phone != phone:
+            existing = await db.customers.find_one({"phone": new_phone, "organization_id": current_user.organization_id})
+            if existing:
+                raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip başka bir müşteri zaten var")
+            updates["phone"] = new_phone
+    
+    if not updates:
+        raise HTTPException(status_code=400, detail="Güncellenecek bir bilgi yok")
+    
+    await db.customers.update_one({"phone": phone, "organization_id": current_user.organization_id}, {"$set": updates})
+    
+    # Telefon değiştiyse randevuları da güncelle
+    if new_phone and new_phone != phone:
+        await db.appointments.update_many(
+            {"phone": phone, "organization_id": current_user.organization_id},
+            {"$set": {"phone": new_phone}}
+        )
+    # İsim değiştiyse randevulardaki müşteri adını da güncelle
+    if "name" in updates:
+        phone_to_match = new_phone if new_phone and new_phone != phone else phone
+        await db.appointments.update_many(
+            {"phone": phone_to_match, "organization_id": current_user.organization_id},
+            {"$set": {"customer_name": updates["name"]}}
+        )
+    
+    try:
+        await invalidate_cache(request, "customers_list", current_user)
+        await invalidate_cache(request, "dashboard_stats", current_user)
+    except Exception:
+        pass
+    
+    try:
+        await emit_to_organization(current_user.organization_id, 'customer_updated', {'phone': phone})
+    except Exception:
+        pass
+    
+    logging.info(f"Customer updated: {phone} -> {updates} for org {current_user.organization_id}")
+    return {"message": "Müşteri bilgileri güncellendi", "updates": updates}
 
 @api_router.delete("/customers/{phone}")
 async def delete_customer(request: Request, phone: str, current_user: UserInDB = Depends(get_current_user)):
@@ -9754,6 +10178,14 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     appointment_data['staff_member_id'] = assigned_staff_id
     appointment_data['source'] = 'public_booking'  # Public booking'den geldiğini işaretle
     
+    # Seans paketi desteği: Hizmetin session_count > 1 ise otomatik olarak ilk seans bilgilerini ekle
+    service_session_count = service.get('session_count')
+    if service_session_count and service_session_count > 1:
+        appointment_data['session_group_id'] = str(uuid.uuid4())
+        appointment_data['session_number'] = 1
+        appointment_data['session_total'] = service_session_count
+        appointment_data['payment_status'] = 'paid'
+    
     # Randevu durumunu kontrol et (bitiş saatine göre)
     try:
         turkey_tz = ZoneInfo("Europe/Istanbul")
@@ -9824,6 +10256,13 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             }
             await db.customers.insert_one(customer_doc)
             logging.info(f"Customer auto-added from public booking: {appointment.customer_name} ({appointment.phone}) for org {organization_id}")
+            
+            # Cache invalidation SONRASI müşteri eklendi — tekrar temizle (race condition fix)
+            try:
+                mock_user = type('obj', (object,), {'organization_id': organization_id})
+                await invalidate_cache(request, "customers_list", mock_user)
+            except Exception:
+                pass
             
             # WebSocket event gönder (müşteriler listesini güncellemek için)
             try:

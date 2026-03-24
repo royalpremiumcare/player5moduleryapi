@@ -83,9 +83,14 @@ const SortableServiceCard = ({ service, i18n, t, onEdit, onDelete }) => {
 
             <div className="flex-1 min-w-0">
               <h3 className="text-base font-black text-zinc-900 mb-1 break-words leading-tight line-clamp-2">{service.name}</h3>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <p className="text-lg font-black text-blue-600">{Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}</p>
                 <p className="text-sm text-zinc-600 font-bold">{(service.duration || 30)} {t('services.management.minutes')}</p>
+                {service.session_count && service.session_count > 1 && (
+                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                    {service.session_count} {i18n.language === 'tr' ? 'seans' : 'sessions'}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -124,7 +129,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
   const [showAssignReminder, setShowAssignReminder] = useState(false);
   const [lastAddedServiceName, setLastAddedServiceName] = useState("");
   const [editingService, setEditingService] = useState(null);
-  const [formData, setFormData] = useState({ name: "", price: "", duration: "30" });
+  const [formData, setFormData] = useState({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2" });
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -147,7 +152,9 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
     setFormData({ 
       name: service.name, 
       price: service.price.toString(),
-      duration: (service.duration || 30).toString()
+      duration: (service.duration || 30).toString(),
+      isSessionPackage: !!(service.session_count && service.session_count > 1),
+      sessionCount: (service.session_count && service.session_count > 1) ? service.session_count.toString() : "2"
     });
     setShowDialog(true);
   };
@@ -182,7 +189,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
 
   const handleNew = () => {
     setEditingService(null);
-    setFormData({ name: "", price: "", duration: "30" });
+    setFormData({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2" });
     setShowDialog(true);
   };
 
@@ -208,7 +215,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
 
     setLoading(true);
     try {
-      const payload = { name: formData.name, price, duration };
+      const payload = { name: formData.name, price, duration, session_count: formData.isSessionPackage ? parseInt(formData.sessionCount) : null };
       
       if (editingService) {
         await api.put(`/services/${editingService.id}`, payload);
@@ -221,7 +228,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       }
       
       setShowDialog(false);
-      setFormData({ name: "", price: "", duration: "30" });
+      setFormData({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2" });
       onRefresh();
     } catch (error) {
       toast.error(t('services.management.operationFailed'));
@@ -441,6 +448,42 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               />
               <p className="text-xs text-zinc-500 font-medium">{t('services.management.durationNote')}</p>
             </div>
+            <div className="flex items-center justify-between p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 shadow-sm">
+              <div className="flex-1">
+                <Label htmlFor="session-toggle" className="text-sm font-bold text-zinc-900 cursor-pointer">
+                  {i18n.language === 'tr' ? 'Bu hizmet bir seans paketi mi?' : 'Is this a session package?'}
+                </Label>
+                <p className="text-xs text-zinc-600 mt-1 font-medium">
+                  {i18n.language === 'tr' ? 'Açarsanız seans sayısı girmeniz gerekir' : 'If enabled, you need to enter the number of sessions'}
+                </p>
+              </div>
+              <Switch
+                id="session-toggle"
+                checked={formData.isSessionPackage}
+                onCheckedChange={(checked) => setFormData({ ...formData, isSessionPackage: checked })}
+              />
+            </div>
+            {formData.isSessionPackage && (
+              <div className="space-y-2 animate-in fade-in duration-200">
+                <Label htmlFor="session-count" className="text-sm font-bold text-zinc-700">
+                  {i18n.language === 'tr' ? 'Kaç Seans?' : 'How many sessions?'}
+                </Label>
+                <Input
+                  id="session-count"
+                  type="number"
+                  min="2"
+                  max="50"
+                  value={formData.sessionCount}
+                  onChange={(e) => setFormData({ ...formData, sessionCount: e.target.value })}
+                  placeholder="7"
+                  required
+                  className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                />
+                <p className="text-xs text-zinc-500 font-medium">
+                  {i18n.language === 'tr' ? 'Minimum 2 seans gereklidir' : 'Minimum 2 sessions required'}
+                </p>
+              </div>
+            )}
             <DialogFooter className="border-t border-white/30 pt-4">
               <Button 
                 type="button" 

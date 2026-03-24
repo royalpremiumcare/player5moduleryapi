@@ -126,9 +126,9 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   const visibleServices = useMemo(() => {
     const raw = filteredServices || [];
-    const search = (debouncedServiceSearchTerm || "").toLowerCase();
+    const search = (debouncedServiceSearchTerm || "").toLocaleLowerCase('tr');
     if (!search) return raw;
-    return raw.filter((s) => String(s?.name || "").toLowerCase().includes(search));
+    return raw.filter((s) => String(s?.name || "").toLocaleLowerCase('tr').includes(search));
   }, [filteredServices, debouncedServiceSearchTerm]);
 
   const currencySymbol = useMemo(() => {
@@ -143,12 +143,12 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   const filteredCustomers = useMemo(() => {
     const raw = customers || [];
-    const search = (debouncedCustomerSearchTerm || "").toLowerCase();
+    const search = (debouncedCustomerSearchTerm || "").toLocaleLowerCase('tr');
     const phoneSearch = String(debouncedCustomerSearchTerm || "");
 
     const filtered = search
       ? raw.filter((c) => {
-          const name = (c?.name || "").toLowerCase();
+          const name = (c?.name || "").toLocaleLowerCase('tr');
           const phone = String(c?.phone || "");
           return name.includes(search) || phone.includes(phoneSearch);
         })
@@ -379,6 +379,17 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       if (userRole === 'staff' && !canViewAll && currentUser && !payload.staff_member_id) payload.staff_member_id = currentUser.username;
       if (!payload.staff_member_id) delete payload.staff_member_id;
 
+      // Seans paketi: ilk randevuya session alanlarını ekle
+      if (!appointment) {
+        const selectedService = services.find(s => s.id === formData.service_id);
+        if (selectedService?.session_count && selectedService.session_count > 1) {
+          payload.session_group_id = crypto.randomUUID();
+          payload.session_number = 1;
+          payload.session_total = selectedService.session_count;
+          payload.payment_status = 'package_included';
+        }
+      }
+
       if (appointment) {
         await api.put(`/appointments/${appointment.id}`, payload);
         toast.success(t('appointments.form.updated'));
@@ -468,6 +479,11 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               <p className={`text-sm mt-1 font-medium ${formData.service_id === service.id ? 'text-zinc-200' : 'text-zinc-500'}`}>
 {i18n.language === 'en' ? `${currencySymbol}${Math.round(service.price)}` : `${Math.round(service.price)}${currencySymbol}`} • {service.duration || 30} {t('appointments.form.durationUnit')}
               </p>
+              {service.session_count && service.session_count > 1 && (
+                <span className={`inline-block text-xs mt-1.5 px-2 py-0.5 rounded-full font-bold ${formData.service_id === service.id ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-700'}`}>
+                  {service.session_count} {i18n.language === 'tr' ? 'Seanslık Paket' : 'Session Package'}
+                </span>
+              )}
             </div>
             <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-300
               ${formData.service_id === service.id 
@@ -617,6 +633,31 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     return (
       <div className="space-y-8 animate-in slide-in-from-right duration-300 pb-24">
         
+        {/* Seans Paketi Bilgilendirmesi */}
+        {(() => {
+          const selectedSvc = services.find(s => s.id === formData.service_id);
+          if (selectedSvc?.session_count && selectedSvc.session_count > 1) {
+            return (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-2.5">
+                <CalendarIcon className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-blue-800">
+                  <p className="font-bold">
+                    {i18n.language === 'tr' 
+                      ? `Bu hizmet ${selectedSvc.session_count} seanslık bir pakettir.`
+                      : `This service is a ${selectedSvc.session_count}-session package.`}
+                  </p>
+                  <p className="mt-0.5">
+                    {i18n.language === 'tr'
+                      ? 'Şu an ilk seans için tarih ve saat seçiyorsunuz. Kalan seansları daha sonra planlayabilirsiniz.'
+                      : 'You are selecting date and time for the first session. You can plan remaining sessions later.'}
+                  </p>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
         {/* Personel Seçimi */}
         {(userRole === 'admin' || canViewAll) && qualifiedStaff.length > 0 && (
           <div>
