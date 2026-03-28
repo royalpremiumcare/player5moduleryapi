@@ -43,20 +43,21 @@ export default function MarketingPanel() {
 
   const load = useCallback(async (currentTab = tab, batchId = selectedBatch) => {
     setLoading(true);
-    try {
-      const batchParam = batchId ? `&batch_id=${batchId}` : "";
-      const [leadsRes, statsRes, profileRes, batchesRes] = await Promise.all([
-        api.get(`/marketing/leads?tab=${currentTab}${batchParam}`),
-        api.get("/marketing/my-stats"),
-        profile ? Promise.resolve({ data: profile }) : api.get("/marketing/profile"),
-        api.get("/marketing/leads/batches"),
-      ]);
-      setLeads(leadsRes.data.leads || []);
-      setMyStats(statsRes.data);
-      if (!profile) setProfile(profileRes.data);
-      setBatches(batchesRes.data.batches || []);
-    } catch (e) { toast.error(e.response?.data?.detail || "Veriler yüklenemedi"); console.error("MarketingPanel load error", e); }
-    finally { setLoading(false); }
+    const batchParam = batchId ? `&batch_id=${batchId}` : "";
+    const [leadsR, statsR, profileR, batchesR] = await Promise.allSettled([
+      api.get(`/marketing/leads?tab=${currentTab}${batchParam}`),
+      api.get("/marketing/my-stats"),
+      profile ? Promise.resolve({ data: profile }) : api.get("/marketing/profile"),
+      api.get("/marketing/leads/batches"),
+    ]);
+    if (leadsR.status === "fulfilled") setLeads(leadsR.value.data.leads || []);
+    else { toast.error("Leadler yüklenemedi"); console.error("leads error", leadsR.reason); }
+    if (statsR.status === "fulfilled") setMyStats(statsR.value.data);
+    else console.error("stats error", statsR.reason?.response?.data || statsR.reason);
+    if (profileR.status === "fulfilled" && !profile) setProfile(profileR.value.data);
+    if (batchesR.status === "fulfilled") setBatches(batchesR.value.data.batches || []);
+    else console.error("batches error", batchesR.reason?.response?.data || batchesR.reason);
+    setLoading(false);
   }, [tab, profile, selectedBatch]);
 
   useEffect(() => { load(tab, selectedBatch); }, [tab, selectedBatch]);
@@ -81,13 +82,6 @@ export default function MarketingPanel() {
     return () => clearInterval(id);
   }, [activeLead?.claimed_at]);
 
-  // activeLead açıldığında call card'a scroll et
-  useEffect(() => {
-    if (activeLead && callCardRef.current) {
-      callCardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [activeLead?.id]);
-
   const claimLead = async (lead) => {
     setClaiming(lead.id);
     try {
@@ -96,7 +90,6 @@ export default function MarketingPanel() {
       setCallStatus("");
       setNote("");
       setLeads(prev => prev.filter(l => l.id !== lead.id));
-      // Telefon uygulamasını aç
       window.location.href = `tel:${lead.phone}`;
     } catch (e) {
       toast.error(e.response?.data?.detail || "Lead alınamadı");
@@ -166,27 +159,26 @@ export default function MarketingPanel() {
         </div>
       </header>
 
-      <div className="flex-1 max-w-2xl mx-auto w-full px-4 py-5 space-y-4">
+      <div className={`flex-1 max-w-2xl mx-auto w-full px-4 py-5 space-y-4 ${activeLead ? "pb-[420px]" : "pb-6"}`}>
         {/* My Stats */}
-        {myStats && (
-          <div className="grid grid-cols-4 gap-3">
-            {[
-              { label: "Bugün",       value: myStats.today_called },
-              { label: "Toplam",      value: myStats.total_called },
-              { label: "İlgilendi",   value: myStats.interested },
-              { label: "Dönüşüm",    value: `${myStats.conversion_rate}%` },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 text-center">
-                <p className="text-xs text-gray-400">{label}</p>
-                <p className="text-xl font-bold text-gray-900 mt-0.5">{value}</p>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-4 gap-3">
+          {[
+            { label: "Bugün",       value: myStats?.today_called ?? "—" },
+            { label: "Toplam",      value: myStats?.total_called ?? "—" },
+            { label: "İlgilendi",   value: myStats?.interested ?? "—" },
+            { label: "Dönüşüm",    value: myStats ? `${myStats.conversion_rate}%` : "—" },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 text-center">
+              <p className="text-xs text-gray-400">{label}</p>
+              <p className="text-xl font-bold text-gray-900 mt-0.5">{value}</p>
+            </div>
+          ))}
+        </div>
 
-        {/* Active call card */}
+        {/* Active call card — fixed overlay */}
         {activeLead && (
-          <div ref={callCardRef} className="bg-white rounded-2xl shadow-lg border border-indigo-100 overflow-hidden">
+          <div ref={callCardRef} className="fixed inset-x-0 bottom-0 z-50 px-4 pb-4 pt-2 bg-gradient-to-t from-black/40 to-transparent">
+          <div className="bg-white rounded-2xl shadow-2xl border border-indigo-100 overflow-hidden max-w-2xl mx-auto">
             {/* Call header */}
             <div className="bg-indigo-600 px-5 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -271,6 +263,7 @@ export default function MarketingPanel() {
                 </button>
               </div>
             </div>
+          </div>
           </div>
         )}
 
