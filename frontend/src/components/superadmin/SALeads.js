@@ -62,10 +62,13 @@ export default function SALeads() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setPreviewData(res.data);
-      // Read file as base64 for confirm step
+      // Read file as base64 for confirm step (readAsDataURL — büyük dosyalar için güvenli)
       const reader = new FileReader();
-      reader.onload = (e) => setFileB64(btoa(String.fromCharCode(...new Uint8Array(e.target.result))));
-      reader.readAsArrayBuffer(file);
+      reader.onload = (e) => {
+        const b64 = e.target.result.split(",")[1];
+        setFileB64(b64);
+      };
+      reader.readAsDataURL(file);
       setUploadStep(1);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Dosya okunamadı");
