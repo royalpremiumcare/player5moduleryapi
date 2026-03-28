@@ -11284,6 +11284,7 @@ async def get_marketing_leads(
     batch_id: str = None
 ):
     """Havuz leadleri veya benim leadlerim (batch_id ile filtrelenebilir)"""
+    logging.info(f"[LEADS] user={current_user.username} id={current_user.id} tab={tab} batch_id={batch_id}")
     await _release_expired_claims(db)
     if tab == "mine":
         query = {"claimed_by": current_user.id, "status": {"$in": ["claimed", "interested", "unreachable", "not_interested", "waiting", "registered"]}}
@@ -11413,6 +11414,7 @@ async def get_my_marketing_stats(
     db = Depends(get_db)
 ):
     """Pazarlamacının kendi istatistikleri"""
+    logging.info(f"[STATS] user={current_user.username} id={current_user.id} role={current_user.role}")
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     total_called = await db.leads.count_documents({"claimed_by": current_user.id, "status": {"$nin": ["pool", "claimed"]}})
     interested = await db.leads.count_documents({"claimed_by": current_user.id, "status": "interested"})
