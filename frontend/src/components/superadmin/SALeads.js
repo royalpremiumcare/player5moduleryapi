@@ -88,6 +88,8 @@ export default function SALeads() {
       setFileObj(null);
       setCompanyCol("");
       setPhoneCol("");
+      // Yeni yüklenen batch'i otomatik seç
+      if (res.data.batch_id) setBatchFilter(res.data.batch_id);
       load();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Yükleme başarısız");
@@ -262,10 +264,25 @@ export default function SALeads() {
 
       {/* Lead table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100">
+        <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Lead Havuzu</h3>
           <span className="text-sm text-gray-400">{total} kayıt</span>
+          {batchFilter && (
+            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
+              {batches.find(b => b.id === batchFilter)?.batch_name || "Seçili Batch"}
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-2">
+            <select
+              value={batchFilter}
+              onChange={e => setBatchFilter(e.target.value)}
+              className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+            >
+              <option value="">Tüm Kampanyalar</option>
+              {batches.map(b => (
+                <option key={b.id} value={b.id}>{b.batch_name} ({b.total})</option>
+              ))}
+            </select>
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}

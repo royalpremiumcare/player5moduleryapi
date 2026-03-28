@@ -11265,22 +11265,37 @@ async def delete_single_lead(
 
 
 # === MARKETING — TELE-SATIŞ CRM ===
+@api_router.get("/marketing/leads/batches")
+async def get_marketing_batches(
+    request: Request,
+    current_user: UserInDB = Depends(get_marketing_user),
+    db = Depends(get_db)
+):
+    """Marketing kullanıcısı için mevcut batch listesi"""
+    batches = await db.lead_batches.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return {"batches": batches}
+
 @api_router.get("/marketing/leads")
 async def get_marketing_leads(
     request: Request,
     current_user: UserInDB = Depends(get_marketing_user),
     db = Depends(get_db),
-    tab: str = "pool"  # "pool" | "mine"
+    tab: str = "pool",
+    batch_id: str = None
 ):
-    """Havuz leadleri veya benim leadlerim"""
+    """Havuz leadleri veya benim leadlerim (batch_id ile filtrelenebilir)"""
     await _release_expired_claims(db)
     if tab == "mine":
         query = {"claimed_by": current_user.id, "status": {"$in": ["claimed", "interested", "unreachable", "not_interested", "waiting", "registered"]}}
+        if batch_id:
+            query["batch_id"] = batch_id
         leads = await db.leads.find(query, {"_id": 0}).sort("updated_at", -1).to_list(500)
     else:
         query = {"status": "pool"}
+        if batch_id:
+            query["batch_id"] = batch_id
         leads = await db.leads.find(query, {"_id": 0}).sort("created_at", 1).to_list(200)
-    return {"leads": leads}
+    return {"leads": leads, "batch_id": batch_id}
 
 @api_router.post("/marketing/leads/{lead_id}/claim")
 async def claim_lead(

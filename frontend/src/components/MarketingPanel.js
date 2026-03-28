@@ -29,31 +29,36 @@ export default function MarketingPanel() {
   const [tab, setTab]               = useState("pool"); // "pool" | "mine"
   const [leads, setLeads]           = useState([]);
   const [loading, setLoading]       = useState(true);
-  const [activeLead, setActiveLead] = useState(null); // currently claimed lead in call card
+  const [activeLead, setActiveLead] = useState(null);
   const [callStatus, setCallStatus] = useState("");
   const [note, setNote]             = useState("");
   const [saving, setSaving]         = useState(false);
-  const [claiming, setClaiming]     = useState(null); // lead id being claimed
+  const [claiming, setClaiming]     = useState(null);
+  const [batches, setBatches]       = useState([]);
+  const [selectedBatch, setSelectedBatch] = useState(""); // batch_id filtresi
 
   // Countdown timer for claimed lead (15 min)
   const [timeLeft, setTimeLeft] = useState(null);
 
-  const load = useCallback(async (currentTab = tab) => {
+  const load = useCallback(async (currentTab = tab, batchId = selectedBatch) => {
     setLoading(true);
     try {
-      const [leadsRes, statsRes, profileRes] = await Promise.all([
-        api.get(`/marketing/leads?tab=${currentTab}`),
+      const batchParam = batchId ? `&batch_id=${batchId}` : "";
+      const [leadsRes, statsRes, profileRes, batchesRes] = await Promise.all([
+        api.get(`/marketing/leads?tab=${currentTab}${batchParam}`),
         api.get("/marketing/my-stats"),
         profile ? Promise.resolve({ data: profile }) : api.get("/marketing/profile"),
+        api.get("/marketing/leads/batches"),
       ]);
       setLeads(leadsRes.data.leads || []);
       setMyStats(statsRes.data);
       if (!profile) setProfile(profileRes.data);
+      setBatches(batchesRes.data.batches || []);
     } catch { toast.error("Veriler yüklenemedi"); }
     finally { setLoading(false); }
-  }, [tab, profile]);
+  }, [tab, profile, selectedBatch]);
 
-  useEffect(() => { load(); }, [tab]);
+  useEffect(() => { load(tab, selectedBatch); }, [tab, selectedBatch]);
 
   // Countdown for active lead
   useEffect(() => {
@@ -259,6 +264,33 @@ export default function MarketingPanel() {
           </div>
         )}
 
+        {/* Kampanya Seçici */}
+        {batches.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3 flex items-center gap-3">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex-shrink-0">Kampanya</span>
+            <select
+              value={selectedBatch}
+              onChange={e => setSelectedBatch(e.target.value)}
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-gray-50"
+            >
+              <option value="">Tümü</option>
+              {batches.map(b => (
+                <option key={b.id} value={b.id}>
+                  {b.batch_name} ({b.total} lead)
+                </option>
+              ))}
+            </select>
+            {selectedBatch && (
+              <button
+                onClick={() => setSelectedBatch("")}
+                className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0"
+              >
+                Temizle
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
           {[
@@ -290,7 +322,9 @@ export default function MarketingPanel() {
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-10 text-center">
               <Phone className="w-10 h-10 text-gray-200 mx-auto mb-3" />
               <p className="text-sm text-gray-400">
-                {tab === "pool" ? "Havuzda aranacak lead yok" : "Henüz arama yapmadınız"}
+                {tab === "pool"
+                ? (selectedBatch ? "Bu kampanyada aranacak lead yok" : "Havuzda aranacak lead yok")
+                : "Henüz arama yapmadınız"}
               </p>
             </div>
           ) : (
@@ -313,6 +347,9 @@ export default function MarketingPanel() {
                         </span>
                       </div>
                       <p className="text-sm text-gray-500 font-mono mt-0.5">{lead.phone}</p>
+                      {!selectedBatch && lead.batch_name && (
+                        <p className="text-xs text-indigo-400 mt-0.5">{lead.batch_name}</p>
+                      )}
                       {lead.note && (
                         <p className="text-xs text-gray-400 mt-1 italic">"{lead.note}"</p>
                       )}
