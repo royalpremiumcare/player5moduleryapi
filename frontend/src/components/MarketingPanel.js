@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Phone, PhoneCall, LogOut, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Pause, Star } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
@@ -39,6 +39,7 @@ export default function MarketingPanel() {
 
   // Countdown timer for claimed lead (15 min)
   const [timeLeft, setTimeLeft] = useState(null);
+  const callCardRef = useRef(null);
 
   const load = useCallback(async (currentTab = tab, batchId = selectedBatch) => {
     setLoading(true);
@@ -54,7 +55,7 @@ export default function MarketingPanel() {
       setMyStats(statsRes.data);
       if (!profile) setProfile(profileRes.data);
       setBatches(batchesRes.data.batches || []);
-    } catch { toast.error("Veriler yüklenemedi"); }
+    } catch (e) { toast.error(e.response?.data?.detail || "Veriler yüklenemedi"); console.error("MarketingPanel load error", e); }
     finally { setLoading(false); }
   }, [tab, profile, selectedBatch]);
 
@@ -80,6 +81,13 @@ export default function MarketingPanel() {
     return () => clearInterval(id);
   }, [activeLead?.claimed_at]);
 
+  // activeLead açıldığında call card'a scroll et
+  useEffect(() => {
+    if (activeLead && callCardRef.current) {
+      callCardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [activeLead?.id]);
+
   const claimLead = async (lead) => {
     setClaiming(lead.id);
     try {
@@ -88,6 +96,8 @@ export default function MarketingPanel() {
       setCallStatus("");
       setNote("");
       setLeads(prev => prev.filter(l => l.id !== lead.id));
+      // Telefon uygulamasını aç
+      window.location.href = `tel:${lead.phone}`;
     } catch (e) {
       toast.error(e.response?.data?.detail || "Lead alınamadı");
       load(tab);
@@ -176,7 +186,7 @@ export default function MarketingPanel() {
 
         {/* Active call card */}
         {activeLead && (
-          <div className="bg-white rounded-2xl shadow-lg border border-indigo-100 overflow-hidden">
+          <div ref={callCardRef} className="bg-white rounded-2xl shadow-lg border border-indigo-100 overflow-hidden">
             {/* Call header */}
             <div className="bg-indigo-600 px-5 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
