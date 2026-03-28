@@ -11368,9 +11368,7 @@ async def update_lead_status(
         "status": new_status,
         "note": note,
         "updated_at": now,
-        "claimed_by": None,
-        "claimed_at": None,
-        "claimed_by_name": None,
+        # claimed_by ve claimed_by_name sakla — mine tab ve stats için gerekli
     }
     await db.leads.update_one(
         {"id": lead_id},
