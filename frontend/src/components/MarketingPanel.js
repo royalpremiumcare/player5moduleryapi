@@ -90,7 +90,13 @@ export default function MarketingPanel() {
       setCallStatus("");
       setNote("");
       setLeads(prev => prev.filter(l => l.id !== lead.id));
-      window.location.href = `tel:${lead.phone}`;
+      // tel: linkini görünmez anchor ile aç — page state korunur
+      const a = document.createElement("a");
+      a.href = `tel:${lead.phone}`;
+      a.setAttribute("rel", "noopener");
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Lead alınamadı");
       load(tab);
