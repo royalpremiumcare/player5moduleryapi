@@ -11101,25 +11101,20 @@ async def preview_lead_upload(
         logging.error(f"Lead upload preview error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Dosya okunamadı: {str(e)}")
 
-class LeadUploadConfirm(BaseModel):
-    filename: str
-    batch_name: str
-    company_col: str
-    phone_col: str
-    file_data: str  # base64 encoded
-
 @api_router.post("/superadmin/leads/upload/confirm")
 async def confirm_lead_upload(
     request: Request,
-    payload: LeadUploadConfirm,
+    file: UploadFile = File(...),
+    batch_name: str = Form(...),
+    company_col: str = Form(...),
+    phone_col: str = Form(...),
     current_user: UserInDB = Depends(get_superadmin_user),
     db = Depends(get_db)
 ):
-    """Column mapping ile lead'leri yükle"""
+    """Column mapping ile lead'leri yükle (multipart/form-data)"""
     try:
-        import base64 as b64
-        content = b64.b64decode(payload.file_data)
-        filename = payload.filename.lower()
+        content = await file.read()
+        filename = (file.filename or "").lower()
         rows = []
 
         if filename.endswith(".csv"):
@@ -11127,7 +11122,7 @@ async def confirm_lead_upload(
             reader = csv.DictReader(io.StringIO(text))
             for row in reader:
                 rows.append(dict(row))
-        else:
+        elif filename.endswith(".xlsx") or filename.endswith(".xls"):
             wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
             ws = wb.active
             all_rows = list(ws.iter_rows(values_only=True))
@@ -11135,21 +11130,23 @@ async def confirm_lead_upload(
                 cols = [str(c) if c is not None else "" for c in all_rows[0]]
                 for row in all_rows[1:]:
                     rows.append({cols[i]: (str(row[i]) if row[i] is not None else "") for i in range(len(cols))})
+        else:
+            raise HTTPException(status_code=400, detail="Desteklenmeyen dosya formatı")
 
         batch_id = str(uuid.uuid4())
         now_iso = datetime.now(timezone.utc).isoformat()
         leads_to_insert = []
         skipped = 0
         for row in rows:
-            company = str(row.get(payload.company_col, "") or "").strip()
-            phone = str(row.get(payload.phone_col, "") or "").strip()
+            company = str(row.get(company_col, "") or "").strip()
+            phone = str(row.get(phone_col, "") or "").strip()
             if not company and not phone:
                 skipped += 1
                 continue
             leads_to_insert.append({
                 "id": str(uuid.uuid4()),
                 "batch_id": batch_id,
-                "batch_name": payload.batch_name,
+                "batch_name": batch_name,
                 "company_name": company,
                 "phone": phone,
                 "status": "pool",
@@ -11167,10 +11164,9 @@ async def confirm_lead_upload(
         if leads_to_insert:
             await db.leads.insert_many(leads_to_insert)
 
-        # Batch kaydı
         await db.lead_batches.insert_one({
             "id": batch_id,
-            "batch_name": payload.batch_name,
+            "batch_name": batch_name,
             "total": len(leads_to_insert),
             "skipped": skipped,
             "uploaded_by": current_user.id,

@@ -23,10 +23,9 @@ export default function SALeads() {
   const [batchFilter, setBatchFilter]   = useState("");
 
   // Upload wizard
-  const [uploadStep, setUploadStep]   = useState(0); // 0=idle, 1=preview, 2=mapping
+  const [uploadStep, setUploadStep]   = useState(0); // 0=idle, 1=mapping
   const [previewData, setPreviewData] = useState(null);
-  const [fileB64, setFileB64]         = useState("");
-  const [fileName, setFileName]       = useState("");
+  const [fileObj, setFileObj]         = useState(null); // actual File object
   const [companyCol, setCompanyCol]   = useState("");
   const [phoneCol, setPhoneCol]       = useState("");
   const [batchName, setBatchName]     = useState("");
@@ -53,7 +52,7 @@ export default function SALeads() {
 
   const handleFile = async (file) => {
     if (!file) return;
-    setFileName(file.name);
+    setFileObj(file);
     setBatchName(file.name.replace(/\.[^.]+$/, ""));
     const formData = new FormData();
     formData.append("file", file);
@@ -62,13 +61,6 @@ export default function SALeads() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setPreviewData(res.data);
-      // Read file as base64 for confirm step (readAsDataURL — büyük dosyalar için güvenli)
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const b64 = e.target.result.split(",")[1];
-        setFileB64(b64);
-      };
-      reader.readAsDataURL(file);
       setUploadStep(1);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Dosya okunamadı");
@@ -79,19 +71,21 @@ export default function SALeads() {
     if (!companyCol || !phoneCol || !batchName) {
       toast.error("Lütfen tüm alanları doldurun"); return;
     }
+    if (!fileObj) { toast.error("Dosya bulunamadı, lütfen tekrar yükleyin"); return; }
     setUploading(true);
     try {
-      const res = await api.post("/superadmin/leads/upload/confirm", {
-        filename: fileName,
-        batch_name: batchName,
-        company_col: companyCol,
-        phone_col: phoneCol,
-        file_data: fileB64,
+      const formData = new FormData();
+      formData.append("file", fileObj);
+      formData.append("batch_name", batchName);
+      formData.append("company_col", companyCol);
+      formData.append("phone_col", phoneCol);
+      const res = await api.post("/superadmin/leads/upload/confirm", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
       toast.success(res.data.message);
       setUploadStep(0);
       setPreviewData(null);
-      setFileB64("");
+      setFileObj(null);
       setCompanyCol("");
       setPhoneCol("");
       load();
@@ -156,7 +150,7 @@ export default function SALeads() {
             <button onClick={() => setUploadStep(0)} className="text-sm text-gray-400 hover:text-gray-600">İptal</button>
           </div>
           <p className="text-sm text-gray-500">
-            <strong>{fileName}</strong> — {previewData.preview?.length} satır önizleme
+            <strong>{fileObj?.name}</strong> — {previewData.preview?.length} satır önizleme
           </p>
 
           {/* Preview table */}
