@@ -11289,12 +11289,12 @@ async def get_marketing_leads(
         query = {"claimed_by": current_user.id, "status": {"$in": ["claimed", "interested", "unreachable", "not_interested", "waiting", "registered"]}}
         if batch_id:
             query["batch_id"] = batch_id
-        leads = await db.leads.find(query, {"_id": 0}).sort("updated_at", -1).to_list(500)
+        leads = await db.leads.find(query, {"_id": 0}).sort("updated_at", -1).to_list(5000)
     else:
         query = {"status": "pool"}
         if batch_id:
             query["batch_id"] = batch_id
-        leads = await db.leads.find(query, {"_id": 0}).sort("created_at", 1).to_list(200)
+        leads = await db.leads.find(query, {"_id": 0}).sort("created_at", 1).to_list(5000)
     return {"leads": leads, "batch_id": batch_id}
 
 @api_router.post("/marketing/leads/{lead_id}/claim")

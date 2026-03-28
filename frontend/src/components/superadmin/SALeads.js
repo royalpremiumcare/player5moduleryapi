@@ -21,6 +21,8 @@ export default function SALeads() {
   const [loading, setLoading]     = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [batchFilter, setBatchFilter]   = useState("");
+  const [page, setPage]               = useState(1);
+  const PAGE_SIZE = 50;
 
   // Upload wizard
   const [uploadStep, setUploadStep]   = useState(0); // 0=idle, 1=mapping
@@ -32,13 +34,17 @@ export default function SALeads() {
   const [uploading, setUploading]     = useState(false);
   const fileRef = useRef();
 
-  const load = async () => {
+  const load = async (currentPage = page) => {
     setLoading(true);
     try {
+      const skip = (currentPage - 1) * PAGE_SIZE;
+      const params = new URLSearchParams({ limit: PAGE_SIZE, skip });
+      if (statusFilter) params.set("status_filter", statusFilter);
+      if (batchFilter) params.set("batch_id", batchFilter);
       const [statsRes, batchRes, leadsRes] = await Promise.all([
         api.get("/superadmin/leads/stats"),
         api.get("/superadmin/leads/batches"),
-        api.get(`/superadmin/leads?limit=100${statusFilter ? `&status_filter=${statusFilter}` : ""}${batchFilter ? `&batch_id=${batchFilter}` : ""}`),
+        api.get(`/superadmin/leads?${params.toString()}`),
       ]);
       setStats(statsRes.data);
       setBatches(batchRes.data.batches || []);
@@ -48,7 +54,8 @@ export default function SALeads() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [statusFilter, batchFilter]);
+  useEffect(() => { setPage(1); }, [statusFilter, batchFilter]);
+  useEffect(() => { load(page); }, [page, statusFilter, batchFilter]);
 
   const handleFile = async (file) => {
     if (!file) return;
@@ -90,7 +97,8 @@ export default function SALeads() {
       setPhoneCol("");
       // Yeni yüklenen batch'i otomatik seç
       if (res.data.batch_id) setBatchFilter(res.data.batch_id);
-      load();
+      setPage(1);
+      load(1);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Yükleme başarısız");
     } finally { setUploading(false); }
@@ -340,6 +348,33 @@ export default function SALeads() {
             </tbody>
           </table>
         </div>
+        {/* Pagination */}
+        {total > PAGE_SIZE && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+            <span className="text-xs text-gray-500">
+              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} / {total} kayıt
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ← Önceki
+              </button>
+              <span className="px-3 py-1.5 text-xs font-medium text-gray-700">
+                {page} / {Math.ceil(total / PAGE_SIZE)}
+              </span>
+              <button
+                onClick={() => setPage(p => Math.min(Math.ceil(total / PAGE_SIZE), p + 1))}
+                disabled={page >= Math.ceil(total / PAGE_SIZE)}
+                className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Sonraki →
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
