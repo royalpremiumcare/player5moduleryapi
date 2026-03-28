@@ -1,825 +1,123 @@
-import { useState, useEffect, useMemo } from "react";
-import { 
-  Building2, DollarSign, Calendar, Users, Search, ArrowUpDown, ArrowUp, ArrowDown, 
-  Phone, Mail, MessageSquare, Clock, CheckCircle2, MessageCircle, Trash2, Trash, 
-  ArrowLeft, Package, CreditCard, X, ChevronDown, ChevronUp, UserX, Settings,
-  Send, CheckCheck, Eye, AlertTriangle, RefreshCw
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect } from "react";
+import { BarChart2, Building2, MessageSquare, MessageCircle, Target, Users, LogOut, Menu, X } from "lucide-react";
 import { toast } from "sonner";
-import api from "../api/api";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { useAuth } from "../context/AuthContext";
+import SAOverview from "./superadmin/SAOverview";
+import SAOrganizations from "./superadmin/SAOrganizations";
+import SAContacts from "./superadmin/SAContacts";
+import SAWhatsApp from "./superadmin/SAWhatsApp";
+import SALeads from "./superadmin/SALeads";
+import SAUsers from "./superadmin/SAUsers";
+
+const NAV_ITEMS = [
+  { id: "overview",       label: "Genel Bakış",    icon: BarChart2 },
+  { id: "organizations",  label: "İşletmeler",     icon: Building2 },
+  { id: "contacts",       label: "İletişim",       icon: MessageSquare },
+  { id: "whatsapp",       label: "WhatsApp",       icon: MessageCircle },
+  { id: "leads",          label: "Lead Yönetimi",  icon: Target },
+  { id: "users",          label: "Kullanıcılar",   icon: Users },
+];
 
 const SuperAdmin = ({ onNavigate }) => {
-  const [stats, setStats] = useState(null);
-  const [organizations, setOrganizations] = useState([]);
-  const [contactRequests, setContactRequests] = useState([]);
-  const [plans, setPlans] = useState([]);
-  const [activeTab, setActiveTab] = useState("organizations");
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [contactSearchTerm, setContactSearchTerm] = useState("");
-  const [sortConfig, setSortConfig] = useState({ key: 'isletme_adi', direction: 'asc' });
-  const [contactSortConfig, setContactSortConfig] = useState({ key: 'created_at', direction: 'desc' });
-  const [expandedOrg, setExpandedOrg] = useState(null);
-  const [assignPlanModal, setAssignPlanModal] = useState({ open: false, org: null });
-  const [selectedPlan, setSelectedPlan] = useState('');
-  const [selectedCycle, setSelectedCycle] = useState('monthly');
-  const [staffList, setStaffList] = useState([]);
-  const [loadingStaff, setLoadingStaff] = useState(false);
-  const [whatsappLogs, setWhatsappLogs] = useState({ logs: [], total: 0, summary: { sent: 0, delivered: 0, read: 0, failed: 0 } });
-  const [waLogFilter, setWaLogFilter] = useState("");
-  const [loadingWaLogs, setLoadingWaLogs] = useState(false);
+  const { logout } = useAuth();
+  const [activeTab, setActiveTab] = useState("overview");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === "whatsapp") loadWhatsappLogs(waLogFilter);
-  }, [activeTab, waLogFilter]);
-
-  const loadWhatsappLogs = async (statusFilter = "") => {
-    setLoadingWaLogs(true);
-    try {
-      const params = statusFilter ? `?status_filter=${statusFilter}&limit=200` : "?limit=200";
-      const res = await api.get(`/superadmin/whatsapp-logs${params}`);
-      setWhatsappLogs(res.data);
-    } catch (e) {
-      toast.error("WhatsApp logları yüklenemedi");
-    } finally {
-      setLoadingWaLogs(false);
+  const renderContent = () => {
+    switch (activeTab) {
+      case "overview":      return <SAOverview />;
+      case "organizations": return <SAOrganizations />;
+      case "contacts":      return <SAContacts />;
+      case "whatsapp":      return <SAWhatsApp />;
+      case "leads":         return <SALeads />;
+      case "users":         return <SAUsers />;
+      default:              return <SAOverview />;
     }
   };
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [statsResponse, orgsResponse, contactsResponse, plansResponse] = await Promise.all([
-        api.get("/superadmin/stats"),
-        api.get("/superadmin/organizations"),
-        api.get("/superadmin/contact-requests"),
-        api.get("/superadmin/plans")
-      ]);
-      setStats(statsResponse.data);
-      setOrganizations(orgsResponse.data.organizations || []);
-      setContactRequests(contactsResponse.data.contacts || []);
-      setPlans(plansResponse.data.plans || []);
-    } catch (error) {
-      if (error.response?.status === 403) {
-        toast.error("Bu sayfaya erişim yetkiniz yok");
-      } else {
-        toast.error("Veriler yüklenemedi");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadStaff = async (orgId) => {
-    setLoadingStaff(true);
-    try {
-      const response = await api.get(`/superadmin/organizations/${orgId}/staff`);
-      setStaffList(response.data.staff || []);
-    } catch (error) {
-      toast.error("Personel listesi yüklenemedi");
-    } finally {
-      setLoadingStaff(false);
-    }
-  };
-
-  const handleExpandOrg = async (orgId) => {
-    if (expandedOrg === orgId) {
-      setExpandedOrg(null);
-      setStaffList([]);
-    } else {
-      setExpandedOrg(orgId);
-      await loadStaff(orgId);
-    }
-  };
-
-  const handleAssignPlan = async () => {
-    if (!selectedPlan || !assignPlanModal.org) return;
-    
-    try {
-      await api.post(`/superadmin/organizations/${assignPlanModal.org.organization_id}/assign-plan`, {
-        plan_id: selectedPlan,
-        billing_cycle: selectedCycle
-      });
-      toast.success("Paket başarıyla atandı");
-      setAssignPlanModal({ open: false, org: null });
-      setSelectedPlan('');
-      setSelectedCycle('monthly');
-      loadData();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || "Paket atanamadı");
-    }
-  };
-
-  const handleDeleteOrganization = async (org) => {
-    if (!window.confirm(`"${org.isletme_adi}" işletmesini ve TÜM VERİLERİNİ silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!`)) {
-      return;
-    }
-    
-    try {
-      await api.delete(`/superadmin/organizations/${org.organization_id}`);
-      toast.success("İşletme silindi");
-      loadData();
-    } catch (error) {
-      toast.error("İşletme silinemedi");
-    }
-  };
-
-  const handleDeleteStaff = async (orgId, staffId, staffName) => {
-    if (!window.confirm(`"${staffName}" personelini silmek istediğinize emin misiniz?`)) {
-      return;
-    }
-    
-    try {
-      await api.delete(`/superadmin/organizations/${orgId}/staff/${staffId}`);
-      toast.success("Personel silindi");
-      loadStaff(orgId);
-      loadData();
-    } catch (error) {
-      toast.error("Personel silinemedi");
-    }
-  };
-
-  const handleStatusUpdate = async (contactId, newStatus) => {
-    try {
-      await api.put(`/superadmin/contact-requests/${contactId}/status`, { status: newStatus });
-      setContactRequests(prev => 
-        prev.map(contact => contact.id === contactId ? { ...contact, status: newStatus } : contact)
-      );
-      toast.success("Durum güncellendi");
-    } catch (error) {
-      toast.error("Durum güncellenirken hata oluştu");
-    }
-  };
-
-  const handleDeleteContact = async (contactId) => {
-    if (!window.confirm("Bu iletişim talebini silmek istediğinize emin misiniz?")) return;
-    try {
-      await api.delete(`/superadmin/contact-requests/${contactId}`);
-      setContactRequests(prev => prev.filter(contact => contact.id !== contactId));
-      toast.success("İletişim talebi silindi");
-    } catch (error) {
-      toast.error("Silme işlemi başarısız");
-    }
-  };
-
-  // Filtreleme ve sıralama
-  const filteredAndSortedOrgs = useMemo(() => {
-    let filtered = organizations.filter(org => {
-      const searchLower = searchTerm.toLowerCase();
-      return (
-        org.isletme_adi?.toLowerCase().includes(searchLower) ||
-        org.telefon_numarasi?.includes(searchTerm) ||
-        org.admin_full_name?.toLowerCase().includes(searchLower) ||
-        org.admin_email?.toLowerCase().includes(searchLower)
-      );
-    });
-
-    if (sortConfig.key) {
-      filtered.sort((a, b) => {
-        let aVal = a[sortConfig.key];
-        let bVal = b[sortConfig.key];
-        if (typeof aVal === 'number' && typeof bVal === 'number') {
-          return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
-        }
-        aVal = String(aVal || '').toLowerCase();
-        bVal = String(bVal || '').toLowerCase();
-        return sortConfig.direction === 'asc' ? aVal.localeCompare(bVal, 'tr') : bVal.localeCompare(aVal, 'tr');
-      });
-    }
-    return filtered;
-  }, [organizations, searchTerm, sortConfig]);
-
-  const filteredAndSortedContacts = useMemo(() => {
-    let filtered = contactRequests.filter(contact => {
-      const searchLower = contactSearchTerm.toLowerCase();
-      return (
-        contact.name?.toLowerCase().includes(searchLower) ||
-        contact.phone?.includes(contactSearchTerm) ||
-        contact.email?.toLowerCase().includes(searchLower)
-      );
-    });
-
-    if (contactSortConfig.key) {
-      filtered.sort((a, b) => {
-        let aVal = a[contactSortConfig.key];
-        let bVal = b[contactSortConfig.key];
-        if (contactSortConfig.key === 'created_at') {
-          aVal = new Date(aVal || 0).getTime();
-          bVal = new Date(bVal || 0).getTime();
-        }
-        if (typeof aVal === 'string') aVal = aVal.toLowerCase();
-        if (typeof bVal === 'string') bVal = bVal.toLowerCase();
-        return contactSortConfig.direction === 'asc' ? (aVal > bVal ? 1 : -1) : (aVal < bVal ? 1 : -1);
-      });
-    }
-    return filtered;
-  }, [contactRequests, contactSearchTerm, contactSortConfig]);
-
-  const handleSort = (key) => {
-    setSortConfig(prev => ({
-      key,
-      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
-    }));
-  };
-
-  const SortIcon = ({ columnKey }) => {
-    if (sortConfig.key !== columnKey) return <ArrowUpDown className="ml-1 h-3 w-3 text-gray-400" />;
-    return sortConfig.direction === 'asc' 
-      ? <ArrowUp className="ml-1 h-3 w-3 text-blue-600" />
-      : <ArrowDown className="ml-1 h-3 w-3 text-blue-600" />;
-  };
-
-  if (loading && !stats) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Yükleniyor...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header - Mobile Responsive */}
-      <div className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => onNavigate && onNavigate('dashboard')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <div>
-                <h1 className="text-xl md:text-2xl font-bold text-gray-900">Super Admin</h1>
-                <p className="text-xs md:text-sm text-gray-500 hidden sm:block">Platform Yönetimi</p>
-              </div>
-            </div>
-            <button
-              onClick={loadData}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Yenile"
-            >
-              <Settings className="w-5 h-5 text-gray-600" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 py-4 md:py-6">
-        {/* Stats Cards - Mobile Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-          <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Building2 className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">İşletme</p>
-                <p className="text-xl font-bold">{stats?.toplam_isletme || 0}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <DollarSign className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Aylık Gelir</p>
-                <p className="text-xl font-bold">{(stats?.toplam_gelir_bu_ay || 0).toLocaleString('tr-TR')}₺</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Calendar className="h-5 w-5 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Randevu</p>
-                <p className="text-xl font-bold">{(stats?.toplam_randevu_bu_ay || 0).toLocaleString('tr-TR')}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-orange-100 rounded-lg">
-                <Users className="h-5 w-5 text-orange-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Kullanıcı</p>
-                <p className="text-xl font-bold">{(stats?.toplam_aktif_kullanici || 0).toLocaleString('tr-TR')}</p>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-          <button
-            onClick={() => setActiveTab("organizations")}
-            className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors ${
-              activeTab === "organizations"
-                ? "bg-blue-600 text-white"
-                : "bg-white text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            İşletmeler ({organizations.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("contacts")}
-            className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors relative ${
-              activeTab === "contacts"
-                ? "bg-blue-600 text-white"
-                : "bg-white text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            İletişim ({contactRequests.length})
-            {contactRequests.filter(c => c.status === "pending").length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {contactRequests.filter(c => c.status === "pending").length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("whatsapp")}
-            className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors relative ${
-              activeTab === "whatsapp"
-                ? "bg-green-600 text-white"
-                : "bg-white text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            WhatsApp Logları
-            {whatsappLogs.summary.failed > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {whatsappLogs.summary.failed}
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Organizations Tab */}
-        {activeTab === "organizations" && (
-          <div className="space-y-4">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="İşletme, telefon veya admin adı ile ara..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-white"
-              />
-            </div>
-
-            {/* Sort Buttons - Mobile */}
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              {[
-                { key: 'isletme_adi', label: 'Ad' },
-                { key: 'abonelik_paketi', label: 'Paket' },
-                { key: 'days_left', label: 'Kalan Gün' },
-                { key: 'toplam_odeme', label: 'Ödeme' },
-              ].map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => handleSort(key)}
-                  className={`flex items-center px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                    sortConfig.key === key ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {label}
-                  <SortIcon columnKey={key} />
-                </button>
-              ))}
-            </div>
-
-            {/* Organizations List - Card Based for Mobile */}
-            <div className="space-y-3">
-              {filteredAndSortedOrgs.length === 0 ? (
-                <Card className="p-8 text-center text-gray-500">
-                  {searchTerm ? "Arama sonucu bulunamadı" : "Henüz işletme kaydı yok"}
-                </Card>
-              ) : (
-                filteredAndSortedOrgs.map((org) => (
-                  <Card key={org.organization_id} className="overflow-hidden">
-                    {/* Main Row */}
-                    <div 
-                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                      onClick={() => handleExpandOrg(org.organization_id)}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-gray-900 truncate">{org.isletme_adi}</h3>
-                            {org.billing_cycle === 'yearly' && (
-                              <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                                Yıllık
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-500 truncate">{org.admin_full_name} • {org.admin_email}</p>
-                          <p className="text-sm text-gray-500">{org.telefon_numarasi}</p>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            org.abonelik_paketi === 'Premium' ? 'bg-purple-100 text-purple-700' :
-                            org.abonelik_paketi === 'Business' ? 'bg-indigo-100 text-indigo-700' :
-                            org.plan_id === 'tier_trial' ? 'bg-gray-100 text-gray-700' :
-                            'bg-blue-100 text-blue-700'
-                          }`}>
-                            {org.abonelik_paketi}
-                          </span>
-                          <span className={`text-xs font-medium ${
-                            org.days_left !== null && org.days_left <= 3 ? 'text-red-600' :
-                            org.days_left !== null && org.days_left <= 7 ? 'text-yellow-600' :
-                            'text-gray-500'
-                          }`}>
-                            {org.abonelik_durumu}
-                          </span>
-                        </div>
-                      </div>
-                      
-                      {/* Stats Row */}
-                      <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5" />
-                          {org.bu_ayki_randevu_sayisi} randevu
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Users className="w-3.5 h-3.5" />
-                          {org.toplam_personel_sayisi} personel
-                        </span>
-                        <span className="flex items-center gap-1 font-semibold text-gray-900">
-                          <CreditCard className="w-3.5 h-3.5" />
-                          {org.toplam_odeme.toLocaleString('tr-TR')} ₺
-                        </span>
-                        {expandedOrg === org.organization_id ? (
-                          <ChevronUp className="w-4 h-4 ml-auto" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4 ml-auto" />
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Expanded Content */}
-                    {expandedOrg === org.organization_id && (
-                      <div className="border-t bg-gray-50 p-4 space-y-4">
-                        {/* Actions */}
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAssignPlanModal({ open: true, org });
-                              setSelectedPlan(org.plan_id);
-                              setSelectedCycle(org.billing_cycle);
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                          >
-                            <Package className="w-4 h-4" />
-                            Paket Ata
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteOrganization(org);
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            İşletmeyi Sil
-                          </button>
-                        </div>
-
-                        {/* Staff List */}
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-700 mb-2">Personeller ({staffList.length})</h4>
-                          {loadingStaff ? (
-                            <p className="text-sm text-gray-500">Yükleniyor...</p>
-                          ) : staffList.length === 0 ? (
-                            <p className="text-sm text-gray-500">Personel yok</p>
-                          ) : (
-                            <div className="space-y-2">
-                              {staffList.map((staff) => (
-                                <div key={staff.id} className="flex items-center justify-between bg-white p-3 rounded-lg">
-                                  <div>
-                                    <p className="text-sm font-medium text-gray-900">{staff.full_name}</p>
-                                    <p className="text-xs text-gray-500">{staff.username}</p>
-                                  </div>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteStaff(org.organization_id, staff.id, staff.full_name);
-                                    }}
-                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                  >
-                                    <UserX className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </Card>
-                ))
-              )}
-            </div>
-
-            <p className="text-sm text-gray-500 text-center">
-              Toplam {filteredAndSortedOrgs.length} işletme
-            </p>
-          </div>
-        )}
-
-        {/* WhatsApp Logs Tab */}
-        {activeTab === "whatsapp" && (
-          <div className="space-y-4">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { key: "",          label: "Toplam",     value: whatsappLogs.total,              icon: MessageSquare, color: "blue" },
-                { key: "sent",      label: "Gönderildi", value: whatsappLogs.summary.sent,       icon: Send,          color: "indigo" },
-                { key: "delivered", label: "İletildi",   value: whatsappLogs.summary.delivered,  icon: CheckCheck,    color: "green" },
-                { key: "read",      label: "Okundu",     value: whatsappLogs.summary.read,       icon: Eye,           color: "purple" },
-                { key: "failed",    label: "Başarısız",  value: whatsappLogs.summary.failed,     icon: AlertTriangle, color: "red" },
-              ].map(({ key, label, value, icon: Icon, color }) => (
-                <Card
-                  key={key}
-                  onClick={() => setWaLogFilter(waLogFilter === key ? "" : key)}
-                  className={`p-3 cursor-pointer transition-all ${
-                    waLogFilter === key ? `ring-2 ring-${color}-500` : "hover:shadow-md"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className={`p-1.5 bg-${color}-100 rounded-lg`}>
-                      <Icon className={`h-4 w-4 text-${color}-600`} />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">{label}</p>
-                      <p className="text-lg font-bold">{value}</p>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-
-            {/* Filter bar */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">
-                {waLogFilter ? `Filtre: ${waLogFilter}` : "Tümü gösteriliyor"}
-              </span>
-              {waLogFilter && (
-                <button
-                  onClick={() => setWaLogFilter("")}
-                  className="text-xs text-blue-600 underline"
-                >
-                  Filtreyi kaldır
-                </button>
-              )}
-              <button
-                onClick={() => loadWhatsappLogs(waLogFilter)}
-                className="ml-auto flex items-center gap-1 px-3 py-1.5 bg-white border rounded-lg text-sm text-gray-600 hover:bg-gray-50"
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingWaLogs ? "animate-spin" : ""}`} />
-                Yenile
-              </button>
-            </div>
-
-            {/* Logs List */}
-            {loadingWaLogs ? (
-              <Card className="p-8 text-center text-gray-500">Yükleniyor...</Card>
-            ) : whatsappLogs.logs.length === 0 ? (
-              <Card className="p-8 text-center text-gray-500">
-                {waLogFilter ? `"${waLogFilter}" durumunda log bulunamadı` : "Henüz WhatsApp log kaydı yok"}
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {whatsappLogs.logs.map((log, idx) => (
-                  <Card key={`${log.message_id}-${idx}`} className="p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            log.status === "read"      ? "bg-purple-100 text-purple-700" :
-                            log.status === "delivered" ? "bg-green-100 text-green-700" :
-                            log.status === "sent"      ? "bg-indigo-100 text-indigo-700" :
-                            log.status === "failed"    ? "bg-red-100 text-red-700" :
-                            "bg-gray-100 text-gray-700"
-                          }`}>
-                            {log.status === "read"      && <Eye className="w-3 h-3" />}
-                            {log.status === "delivered" && <CheckCheck className="w-3 h-3" />}
-                            {log.status === "sent"      && <Send className="w-3 h-3" />}
-                            {log.status === "failed"    && <AlertTriangle className="w-3 h-3" />}
-                            {log.status === "read" ? "Okundu" :
-                             log.status === "delivered" ? "İletildi" :
-                             log.status === "sent" ? "Gönderildi" :
-                             log.status === "failed" ? "Başarısız" : log.status}
-                          </span>
-                          <span className="text-sm font-medium text-gray-800 flex items-center gap-1">
-                            <Phone className="w-3 h-3 text-gray-400" />
-                            +{log.recipient}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-400 mt-1 font-mono truncate">{log.message_id}</p>
-                        {log.errors?.length > 0 && (
-                          <div className="mt-1 p-2 bg-red-50 rounded text-xs text-red-700">
-                            {log.errors.map((e, i) => (
-                              <p key={i}><strong>{e.code}</strong>: {e.title || e.message || JSON.stringify(e)}</p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs text-gray-400">
-                          {log.recorded_at ? new Date(log.recorded_at).toLocaleString("tr-TR") : "-"}
-                        </p>
-                        {log.timestamp && (
-                          <p className="text-xs text-gray-300">
-                            {new Date(log.timestamp * 1000).toLocaleTimeString("tr-TR")}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-
-            <p className="text-sm text-gray-500 text-center">
-              {whatsappLogs.logs.length} kayıt gösteriliyor (toplam {whatsappLogs.total})
-            </p>
-          </div>
-        )}
-
-        {/* Contacts Tab */}
-        {activeTab === "contacts" && (
-          <div className="space-y-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="Ad, telefon veya e-posta ile ara..."
-                value={contactSearchTerm}
-                onChange={(e) => setContactSearchTerm(e.target.value)}
-                className="pl-10 bg-white"
-              />
-            </div>
-
-            <div className="space-y-3">
-              {filteredAndSortedContacts.length === 0 ? (
-                <Card className="p-8 text-center text-gray-500">
-                  {contactSearchTerm ? "Arama sonucu bulunamadı" : "Henüz iletişim talebi yok"}
-                </Card>
-              ) : (
-                filteredAndSortedContacts.map((contact) => (
-                  <Card key={contact.id} className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-gray-900">{contact.name}</h3>
-                        <div className="flex flex-wrap gap-3 mt-1 text-sm text-gray-500">
-                          <a href={`tel:${contact.phone}`} className="flex items-center gap-1 text-blue-600">
-                            <Phone className="w-3.5 h-3.5" />
-                            {contact.phone}
-                          </a>
-                          {contact.email && (
-                            <a href={`mailto:${contact.email}`} className="flex items-center gap-1 text-blue-600">
-                              <Mail className="w-3.5 h-3.5" />
-                              {contact.email}
-                            </a>
-                          )}
-                        </div>
-                        {contact.message && (
-                          <p className="mt-2 text-sm text-gray-600 bg-gray-50 p-2 rounded">{contact.message}</p>
-                        )}
-                        <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
-                          <Clock className="w-3.5 h-3.5" />
-                          {contact.created_at ? new Date(contact.created_at).toLocaleString('tr-TR') : '-'}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          contact.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                          contact.status === 'contacted' ? 'bg-green-100 text-green-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {contact.status === 'pending' ? 'Beklemede' :
-                           contact.status === 'contacted' ? 'Ulaşıldı' : contact.status}
-                        </span>
-                        <div className="flex gap-1">
-                          {contact.status !== 'contacted' && (
-                            <button
-                              onClick={() => handleStatusUpdate(contact.id, 'contacted')}
-                              className="p-1.5 bg-green-100 text-green-600 rounded hover:bg-green-200 transition-colors"
-                              title="Ulaşıldı"
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteContact(contact.id)}
-                            className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
-                            title="Sil"
-                          >
-                            <Trash className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Assign Plan Modal */}
-      {assignPlanModal.open && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Paket Ata</h3>
-              <button
-                onClick={() => setAssignPlanModal({ open: false, org: null })}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <p className="text-sm text-gray-500 mb-4">
-              <strong>{assignPlanModal.org?.isletme_adi}</strong> için paket seçin
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Paket</label>
-                <select
-                  value={selectedPlan}
-                  onChange={(e) => setSelectedPlan(e.target.value)}
-                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Seçin...</option>
-                  {plans.map((plan) => (
-                    <option key={plan.id} value={plan.id}>
-                      {plan.name} - {plan.price_monthly}₺/ay
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {selectedPlan && selectedPlan !== 'tier_trial' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Periyot</label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setSelectedCycle('monthly')}
-                      className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                        selectedCycle === 'monthly'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Aylık
-                    </button>
-                    <button
-                      onClick={() => setSelectedCycle('yearly')}
-                      className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                        selectedCycle === 'yearly'
-                          ? 'bg-green-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Yıllık
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={handleAssignPlan}
-                disabled={!selectedPlan}
-                className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Paketi Ata
-              </button>
-            </div>
-          </div>
-        </div>
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
       )}
+
+      {/* Sidebar */}
+      <aside className={`
+        fixed lg:static inset-y-0 left-0 z-30 w-64 bg-slate-900 flex flex-col
+        transform transition-transform duration-200 ease-in-out
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+      `}>
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-700">
+          <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-sm">P</span>
+          </div>
+          <div>
+            <p className="text-white font-bold text-sm leading-none">PLANN</p>
+            <p className="text-slate-400 text-xs mt-0.5">Super Admin</p>
+          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="ml-auto p-1 text-slate-400 hover:text-white lg:hidden"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => { setActiveTab(id); setSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === id
+                  ? "bg-indigo-600 text-white"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Logout */}
+        <div className="px-3 py-4 border-t border-slate-700">
+          <button
+            onClick={() => { logout(); }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Çıkış Yap
+          </button>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top bar */}
+        <header className="bg-white border-b border-gray-200 flex items-center gap-4 px-4 py-3 flex-shrink-0">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 lg:hidden"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <h1 className="text-lg font-semibold text-gray-900">
+            {NAV_ITEMS.find(n => n.id === activeTab)?.label || "Genel Bakış"}
+          </h1>
+        </header>
+
+        {/* View content */}
+        <main className="flex-1 overflow-y-auto">
+          {renderContent()}
+        </main>
+      </div>
     </div>
   );
 };

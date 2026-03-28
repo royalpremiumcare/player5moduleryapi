@@ -25,6 +25,8 @@ import json
 import secrets
 import io
 from PIL import Image as PilImage
+import openpyxl
+import csv
 
 from contextlib import asynccontextmanager
 from passlib.context import CryptContext
@@ -1473,6 +1475,13 @@ async def get_superadmin_user(request: Request, token: str = Depends(oauth2_sche
     user = await get_current_user(request, token, db)
     if user.role != "superadmin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu işlem için superadmin yetkisi gereklidir")
+    return user
+
+async def get_marketing_user(request: Request, token: str = Depends(oauth2_scheme), db = Depends(get_db)):
+    """Sadece marketing rolüne sahip kullanıcılar için dependency"""
+    user = await get_current_user(request, token, db)
+    if user.role != "marketing":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu işlem için marketing yetkisi gereklidir")
     return user
 
 # --- KOTA YÖNETİM FONKSİYONLARI ---
@@ -10895,6 +10904,535 @@ async def get_whatsapp_message_logs(
     except Exception as e:
         logging.error(f"Error in get_whatsapp_message_logs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="WhatsApp logları alınırken hata oluştu")
+
+# === SUPERADMIN FINANCIAL STATS ===
+@api_router.get("/superadmin/financial-stats")
+async def get_financial_stats(request: Request, current_user: UserInDB = Depends(get_superadmin_user), db = Depends(get_db)):
+    """SaaS finansal özet: MRR, Toplam Ciro, Aktif İşletme, Churn"""
+    try:
+        now = datetime.now(timezone.utc)
+        first_day = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        thirty_days_ago = now - timedelta(days=30)
+
+        # Tüm org plan kayıtları
+        all_plans = await db.organization_plans.find({}, {"_id": 0}).to_list(10000)
+        active_plans = [p for p in all_plans if p.get("status") == "active"]
+
+        # MRR hesabı
+        plan_prices = {p["id"]: p.get("price_monthly", 0) for p in PLANS}
+        mrr = 0
+        for p in active_plans:
+            pid = p.get("plan_id", "")
+            cycle = p.get("billing_cycle", "monthly")
+            price = plan_prices.get(pid, 0)
+            if cycle == "yearly":
+                mrr += price  # zaten aylık fiyat
+            else:
+                mrr += price
+
+        # Toplam ciro (tüm zamanlar — payment_history)
+        all_payments = await db.payment_history.find({}, {"_id": 0, "amount": 1}).to_list(100000)
+        total_revenue = sum(p.get("amount", 0) for p in all_payments)
+
+        # Aktif işletme sayısı
+        active_count = len(active_plans)
+
+        # Churn: son 30 günde süresi dolmuş / iptal edilmiş
+        churn_count = await db.organization_plans.count_documents({
+            "status": {"$in": ["expired", "cancelled"]},
+            "updated_at": {"$gte": thirty_days_ago.isoformat()}
+        })
+
+        # Bu ay yeni kayıtlar
+        new_this_month = await db.users.count_documents({
+            "role": "admin",
+            "created_at": {"$gte": first_day.isoformat()}
+        })
+
+        # WhatsApp başarı oranı (son 7 gün)
+        seven_days_ago = now - timedelta(days=7)
+        wa_total = await db.whatsapp_message_logs.count_documents({
+            "recorded_at": {"$gte": seven_days_ago.isoformat()}
+        })
+        wa_success = await db.whatsapp_message_logs.count_documents({
+            "status": {"$in": ["delivered", "read"]},
+            "recorded_at": {"$gte": seven_days_ago.isoformat()}
+        })
+        wa_success_rate = round((wa_success / wa_total * 100) if wa_total > 0 else 0, 1)
+
+        # Toplam randevu bu ay
+        total_appointments_month = await db.appointments.count_documents({
+            "created_at": {"$gte": first_day.isoformat()}
+        })
+
+        return {
+            "mrr": mrr,
+            "total_revenue": total_revenue,
+            "active_businesses": active_count,
+            "churn_last_30d": churn_count,
+            "new_registrations_this_month": new_this_month,
+            "wa_success_rate": wa_success_rate,
+            "total_appointments_this_month": total_appointments_month,
+        }
+    except Exception as e:
+        logging.error(f"Error in get_financial_stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Finansal istatistikler alınamadı")
+
+
+# === SUPERADMIN — MARKETING KULLANICI YÖNETİMİ ===
+class MarketingUserCreate(BaseModel):
+    username: str
+    password: str
+    full_name: Optional[str] = None
+
+@api_router.post("/superadmin/users/marketing")
+async def create_marketing_user(
+    request: Request,
+    user_data: MarketingUserCreate,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """Marketing kullanıcısı oluştur - Sadece superadmin"""
+    existing = await db.users.find_one({"username": user_data.username.lower().strip()})
+    if existing:
+        raise HTTPException(status_code=400, detail="Bu kullanıcı adı zaten kullanılıyor")
+    hashed = pwd_context.hash(user_data.password)
+    new_user = {
+        "id": str(uuid.uuid4()),
+        "username": user_data.username.lower().strip(),
+        "full_name": user_data.full_name or user_data.username,
+        "role": "marketing",
+        "organization_id": "global",
+        "hashed_password": hashed,
+        "status": "active",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.insert_one(new_user)
+    new_user.pop("hashed_password", None)
+    new_user.pop("_id", None)
+    logging.info(f"Marketing kullanıcısı oluşturuldu: {new_user['username']}")
+    return {"message": "Marketing kullanıcısı oluşturuldu", "user": new_user}
+
+@api_router.get("/superadmin/users/marketing")
+async def list_marketing_users(
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """Marketing kullanıcılarını listele"""
+    users = await db.users.find({"role": "marketing"}, {"_id": 0, "hashed_password": 0}).to_list(500)
+    return {"users": users}
+
+@api_router.delete("/superadmin/users/marketing/{user_id}")
+async def delete_marketing_user(
+    request: Request,
+    user_id: str,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """Marketing kullanıcısını sil"""
+    result = await db.users.delete_one({"id": user_id, "role": "marketing"})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    return {"message": "Kullanıcı silindi"}
+
+
+# === SUPERADMIN — LEAD YÖNETİMİ ===
+LEAD_CLAIM_TIMEOUT_MINUTES = 15
+
+async def _release_expired_claims(db):
+    """Süresi dolmuş claim'leri havuza geri at ve sistem logu düş"""
+    timeout_dt = datetime.now(timezone.utc) - timedelta(minutes=LEAD_CLAIM_TIMEOUT_MINUTES)
+    expired = await db.leads.find({
+        "status": "claimed",
+        "claimed_at": {"$lt": timeout_dt.isoformat()}
+    }, {"_id": 0}).to_list(1000)
+    for lead in expired:
+        system_log = {
+            "action": "timeout_expired",
+            "user": lead.get("claimed_by_name", "?"),
+            "user_id": lead.get("claimed_by"),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "note": f"15 dakika süre doldu, {lead.get('claimed_by_name', '?')} işlem yapmadan süresi doldu"
+        }
+        await db.leads.update_one(
+            {"id": lead["id"]},
+            {"$set": {"status": "pool", "claimed_by": None, "claimed_at": None, "claimed_by_name": None},
+             "$push": {"system_logs": system_log}}
+        )
+    return len(expired)
+
+@api_router.post("/superadmin/leads/upload/preview")
+async def preview_lead_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: UserInDB = Depends(get_superadmin_user),
+):
+    """CSV/XLSX dosyasının sütunlarını ve ilk 5 satırını döndür"""
+    try:
+        content = await file.read()
+        filename = (file.filename or "").lower()
+        columns = []
+        preview_rows = []
+
+        if filename.endswith(".csv"):
+            text = content.decode("utf-8-sig", errors="replace")
+            reader = csv.DictReader(io.StringIO(text))
+            columns = list(reader.fieldnames or [])
+            for i, row in enumerate(reader):
+                if i >= 5:
+                    break
+                preview_rows.append(dict(row))
+        elif filename.endswith(".xlsx") or filename.endswith(".xls"):
+            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+            if rows:
+                columns = [str(c) if c is not None else "" for c in rows[0]]
+                for row in rows[1:6]:
+                    preview_rows.append({columns[i]: (str(row[i]) if row[i] is not None else "") for i in range(len(columns))})
+        else:
+            raise HTTPException(status_code=400, detail="Desteklenmeyen dosya formatı. CSV veya XLSX yükleyin.")
+
+        return {"columns": columns, "preview": preview_rows, "filename": file.filename}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Lead upload preview error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Dosya okunamadı: {str(e)}")
+
+class LeadUploadConfirm(BaseModel):
+    filename: str
+    batch_name: str
+    company_col: str
+    phone_col: str
+    file_data: str  # base64 encoded
+
+@api_router.post("/superadmin/leads/upload/confirm")
+async def confirm_lead_upload(
+    request: Request,
+    payload: LeadUploadConfirm,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """Column mapping ile lead'leri yükle"""
+    try:
+        import base64 as b64
+        content = b64.b64decode(payload.file_data)
+        filename = payload.filename.lower()
+        rows = []
+
+        if filename.endswith(".csv"):
+            text = content.decode("utf-8-sig", errors="replace")
+            reader = csv.DictReader(io.StringIO(text))
+            for row in reader:
+                rows.append(dict(row))
+        else:
+            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+            ws = wb.active
+            all_rows = list(ws.iter_rows(values_only=True))
+            if all_rows:
+                cols = [str(c) if c is not None else "" for c in all_rows[0]]
+                for row in all_rows[1:]:
+                    rows.append({cols[i]: (str(row[i]) if row[i] is not None else "") for i in range(len(cols))})
+
+        batch_id = str(uuid.uuid4())
+        now_iso = datetime.now(timezone.utc).isoformat()
+        leads_to_insert = []
+        skipped = 0
+        for row in rows:
+            company = str(row.get(payload.company_col, "") or "").strip()
+            phone = str(row.get(payload.phone_col, "") or "").strip()
+            if not company and not phone:
+                skipped += 1
+                continue
+            leads_to_insert.append({
+                "id": str(uuid.uuid4()),
+                "batch_id": batch_id,
+                "batch_name": payload.batch_name,
+                "company_name": company,
+                "phone": phone,
+                "status": "pool",
+                "claimed_by": None,
+                "claimed_at": None,
+                "claimed_by_name": None,
+                "note": "",
+                "system_logs": [],
+                "uploaded_by": current_user.id,
+                "uploaded_by_name": current_user.full_name or current_user.username,
+                "created_at": now_iso,
+                "updated_at": now_iso,
+            })
+
+        if leads_to_insert:
+            await db.leads.insert_many(leads_to_insert)
+
+        # Batch kaydı
+        await db.lead_batches.insert_one({
+            "id": batch_id,
+            "batch_name": payload.batch_name,
+            "total": len(leads_to_insert),
+            "skipped": skipped,
+            "uploaded_by": current_user.id,
+            "uploaded_by_name": current_user.full_name or current_user.username,
+            "created_at": now_iso,
+        })
+        logging.info(f"Lead upload: {len(leads_to_insert)} lead yüklendi, batch={batch_id}")
+        return {"message": f"{len(leads_to_insert)} lead yüklendi", "batch_id": batch_id, "total": len(leads_to_insert), "skipped": skipped}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Lead upload confirm error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Yükleme başarısız: {str(e)}")
+
+@api_router.get("/superadmin/leads")
+async def get_all_leads(
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db),
+    status_filter: Optional[str] = None,
+    batch_id: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100
+):
+    """Tüm leadleri listele (superadmin)"""
+    await _release_expired_claims(db)
+    query = {}
+    if status_filter:
+        query["status"] = status_filter
+    if batch_id:
+        query["batch_id"] = batch_id
+    if assigned_to:
+        query["claimed_by"] = assigned_to
+    total = await db.leads.count_documents(query)
+    leads = await db.leads.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return {"leads": leads, "total": total}
+
+@api_router.get("/superadmin/leads/stats")
+async def get_lead_stats(
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """Lead dönüşüm istatistikleri"""
+    await _release_expired_claims(db)
+    total = await db.leads.count_documents({})
+    pool = await db.leads.count_documents({"status": "pool"})
+    claimed = await db.leads.count_documents({"status": "claimed"})
+    interested = await db.leads.count_documents({"status": "interested"})
+    unreachable = await db.leads.count_documents({"status": "unreachable"})
+    not_interested = await db.leads.count_documents({"status": "not_interested"})
+    waiting = await db.leads.count_documents({"status": "waiting"})
+    registered = await db.leads.count_documents({"status": "registered"})
+    called = total - pool
+    conversion_rate = round((registered / called * 100) if called > 0 else 0, 1)
+    return {
+        "total": total, "pool": pool, "claimed": claimed,
+        "interested": interested, "unreachable": unreachable,
+        "not_interested": not_interested, "waiting": waiting,
+        "registered": registered, "called": called,
+        "conversion_rate": conversion_rate
+    }
+
+@api_router.get("/superadmin/leads/batches")
+async def get_lead_batches(
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """Yükleme geçmişi"""
+    batches = await db.lead_batches.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"batches": batches}
+
+@api_router.delete("/superadmin/leads/batch/{batch_id}")
+async def delete_lead_batch(
+    request: Request,
+    batch_id: str,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """Yükleme grubunu ve tüm leadlerini sil"""
+    result = await db.leads.delete_many({"batch_id": batch_id})
+    await db.lead_batches.delete_one({"id": batch_id})
+    return {"message": f"{result.deleted_count} lead silindi"}
+
+@api_router.delete("/superadmin/leads/{lead_id}")
+async def delete_single_lead(
+    request: Request,
+    lead_id: str,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    await db.leads.delete_one({"id": lead_id})
+    return {"message": "Lead silindi"}
+
+
+# === MARKETING — TELE-SATIŞ CRM ===
+@api_router.get("/marketing/leads")
+async def get_marketing_leads(
+    request: Request,
+    current_user: UserInDB = Depends(get_marketing_user),
+    db = Depends(get_db),
+    tab: str = "pool"  # "pool" | "mine"
+):
+    """Havuz leadleri veya benim leadlerim"""
+    await _release_expired_claims(db)
+    if tab == "mine":
+        query = {"claimed_by": current_user.id, "status": {"$in": ["claimed", "interested", "unreachable", "not_interested", "waiting", "registered"]}}
+        leads = await db.leads.find(query, {"_id": 0}).sort("updated_at", -1).to_list(500)
+    else:
+        query = {"status": "pool"}
+        leads = await db.leads.find(query, {"_id": 0}).sort("created_at", 1).to_list(200)
+    return {"leads": leads}
+
+@api_router.post("/marketing/leads/{lead_id}/claim")
+async def claim_lead(
+    request: Request,
+    lead_id: str,
+    current_user: UserInDB = Depends(get_marketing_user),
+    db = Depends(get_db)
+):
+    """Lead'i al (15dk kilit)"""
+    await _release_expired_claims(db)
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead bulunamadı")
+    if lead["status"] != "pool":
+        raise HTTPException(status_code=409, detail="Bu lead başka biri tarafından alınmış")
+    now = datetime.now(timezone.utc).isoformat()
+    system_log = {
+        "action": "claimed",
+        "user": current_user.full_name or current_user.username,
+        "user_id": current_user.id,
+        "timestamp": now,
+        "note": ""
+    }
+    await db.leads.update_one(
+        {"id": lead_id, "status": "pool"},
+        {"$set": {
+            "status": "claimed",
+            "claimed_by": current_user.id,
+            "claimed_by_name": current_user.full_name or current_user.username,
+            "claimed_at": now,
+            "updated_at": now,
+        }, "$push": {"system_logs": system_log}}
+    )
+    updated = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not updated or updated.get("claimed_by") != current_user.id:
+        raise HTTPException(status_code=409, detail="Lead başka biri tarafından alındı")
+    return {"message": "Lead alındı", "lead": updated}
+
+@api_router.put("/marketing/leads/{lead_id}/status")
+async def update_lead_status(
+    request: Request,
+    lead_id: str,
+    current_user: UserInDB = Depends(get_marketing_user),
+    db = Depends(get_db)
+):
+    """Lead durumunu güncelle"""
+    body = await request.json()
+    new_status = body.get("status")
+    note = body.get("note", "").strip()
+    valid_statuses = ["interested", "unreachable", "not_interested", "waiting", "registered"]
+    if new_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail="Geçersiz durum")
+    if new_status in ["not_interested", "waiting"] and not note:
+        raise HTTPException(status_code=400, detail="Bu durum için not zorunludur")
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead bulunamadı")
+    if lead.get("claimed_by") != current_user.id:
+        raise HTTPException(status_code=403, detail="Bu lead size ait değil")
+    now = datetime.now(timezone.utc).isoformat()
+    system_log = {
+        "action": f"status_updated_{new_status}",
+        "user": current_user.full_name or current_user.username,
+        "user_id": current_user.id,
+        "timestamp": now,
+        "note": note
+    }
+    update_data = {
+        "status": new_status,
+        "note": note,
+        "updated_at": now,
+        "claimed_by": None,
+        "claimed_at": None,
+        "claimed_by_name": None,
+    }
+    await db.leads.update_one(
+        {"id": lead_id},
+        {"$set": update_data, "$push": {"system_logs": system_log}}
+    )
+    updated = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    return {"message": "Durum güncellendi", "lead": updated}
+
+@api_router.post("/marketing/leads/{lead_id}/release")
+async def release_lead(
+    request: Request,
+    lead_id: str,
+    current_user: UserInDB = Depends(get_marketing_user),
+    db = Depends(get_db)
+):
+    """Lead'i havuza geri bırak"""
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead bulunamadı")
+    if lead.get("claimed_by") != current_user.id:
+        raise HTTPException(status_code=403, detail="Bu lead size ait değil")
+    now = datetime.now(timezone.utc).isoformat()
+    system_log = {
+        "action": "manual_release",
+        "user": current_user.full_name or current_user.username,
+        "user_id": current_user.id,
+        "timestamp": now,
+        "note": "Manuel bırakıldı"
+    }
+    await db.leads.update_one(
+        {"id": lead_id},
+        {"$set": {"status": "pool", "claimed_by": None, "claimed_at": None, "claimed_by_name": None, "updated_at": now},
+         "$push": {"system_logs": system_log}}
+    )
+    return {"message": "Lead havuza bırakıldı"}
+
+@api_router.get("/marketing/my-stats")
+async def get_my_marketing_stats(
+    request: Request,
+    current_user: UserInDB = Depends(get_marketing_user),
+    db = Depends(get_db)
+):
+    """Pazarlamacının kendi istatistikleri"""
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    total_called = await db.leads.count_documents({"claimed_by": current_user.id, "status": {"$nin": ["pool", "claimed"]}})
+    interested = await db.leads.count_documents({"claimed_by": current_user.id, "status": "interested"})
+    registered = await db.leads.count_documents({"claimed_by": current_user.id, "status": "registered"})
+    # Bugün güncellenenler (yaklaşık)
+    today_leads = await db.leads.count_documents({
+        "claimed_by": current_user.id,
+        "updated_at": {"$gte": today_start}
+    })
+    conversion = round((registered / total_called * 100) if total_called > 0 else 0, 1)
+    return {
+        "total_called": total_called,
+        "today_called": today_leads,
+        "interested": interested,
+        "registered": registered,
+        "conversion_rate": conversion
+    }
+
+@api_router.get("/marketing/profile")
+async def get_marketing_profile(
+    request: Request,
+    current_user: UserInDB = Depends(get_marketing_user),
+):
+    """Marketing kullanıcısının profil bilgileri"""
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "full_name": current_user.full_name,
+        "role": current_user.role,
+    }
+
 
 # === AI CHATBOT ENDPOINT ===
 class AIChatRequest(BaseModel):

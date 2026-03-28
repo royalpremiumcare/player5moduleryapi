@@ -28,6 +28,7 @@ import StaffManagement from "@/components/StaffManagement";
 import AuditLogs from "@/components/AuditLogs";
 import HelpCenter from "@/components/HelpCenter";
 import SuperAdmin from "@/components/SuperAdmin";
+import MarketingPanel from "@/components/MarketingPanel";
 import SetupWizard from "@/components/SetupWizard";
 import ChatWidget from "@/components/ChatWidget";
 import { Calendar, Briefcase, DollarSign, SettingsIcon, Users, Upload, LogOut, Moon, Sun, UserCog, FileText, Home, Plus, CreditCard, User, HelpCircle, Package, Bell } from "lucide-react";
@@ -53,8 +54,13 @@ function App() {
   const bottomNavRef = useRef(null);
 
   const ENABLE_SETUP_WIZARD = false;
+  const isSpecialRole = userRole === 'superadmin' || userRole === 'marketing';
   
-  const [currentView, setCurrentView] = useState("dashboard");
+  const [currentView, setCurrentView] = useState(() => {
+    if (userRole === 'superadmin') return 'superadmin';
+    if (userRole === 'marketing') return 'marketing';
+    return 'dashboard';
+  });
   const [services, setServices] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [stats, setStats] = useState(null);
@@ -363,7 +369,17 @@ function App() {
     }
   }, []);
 
+  // Role-based initial view
   useEffect(() => {
+    if (userRole === 'superadmin') {
+      setCurrentView('superadmin');
+    } else if (userRole === 'marketing') {
+      setCurrentView('marketing');
+    }
+  }, [userRole]);
+
+  useEffect(() => {
+    if (isSpecialRole) return; // superadmin/marketing için veri yükleme
     loadServices();
     loadAppointments();
     loadSettings();
@@ -872,6 +888,14 @@ function App() {
         />
       )}
 
+      {/* Special roles (superadmin, marketing) kendi layout'larını içeriyor */}
+      {isSpecialRole && currentView === 'superadmin' && <SuperAdmin />}
+      {isSpecialRole && currentView === 'marketing' && <MarketingPanel />}
+
+      {/* Normal kullanıcı UI — sadece admin/staff */}
+      {!isSpecialRole && (
+      <>
+
       {/* Safe Area Cover — Status bar arkası beyaz kalması için */}
       <div className="fixed top-0 left-0 right-0 bg-white z-[45]" style={{ height: 'env(safe-area-inset-top, 0px)' }} />
 
@@ -1167,18 +1191,6 @@ function App() {
             }}
           />
         )}
-        {currentView === "superadmin" && userRole === 'superadmin' && (
-          <SuperAdmin 
-            onNavigate={(view) => {
-              setCurrentView(view);
-              setShowForm(false);
-              // Dashboard'a dönünce URL'yi temizle
-              if (view === 'dashboard') {
-                window.history.pushState({}, '', '/');
-              }
-            }}
-          />
-        )}
       </main>
 
       {/* Alt Navigasyon Barı (Dashboard ve Calendar görünümlerinde) */}
@@ -1276,6 +1288,8 @@ function App() {
           externalOpen={chatOpen}
           onExternalClose={() => setChatOpen(false)}
         />
+      )}
+      </>
       )}
     </div>
   );
