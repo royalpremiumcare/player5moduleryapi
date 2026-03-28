@@ -340,9 +340,9 @@ export default function MarketingPanel() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-gray-900 truncate">{lead.company_name}</p>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${st.cls}`}>
+                      <div className="flex items-start gap-2">
+                        <p className="font-semibold text-gray-900 break-words">{lead.company_name}</p>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 mt-0.5 ${st.cls}`}>
                           {st.label}
                         </span>
                       </div>

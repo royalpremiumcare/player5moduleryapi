@@ -82,7 +82,7 @@ const SortableServiceCard = ({ service, i18n, t, onEdit, onDelete }) => {
             </div>
 
             <div className="flex-1 min-w-0">
-              <h3 className="text-base font-black text-zinc-900 mb-1 break-words leading-tight line-clamp-2">{service.name}</h3>
+              <h3 className="text-base font-black text-zinc-900 mb-1 break-words leading-tight">{service.name}</h3>
               <div className="flex items-center gap-3 flex-wrap">
                 <p className="text-lg font-black text-blue-600">{Math.round(service.price)}{i18n.language === 'tr' ? '₺' : '£'}</p>
                 <p className="text-sm text-zinc-600 font-bold">{(service.duration || 30)} {t('services.management.minutes')}</p>
