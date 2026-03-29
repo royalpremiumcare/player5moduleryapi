@@ -902,7 +902,7 @@ function App() {
       {/* TopBar - Üst Navigasyon Barı */}
       {!showForm && (
         <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm" style={{ fontFamily: 'Inter, sans-serif', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-          <div className="container mx-auto px-4 py-3">
+          <div className="container mx-auto px-4 py-1.5">
             <div className="flex items-center justify-between">
               {/* Sol Bölüm: PLANN Logosu */}
               <div className="flex-shrink-0">
