@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Phone, PhoneCall, LogOut, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Pause, Star } from "lucide-react";
+import SalesGuide from "./SalesGuide";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/api";
@@ -180,6 +181,9 @@ export default function MarketingPanel() {
             </div>
           ))}
         </div>
+
+        {/* Satış Rehberi */}
+        <SalesGuide />
 
         {/* Active call card — fixed overlay */}
         {activeLead && (
