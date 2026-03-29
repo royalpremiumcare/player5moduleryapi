@@ -11902,12 +11902,6 @@ async def whatsapp_webhook_api_app(request: Request):
 async def whatsapp_webhook_api(request: Request):
     return await whatsapp_webhook(request)
 
-# === CORS Preflight için OPTIONS handler (router'dan SONRA) ===
-@app.options("/api/{path:path}")
-async def options_handler(response: Response, request: Request):
-    response.status_code = status.HTTP_204_NO_CONTENT
-    return response
-
 # Static files serving for logos (must be after router)
 static_files_dir = str(ROOT_DIR / "static")
 app.mount("/api/static", StaticFiles(directory=static_files_dir), name="static")
