@@ -1102,6 +1102,16 @@
   resolved "https://registry.npmjs.org/@capacitor-community/contacts/-/contacts-7.1.0.tgz"
   integrity sha512-Q1a9UP/5/XaWVMlA7Vtcsj+w488UieJJYEU0DoZaWMn/g5ltvQ3WuWL3nZMZGexqwwSTsPPYVWvhYbYqJ5xFPQ==
 
+"@capacitor-community/speech-recognition@^7.0.1":
+  version "7.0.1"
+  resolved "https://registry.npmjs.org/@capacitor-community/speech-recognition/-/speech-recognition-7.0.1.tgz"
+  integrity sha512-ykpBZziR575X0eURO5vXaD9gVrXXC/7Ra2qql/2KP6/jxWOqAFuw4eKjSPjwdAgGE6a/Z+v8FJm4SVh57MVwDA==
+
+"@capacitor-community/text-to-speech@^6.1.0":
+  version "6.1.0"
+  resolved "https://registry.npmjs.org/@capacitor-community/text-to-speech/-/text-to-speech-6.1.0.tgz"
+  integrity sha512-K9kbQm7BEkUGhZQYMrPaLfHTbOjQPtXZyQTtZxR+lNJyl1pbSFWwRmK3PCIa5C5M2HLf3iPgj/vTaMvMxlk1Ag==
+
 "@capacitor/android@^7.4.4":
   version "7.4.4"
   resolved "https://registry.npmjs.org/@capacitor/android/-/android-7.4.4.tgz"
@@ -1147,6 +1157,11 @@
   dependencies:
     tslib "^2.1.0"
 
+"@capacitor/haptics@^7.0.1":
+  version "7.0.5"
+  resolved "https://registry.npmjs.org/@capacitor/haptics/-/haptics-7.0.5.tgz"
+  integrity sha512-ujXuUkL8UG1YLhuJo/q+jiHr0K5JmclGZHmV1RttmiUBRG1XpC4Fc4gXUJyEX+6IoyfwWhgtPvJFRUB31HYnRQ==
+
 "@capacitor/ios@^7.4.4":
   version "7.4.4"
   resolved "https://registry.npmjs.org/@capacitor/ios/-/ios-7.4.4.tgz"
@@ -1156,6 +1171,11 @@
   version "7.0.3"
   resolved "https://registry.npmjs.org/@capacitor/push-notifications/-/push-notifications-7.0.3.tgz"
   integrity sha512-4qt5dRVBkHzq202NEoj3JC+S+zQCrZ1FJh7sjkICy/i1iEos+VaoB3bie8eWDQ2LTARktB4+k2xkdpu8pcVo/g==
+
+"@capacitor/status-bar@^7.0.0":
+  version "7.0.0"
+  resolved "https://registry.npmjs.org/@capacitor/status-bar/-/status-bar-7.0.0.tgz"
+  integrity sha512-wsvPkWkoSOXMIgVHu4c6P1sOuDSZ1ClUo5OpLRwj7u8DYzlV4jlmNzztQn2Lvsiqx1z4kfukSaqe40k1Lo4c9g==
 
 "@craco/craco@^7.1.0":
   version "7.1.0"
@@ -1898,6 +1918,11 @@
   resolved "https://registry.npmjs.org/@leichtgewicht/ip-codec/-/ip-codec-2.0.5.tgz"
   integrity sha512-Vo+PSpZG2/fmgmiNzYK9qWRh8h/CHrwD0mo1h1DzL4yzHNSfWYujGTYsWGreD000gcgmZ7K4Ys6Tx9TxtsKdDw==
 
+"@marsidev/react-turnstile@^0.7.1":
+  version "0.7.2"
+  resolved "https://registry.npmjs.org/@marsidev/react-turnstile/-/react-turnstile-0.7.2.tgz"
+  integrity sha512-0jwLvAUkcLkaYaS6jBOZB3zzUiKi5dU3kZtlaeBX6yV7Y4CbFEtfHCY352ovphNz1v0ZjpOj6+3QUczJvD56VA==
+
 "@nicolo-ribaudo/eslint-scope-5-internals@5.1.1-v1":
   version "5.1.1-v1"
   resolved "https://registry.npmjs.org/@nicolo-ribaudo/eslint-scope-5-internals/-/eslint-scope-5-internals-5.1.1-v1.tgz"
@@ -2632,6 +2657,61 @@
   version "1.14.1"
   resolved "https://registry.npmjs.org/@rushstack/eslint-patch/-/eslint-patch-1.14.1.tgz"
   integrity sha512-jGTk8UD/RdjsNZW8qq10r0RBvxL8OWtoT+kImlzPDFilmozzM+9QmIJsmze9UiSBrFU45ZxhTYBypn9q9z/VfQ==
+
+"@sentry-internal/browser-utils@9.47.1":
+  version "9.47.1"
+  resolved "https://registry.npmjs.org/@sentry-internal/browser-utils/-/browser-utils-9.47.1.tgz"
+  integrity sha512-twv6YhrUlPkvKz4/iQDH4KHgcv9t4cMjmZPf4/dCSCXn4/GOjzjx2d74c1w+1KOdS7lcsQzI+MtbK6SeYLiGfQ==
+  dependencies:
+    "@sentry/core" "9.47.1"
+
+"@sentry-internal/feedback@9.47.1":
+  version "9.47.1"
+  resolved "https://registry.npmjs.org/@sentry-internal/feedback/-/feedback-9.47.1.tgz"
+  integrity sha512-xJ4vKvIpAT8e+Sz80YrsNinPU0XV7jPxPjdZ4ex8R2mMvx7pM0gq8JiR/sIVmNiOE0WiUDr6VwLDE8j2APSRMA==
+  dependencies:
+    "@sentry/core" "9.47.1"
+
+"@sentry-internal/replay-canvas@9.47.1":
+  version "9.47.1"
+  resolved "https://registry.npmjs.org/@sentry-internal/replay-canvas/-/replay-canvas-9.47.1.tgz"
+  integrity sha512-r9nve+l5+elGB9NXSN1+PUgJy790tXN1e8lZNH2ziveoU91jW4yYYt34mHZ30fU9tOz58OpaRMj3H3GJ/jYZVA==
+  dependencies:
+    "@sentry-internal/replay" "9.47.1"
+    "@sentry/core" "9.47.1"
+
+"@sentry-internal/replay@9.47.1":
+  version "9.47.1"
+  resolved "https://registry.npmjs.org/@sentry-internal/replay/-/replay-9.47.1.tgz"
+  integrity sha512-O9ZEfySpstGtX1f73m3NbdbS2utwPikaFt6sgp74RG4ZX4LlXe99VAjKR464xKECpYsLmj2bYpiK4opURF0pBA==
+  dependencies:
+    "@sentry-internal/browser-utils" "9.47.1"
+    "@sentry/core" "9.47.1"
+
+"@sentry/browser@9.47.1":
+  version "9.47.1"
+  resolved "https://registry.npmjs.org/@sentry/browser/-/browser-9.47.1.tgz"
+  integrity sha512-at5JOLziw5QpVYytxTDU6xijdV6lDQ/Rxp/qXJaHXud3gIK4suv2cXW+tupJfwoUoHFCnDNfccjCmPmP0yRqiA==
+  dependencies:
+    "@sentry-internal/browser-utils" "9.47.1"
+    "@sentry-internal/feedback" "9.47.1"
+    "@sentry-internal/replay" "9.47.1"
+    "@sentry-internal/replay-canvas" "9.47.1"
+    "@sentry/core" "9.47.1"
+
+"@sentry/core@9.47.1":
+  version "9.47.1"
+  resolved "https://registry.npmjs.org/@sentry/core/-/core-9.47.1.tgz"
+  integrity sha512-KX62+qIt4xgy8eHKHiikfhz2p5fOciXd0Cl+dNzhgPFq8klq4MGMNaf148GB3M/vBqP4nw/eFvRMAayFCgdRQw==
+
+"@sentry/react@^9.1.0":
+  version "9.47.1"
+  resolved "https://registry.npmjs.org/@sentry/react/-/react-9.47.1.tgz"
+  integrity sha512-Anqt0hG1R+nktlwEiDc2FmD+6DUGMJOLuArgr7q1cSCdPbK2Gb1eZ2rF57Ui+CDo9XLvlX9QP2is/M08rrVe3w==
+  dependencies:
+    "@sentry/browser" "9.47.1"
+    "@sentry/core" "9.47.1"
+    hoist-non-react-statics "^3.3.2"
 
 "@sinclair/typebox@^0.24.1":
   version "0.24.51"
@@ -6433,6 +6513,13 @@ he@^1.2.0:
   resolved "https://registry.npmjs.org/he/-/he-1.2.0.tgz"
   integrity sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==
 
+hoist-non-react-statics@^3.3.2:
+  version "3.3.2"
+  resolved "https://registry.npmjs.org/hoist-non-react-statics/-/hoist-non-react-statics-3.3.2.tgz"
+  integrity sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==
+  dependencies:
+    react-is "^16.7.0"
+
 hoopy@^0.1.4:
   version "0.1.4"
   resolved "https://registry.npmjs.org/hoopy/-/hoopy-0.1.4.tgz"
@@ -9276,6 +9363,11 @@ q@^1.1.2:
   resolved "https://registry.npmjs.org/q/-/q-1.5.1.tgz"
   integrity sha512-kV/CThkXo6xyFEZUugw/+pIOywXcDbFYgSct5cT3gqlbkBE1SJdwy6UQoZvodiWF/ckQLZyDE/Bu1M6gVu5lVw==
 
+qrcode.react@^4.2.0:
+  version "4.2.0"
+  resolved "https://registry.npmjs.org/qrcode.react/-/qrcode.react-4.2.0.tgz"
+  integrity sha512-QpgqWi8rD9DsS9EP3z7BT+5lY5SFhsqGjpgW5DY/i3mK4M9DTBNz3ErMi8BWYEfI3L0d8GIbGmcdFAS1uIRGjA==
+
 qs@6.13.0:
   version "6.13.0"
   resolved "https://registry.npmjs.org/qs/-/qs-6.13.0.tgz"
@@ -9409,7 +9501,7 @@ react-i18next@^16.5.0:
     html-parse-stringify "^3.0.1"
     use-sync-external-store "^1.6.0"
 
-react-is@^16.13.1:
+react-is@^16.13.1, react-is@^16.7.0:
   version "16.13.1"
   resolved "https://registry.npmjs.org/react-is/-/react-is-16.13.1.tgz"
   integrity sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==
@@ -9535,6 +9627,11 @@ react-style-singleton@^2.2.2, react-style-singleton@^2.2.3:
   dependencies:
     get-nonce "^1.0.0"
     tslib "^2.0.0"
+
+react-virtuoso@^4.12.6:
+  version "4.18.3"
+  resolved "https://registry.npmjs.org/react-virtuoso/-/react-virtuoso-4.18.3.tgz"
+  integrity sha512-fLz/peHAx4Eu0DLHurFEEI7Y6n5CqEoxBh04rgJM9yMuOJah2a9zWg/MUOmZLcp7zuWYorXq5+5bf3IRgkNvWg==
 
 react@^19.0.0:
   version "19.2.0"

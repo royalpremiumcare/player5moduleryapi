@@ -8,6 +8,7 @@ import { useAuth } from "./context/AuthContext";
 import { io } from "socket.io-client";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
+import { StatusBar, Style } from '@capacitor/status-bar';
 
 import Dashboard from "@/components/Dashboard";
 import CalendarView from "@/components/Calendar";
@@ -776,6 +777,25 @@ function App() {
     const timer = setTimeout(fixLayout, 150);
     return () => clearTimeout(timer);
   }, []);
+
+  // Initialize StatusBar
+  useEffect(() => {
+    const initStatusBar = async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          // WebView'in her zaman status bar'ın arkasına (en üste) uzanmasını zorunlu kıl
+          await StatusBar.setOverlaysWebView({ overlay: true });
+          
+          // Arka planın beyaz/açık renkse ikonların koyu (Dark) olması gerekir
+          await StatusBar.setStyle({ style: Style.Dark }); 
+        } catch (error) {
+          console.error("StatusBar ayarlanırken hata:", error);
+        }
+      }
+    };
+
+    initStatusBar();
+  }, []);
   
   // Re-join organization when token changes
   useEffect(() => {
@@ -910,7 +930,13 @@ function App() {
       
       {/* TopBar - Üst Navigasyon Barı */}
       {!showForm && (
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+        <header 
+          className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm"
+          style={{ 
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+            fontFamily: 'Inter, sans-serif' 
+          }}
+        >
           <div className="container mx-auto px-4 py-1.5">
             <div className="flex items-center justify-between">
               {/* Sol Bölüm: PLANN Logosu */}
