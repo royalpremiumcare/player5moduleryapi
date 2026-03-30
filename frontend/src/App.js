@@ -796,6 +796,24 @@ function App() {
 
     initStatusBar();
   }, []);
+
+  // Radix reflow hack for PWA/Native
+  useEffect(() => {
+    // Sadece PWA veya Native App modunda çalışsın
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone || Capacitor.isNativePlatform();
+    
+    if (isStandalone) {
+      // Tarayıcıyı ekranı yeniden ölçmeye zorla (Reflow Hack)
+      requestAnimationFrame(() => {
+        const originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden'; // Radix'in yaptığını taklit et
+        
+        requestAnimationFrame(() => {
+          document.body.style.overflow = originalOverflow; // Hemen geri al
+        });
+      });
+    }
+  }, []);
   
   // Re-join organization when token changes
   useEffect(() => {
@@ -900,8 +918,7 @@ function App() {
 
 
   return (
-    <div className="App min-h-screen bg-white dark:bg-gray-900 transition-colors">
-      <Toaster position="top-center" richColors />
+    <div className="App min-h-[100dvh] bg-white dark:bg-gray-900 transition-colors">
 
       {/* Setup Wizard - Onboarding */}
       {ENABLE_SETUP_WIZARD && showOnboarding && (
@@ -1324,6 +1341,8 @@ function App() {
           onExternalClose={() => setChatOpen(false)}
         />
       )}
+      
+      <Toaster position="top-center" richColors />
       </>
       )}
     </div>
