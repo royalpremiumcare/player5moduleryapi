@@ -765,6 +765,17 @@ function App() {
     
     // No cleanup - socket persists for component lifetime
   }, []); // Empty dependency array - only run once on mount
+
+  // Fix layout on mount
+  useEffect(() => {
+    const fixLayout = () => {
+      window.scrollTo(0, 0);
+      window.dispatchEvent(new Event("resize"));
+    };
+
+    const timer = setTimeout(fixLayout, 150);
+    return () => clearTimeout(timer);
+  }, []);
   
   // Re-join organization when token changes
   useEffect(() => {
@@ -899,7 +910,7 @@ function App() {
       
       {/* TopBar - Üst Navigasyon Barı */}
       {!showForm && (
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm" style={{ fontFamily: 'Inter, sans-serif', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <div className="container mx-auto px-4 py-1.5">
             <div className="flex items-center justify-between">
               {/* Sol Bölüm: PLANN Logosu */}
