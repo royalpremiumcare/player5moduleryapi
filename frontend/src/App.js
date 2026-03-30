@@ -896,9 +896,7 @@ function App() {
       {!isSpecialRole && (
       <>
 
-      {/* Safe Area Cover — Status bar arkası beyaz kalması için */}
-      <div className="fixed top-0 left-0 right-0 bg-white z-[45]" style={{ height: 'env(safe-area-inset-top, 0px)' }} />
-
+      
       {/* TopBar - Üst Navigasyon Barı */}
       {!showForm && (
         <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm" style={{ fontFamily: 'Inter, sans-serif', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
