@@ -413,7 +413,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       </div>
 
       {/* 1b. İSTATİSTİK KARTLARI — Sticky (scroll'da sabit kalır) */}
-      <div className="sticky z-10 bg-white/90 backdrop-blur-lg border-b border-gray-100 shadow-sm px-5 py-2" style={{ top: '48px' }}>
+      <div className="sticky z-10 bg-white/90 backdrop-blur-lg border-b border-gray-100 shadow-sm px-5 py-2" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 45px)' }}>
         <div className="grid grid-cols-2 gap-2.5 tour-stats"> {/* CLASS EKLENDI */}
           {/* Randevu Sayısı */}
           <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all cursor-default">
