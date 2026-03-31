@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Phone, PhoneCall, LogOut, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Pause, Star } from "lucide-react";
+import { Phone, PhoneCall, LogOut, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Pause, Star, Building2 } from "lucide-react";
 import SalesGuide from "./SalesGuide";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/api";
+// SuperAdmin'deki İşletmeler bileşenini içe aktarıyoruz
+import SAOrganizations from "./superadmin/SAOrganizations"; 
 
 const STATUS_CONFIG = {
   pool:           { label: "Havuzda",     cls: "bg-gray-100 text-gray-500" },
@@ -27,7 +29,8 @@ export default function MarketingPanel() {
   const { logout } = useAuth();
   const [profile, setProfile]       = useState(null);
   const [myStats, setMyStats]       = useState(null);
-  const [tab, setTab]               = useState("pool"); // "pool" | "mine"
+  // Sekme state'ine "organizations" eklendi
+  const [tab, setTab]               = useState("pool"); // "pool" | "mine" | "organizations"
   const [leads, setLeads]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [activeLead, setActiveLead] = useState(null);
@@ -36,14 +39,27 @@ export default function MarketingPanel() {
   const [saving, setSaving]         = useState(false);
   const [claiming, setClaiming]     = useState(null);
   const [batches, setBatches]       = useState([]);
-  const [selectedBatch, setSelectedBatch] = useState(""); // batch_id filtresi
+  const [selectedBatch, setSelectedBatch] = useState("");
 
-  // Countdown timer for claimed lead (15 min)
   const [timeLeft, setTimeLeft] = useState(null);
   const callCardRef = useRef(null);
 
   const load = useCallback(async (currentTab = tab, batchId = selectedBatch) => {
     setLoading(true);
+
+    // Eğer İşletmeler sekmesindeysek lead verilerini çekmeye gerek yok, SAOrganizations kendi verisini çeker.
+    if (currentTab === "organizations") {
+      if (!profile) {
+        try {
+          const profileR = await api.get("/marketing/profile");
+          setProfile(profileR.data);
+        } catch (e) { console.error("Profile error:", e); }
+      }
+      setLoading(false);
+      return;
+    }
+
+    // Lead sekmeleri için normal veri çekme işlemi
     const batchParam = batchId ? `&batch_id=${batchId}` : "";
     const [leadsR, statsR, profileR, batchesR] = await Promise.allSettled([
       api.get(`/marketing/leads?tab=${currentTab}${batchParam}`),
@@ -51,13 +67,18 @@ export default function MarketingPanel() {
       profile ? Promise.resolve({ data: profile }) : api.get("/marketing/profile"),
       api.get("/marketing/leads/batches"),
     ]);
+    
     if (leadsR.status === "fulfilled") setLeads(leadsR.value.data.leads || []);
     else { toast.error("Leadler yüklenemedi"); console.error("leads error", leadsR.reason); }
+    
     if (statsR.status === "fulfilled") setMyStats(statsR.value.data);
     else console.error("stats error", statsR.reason?.response?.data || statsR.reason);
+    
     if (profileR.status === "fulfilled" && !profile) setProfile(profileR.value.data);
+    
     if (batchesR.status === "fulfilled") setBatches(batchesR.value.data.batches || []);
     else console.error("batches error", batchesR.reason?.response?.data || batchesR.reason);
+    
     setLoading(false);
   }, [tab, profile, selectedBatch]);
 
@@ -75,7 +96,7 @@ export default function MarketingPanel() {
         setCallStatus("");
         setNote("");
         toast.warning("Lead süresi doldu, havuza geri döndü");
-        load("pool");
+        if (tab !== "organizations") load("pool");
       }
     };
     tick();
@@ -91,7 +112,6 @@ export default function MarketingPanel() {
       setCallStatus("");
       setNote("");
       setLeads(prev => prev.filter(l => l.id !== lead.id));
-      // tel: linkini görünmez anchor ile aç — page state korunur
       const a = document.createElement("a");
       a.href = `tel:${lead.phone}`;
       a.setAttribute("rel", "noopener");
@@ -100,7 +120,7 @@ export default function MarketingPanel() {
       document.body.removeChild(a);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Lead alınamadı");
-      load(tab);
+      if (tab !== "organizations") load(tab);
     } finally { setClaiming(null); }
   };
 
@@ -112,7 +132,7 @@ export default function MarketingPanel() {
       setActiveLead(null);
       setCallStatus("");
       setNote("");
-      load("pool");
+      if (tab !== "organizations") load("pool");
     } catch { toast.error("Bırakılamadı"); }
   };
 
@@ -129,8 +149,10 @@ export default function MarketingPanel() {
       setActiveLead(null);
       setCallStatus("");
       setNote("");
-      load("mine");
-      setTab("mine");
+      if (tab !== "organizations") {
+        load("mine");
+        setTab("mine");
+      }
     } catch (e) { toast.error(e.response?.data?.detail || "Kaydedilemedi"); }
     finally { setSaving(false); }
   };
@@ -143,17 +165,22 @@ export default function MarketingPanel() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-50 flex flex-col w-full overflow-hidden">
       {/* Header */}
-      <header className="bg-slate-900 text-white px-4 py-3 flex items-center gap-3 flex-shrink-0">
-        <div className="w-7 h-7 bg-indigo-500 rounded-lg flex items-center justify-center">
+      <header 
+        className="bg-slate-900 text-white px-4 pb-3 flex items-center gap-3 flex-shrink-0 sticky top-0 z-40 shadow-sm"
+        style={{ 
+          paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 30px) + 5px)'
+        }}
+      >
+        <div className="w-7 h-7 bg-indigo-500 rounded-lg flex items-center justify-center flex-shrink-0">
           <span className="font-bold text-xs">P</span>
         </div>
-        <span className="font-semibold text-sm">PLANN Tele-Satış</span>
+        <span className="font-semibold text-sm truncate">PLANN Tele-Satış</span>
         {profile && (
-          <span className="text-slate-400 text-sm ml-1">— {profile.full_name || profile.username}</span>
+          <span className="text-slate-400 text-sm ml-1 truncate">— {profile.full_name || profile.username}</span>
         )}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-3 flex-shrink-0">
           <button onClick={() => load(tab)} className="p-1.5 hover:bg-slate-800 rounded-lg transition-colors">
             <RefreshCw className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`} />
           </button>
@@ -166,28 +193,163 @@ export default function MarketingPanel() {
         </div>
       </header>
 
-      <div className={`flex-1 max-w-2xl mx-auto w-full px-4 py-5 space-y-4 ${activeLead ? "pb-[420px]" : "pb-6"}`}>
-        {/* My Stats */}
-        <div className="grid grid-cols-4 gap-3">
-          {[
-            { label: "Bugün",       value: myStats?.today_called ?? "—" },
-            { label: "Toplam",      value: myStats?.total_called ?? "—" },
-            { label: "İlgilendi",   value: myStats?.interested ?? "—" },
-            { label: "Dönüşüm",    value: myStats ? `${myStats.conversion_rate}%` : "—" },
-          ].map(({ label, value }) => (
-            <div key={label} className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 text-center">
-              <p className="text-xs text-gray-400">{label}</p>
-              <p className="text-xl font-bold text-gray-900 mt-0.5">{value}</p>
-            </div>
-          ))}
+      {/* Main Content Area */}
+      <div className={`flex-1 overflow-y-auto px-4 py-5 ${activeLead ? "pb-[420px]" : "pb-6"}`}>
+        
+        {/* Tabs (Her durumda en üstte sabit olarak kalır) */}
+        <div className="max-w-2xl mx-auto w-full mb-4">
+          <div className="flex gap-1 bg-gray-200/80 p-1 rounded-xl overflow-x-auto scrollbar-hide">
+            {[
+              { key: "pool", label: "Havuz" },
+              { key: "mine", label: "Aramalarım" },
+              { key: "organizations", label: "İşletmeler" }, // YENİ EKLENEN SEKME
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`flex-1 py-2 px-3 whitespace-nowrap rounded-lg text-sm font-medium transition-all ${
+                  tab === key ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Satış Rehberi */}
-        <SalesGuide />
+        {/* ---------------- İŞLETMELER SEKME İÇERİĞİ ---------------- */}
+        {tab === "organizations" ? (
+          // Tabloların düzgün görünmesi için max-w'i 5xl yaptık (daha geniş ekran)
+          <div className="max-w-5xl mx-auto w-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden pb-10">
+            {/* SuperAdmin'deki tabloyu direkt burada çağırıyoruz */}
+            <SAOrganizations />
+          </div>
+        ) : (
+        /* ---------------- NORMAL LEAD SEKME İÇERİĞİ ---------------- */
+          <div className="max-w-2xl mx-auto w-full space-y-4">
+            {/* My Stats */}
+            <div className="grid grid-cols-4 gap-2 sm:gap-3">
+              {[
+                { label: "Bugün",      value: myStats?.today_called ?? "—" },
+                { label: "Toplam",     value: myStats?.total_called ?? "—" },
+                { label: "İlgilendi",  value: myStats?.interested ?? "—" },
+                { label: "Dönüşüm",    value: myStats ? `${myStats.conversion_rate}%` : "—" },
+              ].map(({ label, value }) => (
+                <div key={label} className="bg-white rounded-xl shadow-sm border border-gray-100 p-2 sm:p-3 text-center">
+                  <p className="text-[10px] sm:text-xs text-gray-400">{label}</p>
+                  <p className="text-lg sm:text-xl font-bold text-gray-900 mt-0.5">{value}</p>
+                </div>
+              ))}
+            </div>
 
-        {/* Active call card — fixed overlay */}
-        {activeLead && (
-          <div ref={callCardRef} className="fixed inset-x-0 bottom-0 z-50 px-4 pb-4 pt-2 bg-gradient-to-t from-black/40 to-transparent">
+            {/* Satış Rehberi */}
+            <SalesGuide />
+
+            {/* Kampanya Seçici */}
+            {batches.length > 0 && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-3 py-3 flex items-center gap-2 w-full overflow-hidden">
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex-shrink-0">Kampanya</span>
+                <select
+                  value={selectedBatch}
+                  onChange={e => setSelectedBatch(e.target.value)}
+                  className="flex-1 min-w-0 w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-gray-50 truncate"
+                >
+                  <option value="">Tümü</option>
+                  {batches.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.batch_name} ({b.total} lead)
+                    </option>
+                  ))}
+                </select>
+                {selectedBatch && (
+                  <button
+                    onClick={() => setSelectedBatch("")}
+                    className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0 ml-1"
+                  >
+                    Temizle
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Lead list */}
+            <div className="space-y-2">
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-xl p-4 animate-pulse">
+                    <div className="h-4 bg-gray-100 rounded w-1/3 mb-2" />
+                    <div className="h-3 bg-gray-100 rounded w-1/4" />
+                  </div>
+                ))
+              ) : leads.length === 0 ? (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-10 text-center">
+                  <Phone className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                  <p className="text-sm text-gray-400">
+                    {tab === "pool"
+                    ? (selectedBatch ? "Bu kampanyada aranacak lead yok" : "Havuzda aranacak lead yok")
+                    : "Henüz arama yapmadınız"}
+                  </p>
+                </div>
+              ) : (
+                leads.map((lead) => {
+                  const st = STATUS_CONFIG[lead.status] || STATUS_CONFIG.pool;
+                  const isActive = activeLead?.id === lead.id;
+                  return (
+                    <div
+                      key={lead.id}
+                      className={`bg-white rounded-xl shadow-sm border p-4 transition-all ${
+                        isActive ? "border-indigo-300 ring-1 ring-indigo-200" : "border-gray-100"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start gap-2">
+                            <p className="font-semibold text-gray-900 break-words">{lead.company_name}</p>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 mt-0.5 ${st.cls}`}>
+                              {st.label}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-500 font-mono mt-0.5">{lead.phone}</p>
+                          {!selectedBatch && lead.batch_name && (
+                            <p className="text-xs text-indigo-400 mt-0.5">{lead.batch_name}</p>
+                          )}
+                          {lead.note && (
+                            <p className="text-xs text-gray-400 mt-1 italic">"{lead.note}"</p>
+                          )}
+                        </div>
+                        {tab === "pool" && !activeLead && (
+                          <button
+                            onClick={() => claimLead(lead)}
+                            disabled={claiming === lead.id}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-60 flex-shrink-0"
+                          >
+                            <Phone className="w-4 h-4" />
+                            {claiming === lead.id ? "..." : "Ara"}
+                          </button>
+                        )}
+                        {tab === "mine" && lead.status !== "claimed" && (
+                          <a
+                            href={`tel:${lead.phone}`}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors flex-shrink-0"
+                          >
+                            <Phone className="w-4 h-4" />
+                            Ara
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Active call card — fixed overlay */}
+      {/* Bu kartın Fixed kalması, sekme değiştirseler bile görüşmenin kopmamasını sağlar! */}
+      {activeLead && (
+        <div ref={callCardRef} className="fixed inset-x-0 bottom-0 z-50 px-4 pb-4 pt-2 bg-gradient-to-t from-black/40 to-transparent">
           <div className="bg-white rounded-2xl shadow-2xl border border-indigo-100 overflow-hidden max-w-2xl mx-auto">
             {/* Call header */}
             <div className="bg-indigo-600 px-5 py-4 flex items-center justify-between">
@@ -274,125 +436,8 @@ export default function MarketingPanel() {
               </div>
             </div>
           </div>
-          </div>
-        )}
-
-        {/* Kampanya Seçici */}
-        {batches.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3 flex items-center gap-3">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex-shrink-0">Kampanya</span>
-            <select
-              value={selectedBatch}
-              onChange={e => setSelectedBatch(e.target.value)}
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-gray-50"
-            >
-              <option value="">Tümü</option>
-              {batches.map(b => (
-                <option key={b.id} value={b.id}>
-                  {b.batch_name} ({b.total} lead)
-                </option>
-              ))}
-            </select>
-            {selectedBatch && (
-              <button
-                onClick={() => setSelectedBatch("")}
-                className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0"
-              >
-                Temizle
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Tabs */}
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-          {[
-            { key: "pool", label: "Havuz" },
-            { key: "mine", label: "Aramalarım" },
-          ].map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                tab === key ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
         </div>
-
-        {/* Lead list */}
-        <div className="space-y-2">
-          {loading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="bg-white rounded-xl p-4 animate-pulse">
-                <div className="h-4 bg-gray-100 rounded w-1/3 mb-2" />
-                <div className="h-3 bg-gray-100 rounded w-1/4" />
-              </div>
-            ))
-          ) : leads.length === 0 ? (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-10 text-center">
-              <Phone className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-              <p className="text-sm text-gray-400">
-                {tab === "pool"
-                ? (selectedBatch ? "Bu kampanyada aranacak lead yok" : "Havuzda aranacak lead yok")
-                : "Henüz arama yapmadınız"}
-              </p>
-            </div>
-          ) : (
-            leads.map((lead) => {
-              const st = STATUS_CONFIG[lead.status] || STATUS_CONFIG.pool;
-              const isActive = activeLead?.id === lead.id;
-              return (
-                <div
-                  key={lead.id}
-                  className={`bg-white rounded-xl shadow-sm border p-4 transition-all ${
-                    isActive ? "border-indigo-300 ring-1 ring-indigo-200" : "border-gray-100"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start gap-2">
-                        <p className="font-semibold text-gray-900 break-words">{lead.company_name}</p>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 mt-0.5 ${st.cls}`}>
-                          {st.label}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-500 font-mono mt-0.5">{lead.phone}</p>
-                      {!selectedBatch && lead.batch_name && (
-                        <p className="text-xs text-indigo-400 mt-0.5">{lead.batch_name}</p>
-                      )}
-                      {lead.note && (
-                        <p className="text-xs text-gray-400 mt-1 italic">"{lead.note}"</p>
-                      )}
-                    </div>
-                    {tab === "pool" && !activeLead && (
-                      <button
-                        onClick={() => claimLead(lead)}
-                        disabled={claiming === lead.id}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-60 flex-shrink-0"
-                      >
-                        <Phone className="w-4 h-4" />
-                        {claiming === lead.id ? "..." : "Ara"}
-                      </button>
-                    )}
-                    {tab === "mine" && lead.status !== "claimed" && (
-                      <a
-                        href={`tel:${lead.phone}`}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors flex-shrink-0"
-                      >
-                        <Phone className="w-4 h-4" />
-                        Ara
-                      </a>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }

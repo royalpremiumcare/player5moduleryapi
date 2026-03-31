@@ -10597,6 +10597,10 @@ async def delete_resolved_contacts(
 @api_router.get("/superadmin/organizations")
 async def get_superadmin_organizations(request: Request, current_user: UserInDB = Depends(get_superadmin_user), db = Depends(get_db)):
     """Detaylı işletme listesi - Sadece superadmin"""
+
+@api_router.get("/marketing/organizations")
+async def get_marketing_organizations(request: Request, current_user: UserInDB = Depends(get_marketing_user), db = Depends(get_db)):
+    """İşletme listesi - Marketing kullanıcıları için (read-only)"""
     try:
         now = datetime.now(timezone.utc)
         first_day_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -10705,7 +10709,7 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
         
         return {"organizations": organizations_list}
     except Exception as e:
-        logging.error(f"Error in get_superadmin_organizations: {e}", exc_info=True)
+        logging.error(f"Error in get_marketing_organizations: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"İşletme listesi alınırken hata oluştu: {str(e)}")
 
 @api_router.post("/superadmin/organizations/{org_id}/assign-plan")
