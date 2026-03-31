@@ -783,17 +783,16 @@ function App() {
     const initStatusBar = async () => {
       if (Capacitor.isNativePlatform()) {
         try {
-          // WebView'in her zaman status bar'ın arkasına (en üste) uzanmasını zorunlu kıl
           await StatusBar.setOverlaysWebView({ overlay: true });
-          
-          // Arka planın beyaz/açık renkse ikonların koyu (Dark) olması gerekir
+          // İkonların siyah olduğundan emin olalım (Beyaz header üzerinde görünmesi için)
           await StatusBar.setStyle({ style: Style.Dark }); 
+          // Status bar arka planını tamamen şeffaf yap ki header rengin görünüp ikonları kapatmasın
+          await StatusBar.setBackgroundColor({ color: '#ffffff' }); 
         } catch (error) {
           console.error("StatusBar ayarlanırken hata:", error);
         }
       }
     };
-
     initStatusBar();
   }, []);
 
@@ -963,13 +962,14 @@ function App() {
         <header 
           className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm"
           style={{ 
-            // 12px'i 6px'e düşürdük (Tam 1 tık yukarı)
-            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)', 
+            // max(..., 20px) ile ikonların üzerine binmesini kesin olarak engelliyoruz
+            // + 4px ile de ikonların çok dibine yapışmamasını sağlıyoruz
+            paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 20px) + 4px)', 
             fontFamily: 'Inter, sans-serif' 
           }}
         >
-          {/* pt-2'yi pt-1 yaptık ki logolar ve ikonlar da hafif yukarı kaysın */}
-          <div className="container mx-auto px-4 pt-1 pb-2">
+          {/* pt-0 yaparak logo ve ikonların header içindeki konumunu yukarı çektik */}
+          <div className="container mx-auto px-4 pt-0 pb-2">
             <div className="flex items-center justify-between">
               {/* Sol Bölüm: PLANN Logosu */}
               <div className="flex-shrink-0">
