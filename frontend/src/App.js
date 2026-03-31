@@ -784,9 +784,9 @@ function App() {
       if (Capacitor.isNativePlatform()) {
         try {
           await StatusBar.setOverlaysWebView({ overlay: true });
-          // İkonların siyah olduğundan emin olalım (Beyaz header üzerinde görünmesi için)
-          await StatusBar.setStyle({ style: Style.Dark }); 
-          // Status bar arka planını tamamen şeffaf yap ki header rengin görünüp ikonları kapatmasın
+          // İkonların koyu/siyah olması için Style.Light kullanıyoruz (Beyaz arka plan için)
+          await StatusBar.setStyle({ style: Style.Light }); 
+          // Status bar arka planını beyaz yapıyoruz
           await StatusBar.setBackgroundColor({ color: '#ffffff' }); 
         } catch (error) {
           console.error("StatusBar ayarlanırken hata:", error);
@@ -962,8 +962,8 @@ function App() {
         <header 
           className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm"
           style={{ 
-            // max(..., 20px) ile ikonların üzerine binmesini kesin olarak engelliyoruz
-            // + 4px ile de ikonların çok dibine yapışmamasını sağlıyoruz
+            // max(..., 30px) ile ikonların üzerine binmesini kesin olarak engelliyoruz
+            // + 5px ile de ikonların çok dibine yapışmamasını sağlıyoruz
             paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 30px) + 5px)', 
             fontFamily: 'Inter, sans-serif' 
           }}
