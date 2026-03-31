@@ -918,7 +918,20 @@ function App() {
 
 
   return (
-    <div className="App min-h-[100dvh] bg-white dark:bg-gray-900 transition-colors">
+    // YENİ FIXED WRAPPER MİMARİSİ BAŞLANGICI
+    <div 
+      id="app-wrapper"
+      className="fixed inset-0 overflow-y-auto bg-white dark:bg-gray-900 transition-colors w-full h-full"
+      style={{ 
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: '100%',
+        width: '100%'
+      }}
+    >
 
       {/* Setup Wizard - Onboarding */}
       {ENABLE_SETUP_WIZARD && showOnboarding && (
@@ -950,11 +963,13 @@ function App() {
         <header 
           className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm"
           style={{ 
-            paddingTop: 'env(safe-area-inset-top, 0px)',
+            // 12px'i 6px'e düşürdük (Tam 1 tık yukarı)
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)', 
             fontFamily: 'Inter, sans-serif' 
           }}
         >
-          <div className="container mx-auto px-4 py-1.5">
+          {/* pt-2'yi pt-1 yaptık ki logolar ve ikonlar da hafif yukarı kaysın */}
+          <div className="container mx-auto px-4 pt-1 pb-2">
             <div className="flex items-center justify-between">
               {/* Sol Bölüm: PLANN Logosu */}
               <div className="flex-shrink-0">
@@ -985,7 +1000,7 @@ function App() {
                     <UserCog className="w-6 h-6 text-blue-600" />
                   </button>
                 )}
-                <DropdownMenu open={showNotifications} onOpenChange={setShowNotifications}>
+                <DropdownMenu modal={false} open={showNotifications} onOpenChange={setShowNotifications}>
                   <DropdownMenuTrigger asChild>
                     <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative">
                       <Bell className="w-6 h-6 text-gray-700" />
@@ -1342,7 +1357,16 @@ function App() {
         />
       )}
       
-      <Toaster position="top-center" richColors />
+      {/* Toaster bileşenini safe-area kadar aşağı itiyoruz */}
+      <Toaster 
+        position="top-center" 
+        richColors 
+        toastOptions={{
+          style: {
+            marginTop: 'calc(env(safe-area-inset-top, 0px) + 16px)'
+          }
+        }}
+      />
       </>
       )}
     </div>
