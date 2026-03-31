@@ -4,8 +4,8 @@ import SalesGuide from "./SalesGuide";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/api";
-// SuperAdmin'deki İşletmeler bileşenini içe aktarıyoruz
-import SAOrganizations from "./superadmin/SAOrganizations"; 
+// Marketing için özel İşletmeler bileşenini içe aktarıyoruz
+import MarketingOrganizations from "./MarketingOrganizations"; 
 
 const STATUS_CONFIG = {
   pool:           { label: "Havuzda",     cls: "bg-gray-100 text-gray-500" },
@@ -221,8 +221,8 @@ export default function MarketingPanel() {
         {tab === "organizations" ? (
           // Tabloların düzgün görünmesi için max-w'i 5xl yaptık (daha geniş ekran)
           <div className="max-w-5xl mx-auto w-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden pb-10">
-            {/* SuperAdmin'deki tabloyu direkt burada çağırıyoruz */}
-            <SAOrganizations />
+            {/* Marketing için özel tabloyu çağırıyoruz */}
+            <MarketingOrganizations />
           </div>
         ) : (
         /* ---------------- NORMAL LEAD SEKME İÇERİĞİ ---------------- */

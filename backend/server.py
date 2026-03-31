@@ -10597,6 +10597,115 @@ async def delete_resolved_contacts(
 @api_router.get("/superadmin/organizations")
 async def get_superadmin_organizations(request: Request, current_user: UserInDB = Depends(get_superadmin_user), db = Depends(get_db)):
     """Detaylı işletme listesi - Sadece superadmin"""
+    try:
+        now = datetime.now(timezone.utc)
+        first_day_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        if now.month == 12:
+            last_day_of_month = now.replace(year=now.year + 1, month=1, day=1) - timedelta(days=1)
+        else:
+            last_day_of_month = now.replace(month=now.month + 1, day=1) - timedelta(days=1)
+        last_day_of_month = last_day_of_month.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        first_day_str = first_day_of_month.strftime("%Y-%m-%d")
+        last_day_str = last_day_of_month.strftime("%Y-%m-%d")
+        
+        all_settings = await db.settings.find({}).to_list(10000)
+        organizations_list = []
+        
+        for setting in all_settings:
+            org_id = setting.get('organization_id')
+            if not org_id:
+                continue
+            
+            isletme_adi = setting.get('company_name', 'İsimsiz İşletme')
+            telefon_numarasi = setting.get('support_phone', 'Telefon Yok')
+            
+            # Admin kullanıcıyı bul (işletme sahibi)
+            admin_user = await db.users.find_one({"organization_id": org_id, "role": "admin"})
+            admin_full_name = admin_user.get('full_name', '-') if admin_user else '-'
+            admin_email = admin_user.get('username', '-') if admin_user else '-'
+            
+            # Abonelik bilgileri
+            plan_doc = await db.organization_plans.find_one({"organization_id": org_id})
+            billing_cycle = 'monthly'
+            days_left = None
+            toplam_odeme = 0
+            
+            if not plan_doc:
+                abonelik_paketi = "Trial"
+                plan_id = 'tier_trial'
+                abonelik_durumu = "Kayıt Yok"
+            else:
+                plan_id = plan_doc.get('plan_id', 'tier_trial')
+                plan_info = next((p for p in PLANS if p['id'] == plan_id), None)
+                abonelik_paketi = plan_info.get('name', 'Trial') if plan_info else 'Trial'
+                billing_cycle = plan_doc.get('billing_cycle', 'monthly')
+                
+                # Kalan gün hesapla
+                if plan_id == 'tier_trial':
+                    trial_end = plan_doc.get('trial_end_date')
+                    if trial_end:
+                        if isinstance(trial_end, str):
+                            trial_end = datetime.fromisoformat(trial_end.replace('Z', '+00:00'))
+                        days_left = (trial_end - now).days
+                        if days_left < 0:
+                            abonelik_durumu = "Deneme Bitti"
+                        else:
+                            abonelik_durumu = f"{days_left} Gün Kaldı"
+                    else:
+                        abonelik_durumu = "Trial"
+                else:
+                    # Ücretli plan
+                    next_payment = plan_doc.get('next_payment_date')
+                    if next_payment:
+                        if isinstance(next_payment, str):
+                            next_payment = datetime.fromisoformat(next_payment.replace('Z', '+00:00'))
+                        days_left = (next_payment - now).days
+                        if days_left < 0:
+                            abonelik_durumu = "Süresi Doldu"
+                        else:
+                            abonelik_durumu = "Aktif"
+                    else:
+                        abonelik_durumu = "Aktif"
+                
+                # Toplam ödeme hesapla
+                if plan_id != 'tier_trial':
+                    monthly_price = plan_info.get('monthly_price', 0) if plan_info else 0
+                    yearly_price = plan_info.get('yearly_price', 0) if plan_info else 0
+                    toplam_odeme = monthly_price if billing_cycle == 'monthly' else yearly_price
+            
+            # İstatistikler
+            pipeline = [
+                {"$match": {"organization_id": org_id, "created_at": {"$gte": first_day_str, "$lte": last_day_str}}},
+                {"$group": {"_id": None, "count": {"$sum": 1}}}
+            ]
+            appointments_result = await db.appointments.aggregate(pipeline).to_list(1)
+            bu_ayki_randevu_sayisi = appointments_result[0]["count"] if appointments_result else 0
+            
+            toplam_musteri_sayisi = await db.customers.count_documents({"organization_id": org_id})
+            toplam_personel_sayisi = await db.users.count_documents({"organization_id": org_id, "role": "staff"})
+            
+            organizations_list.append({
+                "organization_id": org_id,
+                "isletme_adi": isletme_adi,
+                "telefon_numarasi": telefon_numarasi,
+                "admin_full_name": admin_full_name,
+                "admin_email": admin_email,
+                "abonelik_paketi": abonelik_paketi,
+                "billing_cycle": billing_cycle,
+                "abonelik_durumu": abonelik_durumu,
+                "days_left": days_left,
+                "toplam_odeme": toplam_odeme,
+                "bu_ayki_randevu_sayisi": bu_ayki_randevu_sayisi,
+                "toplam_musteri_sayisi": toplam_musteri_sayisi,
+                "toplam_personel_sayisi": toplam_personel_sayisi
+            })
+        
+        return {"organizations": organizations_list}
+    except Exception as e:
+        logging.error(f"Error in get_superadmin_organizations: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"İşletme listesi alınırken hata oluştu: {str(e)}")
 
 @api_router.get("/marketing/organizations")
 async def get_marketing_organizations(request: Request, current_user: UserInDB = Depends(get_marketing_user), db = Depends(get_db)):
