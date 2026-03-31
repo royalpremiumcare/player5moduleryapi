@@ -964,7 +964,7 @@ function App() {
           style={{ 
             // max(..., 20px) ile ikonların üzerine binmesini kesin olarak engelliyoruz
             // + 4px ile de ikonların çok dibine yapışmamasını sağlıyoruz
-            paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 20px) + 4px)', 
+            paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 30px) + 5px)', 
             fontFamily: 'Inter, sans-serif' 
           }}
         >
