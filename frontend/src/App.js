@@ -86,6 +86,25 @@ function App() {
       : 'PLANN | Dashboard';
   }, [i18n.language]);
 
+  // APP SCROLL KİLİDİ YÖNETİMİ
+  useEffect(() => {
+    if (token) {
+      // Kullanıcı giriş yapmış (Paneldeyiz) -> Ekranı kilitle, kaydırmayı app-wrapper yapsın
+      document.documentElement.classList.add('app-locked');
+      document.body.classList.add('app-locked');
+    } else {
+      // Kullanıcı giriş yapmamış (Landing Page / Login) -> Kilidi aç, normal web sitesi gibi kaysın
+      document.documentElement.classList.remove('app-locked');
+      document.body.classList.remove('app-locked');
+    }
+
+    // Component unmount olursa temizlik yap
+    return () => {
+      document.documentElement.classList.remove('app-locked');
+      document.body.classList.remove('app-locked');
+    };
+  }, [token]);
+
   // App mode detection - PWA/APK olarak açıldığında is_app_mode set et
   useEffect(() => {
     const urlParams = new URLSearchParams(location.search);
@@ -962,9 +981,9 @@ function App() {
         <header 
           className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm"
           style={{ 
-            // max(..., 30px) ile ikonların üzerine binmesini kesin olarak engelliyoruz
-            // + 5px ile de ikonların çok dibine yapışmamasını sağlıyoruz
-            paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 30px) + 5px)', 
+            // max(..., 15px) ile boşluğu düşürdük, daha ince ve şık bir görünüm elde ettik
+            // + 5px ile de ikonların çok dibine yapışmamasını sağlamaya devam ediyoruz
+            paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 15px) + 5px)', 
             fontFamily: 'Inter, sans-serif' 
           }}
         >

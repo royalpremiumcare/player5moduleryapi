@@ -4,16 +4,21 @@
   box-sizing: border-box;
 }
 
-/* YENİ FIXED WRAPPER KİLİDİ - Radix/iOS Zıplamasını Engeller */
+/* SADECE .app-locked class'ı varken gövdeyi kilitle (Panel Modu) */
+html.app-locked, body.app-locked {
+  overflow: hidden !important;
+  height: 100%;
+  width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  background-color: #ffffff;
+}
+
+/* Normal sayfalar (Landing Page vb.) için temel ayarlar */
 html, body {
   scroll-behavior: smooth;
   background-color: #ffffff;
-  overflow: hidden !important; /* Body hiçbir şekilde kaymasın */
-  height: 100%;
-  width: 100%;
-  position: fixed; /* Ekranı çiviliyoruz */
-  top: 0;
-  left: 0;
 }
 
 #root {

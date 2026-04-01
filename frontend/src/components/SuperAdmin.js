@@ -36,7 +36,8 @@ const SuperAdmin = ({ onNavigate }) => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    // h-screen yerine h-full ve w-full verdik ki fixed wrapper'a tam otursun
+    <div className="flex h-full w-full bg-gray-50 overflow-hidden">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -51,8 +52,13 @@ const SuperAdmin = ({ onNavigate }) => {
         transform transition-transform duration-200 ease-in-out
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}>
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-700">
+        {/* Logo & Header: Safe Area boşluğu eklendi */}
+        <div 
+          className="flex items-center gap-3 px-6 pb-4 border-b border-slate-700 flex-shrink-0"
+          style={{ 
+            paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 30px) + 12px)'
+          }}
+        >
           <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
             <span className="text-white font-bold text-sm">P</span>
           </div>
@@ -86,8 +92,11 @@ const SuperAdmin = ({ onNavigate }) => {
           ))}
         </nav>
 
-        {/* Logout */}
-        <div className="px-3 py-4 border-t border-slate-700">
+        {/* Logout: Alt kısımdaki Home Indicator (çizgi) için boşluk bırakıldı */}
+        <div 
+          className="px-3 pt-4 border-t border-slate-700"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
+        >
           <button
             onClick={() => { logout(); }}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
@@ -100,21 +109,29 @@ const SuperAdmin = ({ onNavigate }) => {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top bar */}
-        <header className="bg-white border-b border-gray-200 flex items-center gap-4 px-4 py-3 flex-shrink-0">
+        {/* Top bar: Safe Area boşluğu eklendi */}
+        <header 
+          className="bg-white border-b border-gray-200 flex items-center gap-4 px-4 pb-3 flex-shrink-0"
+          style={{ 
+            paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 30px) + 10px)'
+          }}
+        >
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 lg:hidden"
           >
             <Menu className="w-5 h-5" />
           </button>
-          <h1 className="text-lg font-semibold text-gray-900">
+          <h1 className="text-lg font-semibold text-gray-900 truncate">
             {NAV_ITEMS.find(n => n.id === activeTab)?.label || "Genel Bakış"}
           </h1>
         </header>
 
-        {/* View content */}
-        <main className="flex-1 overflow-y-auto">
+        {/* View content: Alt kısımdaki Home Indicator (çizgi) için boşluk bırakıldı */}
+        <main 
+          className="flex-1 overflow-y-auto"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
+        >
           {renderContent()}
         </main>
       </div>
