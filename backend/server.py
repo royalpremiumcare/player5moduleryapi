@@ -11221,6 +11221,7 @@ async def confirm_lead_upload(
     batch_name: str = Form(...),
     company_col: str = Form(...),
     phone_col: str = Form(...),
+    sector_col: str = Form(...),
     current_user: UserInDB = Depends(get_superadmin_user),
     db = Depends(get_db)
 ):
@@ -11253,6 +11254,7 @@ async def confirm_lead_upload(
         for row in rows:
             company = str(row.get(company_col, "") or "").strip()
             phone = str(row.get(phone_col, "") or "").strip()
+            sector = str(row.get(sector_col, "") or "").strip()
             if not company and not phone:
                 skipped += 1
                 continue
@@ -11262,6 +11264,7 @@ async def confirm_lead_upload(
                 "batch_name": batch_name,
                 "company_name": company,
                 "phone": phone,
+                "sector": sector,
                 "status": "pool",
                 "claimed_by": None,
                 "claimed_at": None,
@@ -11388,26 +11391,41 @@ async def get_marketing_batches(
     batches = await db.lead_batches.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return {"batches": batches}
 
+@api_router.get("/marketing/leads/sectors")
+async def get_marketing_sectors(
+    request: Request,
+    current_user: UserInDB = Depends(get_marketing_user),
+    db = Depends(get_db)
+):
+    """Marketing kullanıcısı için benzersiz sektör listesi"""
+    sectors = await db.leads.distinct("sector", {"sector": {"$nin": ["", None]}})
+    return {"sectors": sorted(sectors)}
+
 @api_router.get("/marketing/leads")
 async def get_marketing_leads(
     request: Request,
     current_user: UserInDB = Depends(get_marketing_user),
     db = Depends(get_db),
     tab: str = "pool",
-    batch_id: str = None
+    batch_id: str = None,
+    sector: str = None
 ):
-    """Havuz leadleri veya benim leadlerim (batch_id ile filtrelenebilir)"""
-    logging.info(f"[LEADS] user={current_user.username} id={current_user.id} tab={tab} batch_id={batch_id}")
+    """Havuz leadleri veya benim leadlerim (batch_id ve sector ile filtrelenebilir)"""
+    logging.info(f"[LEADS] user={current_user.username} id={current_user.id} tab={tab} batch_id={batch_id} sector={sector}")
     await _release_expired_claims(db)
     if tab == "mine":
         query = {"claimed_by": current_user.id, "status": {"$in": ["claimed", "interested", "unreachable", "not_interested", "waiting", "registered"]}}
         if batch_id:
             query["batch_id"] = batch_id
+        if sector:
+            query["sector"] = sector
         leads = await db.leads.find(query, {"_id": 0}).sort("updated_at", -1).to_list(5000)
     else:
         query = {"status": "pool"}
         if batch_id:
             query["batch_id"] = batch_id
+        if sector:
+            query["sector"] = sector
         leads = await db.leads.find(query, {"_id": 0}).sort("created_at", 1).to_list(5000)
     return {"leads": leads, "batch_id": batch_id}
 

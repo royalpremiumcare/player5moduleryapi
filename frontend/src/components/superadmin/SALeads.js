@@ -10,7 +10,7 @@ const STATUS_LABELS = {
   unreachable:    { label: "Ulaşılamadı",cls: "bg-orange-100 text-orange-700" },
   not_interested: { label: "İlgisiz",    cls: "bg-red-100 text-red-700" },
   waiting:        { label: "Beklemede",  cls: "bg-purple-100 text-purple-700" },
-  registered:     { label: "Kayıt Oldu",cls: "bg-green-100 text-green-700" },
+  registered:     { label: "Kayıt Oldu", cls: "bg-green-100 text-green-700" },
 };
 
 export default function SALeads() {
@@ -30,6 +30,7 @@ export default function SALeads() {
   const [fileObj, setFileObj]         = useState(null); // actual File object
   const [companyCol, setCompanyCol]   = useState("");
   const [phoneCol, setPhoneCol]       = useState("");
+  const [sectorCol, setSectorCol]     = useState(""); // YENİ: Sektör sütunu için state eklendi
   const [batchName, setBatchName]     = useState("");
   const [uploading, setUploading]     = useState(false);
   const fileRef = useRef();
@@ -75,7 +76,8 @@ export default function SALeads() {
   };
 
   const confirmUpload = async () => {
-    if (!companyCol || !phoneCol || !batchName) {
+    // YENİ: Sektör sütunu da kontrol ediliyor
+    if (!companyCol || !phoneCol || !sectorCol || !batchName) {
       toast.error("Lütfen tüm alanları doldurun"); return;
     }
     if (!fileObj) { toast.error("Dosya bulunamadı, lütfen tekrar yükleyin"); return; }
@@ -86,6 +88,8 @@ export default function SALeads() {
       formData.append("batch_name", batchName);
       formData.append("company_col", companyCol);
       formData.append("phone_col", phoneCol);
+      formData.append("sector_col", sectorCol); // YENİ: Backend'e sektör kolonunu da gönderiyoruz
+      
       const res = await api.post("/superadmin/leads/upload/confirm", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -95,6 +99,7 @@ export default function SALeads() {
       setFileObj(null);
       setCompanyCol("");
       setPhoneCol("");
+      setSectorCol(""); // YENİ: Yükleme bitince state'i sıfırlıyoruz
       // Yeni yüklenen batch'i otomatik seç
       if (res.data.batch_id) setBatchFilter(res.data.batch_id);
       setPage(1);
@@ -119,11 +124,11 @@ export default function SALeads() {
       {stats && (
         <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
           {[
-            { label: "Toplam",       value: stats.total,           cls: "bg-gray-50" },
-            { label: "Havuzda",      value: stats.pool,            cls: "bg-gray-50" },
-            { label: "İlgilendi",    value: stats.interested,      cls: "bg-blue-50 text-blue-700" },
-            { label: "Beklemede",    value: stats.waiting,         cls: "bg-purple-50 text-purple-700" },
-            { label: "Kayıt Oldu",   value: stats.registered,      cls: "bg-green-50 text-green-700" },
+            { label: "Toplam",       value: stats.total,          cls: "bg-gray-50" },
+            { label: "Havuzda",      value: stats.pool,           cls: "bg-gray-50" },
+            { label: "İlgilendi",    value: stats.interested,     cls: "bg-blue-50 text-blue-700" },
+            { label: "Beklemede",    value: stats.waiting,        cls: "bg-purple-50 text-purple-700" },
+            { label: "Kayıt Oldu",   value: stats.registered,     cls: "bg-green-50 text-green-700" },
             { label: "Dönüşüm %",   value: `${stats.conversion_rate}%`, cls: "bg-indigo-50 text-indigo-700" },
           ].map(({ label, value, cls }) => (
             <div key={label} className={`rounded-xl p-3 border border-gray-100 ${cls}`}>
@@ -185,7 +190,8 @@ export default function SALeads() {
             </table>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* YENİ: Grid yapısı 4 kolona çıkarıldı */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Batch Adı</label>
               <input
@@ -217,10 +223,22 @@ export default function SALeads() {
                 {previewData.columns?.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+            {/* YENİ: Sektör Sütunu Seçimi Eklendi */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sektör Sütunu</label>
+              <select
+                value={sectorCol}
+                onChange={e => setSectorCol(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              >
+                <option value="">Seçin...</option>
+                {previewData.columns?.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
           </div>
           <button
             onClick={confirmUpload}
-            disabled={uploading || !companyCol || !phoneCol || !batchName}
+            disabled={uploading || !companyCol || !phoneCol || !sectorCol || !batchName}
             className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50"
           >
             {uploading ? "Yükleniyor..." : "Leadleri Yükle"}
@@ -308,6 +326,8 @@ export default function SALeads() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Şirket</th>
+                {/* YENİ: Sektör Başlığı */}
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Sektör</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Telefon</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Durum</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Pazarlamacı</th>
@@ -319,14 +339,14 @@ export default function SALeads() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    {Array.from({ length: 6 }).map((_, j) => (
+                    {Array.from({ length: 7 }).map((_, j) => (
                       <td key={j} className="px-4 py-3"><div className="h-4 bg-gray-100 rounded w-24" /></td>
                     ))}
                   </tr>
                 ))
               ) : leads.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">Lead bulunamadı</td>
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">Lead bulunamadı</td>
                 </tr>
               ) : (
                 leads.map(l => {
@@ -334,6 +354,8 @@ export default function SALeads() {
                   return (
                     <tr key={l.id} className="hover:bg-gray-50/60">
                       <td className="px-4 py-3 font-medium text-gray-900">{l.company_name}</td>
+                      {/* YENİ: Sektör Verisi */}
+                      <td className="px-4 py-3 text-gray-600 text-xs">{l.sector || "—"}</td>
                       <td className="px-4 py-3 text-gray-600 font-mono text-xs">{l.phone}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${st.cls}`}>{st.label}</span>
