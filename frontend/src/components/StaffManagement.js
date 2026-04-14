@@ -26,6 +26,8 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
   const [staff, setStaff] = useState([]);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => { window.scrollTo(0, 0); }, []);
   const [editingStaff, setEditingStaff] = useState(null);
   const [editingPaymentStaff, setEditingPaymentStaff] = useState(null);
   const [editingDaysOffStaff, setEditingDaysOffStaff] = useState(null);

@@ -91,6 +91,17 @@ const SortableServiceCard = ({ service, i18n, t, onEdit, onDelete }) => {
                     {service.session_count} {i18n.language === 'tr' ? 'seans' : 'sessions'}
                   </span>
                 )}
+                {service.payment_rule && service.payment_rule !== 'on_site' && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                    service.payment_rule === 'online' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {service.payment_rule === 'online' 
+                      ? (i18n.language === 'tr' ? 'Online Ödeme' : 'Online Payment')
+                      : (i18n.language === 'tr' 
+                          ? `Kapora ${service.deposit_amount ? Math.round(service.deposit_amount) + '₺' : '%' + (service.deposit_percentage || 30)}`
+                          : `Deposit ${service.deposit_amount ? '£' + Math.round(service.deposit_amount) : (service.deposit_percentage || 30) + '%'}`)}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -129,8 +140,9 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
   const [showAssignReminder, setShowAssignReminder] = useState(false);
   const [lastAddedServiceName, setLastAddedServiceName] = useState("");
   const [editingService, setEditingService] = useState(null);
-  const [formData, setFormData] = useState({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2" });
+  const [formData, setFormData] = useState({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2", paymentRule: "on_site", depositAmount: "" });
   const [loading, setLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
   const [settings, setSettings] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [orderedServices, setOrderedServices] = useState([]);
@@ -154,8 +166,11 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       price: service.price.toString(),
       duration: (service.duration || 30).toString(),
       isSessionPackage: !!(service.session_count && service.session_count > 1),
-      sessionCount: (service.session_count && service.session_count > 1) ? service.session_count.toString() : "2"
+      sessionCount: (service.session_count && service.session_count > 1) ? service.session_count.toString() : "2",
+      paymentRule: service.payment_rule || "on_site",
+      depositAmount: service.deposit_amount ? service.deposit_amount.toString() : ""
     });
+    setFormErrors({});
     setShowDialog(true);
   };
 
@@ -189,33 +204,64 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
 
   const handleNew = () => {
     setEditingService(null);
-    setFormData({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2" });
+    setFormData({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2", paymentRule: "on_site", depositAmount: "" });
+    setFormErrors({});
     setShowDialog(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const errors = {};
     
     if (!formData.name || !formData.price || !formData.duration) {
-      toast.error(t('services.management.fillAllFields'));
+      if (!formData.name) errors.name = i18n.language === 'tr' ? 'Hizmet adı gereklidir.' : 'Service name is required.';
+      if (!formData.price) errors.price = i18n.language === 'tr' ? 'Fiyat gereklidir.' : 'Price is required.';
+      if (!formData.duration) errors.duration = i18n.language === 'tr' ? 'Süre gereklidir.' : 'Duration is required.';
+      setFormErrors(errors);
       return;
     }
 
     const price = parseFloat(formData.price);
     if (isNaN(price) || price <= 0) {
-      toast.error(t('services.management.validPrice'));
+      setFormErrors({ price: i18n.language === 'tr' ? 'Geçerli bir fiyat girin.' : 'Enter a valid price.' });
       return;
+    }
+
+    if (formData.paymentRule === 'online' && price < 300) {
+      setFormErrors({ price: i18n.language === 'tr' ? 'Online ödeme için hizmet fiyatı en az 300₺ olmalıdır.' : 'Service price must be at least £5 for online payment.' });
+      return;
+    }
+    if (formData.paymentRule === 'deposit' && price < 300) {
+      setFormErrors({ price: i18n.language === 'tr' ? 'Kapora için hizmet fiyatı en az 300₺ olmalıdır.' : 'Service price must be at least £5 for deposit.' });
+      return;
+    }
+    if (formData.paymentRule === 'deposit') {
+      const dep = parseFloat(formData.depositAmount) || 0;
+      if (dep < 200) {
+        setFormErrors({ depositAmount: i18n.language === 'tr' ? 'Kapora tutarı en az 200₺ olmalıdır.' : 'Deposit must be at least £3.' });
+        return;
+      }
+      if (dep > price) {
+        setFormErrors({ depositAmount: i18n.language === 'tr' ? 'Kapora tutarı, hizmetin toplam fiyatını aşamaz.' : 'Deposit cannot exceed the service price.' });
+        return;
+      }
     }
 
     const duration = parseInt(formData.duration);
     if (isNaN(duration) || duration <= 0) {
-      toast.error(t('services.management.validDuration'));
+      setFormErrors({ duration: i18n.language === 'tr' ? 'Geçerli bir süre girin.' : 'Enter a valid duration.' });
       return;
     }
+    setFormErrors({});
 
     setLoading(true);
     try {
-      const payload = { name: formData.name, price, duration, session_count: formData.isSessionPackage ? parseInt(formData.sessionCount) : null };
+      const payload = { 
+        name: formData.name, price, duration, 
+        session_count: formData.isSessionPackage ? parseInt(formData.sessionCount) : null,
+        payment_rule: formData.paymentRule || "on_site",
+        deposit_amount: formData.paymentRule === "deposit" ? parseFloat(formData.depositAmount) || null : null
+      };
       
       if (editingService) {
         await api.put(`/services/${editingService.id}`, payload);
@@ -228,7 +274,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       }
       
       setShowDialog(false);
-      setFormData({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2" });
+      setFormData({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2", paymentRule: "on_site", depositAmount: "" });
       onRefresh();
     } catch (error) {
       toast.error(t('services.management.operationFailed'));
@@ -394,8 +440,8 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
 
       {/* Service Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
-          <DialogHeader>
+        <DialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0 pb-2">
             <DialogTitle className="text-xl font-black text-zinc-900">
               {editingService ? t('services.management.editTitle') : t('services.management.addTitle')}
             </DialogTitle>
@@ -403,18 +449,19 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               {t('services.management.dialogDescription')}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1 px-1 -mx-1">
             <div className="space-y-2">
               <Label htmlFor="service-name" className="text-sm font-bold text-zinc-700">{t('services.fields.name')}</Label>
               <Input
                 id="service-name"
                 data-testid="service-name-input"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) => { setFormErrors(prev => { const { name: _, ...rest } = prev; return rest; }); setFormData({ ...formData, name: e.target.value }); }}
                 placeholder={t('services.management.pricePlaceholder')}
                 required
-                className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                className={`backdrop-blur-md bg-white/60 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.name ? 'border-red-400 border' : 'border-white/40'}`}
               />
+              {formErrors.name && <p className="text-xs text-red-500 font-medium">{formErrors.name}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="service-price" className="text-sm font-bold text-zinc-700">
@@ -424,13 +471,21 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 id="service-price"
                 data-testid="service-price-input"
                 type="number"
-                step="0.01"
+                step="1"
                 value={formData.price}
-                onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                placeholder="0.00"
+                onChange={(e) => { setFormErrors(prev => { const { price: _, ...rest } = prev; return rest; }); setFormData({ ...formData, price: e.target.value }); }}
+                placeholder="0"
                 required
-                className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                className={`backdrop-blur-md bg-white/60 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.price ? 'border-red-400 border' : 'border-white/40'}`}
               />
+              {formErrors.price 
+                ? <p className="text-xs text-red-500 font-medium">{formErrors.price}</p>
+                : (formData.paymentRule === 'online' || formData.paymentRule === 'deposit') && (
+                  <p className="text-xs text-zinc-400 font-medium">
+                    {i18n.language === 'tr' ? 'Online ödeme için minimum tutar 300₺' : 'Minimum amount for online payment £5'}
+                  </p>
+                )
+              }
             </div>
             <div className="space-y-2">
               <Label htmlFor="service-duration" className="text-sm font-bold text-zinc-700">{t('services.fields.duration')}</Label>
@@ -441,12 +496,15 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 min="1"
                 step="1"
                 value={formData.duration}
-                onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+                onChange={(e) => { setFormErrors(prev => { const { duration: _, ...rest } = prev; return rest; }); setFormData({ ...formData, duration: e.target.value }); }}
                 placeholder="30"
                 required
-                className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                className={`backdrop-blur-md bg-white/60 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.duration ? 'border-red-400 border' : 'border-white/40'}`}
               />
-              <p className="text-xs text-zinc-500 font-medium">{t('services.management.durationNote')}</p>
+              {formErrors.duration 
+                ? <p className="text-xs text-red-500 font-medium">{formErrors.duration}</p>
+                : <p className="text-xs text-zinc-500 font-medium">{t('services.management.durationNote')}</p>
+              }
             </div>
             <div className="flex items-center justify-between p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 shadow-sm">
               <div className="flex-1">
@@ -484,7 +542,81 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 </p>
               </div>
             )}
-            <DialogFooter className="border-t border-white/30 pt-4">
+
+            {/* Ödeme Kuralı */}
+            <div className="space-y-2">
+              <Label className="text-sm font-bold text-zinc-700">
+                {i18n.language === 'tr' ? 'Ödeme Kuralı' : 'Payment Rule'}
+              </Label>
+              <select
+                value={formData.paymentRule}
+                onChange={(e) => {
+                  const rule = e.target.value;
+                  const price = parseFloat(formData.price) || 0;
+                  if (rule === 'online' && price > 0 && price < 300) {
+                    setFormErrors(prev => ({ ...prev, price: i18n.language === 'tr' ? 'Online ödeme için hizmet fiyatı en az 300₺ olmalıdır.' : 'Service price must be at least £5 for online payment.' }));
+                    return;
+                  }
+                  if (rule === 'deposit' && price > 0 && price < 300) {
+                    setFormErrors(prev => ({ ...prev, price: i18n.language === 'tr' ? 'Kapora için hizmet fiyatı en az 300₺ olmalıdır.' : 'Service price must be at least £5 for deposit.' }));
+                    return;
+                  }
+                  setFormErrors(prev => { const { price: _, ...rest } = prev; return rest; });
+                  setFormData({ ...formData, paymentRule: rule });
+                }}
+                className="w-full backdrop-blur-md bg-white/60 border border-white/40 rounded-xl h-11 px-3 text-sm font-medium text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+              >
+                <option value="on_site">{i18n.language === 'tr' ? 'Yerinde Ödeme' : 'Pay On Site'}</option>
+                <option value="online">{i18n.language === 'tr' ? 'Tamamı Online Ödeme' : 'Full Online Payment'}</option>
+                <option value="deposit">{i18n.language === 'tr' ? 'Sadece Kapora' : 'Deposit Only'}</option>
+              </select>
+              <p className="text-xs text-zinc-500 font-medium">
+                {formData.paymentRule === 'online'
+                  ? (i18n.language === 'tr' ? 'Müşteri randevu alırken ödemenin tamamını online yapar.' : 'Customer pays full amount online when booking.')
+                  : formData.paymentRule === 'deposit'
+                    ? (i18n.language === 'tr' ? 'Müşteri randevu alırken sabit kapora öder, kalanı işletmede.' : 'Customer pays fixed deposit online, rest at venue.')
+                    : (i18n.language === 'tr' ? 'Müşteri ödemeyi işletmede yapar, online ödeme alınmaz.' : 'Customer pays at the venue, no online payment.')
+                }
+              </p>
+            </div>
+
+            {formData.paymentRule === 'deposit' && (
+              <div className="space-y-2 animate-in fade-in duration-200">
+                <Label htmlFor="deposit-amount" className="text-sm font-bold text-zinc-700">
+                  {i18n.language === 'tr' ? 'Kapora Tutarı (₺)' : 'Deposit Amount (£)'}
+                </Label>
+                <Input
+                  id="deposit-amount"
+                  type="number"
+                  min="200"
+                  max={Math.round(parseFloat(formData.price) || 0) || 9999}
+                  value={formData.depositAmount}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    const price = parseFloat(formData.price) || 0;
+                    if (val > price && price > 0) {
+                      setFormErrors(prev => ({ ...prev, depositAmount: i18n.language === 'tr' ? 'Kapora tutarı, hizmetin toplam fiyatını aşamaz.' : 'Deposit cannot exceed the service price.' }));
+                      return;
+                    }
+                    setFormErrors(prev => { const { depositAmount: _, ...rest } = prev; return rest; });
+                    setFormData({ ...formData, depositAmount: e.target.value });
+                  }}
+                  placeholder={i18n.language === 'tr' ? 'Min 200₺' : 'Min £3'}
+                  required
+                  className={`backdrop-blur-md bg-white/60 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.depositAmount ? 'border-red-400 border' : 'border-white/40'}`}
+                />
+                {formErrors.depositAmount
+                  ? <p className="text-xs text-red-500 font-medium">{formErrors.depositAmount}</p>
+                  : <p className="text-xs text-zinc-500 font-medium">
+                      {i18n.language === 'tr' 
+                        ? 'Min 200₺. Kalan tutar işletmede ödenir.'
+                        : 'Min £3. Rest is paid at venue.'}
+                    </p>
+                }
+              </div>
+            )}
+
+            <DialogFooter className="flex-shrink-0 border-t border-white/30 pt-4 bg-white/95 sticky bottom-0">
               <Button 
                 type="button" 
                 variant="outline" 

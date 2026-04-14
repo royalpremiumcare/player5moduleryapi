@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { 
   Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, 
-  ArrowLeft, DollarSign, Bell, BellOff, MapPin, Wrench, ShieldCheck, Globe
+  ArrowLeft, DollarSign, Bell, BellOff, MapPin, Wrench, ShieldCheck, Globe,
+  Wallet, CreditCard
 } from "lucide-react"; 
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -303,6 +304,23 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                 title={t('settings.financeManagement')}
                 subtitle={t('settings.financeManagementSubtitle')}
                 onClick={() => onNavigate && onNavigate("settings-finance")}
+              />
+            </div>
+
+            {/* ÖDEME YÖNETİMİ */}
+            <SectionTitle title="Ödeme Yönetimi" />
+            <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
+              <SettingItem 
+                icon={Wallet} 
+                title="Cüzdan"
+                subtitle="Bakiye, işlemler ve ödeme talepleri"
+                onClick={() => onNavigate && onNavigate("merchant-wallet")}
+              />
+              <SettingItem 
+                icon={CreditCard} 
+                title="Ödeme Ayarları"
+                subtitle="Banka bilgileri, komisyon ve ödeme tercihleri"
+                onClick={() => onNavigate && onNavigate("merchant-payment-settings")}
               />
             </div>
           </>

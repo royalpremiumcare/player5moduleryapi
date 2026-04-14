@@ -207,6 +207,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       const dateStr = format(formData.appointment_date, "yyyy-MM-dd");
       const params = { service_id: formData.service_id, date: dateStr };
       if (formData.staff_member_id) params.staff_id = formData.staff_member_id;
+      if (appointment?.id) params.exclude_appointment_id = appointment.id;
 
       let res;
       if (userRole === 'admin' || canViewAll) {
@@ -422,7 +423,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // --- MEMOIZED COMPUTATIONS (renderStep dışında) ---
 
-  const days = useMemo(() => Array.from({ length: 14 }, (_, i) => addDays(new Date(), i)), []);
+  const days = useMemo(() => Array.from({ length: 60 }, (_, i) => addDays(new Date(), i)), []);
 
   const allSlots = useMemo(
     () => [...new Set([...availableSlots, ...busySlots])].sort(),
@@ -803,11 +804,12 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         {/* HEADER */}
         <div className="px-6 pt-12 pb-4 md:pt-6 border-b border-white/20 flex items-center justify-between backdrop-blur-2xl bg-white/70 sticky top-0 z-20 shrink-0 shadow-sm">
           <div className="flex items-center gap-4">
-            {step > 1 ? (
+            {step > 1 && (
               <button onClick={() => setStep(step - 1)} className="p-2 -ml-2 hover:bg-white/50 rounded-xl transition-colors duration-200">
                 <ChevronLeft className="w-6 h-6 text-zinc-900" strokeWidth={2} />
               </button>
-            ) : (
+            )}
+            {step === 1 && (
               <button onClick={onCancel} className="p-2 -ml-2 hover:bg-white/50 rounded-xl transition-colors duration-200 md:hidden">
                  <X className="w-6 h-6 text-zinc-900" strokeWidth={2} />
               </button>
@@ -823,7 +825,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               </p>
             </div>
           </div>
-          <button onClick={onCancel} className="p-2 backdrop-blur-md bg-white/50 rounded-xl hover:bg-white/70 transition-all duration-300 hidden md:block shadow-sm">
+          <button onClick={onCancel} className="p-2 backdrop-blur-md bg-white/50 rounded-xl hover:bg-white/70 transition-all duration-300 shadow-sm">
             <X className="w-5 h-5 text-zinc-600" strokeWidth={2} />
           </button>
         </div>

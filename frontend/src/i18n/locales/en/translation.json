@@ -131,6 +131,14 @@
         "title": "Income & Expense Management",
         "description": "Track your business income and expenses with the pre-accounting system."
       },
+      "onlinePayment": {
+        "title": "Online Payment System",
+        "description": "Set up online payment or deposit rules for your services. Customers pay securely when booking; choose full payment or percentage-based deposit."
+      },
+      "sessionPackages": {
+        "title": "Session Package Management",
+        "description": "Create multi-session services, plan sessions in bulk and track them. Session plans are automatically sent to your customers via WhatsApp."
+      },
       "reporting": {
         "title": "Reporting & Statistics",
         "description": "View customer, staff and service statistics. Track income and expenses."
@@ -199,7 +207,9 @@
         "prioritySupport": "Priority Support",
         "customIntegrations": "Custom Integrations",
         "appointmentReminder": "Appointment Reminders Included",
-        "unlimitedAppointments": "Unlimited Appointments"
+        "unlimitedAppointments": "Unlimited Appointments",
+        "onlinePayment": "Accept Online Payments (Deposit or Full)",
+        "sessionPackages": "Session Package Management"
       }
     },
     "testimonials": {
@@ -613,7 +623,14 @@
       "settingUpdated": "Setting updated",
       "settingUpdateFailed": "Could not update setting",
       "minutes": "min",
-      "pricePlaceholder": "E.g.: Haircut, Treatment, Consultation"
+      "pricePlaceholder": "E.g.: Haircut, Treatment, Consultation",
+      "paymentRule": "Payment Rule",
+      "paymentRuleOnSite": "Pay On Site",
+      "paymentRuleOnline": "Full Online Payment",
+      "paymentRuleDeposit": "Deposit Only",
+      "depositPercentage": "Deposit Percentage (%)",
+      "depositPercentageNote": "Customer pays this percentage of the total during online checkout",
+      "depositInvalid": "Deposit percentage must be between 1-99"
     },
     "fields": {
       "name": "Service Name",
@@ -1265,5 +1282,47 @@
     "upgradeDesc": "Your monthly AI usage limit has been reached. Upgrade your plan for uninterrupted service.",
     "placeholder": "Type your message...",
     "disclaimer": "AI can make mistakes. Verify for important decisions."
+  },
+  "financial": {
+    "title": "Financial Management",
+    "overview": "Overview",
+    "wallets": "Wallets",
+    "totalPoolGbp": "Total Pool (GBP)",
+    "gbpMerchants": "GBP Merchants",
+    "tryMerchants": "TRY Merchants",
+    "exchangeRate": "GBP/TRY Rate",
+    "allMarkets": "All Markets",
+    "orgId": "Org ID",
+    "currency": "Currency",
+    "available": "Available",
+    "pending": "Pending",
+    "frozen": "Frozen",
+    "kyc": "KYC",
+    "kycVerified": "Verified",
+    "kycPending": "Pending",
+    "kycApprove": "Approve KYC",
+    "kycApproved": "KYC approved",
+    "freezeWallet": "Freeze Wallet",
+    "walletFrozen": "Wallet frozen",
+    "noWallets": "No wallets found",
+    "actions": "Actions",
+    "totalWallets": "Total {{count}} wallets",
+    "page": "Page {{current}}/{{total}}",
+    "refresh": "Refresh",
+    "searchOrg": "Search Org ID or name...",
+    "cancelOnly": "Cancel Only",
+    "cancelOnlyDesc": "Remaining sessions are cancelled, no refund. Payment stays in your wallet.",
+    "cancelAndRefund": "Cancel & Refund",
+    "cancelAndRefundDesc": "Remaining sessions are cancelled and the proportional amount is refunded to the customer.",
+    "refund": "Refund",
+    "refunding": "Refunding...",
+    "refundInitiated": "Refund initiated",
+    "refundFailed": "Refund failed",
+    "confirmRefund": "Are you sure you want to refund this appointment?",
+    "redirectingToPayment": "Redirecting to payment page...",
+    "checkoutFailed": "Payment page could not be created. Your appointment is booked, you can pay on site.",
+    "processing": "Processing...",
+    "confirm": "Confirm",
+    "selectOption": "Please select an option"
   }
 }

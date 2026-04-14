@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import { useParams } from "react-router-dom";
 import { format } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
-import { Calendar as CalendarIcon, Clock, Check, AlertCircle, User, ArrowRight, ArrowLeft, Loader2, ChevronLeft, ChevronRight, X, MessageCircle, QrCode as QrCodeIcon } from "lucide-react";
-import { Turnstile } from "@marsidev/react-turnstile";
+import { Calendar as CalendarIcon, Clock, Check, AlertCircle, User, ArrowRight, ArrowLeft, Loader2, ChevronLeft, ChevronRight, X, MessageCircle, QrCode as QrCodeIcon, Info } from "lucide-react";
+// Raw Turnstile API used via window.turnstile (loaded in index.html)
 import { QRCodeSVG } from "qrcode.react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,11 @@ import BusinessMap from "./BusinessMap";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const API = `${BACKEND_URL}/api`;
+
+const fmtPrice = (minor) => {
+  const major = Math.round(minor / 100);
+  return major.toLocaleString('tr-TR');
+};
 
 const publicApi = axios.create({
   baseURL: `${BACKEND_URL}/api`,
@@ -210,18 +215,72 @@ const PublicBookingPage = () => {
   
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [feePreview, setFeePreview] = useState(null);
+  const [showFeeTooltip, setShowFeeTooltip] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState(null); // "success" | "cancelled" | null
 
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState(null);
   const [verificationPending, setVerificationPending] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
-  const [verificationWaLink, setVerificationWaLink] = useState("");
-  const [verificationWaNumber, setVerificationWaNumber] = useState("");
+  const [userEnteredCode, setUserEnteredCode] = useState("");
+  const [verificationPhone, setVerificationPhone] = useState("");
   const [verificationStatus, setVerificationStatus] = useState("pending");
+  const [verifyingCode, setVerifyingCode] = useState(false);
 
   const resetTimeoutRef = useRef(null);
   const socketRef = useRef(null);
   const pollIntervalRef = useRef(null);
+  const turnstileWidgetId = useRef(null);
+  const turnstileContainerRef = useRef(null);
+  const turnstileResolveRef = useRef(null);
+
+  // --- RAW TURNSTILE: render widget once on mount ---
+  useEffect(() => {
+    const initTurnstile = () => {
+      if (!window.turnstile || !turnstileContainerRef.current) return;
+      if (turnstileWidgetId.current) return; // already rendered
+      
+      console.log('[Turnstile] rendering widget via raw API...');
+      turnstileWidgetId.current = window.turnstile.render(turnstileContainerRef.current, {
+        sitekey: process.env.REACT_APP_TURNSTILE_SITE_KEY || '0x4AAAAAACuhfhSBvGXOLpdW',
+        size: 'normal',
+        callback: (token) => {
+          console.log('[Turnstile] onSuccess, token length:', token?.length);
+          setTurnstileToken(token);
+          if (turnstileResolveRef.current) {
+            turnstileResolveRef.current(token);
+            turnstileResolveRef.current = null;
+          }
+        },
+        'error-callback': (err) => {
+          console.log('[Turnstile] onError:', err);
+          setTurnstileToken(null);
+        },
+        'expired-callback': () => {
+          console.log('[Turnstile] onExpire');
+          setTurnstileToken(null);
+        },
+      });
+      console.log('[Turnstile] widget rendered, id:', turnstileWidgetId.current);
+    };
+
+    // Poll until BOTH window.turnstile API AND container ref are available
+    const iv = setInterval(() => {
+      if (window.turnstile && turnstileContainerRef.current && !turnstileWidgetId.current) {
+        clearInterval(iv);
+        initTurnstile();
+      }
+    }, 300);
+
+    return () => {
+      clearInterval(iv);
+      if (turnstileWidgetId.current && window.turnstile) {
+        window.turnstile.remove(turnstileWidgetId.current);
+        turnstileWidgetId.current = null;
+      }
+    };
+  }, []);
 
   // --- HELPER: GÖRÜNEN ADIM HESAPLAMA ---
   // Eğer personel seçimi kapalıysa toplam adım 3, açıksa 4 olmalı.
@@ -269,6 +328,16 @@ const PublicBookingPage = () => {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get('payment');
+    if (payment === 'success' || payment === 'cancelled') {
+      setPaymentStatus(payment);
+      // URL'den query parametrelerini temizle
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
     loadBusinessData();
   }, [slug]);
 
@@ -288,7 +357,7 @@ const PublicBookingPage = () => {
       
       const socket = io(socketUrl, {
         path: '/api/socket.io',
-        transports: ['websocket', 'polling'],
+        transports: ['websocket'],
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         reconnectionAttempts: 5,
@@ -448,6 +517,18 @@ const PublicBookingPage = () => {
   const handleServiceSelect = (service) => {
     setSelectedService(service);
     setSelectedStaff(null);
+    setFeePreview(null);
+    
+    // Fetch fee preview for online/deposit services
+    if (service.payment_rule && service.payment_rule !== 'on_site' && business?.organization_id) {
+      publicApi.get(`/public/fee-preview`, {
+        params: {
+          organization_id: business.organization_id,
+          service_id: service.id,
+          session_count: service.session_count || 1,
+        }
+      }).then(res => setFeePreview(res.data)).catch(() => {});
+    }
     
     // Çift tıklama sorununu çözmek için:
     // Doğrudan state güncellemesi beklemeden bir sonraki adıma geçişi planla
@@ -489,42 +570,6 @@ const PublicBookingPage = () => {
     }, 20000);
   }, []);
 
-  const startVerificationPolling = useCallback((code, savedFullName, savedPhone) => {
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-
-    const timeoutId = setTimeout(() => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
-      setVerificationStatus("expired");
-    }, 15 * 60 * 1000);
-
-    pollIntervalRef.current = setInterval(async () => {
-      try {
-        const res = await publicApi.get('/public/verify-status', { params: { code } });
-        if (res.data.status === "verified") {
-          clearInterval(pollIntervalRef.current);
-          clearTimeout(timeoutId);
-          pollIntervalRef.current = null;
-          setVerificationStatus("verified");
-          setVerificationPending(false);
-          if (rememberMe) {
-            localStorage.setItem('plann_user', JSON.stringify({ fullName: savedFullName, phone: savedPhone }));
-          }
-          setSuccess(true);
-          toast.success(t('publicBooking.appointmentCreated'));
-          triggerSuccessReset();
-        } else if (res.data.status === "expired") {
-          clearInterval(pollIntervalRef.current);
-          clearTimeout(timeoutId);
-          pollIntervalRef.current = null;
-          setVerificationStatus("expired");
-        }
-      } catch (_) {}
-    }, 3000);
-  }, [rememberMe, t, triggerSuccessReset]);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -544,6 +589,10 @@ const PublicBookingPage = () => {
 
     setSubmitting(true);
     try {
+      // Use pre-solved Turnstile token (auto-solved on page load) — soft mode, proceed even without token
+      let token = turnstileToken || (window.turnstile && turnstileWidgetId.current ? window.turnstile.getResponse(turnstileWidgetId.current) : null) || "";
+      console.log('[Turnstile] token available:', token ? `length=${token.length}` : 'empty (soft mode)');
+
       const fullName = customerFullName.trim();
       const fullPhoneNumber = `${phonePrefix}${phone}`;
       
@@ -555,7 +604,7 @@ const PublicBookingPage = () => {
         appointment_time: selectedTime,
         notes: "",
         staff_member_id: selectedStaff || null,
-        turnstile_token: turnstileToken,
+        turnstile_token: token,
       };
 
       const response = await publicApi.post(`/public/appointments`, payload, {
@@ -563,19 +612,39 @@ const PublicBookingPage = () => {
       });
 
       if (response.data.needs_verification) {
-        const { code, wa_link, wa_number } = response.data;
-        setVerificationCode(code);
-        setVerificationWaLink(wa_link || "");
-        setVerificationWaNumber(wa_number || "");
+        setVerificationCode(response.data.code);
+        setVerificationPhone(fullPhoneNumber);
         setVerificationStatus("pending");
         setVerificationPending(true);
-        startVerificationPolling(code, fullName, phone.trim());
         return;
       }
       
       if (rememberMe) {
         const userData = { fullName: fullName, phone: phone.trim() };
         localStorage.setItem('plann_user', JSON.stringify(userData));
+      }
+
+      // Stripe checkout redirect for online/deposit payment rules
+      const paymentRule = selectedService.payment_rule;
+      console.log('[Checkout] selectedService:', selectedService.name, 'payment_rule:', paymentRule, 'appointment response:', response.data);
+      if (paymentRule === "online" || paymentRule === "deposit") {
+        try {
+          toast.info(i18n.language === 'tr' ? 'Ödeme sayfasına yönlendiriliyorsunuz...' : 'Redirecting to payment page...');
+          const checkoutRes = await publicApi.post(`/public/checkout`, {
+            organization_id: business.organization_id,
+            service_id: selectedService.id,
+            appointment_id: response.data.appointment?.id || response.data.id || response.data.appointment_id,
+            customer_name: fullName,
+            customer_phone: fullPhoneNumber,
+          });
+          if (checkoutRes.data?.checkout_url) {
+            window.location.href = checkoutRes.data.checkout_url;
+            return;
+          }
+        } catch (checkoutErr) {
+          console.error("Stripe checkout error:", checkoutErr);
+          toast.error(i18n.language === 'tr' ? 'Ödeme sayfası oluşturulamadı. Randevunuz oluşturuldu, ödemeyi yerinde yapabilirsiniz.' : 'Payment page could not be created. Your appointment is booked, you can pay on site.');
+        }
       }
       
       setSuccess(true);
@@ -586,6 +655,11 @@ const PublicBookingPage = () => {
       toast.error(errorMessage);
     } finally {
       setSubmitting(false);
+      // Reset widget so it auto-solves again for next attempt
+      setTurnstileToken(null);
+      if (turnstileWidgetId.current && window.turnstile) {
+        window.turnstile.reset(turnstileWidgetId.current);
+      }
     }
   };
 
@@ -632,6 +706,53 @@ const PublicBookingPage = () => {
     );
   }
 
+  const handleVerifyCode = async () => {
+    if (!userEnteredCode.trim()) return;
+    setVerifyingCode(true);
+    try {
+      const res = await publicApi.post('/public/verify-code', {
+        code: userEnteredCode.trim(),
+        phone: verificationPhone,
+      });
+      if (res.data.status === 'verified') {
+        toast.success(currentLang === 'en' ? 'Verified! Appointment created.' : 'Doğrulandı! Randevunuz oluşturuldu.');
+        setVerificationPending(false);
+        setVerificationStatus('verified');
+        if (rememberMe) {
+          localStorage.setItem('plann_user', JSON.stringify({ fullName: customerFullName.trim(), phone: phone.trim() }));
+        }
+        // Checkout redirect for online/deposit
+        const paymentRule = res.data.service_payment_rule;
+        if ((paymentRule === 'online' || paymentRule === 'deposit') && res.data.appointment_id) {
+          try {
+            toast.info(currentLang === 'en' ? 'Redirecting to payment...' : 'Ödeme sayfasına yönlendiriliyorsunuz...');
+            const checkoutRes = await publicApi.post('/public/checkout', {
+              organization_id: business.organization_id,
+              service_id: selectedService.id,
+              appointment_id: res.data.appointment_id,
+              customer_name: customerFullName.trim(),
+              customer_phone: verificationPhone,
+            });
+            if (checkoutRes.data?.checkout_url) {
+              window.location.href = checkoutRes.data.checkout_url;
+              return;
+            }
+          } catch (checkoutErr) {
+            console.error('Checkout error after verification:', checkoutErr);
+            toast.error(currentLang === 'en' ? 'Payment page failed. Appointment is booked.' : 'Ödeme sayfası oluşturulamadı. Randevunuz oluşturuldu.');
+          }
+        }
+        setSuccess(true);
+        triggerSuccessReset();
+      }
+    } catch (err) {
+      const msg = err.response?.data?.detail || (currentLang === 'en' ? 'Verification failed.' : 'Doğrulama başarısız.');
+      toast.error(msg);
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
+
   if (verificationPending) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
@@ -642,95 +763,41 @@ const PublicBookingPage = () => {
               <MessageCircle className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">
-              {currentLang === 'en' ? 'Verify via WhatsApp' : 'WhatsApp ile Doğrulayın'}
+              {currentLang === 'en' ? 'Verify Your Number' : 'Numaranızı Doğrulayın'}
             </h2>
             <p className="text-zinc-500 mt-2 text-sm">
               {currentLang === 'en'
-                ? 'Send the code below to confirm your appointment.'
-                : 'Randevunuzu onaylamak için aşağıdaki kodu gönderin.'}
+                ? 'We sent a verification code to your WhatsApp. Enter it below.'
+                : 'WhatsApp\'ınıza bir doğrulama kodu gönderdik. Aşağıya girin.'}
             </p>
           </div>
 
-          <div className="bg-zinc-950 rounded-xl p-6 text-center">
-            <p className="text-zinc-400 text-xs uppercase tracking-wider mb-2">
-              {currentLang === 'en' ? 'Your code' : 'Doğrulama kodunuz'}
-            </p>
-            <p className="text-white text-3xl font-mono font-bold tracking-widest">{verificationCode}</p>
-            <p className="text-zinc-500 text-xs mt-3">
-              {currentLang === 'en' ? 'Valid for 15 minutes' : '15 dakika geçerli'}
-            </p>
+          <div className="space-y-3">
+            <Input
+              type="text"
+              placeholder={currentLang === 'en' ? 'Enter 6-digit code' : '6 haneli kodu girin'}
+              value={userEnteredCode}
+              onChange={(e) => setUserEnteredCode(e.target.value.toUpperCase())}
+              className="text-center text-xl font-mono font-bold tracking-widest h-14 border-zinc-300"
+              autoFocus
+            />
+            <Button
+              type="button"
+              onClick={handleVerifyCode}
+              disabled={verifyingCode || !userEnteredCode.trim()}
+              className="w-full h-12 bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-base"
+            >
+              {verifyingCode ? (
+                <><Loader2 className="w-4 h-4 animate-spin mr-2" /> {currentLang === 'en' ? 'Verifying...' : 'Doğrulanıyor...'}</>
+              ) : (
+                currentLang === 'en' ? 'Verify & Confirm' : 'Doğrula ve Onayla'
+              )}
+            </Button>
           </div>
 
-          {verificationWaLink && (
-  <div className="space-y-2">
-    <button
-      type="button"
-      onClick={(e) => {
-        e.preventDefault();
-        
-        // Güvenlik önlemi: Eğer backend numarayı göndermeyi unutursa eski düzende aç.
-        if (!verificationWaNumber) {
-          window.open(verificationWaLink, '_blank');
-          return;
-        }
-
-        const message = encodeURIComponent(`Randevu doğrulama kodum: ${verificationCode}`);
-        const isAndroid = /Android/i.test(navigator.userAgent);
-        
-        if (isAndroid) {
-          // Android Intent: Instagram vb. tarayıcıları %100 deler ve WhatsApp'ı zorla açar
-          window.location.href = `intent://send/?phone=${verificationWaNumber}&text=${message}#Intent;scheme=whatsapp;package=com.whatsapp;end`;
-        } else {
-          // iOS Deep Link
-          window.location.href = `whatsapp://send?phone=${verificationWaNumber}&text=${message}`;
-        }
-      }}
-      className="flex items-center justify-center gap-3 w-full bg-[#25D366] hover:bg-[#1fb558] text-white font-bold h-14 rounded-xl text-lg transition-colors shadow-sm"
-    >
-      <MessageCircle className="w-6 h-6" />
-      {currentLang === 'en' ? "Open WhatsApp" : "WhatsApp'ı Aç"}
-    </button>
-    <p className="text-zinc-500 text-[11px] text-center px-2">
-      {currentLang === 'en' 
-        ? "WhatsApp will open automatically. Please hit the send button in the chat." 
-        : "Butona tıkladığınızda WhatsApp otomatik açılacaktır. Lütfen mesajı gönder tuşuna basınız."}
-    </p>
-  </div>
-)}
-
-          {verificationWaLink && (
-            <div className="hidden md:block bg-zinc-50 border border-zinc-200 rounded-xl p-5 text-center">
-              <div className="flex items-center gap-2 justify-center mb-3 text-zinc-500 text-sm font-medium">
-                <QrCodeIcon className="w-4 h-4" />
-                {currentLang === 'en' ? 'On desktop? Scan this QR code' : 'Bilgisayardaysanız QR kodu okutun'}
-              </div>
-              <div className="flex justify-center">
-                <QRCodeSVG value={verificationWaLink} size={160} bgColor="#ffffff" fgColor="#18181b" level="M" />
-              </div>
-            </div>
-          )}
-
-          {verificationStatus === "expired" ? (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-              <p className="text-red-600 font-semibold text-sm">
-                {currentLang === 'en' ? 'Code expired. Please try again.' : 'Kodun süresi doldu. Lütfen tekrar deneyin.'}
-              </p>
-              <button
-                type="button"
-                onClick={() => { setVerificationPending(false); setVerificationStatus("pending"); }}
-                className="mt-2 text-sm underline text-zinc-700 hover:text-zinc-900"
-              >
-                {currentLang === 'en' ? 'Back to form' : 'Forma dön'}
-              </button>
-            </div>
-          ) : (
-            <div className="bg-zinc-50 border border-zinc-100 rounded-lg p-4 text-center">
-              <div className="flex items-center justify-center gap-2 text-zinc-400 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {currentLang === 'en' ? 'Waiting for your message...' : 'Mesajınız bekleniyor...'}
-              </div>
-            </div>
-          )}
+          <p className="text-zinc-400 text-xs text-center">
+            {currentLang === 'en' ? 'Code is valid for 15 minutes.' : 'Kod 15 dakika geçerlidir.'}
+          </p>
 
           <button
             type="button"
@@ -738,11 +805,79 @@ const PublicBookingPage = () => {
               if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
               setVerificationPending(false);
               setVerificationStatus("pending");
+              setUserEnteredCode("");
             }}
             className="w-full text-sm text-zinc-400 hover:text-zinc-600 py-2 transition-colors"
           >
             {currentLang === 'en' ? 'Cancel and go back' : 'İptal et ve geri dön'}
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (paymentStatus === 'success') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <Toaster position="top-center" richColors theme="light" />
+        <div className="text-center max-w-md w-full animate-in fade-in zoom-in duration-300">
+          <div className="w-20 h-20 bg-emerald-600 text-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl">
+            <Check className="w-10 h-10" />
+          </div>
+          <h2 className="text-3xl font-bold text-zinc-900 mb-3 tracking-tight">
+            {currentLang === 'tr' ? 'Ödemeniz Alındı!' : 'Payment Successful!'}
+          </h2>
+          <p className="text-zinc-500 text-lg mb-6">
+            {currentLang === 'tr'
+              ? 'Randevunuz onaylandı ve ödemeniz başarıyla tamamlandı. Randevu detayları kısa süre içinde size iletilecektir.'
+              : 'Your appointment is confirmed and payment was completed successfully. Appointment details will be sent to you shortly.'}
+          </p>
+          {business && (
+            <div className="mb-6 p-4 bg-zinc-50 rounded-xl border border-zinc-200">
+              <div className="font-bold text-zinc-900 text-lg">{business.business_name}</div>
+              {(business?.location?.address || settings?.address) && (
+                <div className="text-sm text-zinc-500 mt-1">{business?.location?.address || settings?.address}</div>
+              )}
+            </div>
+          )}
+          <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-sm text-emerald-700 mb-6">
+            {currentLang === 'tr' ? '✓ Ödeme onayı tarafınıza iletilecektir.' : '✓ Payment confirmation will be sent to you.'}
+          </div>
+          <Button
+            type="button"
+            onClick={() => setPaymentStatus(null)}
+            className="bg-zinc-900 hover:bg-black text-white font-bold h-12 px-6 rounded-lg"
+          >
+            {currentLang === 'tr' ? 'Tamam' : 'Done'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (paymentStatus === 'cancelled') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <Toaster position="top-center" richColors theme="light" />
+        <div className="text-center max-w-md w-full animate-in fade-in zoom-in duration-300">
+          <div className="w-20 h-20 bg-amber-500 text-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl">
+            <AlertCircle className="w-10 h-10" />
+          </div>
+          <h2 className="text-2xl font-bold text-zinc-900 mb-3 tracking-tight">
+            {currentLang === 'tr' ? 'Ödeme İptal Edildi' : 'Payment Cancelled'}
+          </h2>
+          <p className="text-zinc-500 text-lg mb-6">
+            {currentLang === 'tr'
+              ? 'Ödeme işlemi tamamlanmadı. Randevunuz oluşturulmadı, lütfen tekrar deneyin.'
+              : 'Payment was not completed. Your appointment was not created, please try again.'}
+          </p>
+          <Button
+            type="button"
+            onClick={() => setPaymentStatus(null)}
+            className="bg-zinc-900 hover:bg-black text-white font-bold h-12 px-6 rounded-lg"
+          >
+            {currentLang === 'tr' ? 'Tamam' : 'OK'}
+          </Button>
         </div>
       </div>
     );
@@ -913,6 +1048,8 @@ const PublicBookingPage = () => {
             </div>
 
             <form onSubmit={handleSubmit}>
+              {/* Turnstile container - raw API renders into this div */}
+              <div ref={turnstileContainerRef} />
               
               {/* ADIM 1: Hizmet Seçimi */}
               {currentStep === 1 && (
@@ -948,6 +1085,20 @@ const PublicBookingPage = () => {
                             </span>
                           </div>
                         )}
+                        {service.payment_rule && service.payment_rule !== 'on_site' && (
+                          <div className="mb-2">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                              service.payment_rule === 'deposit'
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-emerald-100 text-emerald-700'
+                            }`}>
+                              {service.payment_rule === 'deposit'
+                                ? (currentLang === 'tr' ? 'Kapora Gerekli' : 'Deposit Required')
+                                : (currentLang === 'tr' ? 'Online Ödeme' : 'Online Payment')
+                              }
+                            </span>
+                          </div>
+                        )}
                         <div className="mt-auto flex items-center justify-between w-full pt-4 border-t border-dashed border-zinc-200">
                             {settings?.show_service_duration_on_public !== false && (
                                 <span className="text-sm font-medium text-zinc-500 bg-zinc-100 px-2 py-1 rounded">
@@ -956,7 +1107,7 @@ const PublicBookingPage = () => {
                             )}
                             {settings?.show_service_price_on_public !== false && (
                                 <span className="text-lg font-bold text-zinc-900">
-                                  {currentLang === 'en' ? `${currencySymbol}${Math.round(service.price)}` : `${Math.round(service.price)}${currencySymbol}`}
+                                  {currentLang === 'en' ? `${currencySymbol}${Math.round(service.price).toLocaleString('tr-TR')}` : `${Math.round(service.price).toLocaleString('tr-TR')}${currencySymbol}`}
                                 </span>
                             )}
                         </div>
@@ -1080,15 +1231,15 @@ const PublicBookingPage = () => {
                     <h2 className="lg:hidden text-2xl font-bold text-zinc-900 tracking-tight">{t('publicBooking.step4')}</h2>
 
                     {selectedService?.session_count && selectedService.session_count > 1 && (
-                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3">
-                        <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-zinc-500 flex-shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-sm font-bold text-blue-900">
+                          <p className="text-sm font-bold text-zinc-900">
                             {currentLang === 'tr' 
                               ? `Bu hizmet ${selectedService.session_count} seanslık bir pakettir.`
                               : `This service is a ${selectedService.session_count}-session package.`}
                           </p>
-                          <p className="text-xs text-blue-700 mt-1">
+                          <p className="text-xs text-zinc-500 mt-1">
                             {currentLang === 'tr'
                               ? 'Şu an ilk seans için randevu alıyorsunuz. Kalan seanslar işletme tarafından planlanacaktır.'
                               : 'You are booking the first session. Remaining sessions will be scheduled by the business.'}
@@ -1199,22 +1350,91 @@ const PublicBookingPage = () => {
                              </div>
                              
                              {settings?.show_service_price_on_public !== false && (
-                             <div className="border-t border-zinc-200 pt-4 mt-4 flex justify-between items-center">
-                                <span className="text-zinc-600 font-medium">{t('publicBooking.price')}</span>
-                                <span className="text-2xl font-bold text-zinc-900">
-                                  {selectedService ? (currentLang === 'en' ? `${currencySymbol}${Math.round(selectedService.price)}` : `${Math.round(selectedService.price)}${currencySymbol}`) : "-"}
-                                </span>
+                             <div className="border-t border-zinc-200 pt-4 mt-4">
+                                {feePreview ? (
+                                  <div className="space-y-3">
+                                    {/* Hizmet Bedeli — her zaman tam fiyat */}
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-zinc-500 text-sm">{currentLang === 'tr' ? 'Hizmet Bedeli' : 'Service Price'}</span>
+                                      <span className="font-medium text-zinc-900">
+                                        {currentLang === 'en'
+                                          ? `${currencySymbol}${fmtPrice(feePreview.full_service_price_minor)}`
+                                          : `${fmtPrice(feePreview.full_service_price_minor)}${currencySymbol}`
+                                        }
+                                      </span>
+                                    </div>
+                                    {/* Kapora satırı — sadece deposit varsa */}
+                                    {feePreview.deposit_applied && (
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-amber-600 text-sm font-medium">{currentLang === 'tr' ? 'Kapora (şimdi ödenecek)' : 'Deposit (due now)'}</span>
+                                        <span className="font-medium text-amber-600">
+                                          {currentLang === 'en'
+                                            ? `${currencySymbol}${fmtPrice(feePreview.deposit_minor)}`
+                                            : `${fmtPrice(feePreview.deposit_minor)}${currencySymbol}`
+                                          }
+                                        </span>
+                                      </div>
+                                    )}
+                                    {/* Platform Hizmet Bedeli — sadece buyer_pays */}
+                                    {feePreview.fee_preference === 'buyer_pays' && (
+                                      <div className="flex justify-between items-center relative">
+                                        <span className="text-zinc-500 text-sm flex items-center gap-1">
+                                          {currentLang === 'tr' ? 'Platform Hizmet Bedeli' : 'Platform Service Fee'}
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.preventDefault(); setShowFeeTooltip(!showFeeTooltip); }}
+                                            className="text-zinc-400 hover:text-zinc-600"
+                                          >
+                                            <Info className="w-3.5 h-3.5" />
+                                          </button>
+                                        </span>
+                                        <span className="font-medium text-zinc-500">
+                                          {currentLang === 'en'
+                                            ? `${currencySymbol}${fmtPrice(feePreview.buyer_pays.platform_fee)}`
+                                            : `${fmtPrice(feePreview.buyer_pays.platform_fee)}${currencySymbol}`
+                                          }
+                                        </span>
+                                        {showFeeTooltip && (
+                                          <div className="absolute left-0 top-full mt-2 z-50 bg-zinc-800 text-white text-xs rounded-lg p-3 max-w-[260px] shadow-lg">
+                                            {currentLang === 'tr'
+                                              ? 'Bu bedel; 7/24 online randevu altyapısı, güvenli ödeme işleme ve müşteri destek hizmetlerini kapsar. İade durumunda bu bedel iade edilmez.'
+                                              : 'This fee covers 24/7 online booking infrastructure, secure payment processing and customer support services. This fee is non-refundable.'}
+                                            <div className="absolute -top-1 left-4 w-2 h-2 bg-zinc-800 rotate-45"></div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                    {/* Toplam */}
+                                    <div className="flex justify-between items-center border-t border-zinc-200 pt-3">
+                                      <span className="text-zinc-900 font-bold">
+                                        {feePreview.deposit_applied
+                                          ? (currentLang === 'tr' ? 'Şimdi Ödenecek' : 'Due Now')
+                                          : t('publicBooking.price')
+                                        }
+                                      </span>
+                                      <span className="text-2xl font-bold text-zinc-900">
+                                        {(() => {
+                                          const active = feePreview.fee_preference === 'buyer_pays' ? feePreview.buyer_pays : feePreview.seller_pays;
+                                          const amount = active.customer_pays;
+                                          return currentLang === 'en'
+                                            ? `${currencySymbol}${fmtPrice(amount)}`
+                                            : `${fmtPrice(amount)}${currencySymbol}`;
+                                        })()}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-zinc-600 font-medium">{t('publicBooking.price')}</span>
+                                    <span className="text-2xl font-bold text-zinc-900">
+                                      {selectedService ? (currentLang === 'en' ? `${currencySymbol}${Math.round(selectedService.price)}` : `${Math.round(selectedService.price)}${currencySymbol}`) : "-"}
+                                    </span>
+                                  </div>
+                                )}
                              </div>
                              )}
                           </div>
 
-                          <Turnstile
-                            siteKey={process.env.REACT_APP_TURNSTILE_SITE_KEY || "0x4AAAAAACuhfhSBvGXOLpdW"}
-                            onSuccess={(token) => setTurnstileToken(token)}
-                            onExpire={() => setTurnstileToken(null)}
-                            onError={() => setTurnstileToken(null)}
-                            options={{ size: "invisible" }}
-                          />
                           <Button
                             type="submit"
                             disabled={submitting || !canGoNext()}
@@ -1226,6 +1446,9 @@ const PublicBookingPage = () => {
                                 t('publicBooking.confirmAppointment')
                             )}
                           </Button>
+                          {feePreview && feePreview.deposit_applied && (
+                            <p className="text-center text-zinc-400 text-xs mt-3">{currentLang === 'tr' ? 'Kalan tutar işletmede ödenecektir.' : 'Remaining balance is due at the venue.'}</p>
+                          )}
                       </div>
                     </div>
                 </div>

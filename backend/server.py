@@ -1,6 +1,6 @@
 from voice_ai_service import get_voice_ai_service
 from whatsapp_service import send_whatsapp_template, detect_language_from_phone
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -774,6 +774,15 @@ async def lifespan(app: FastAPI):
             max_instances=1
         )
         
+        # Step 4b: Financial Engine Cron Jobs
+        if app.db is not None:
+            try:
+                from financial.cron_jobs import register_financial_cron_jobs
+                register_financial_cron_jobs(scheduler, app.db)
+                logging.info("  - Financial Engine: 8 cron jobs registered")
+            except Exception as fin_err:
+                logging.warning(f"Financial cron jobs registration failed: {fin_err}")
+
         scheduler.start()
         logging.info("Step 4 SUCCESS: Schedulers started")
         logging.info("  - Recurring Payments: Daily at 02:00 UTC")
@@ -1797,9 +1806,9 @@ class PlanUpdateRequest(BaseModel):
 class ContactRequest(BaseModel): name: str = Field(..., min_length=1); phone: str = Field(..., min_length=10); email: Optional[str] = None; message: Optional[str] = None
 class ContactStatusUpdate(BaseModel): status: Literal["pending", "contacted", "resolved"]
 class Service(BaseModel):
-    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); name: str; price: float; duration: int = 30; order: Optional[int] = None; session_count: Optional[int] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-class ServiceCreate(BaseModel): name: str; price: float; duration: int = 30; order: Optional[int] = None; session_count: Optional[int] = None
-class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[float] = None; duration: Optional[int] = None; order: Optional[int] = None; session_count: Optional[int] = None
+    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); name: str; price: float; duration: int = 30; order: Optional[int] = None; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+class ServiceCreate(BaseModel): name: str; price: float; duration: int = 30; order: Optional[int] = None; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None
+class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[float] = None; duration: Optional[int] = None; order: Optional[int] = None; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None
 class Appointment(BaseModel):
     model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None; source: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None
 class AppointmentCreate(BaseModel):
@@ -1993,8 +2002,10 @@ PLANS = [
             "Sınırsız Personel",
             "Sınırsız Müşteri",
             "Online Randevu",
+            "Online Ödeme Alın (Kapora veya Tam Ödeme)",
+            "Seans Paketi Yönetimi",
             "İstatistikler",
-            "Yapay Zeka Akıllı Asistan (Standart Kullanım)"
+            "Yapay Zeka Akıllı Asistan (500 Mesaj/Ay)"
         ],
         "target_audience_tr": "Yeni başlayanlar, tek kişilik veya butik işletmeler için ideal başlangıç paketi."
     },
@@ -2011,8 +2022,10 @@ PLANS = [
             "Sınırsız Personel",
             "Sınırsız Müşteri",
             "Online Randevu",
+            "Online Ödeme Alın (Kapora veya Tam Ödeme)",
+            "Seans Paketi Yönetimi",
             "İstatistikler",
-            "Yapay Zeka Akıllı Asistan (Gelişmiş Kullanım)"
+            "Yapay Zeka Akıllı Asistan (3.000 Mesaj/Ay)"
         ],
         "target_audience_tr": "Büyümekte olan ve müşteri kitlesini oturtmaya başlamış salonlar için."
     },
@@ -2029,8 +2042,10 @@ PLANS = [
             "Sınırsız Personel",
             "Sınırsız Müşteri",
             "Online Randevu",
+            "Online Ödeme Alın (Kapora veya Tam Ödeme)",
+            "Seans Paketi Yönetimi",
             "İstatistikler",
-            "Yapay Zeka Akıllı Asistan (Limitsiz)"
+            "Yapay Zeka Akıllı Asistan (10.000 Mesaj/Ay)"
         ],
         "target_audience_tr": "Düzenli ve sabit bir müşteri hacmine sahip, yerleşik işletmeler için."
     },
@@ -2047,6 +2062,8 @@ PLANS = [
             "Sınırsız Personel",
             "Sınırsız Müşteri",
             "Online Randevu",
+            "Online Ödeme Alın (Kapora veya Tam Ödeme)",
+            "Seans Paketi Yönetimi",
             "İstatistikler",
             "Yapay Zeka Akıllı Asistan (Limitsiz)"
         ],
@@ -2065,6 +2082,8 @@ PLANS = [
             "Sınırsız Personel",
             "Sınırsız Müşteri",
             "Online Randevu",
+            "Online Ödeme Alın (Kapora veya Tam Ödeme)",
+            "Seans Paketi Yönetimi",
             "İstatistikler",
             "Yapay Zeka Akıllı Asistan (Limitsiz)"
         ],
@@ -2083,6 +2102,8 @@ PLANS = [
             "Sınırsız Personel",
             "Sınırsız Müşteri",
             "Online Randevu",
+            "Online Ödeme Alın (Kapora veya Tam Ödeme)",
+            "Seans Paketi Yönetimi",
             "İstatistikler",
             "Yapay Zeka Akıllı Asistan (Limitsiz)"
         ],
@@ -2133,16 +2154,16 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
     
     # Slug oluştur (organization_name'den)
     base_slug = slugify(user_in.organization_name or user_in.username)
-    unique_slug = base_slug
+    if not base_slug:
+        raise HTTPException(status_code=400, detail="İşletme adı geçerli karakter içermelidir.")
     
-    # Slug benzersizlik kontrolü
-    slug_counter = 1
-    while await db.users.find_one({"slug": unique_slug}):
-        unique_slug = f"{base_slug}{str(uuid.uuid4())[:4]}"
-        slug_counter += 1
-        if slug_counter > 10:  # Sonsuz döngüyü önle
-            unique_slug = f"{base_slug}{str(uuid.uuid4())[:8]}"
-            break
+    existing_slug = await db.users.find_one({"slug": base_slug})
+    if existing_slug:
+        raise HTTPException(
+            status_code=400,
+            detail="Bu işletme adı zaten kullanılıyor veya mevcut bir işletmeyle çok benzer. Lütfen farklı bir işletme adı seçin."
+        )
+    unique_slug = base_slug
     
     # User kaydını oluştur
     accept_language = request.headers.get('Accept-Language', '')
@@ -4263,7 +4284,7 @@ async def _check_slot_conflict(db, organization_id: str, staff_id: str, date: st
     """Belirtilen slotun çakışma durumunu kontrol eder. True = çakışma var."""
     new_start_min = _time_to_minutes(time)
     new_end_min = new_start_min + service_duration
-    query = {"organization_id": organization_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi"]}}
+    query = {"organization_id": organization_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}}
     if staff_id:
         query["staff_member_id"] = staff_id
     existing = await db.appointments.find(
@@ -4282,7 +4303,7 @@ async def _find_alternative_slots(db, organization_id: str, staff_id: str, date:
     """Çakışan slot için aynı günden en yakın müsait saatleri bulur."""
     preferred_min = _time_to_minutes(preferred_time)
     existing = await db.appointments.find(
-        {"organization_id": organization_id, "staff_member_id": staff_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi"]}},
+        {"organization_id": organization_id, "staff_member_id": staff_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}},
         {"_id": 0, "appointment_time": 1, "service_duration": 1}
     ).to_list(200)
     busy_ranges = []
@@ -4373,13 +4394,26 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                 )
             raise HTTPException(status_code=403, detail=quota_error)
     
+    # Yeniden planlama: aynı session_group_id ile geliyorsa eski seansları iptal et
+    if bulk.session_group_id:
+        cancel_result = await db.appointments.update_many(
+            {
+                "session_group_id": bulk.session_group_id,
+                "organization_id": current_user.organization_id,
+                "session_number": {"$gte": bulk.starting_session_number},
+                "status": {"$nin": ["İptal Edildi", "Tamamlandı"]},
+            },
+            {"$set": {"status": "İptal Edildi"}}
+        )
+        if cancel_result.modified_count > 0:
+            logging.info(f"♻️ Yeniden planlama: {cancel_result.modified_count} eski seans iptal edildi (group={bulk.session_group_id})")
+
     # Her slot için çakışma kontrolü
     redis_client = getattr(request.app.state, 'redis_client', None)
     lock_keys = []
-    staff_assignments = {}  # idx -> staff_id (çakışma durumunda farklı personel atanabilir)
+    staff_assignments = {}
     try:
         for idx, session in enumerate(bulk.sessions):
-            # Redis lock
             if redis_client and assigned_staff_id:
                 lk = f"plann:lock:appt:{current_user.organization_id}:{assigned_staff_id}:{session.date}:{session.time}"
                 acquired = await redis_client.setnx(lk, "locked")
@@ -4388,7 +4422,6 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                 await redis_client.expire(lk, 10)
                 lock_keys.append(lk)
             
-            # Çakışma kontrolü — çakışma varsa otomatik başka personele ata
             slot_staff = assigned_staff_id
             has_conflict = await _check_slot_conflict(db, current_user.organization_id, slot_staff, session.date, session.time, service_duration)
             has_break = False
@@ -4396,6 +4429,10 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                 end_time = _minutes_to_time(_time_to_minutes(session.time) + service_duration)
                 has_break = await check_break_conflict(db, slot_staff, session.date, session.time, end_time, current_user.organization_id)
             if has_conflict or has_break:
+                if not assigned_staff_id:
+                    logging.warning(f"Seans {idx+1}: {session.date} {session.time} çakışma var (personelsiz mod), yine de oluşturuluyor")
+                    staff_assignments[idx] = slot_staff
+                    continue
                 alt_staff = await _find_available_staff_for_slot(db, current_user.organization_id, bulk.service_id, session.date, session.time, service_duration, exclude_staff_id=slot_staff)
                 if alt_staff:
                     slot_staff = alt_staff
@@ -4479,8 +4516,63 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
         except Exception as e:
             logging.warning(f"WebSocket emit error: {e}")
         
+        # WhatsApp SESSION_PACKAGE — template ile seans bilgisi
+        async def _send_session_wa():
+            try:
+                from whatsapp_service import format_date_for_display
+
+                wa_settings = await db.settings.find_one({"organization_id": current_user.organization_id})
+                wa_company = (wa_settings or {}).get("company_name", "İşletme")
+                wa_support = (wa_settings or {}).get("phone", "")
+                wa_loc = (wa_settings or {}).get("location") or {}
+                wa_coords = wa_loc.get("coordinates", {})
+                wa_lat = wa_coords.get("lat")
+                wa_lng = wa_coords.get("lng")
+                wa_address = wa_loc.get("address")
+
+                first_apt = created_appointments[0]
+                all_sessions = await db.appointments.find(
+                    {"session_group_id": group_id, "organization_id": current_user.organization_id}
+                ).sort("session_number", 1).to_list(100)
+
+                session_total = all_sessions[0].get("session_total", len(all_sessions)) if all_sessions else len(created_appointments)
+
+                number_emojis = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+                tr_days = ["Pazartesi","Salı","Çarşamba","Perşembe","Cuma","Cumartesi","Pazar"]
+                tr_months = ["","Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"]
+                parts = []
+                for s in all_sessions:
+                    idx = (s.get("session_number", 1) - 1)
+                    emoji = number_emojis[idx] if idx < len(number_emojis) else f"{idx+1}."
+                    try:
+                        from datetime import datetime as _dt
+                        dt = _dt.strptime(s.get("appointment_date", ""), "%Y-%m-%d")
+                        day_name = tr_days[dt.weekday()]
+                        month_name = tr_months[dt.month]
+                        parts.append(f"{emoji} {dt.day} {month_name} {day_name} {dt.year}")
+                    except Exception:
+                        d = format_date_for_display(s.get("appointment_date", ""))
+                        parts.append(f"{emoji} {d}")
+                session_dates_text = " | ".join(parts)
+
+                try:
+                    await asyncio.to_thread(
+                        send_whatsapp_template,
+                        first_apt["phone"], "SESSION_PACKAGE",
+                        first_apt["customer_name"], wa_company,
+                        first_apt["appointment_date"], first_apt["appointment_time"],
+                        first_apt["service_name"], wa_support or "+44 7474 626 900",
+                        business_lat=wa_lat, business_lng=wa_lng, business_address=wa_address,
+                        session_count=session_total, session_dates_text=session_dates_text,
+                    )
+                    logging.info(f"✓ SESSION_PACKAGE WhatsApp sent to {first_apt['phone']} ({session_total} sessions)")
+                except Exception as wa_err:
+                    logging.warning(f"WhatsApp session notification failed: {wa_err}")
+            except Exception as wa_outer_err:
+                logging.warning(f"WhatsApp session notifications error: {wa_outer_err}")
+        asyncio.create_task(_send_session_wa())
+
         logging.info(f"✅ Bulk session created: {len(created_appointments)} appointments, group={group_id}")
-        # MongoDB insert_many _id ekler, response'tan temizle
         clean_appointments = [{k: v for k, v in apt.items() if k != '_id'} for apt in created_appointments]
         return {"message": f"{len(created_appointments)} seans başarıyla oluşturuldu", "session_group_id": group_id, "appointments": clean_appointments}
     
@@ -4545,16 +4637,15 @@ async def bulk_check_availability(request: Request, check: BulkCheckRequest, cur
     return results
 
 @api_router.post("/appointments/session-group/{group_id}/cancel-remaining")
-async def cancel_remaining_sessions(request: Request, group_id: str, current_user: UserInDB = Depends(get_current_user)):
-    """Seans grubundaki tarihi gelmemiş tüm randevuları toplu iptal eder."""
+async def cancel_remaining_sessions(request: Request, group_id: str, from_session_number: int = Query(1, ge=1), current_user: UserInDB = Depends(get_current_user)):
+    """Seans grubundaki seçilen seans numarasından itibaren bekleyen randevuları iptal eder."""
     db = await get_db_from_request(request)
     turkey_tz = ZoneInfo("Europe/Istanbul")
     today_str = datetime.now(turkey_tz).strftime("%Y-%m-%d")
-    # Personel yetki kontrolü
     query = {
         "session_group_id": group_id,
         "organization_id": current_user.organization_id,
-        "appointment_date": {"$gte": today_str},
+        "session_number": {"$gte": from_session_number},
         "status": {"$nin": ["İptal", "İptal Edildi", "Tamamlandı"]}
     }
     if current_user.role == "staff" and not current_user.can_view_all_appointments:
@@ -4586,6 +4677,322 @@ async def cancel_remaining_sessions(request: Request, group_id: str, current_use
     logging.info(f"✅ Cancelled {cancel_count} remaining sessions for group {group_id}")
     return {"message": f"{cancel_count} seans iptal edildi", "cancelled_count": cancel_count, "session_group_id": group_id}
 
+@api_router.post("/appointments/{appointment_id}/refund")
+async def refund_single_appointment(request: Request, appointment_id: str, current_user: UserInDB = Depends(get_current_user)):
+    """Tekil randevu için Stripe iade başlatır + state machine + wallet günceller."""
+    if current_user.role not in ("admin", "superadmin"):
+        raise HTTPException(status_code=403, detail="Yalnızca admin iade başlatabilir")
+    db = await get_db_from_request(request)
+    apt = await db.appointments.find_one({"id": appointment_id, "organization_id": current_user.organization_id})
+    if not apt:
+        raise HTTPException(status_code=404, detail="Randevu bulunamadı")
+
+    REFUNDABLE_STATES = ("captured", "settled", "available")
+
+    txn = await db.merchant_transactions.find_one({
+        "organization_id": current_user.organization_id,
+        "appointment_id": appointment_id,
+        "state": {"$in": list(REFUNDABLE_STATES)},
+    })
+    if not txn and apt.get("session_group_id"):
+        txn = await db.merchant_transactions.find_one({
+            "organization_id": current_user.organization_id,
+            "session_group_id": apt["session_group_id"],
+            "state": {"$in": list(REFUNDABLE_STATES)},
+        })
+
+    if not txn or not txn.get("stripe_payment_intent_id"):
+        raise HTTPException(status_code=400, detail="Bu randevu için iade edilebilir ödeme bulunamadı")
+
+    import stripe as stripe_lib
+    from financial.state_machine import StateMachine
+
+    is_session_partial = bool(apt.get("session_group_id") and apt.get("session_total") and apt["session_total"] > 1)
+    refund_amount = txn.get("amount_display_minor", 0)
+    if is_session_partial:
+        refund_amount = int(refund_amount / apt["session_total"])
+
+    if refund_amount <= 0:
+        raise HTTPException(status_code=400, detail="İade tutarı hesaplanamadı")
+
+    try:
+        stripe_refund = stripe_lib.Refund.create(
+            payment_intent=txn["stripe_payment_intent_id"],
+            amount=refund_amount,
+            reason="requested_by_customer",
+            metadata={
+                "organization_id": current_user.organization_id,
+                "appointment_id": appointment_id,
+                "transaction_id": txn["id"],
+            },
+        )
+    except stripe_lib.error.StripeError as e:
+        logging.error(f"Stripe refund failed for appointment {appointment_id}: {e}")
+        raise HTTPException(status_code=400, detail=f"Stripe iade hatası: {str(e)}")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if is_session_partial:
+        prev_refunded = txn.get("partial_refund_total_minor", 0)
+        await db.merchant_transactions.update_one(
+            {"id": txn["id"]},
+            {
+                "$set": {"partial_refund_total_minor": prev_refunded + refund_amount, "updated_at": now_iso},
+                "$push": {"state_history": {
+                    "state": "partial_refund", "timestamp": now_iso,
+                    "trigger": "single_session_refund", "refund_amount_minor": refund_amount,
+                    "stripe_refund_id": stripe_refund.id, "appointment_id": appointment_id,
+                }},
+            },
+        )
+        refund_tx_doc = {
+            "id": str(uuid.uuid4()),
+            "organization_id": current_user.organization_id,
+            "base_currency": txn.get("base_currency", "TRY"),
+            "type": "refund",
+            "state": "refunded",
+            "amount_display_minor": refund_amount,
+            "fee_amount_minor": 0,
+            "stripe_refund_id": stripe_refund.id,
+            "stripe_payment_intent_id": txn.get("stripe_payment_intent_id"),
+            "appointment_id": appointment_id,
+            "session_group_id": apt.get("session_group_id"),
+            "parent_transaction_id": txn["id"],
+            "customer_name": txn.get("customer_name"),
+            "customer_phone": txn.get("customer_phone"),
+            "created_at": now_iso, "updated_at": now_iso,
+            "state_history": [{"state": "refunded", "timestamp": now_iso, "trigger": "single_session_refund"}],
+        }
+        await db.merchant_transactions.insert_one(refund_tx_doc)
+        await db.merchant_wallets.update_one(
+            {"organization_id": current_user.organization_id},
+            {"$inc": {"available_balance_minor": -refund_amount, "total_refunded_minor": refund_amount}, "$set": {"updated_at": now_iso}},
+        )
+    else:
+        sm = StateMachine(db)
+        try:
+            await sm.transition(
+                tx_id=txn["id"],
+                new_state="refunded",
+                trigger="appointment_refund",
+                metadata={
+                    "stripe_refund_id": stripe_refund.id,
+                    "refund_amount_minor": refund_amount,
+                    "refund_appointment_id": appointment_id,
+                },
+            )
+        except Exception as e:
+            logging.error(f"State transition after refund failed for tx {txn['id']}: {e}")
+
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {"payment_status": "refunded", "status": "İptal Edildi"}}
+    )
+
+    base_currency = txn.get("base_currency", "TRY")
+    logging.info(f"Single refund {stripe_refund.id} for appointment {appointment_id}: {refund_amount} minor ({base_currency}), session_partial={is_session_partial}")
+    return {
+        "message": "İade başlatıldı",
+        "refund_id": stripe_refund.id,
+        "amount_minor": refund_amount,
+    }
+
+@api_router.post("/appointments/session-group/{group_id}/cancel-and-refund")
+async def cancel_remaining_sessions_and_refund(request: Request, group_id: str, from_session_number: int = Query(1, ge=1), current_user: UserInDB = Depends(get_current_user)):
+    """Seans grubundaki seçilen seans numarasından itibaren iptal eder ve orantılı iade başlatır."""
+    if current_user.role not in ("admin", "superadmin"):
+        raise HTTPException(status_code=403, detail="Yalnızca admin iade başlatabilir")
+    db = await get_db_from_request(request)
+    turkey_tz = ZoneInfo("Europe/Istanbul")
+    today_str = datetime.now(turkey_tz).strftime("%Y-%m-%d")
+    query = {
+        "session_group_id": group_id,
+        "organization_id": current_user.organization_id,
+        "session_number": {"$gte": from_session_number},
+        "status": {"$nin": ["İptal", "İptal Edildi", "Tamamlandı"]}
+    }
+    future_sessions = await db.appointments.find(query, {"_id": 0, "id": 1}).to_list(100)
+    if not future_sessions:
+        raise HTTPException(status_code=404, detail="İptal edilecek bekleyen seans bulunamadı")
+
+    # Get total session count for this group
+    total_in_group = await db.appointments.count_documents({
+        "session_group_id": group_id,
+        "organization_id": current_user.organization_id,
+    })
+    cancel_count = len(future_sessions)
+    ids_to_cancel = [s['id'] for s in future_sessions]
+
+    # Cancel
+    await db.appointments.update_many(
+        {"id": {"$in": ids_to_cancel}, "organization_id": current_user.organization_id},
+        {"$set": {"status": "İptal Edildi"}}
+    )
+
+    # Quota refund
+    try:
+        await db.organization_plans.update_one(
+            {"organization_id": current_user.organization_id},
+            {"$inc": {"quota_usage": -cancel_count}}
+        )
+    except Exception as e:
+        logging.warning(f"Quota refund error: {e}")
+
+    # Proportional refund via financial engine + state machine
+    refund_result = None
+    try:
+        from financial.state_machine import StateMachine
+        import stripe as stripe_lib
+
+        REFUNDABLE_STATES = ("captured", "settled", "available")
+
+        # 1) Try session_group_id first
+        txn = await db.merchant_transactions.find_one({
+            "organization_id": current_user.organization_id,
+            "session_group_id": group_id,
+            "state": {"$in": list(REFUNDABLE_STATES)},
+        })
+
+        # 2) Fallback: find by appointment_id of the first (paid) session
+        if not txn:
+            first_session = await db.appointments.find_one({
+                "session_group_id": group_id,
+                "organization_id": current_user.organization_id,
+                "session_number": 1,
+            })
+            if first_session:
+                txn = await db.merchant_transactions.find_one({
+                    "organization_id": current_user.organization_id,
+                    "appointment_id": first_session["id"],
+                    "state": {"$in": list(REFUNDABLE_STATES)},
+                })
+                if txn and not txn.get("session_group_id"):
+                    await db.merchant_transactions.update_one(
+                        {"id": txn["id"]},
+                        {"$set": {"session_group_id": group_id}},
+                    )
+                    logging.info(f"Backfilled session_group_id on tx {txn['id']}")
+
+        if txn and txn.get("stripe_payment_intent_id"):
+            proportion = cancel_count / total_in_group if total_in_group > 0 else 0
+            refund_amount = int(txn.get("amount_display_minor", 0) * proportion)
+            is_full_refund = cancel_count >= total_in_group
+
+            if refund_amount > 0:
+                stripe_refund = stripe_lib.Refund.create(
+                    payment_intent=txn["stripe_payment_intent_id"],
+                    amount=refund_amount,
+                    reason="requested_by_customer",
+                    metadata={
+                        "organization_id": current_user.organization_id,
+                        "session_group_id": group_id,
+                        "transaction_id": txn["id"],
+                        "sessions_cancelled": str(cancel_count),
+                    },
+                )
+
+                now_iso = datetime.now(ZoneInfo("UTC")).isoformat()
+
+                if is_full_refund:
+                    sm = StateMachine(db)
+                    try:
+                        await sm.transition(
+                            tx_id=txn["id"],
+                            new_state="refunded",
+                            trigger="session_group_refund",
+                            metadata={
+                                "stripe_refund_id": stripe_refund.id,
+                                "refund_amount_minor": refund_amount,
+                                "sessions_cancelled": cancel_count,
+                                "total_sessions": total_in_group,
+                            },
+                        )
+                    except Exception as e:
+                        logging.error(f"State transition after full session refund failed for tx {txn['id']}: {e}")
+                else:
+                    # Partial refund: keep original tx, create a visible refund record
+                    prev_refunded = txn.get("partial_refund_total_minor", 0)
+                    await db.merchant_transactions.update_one(
+                        {"id": txn["id"]},
+                        {
+                            "$set": {
+                                "partial_refund_total_minor": prev_refunded + refund_amount,
+                                "updated_at": now_iso,
+                            },
+                            "$push": {
+                                "state_history": {
+                                    "state": "partial_refund",
+                                    "timestamp": now_iso,
+                                    "trigger": "session_group_partial_refund",
+                                    "refund_amount_minor": refund_amount,
+                                    "stripe_refund_id": stripe_refund.id,
+                                    "sessions_cancelled": cancel_count,
+                                    "total_sessions": total_in_group,
+                                },
+                            },
+                        },
+                    )
+
+                    refund_tx_doc = {
+                        "id": str(uuid.uuid4()),
+                        "organization_id": current_user.organization_id,
+                        "base_currency": txn.get("base_currency", "TRY"),
+                        "type": "refund",
+                        "state": "refunded",
+                        "amount_display_minor": refund_amount,
+                        "fee_amount_minor": 0,
+                        "stripe_refund_id": stripe_refund.id,
+                        "stripe_payment_intent_id": txn.get("stripe_payment_intent_id"),
+                        "session_group_id": group_id,
+                        "parent_transaction_id": txn["id"],
+                        "customer_name": txn.get("customer_name"),
+                        "customer_phone": txn.get("customer_phone"),
+                        "created_at": now_iso,
+                        "updated_at": now_iso,
+                        "state_history": [{"state": "refunded", "timestamp": now_iso, "trigger": "session_group_partial_refund"}],
+                    }
+                    await db.merchant_transactions.insert_one(refund_tx_doc)
+
+                    wallet_debit = {
+                        "available_balance_minor": -refund_amount,
+                        "total_refunded_minor": refund_amount,
+                    }
+                    await db.merchant_wallets.update_one(
+                        {"organization_id": current_user.organization_id},
+                        {"$inc": wallet_debit, "$set": {"updated_at": now_iso}},
+                    )
+                    logging.info(f"Partial session refund: created refund tx {refund_tx_doc['id']}, wallet debit: {wallet_debit}")
+
+                refund_result = {
+                    "refund_id": stripe_refund.id,
+                    "amount_minor": refund_amount,
+                    "sessions_refunded": cancel_count,
+                    "is_full_refund": is_full_refund,
+                }
+                logging.info(f"Session refund {stripe_refund.id}: {refund_amount} minor ({cancel_count}/{total_in_group} sessions, full={is_full_refund})")
+        else:
+            logging.warning(f"No refundable transaction found for session group {group_id}")
+            refund_result = {"error": "İade edilecek ödeme işlemi bulunamadı"}
+    except Exception as e:
+        logging.warning(f"Refund attempt error: {e}")
+        refund_result = {"error": str(e)}
+
+    # Cache + WebSocket
+    try:
+        await invalidate_cache(request, "dashboard_stats", current_user)
+        await invalidate_cache(request, "customers_list", current_user)
+        await emit_to_organization(current_user.organization_id, 'appointments_bulk_updated', {'session_group_id': group_id, 'cancelled': cancel_count})
+    except Exception as e:
+        logging.warning(f"Post-cancel cleanup error: {e}")
+
+    logging.info(f"✅ Cancelled+refund {cancel_count} remaining sessions for group {group_id}")
+    return {
+        "message": f"{cancel_count} seans iptal edildi" + (" ve iade başlatıldı" if refund_result and "refund_id" in refund_result else ""),
+        "cancelled_count": cancel_count,
+        "session_group_id": group_id,
+        "refund": refund_result,
+    }
+
 @api_router.get("/appointments", response_model=List[Appointment])
 async def get_appointments(
     request: Request, 
@@ -4598,7 +5005,7 @@ async def get_appointments(
     current_user: UserInDB = Depends(get_current_user)
 ):
     db = await get_db_from_request(request)
-    query = {"organization_id": current_user.organization_id}
+    query = {"organization_id": current_user.organization_id, "status": {"$ne": "Ödeme Bekleniyor"}}
     
     # Personel sadece kendine atanan randevuları görebilir (can_view_all_appointments yetkisi yoksa)
     if current_user.role == "staff" and not current_user.can_view_all_appointments:
@@ -4738,17 +5145,45 @@ async def delete_service(request: Request, service_id: str, current_user: UserIn
     if result.deleted_count == 0: raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
     return {"message": "Hizmet silindi"}
 
+def _validate_service_payment_limits(price: float, payment_rule: Optional[str], deposit_amount: Optional[float]):
+    """Enforce minimum online payment / deposit limits."""
+    if not payment_rule or payment_rule == "on_site":
+        return
+    price_minor = int(round(price * 100))
+    if payment_rule in ("online", "full_online") and price_minor < 30_000:
+        raise HTTPException(status_code=400, detail="Online ödeme için hizmet fiyatı en az 300₺ olmalıdır.")
+    if payment_rule == "deposit":
+        if price_minor < 30_000:
+            raise HTTPException(status_code=400, detail="Kapora için hizmet fiyatı en az 300₺ olmalıdır.")
+        if deposit_amount is not None:
+            dep_minor = int(round(deposit_amount * 100))
+            if dep_minor < 20_000:
+                raise HTTPException(status_code=400, detail="Kapora tutarı en az 200₺ olmalıdır.")
+            if dep_minor > price_minor:
+                raise HTTPException(status_code=400, detail="Kapora tutarı, hizmetin toplam fiyatını aşamaz.")
+
 @api_router.put("/services/{service_id}", response_model=Service)
 async def update_service(request: Request, service_id: str, service_update: ServiceUpdate, current_user: UserInDB = Depends(get_current_user)):
-    # Sadece admin güncelleyebilir
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
     
     db = await get_db_from_request(request); query = {"id": service_id, "organization_id": current_user.organization_id}
     service = await db.services.find_one(query, {"_id": 0})
     if not service: raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
-    update_data = {k: v for k, v in service_update.model_dump().items() if v is not None}
-    if update_data: await db.services.update_one(query, {"$set": update_data})
+    effective_price = service_update.price if service_update.price is not None else service.get("price", 0)
+    effective_rule = service_update.payment_rule if service_update.payment_rule is not None else service.get("payment_rule")
+    effective_deposit = service_update.deposit_amount if service_update.deposit_amount is not None else service.get("deposit_amount")
+    _validate_service_payment_limits(effective_price, effective_rule, effective_deposit)
+    raw = service_update.model_dump()
+    update_data = {k: v for k, v in raw.items() if v is not None}
+    unset_data = {}
+    for field in ("session_count", "deposit_percentage", "deposit_amount"):
+        if field in raw and raw[field] is None and field in service:
+            unset_data[field] = ""
+    ops = {}
+    if update_data: ops["$set"] = update_data
+    if unset_data: ops["$unset"] = unset_data
+    if ops: await db.services.update_one(query, ops)
     updated_service = await db.services.find_one(query, {"_id": 0})
     if isinstance(updated_service['created_at'], str): updated_service['created_at'] = datetime.fromisoformat(updated_service['created_at'].replace('Z', '+00:00'))
     return updated_service
@@ -4763,11 +5198,11 @@ async def get_service(request: Request, service_id: str, current_user: UserInDB 
 
 @api_router.post("/services", response_model=Service)
 async def create_service(request: Request, service: ServiceCreate, current_user: UserInDB = Depends(get_current_user)):
-    # Sadece admin ekleyebilir
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
     
     db = await get_db_from_request(request)
+    _validate_service_payment_limits(service.price, service.payment_rule, service.deposit_amount)
 
     service_data = service.model_dump()
     if service_data.get("order") is None:
@@ -6383,7 +6818,7 @@ async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends
             await db.transactions.insert_many(transactions_to_create)
 
     # --- İSTATİSTİK HESAPLAMA ---
-    today_appointments = await db.appointments.count_documents({**base_query, "appointment_date": today, "status": {"$ne": "İptal"}})
+    today_appointments = await db.appointments.count_documents({**base_query, "appointment_date": today, "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}})
     today_completed_list = await db.appointments.find(
         {**base_query, "appointment_date": today, "status": "Tamamlandı"},
         {"service_price": 1}
@@ -6677,28 +7112,24 @@ async def update_settings(request: Request, settings: Settings, current_user: Us
     
     # Eğer company_name değiştiyse, yeni slug oluştur
     if current_settings and "company_name" in update_data and current_settings.get('company_name') != settings.company_name:
-        # Yeni slug oluştur
         base_slug = slugify(settings.company_name)
+        if not base_slug:
+            raise HTTPException(status_code=400, detail="İşletme adı geçerli karakter içermelidir.")
+        
+        existing_slug = await db.users.find_one({"slug": base_slug, "username": {"$ne": current_user.username}})
+        if existing_slug:
+            raise HTTPException(
+                status_code=400,
+                detail="Bu işletme adı zaten kullanılıyor veya mevcut bir işletmeyle çok benzer. Lütfen farklı bir işletme adı seçin."
+            )
         unique_slug = base_slug
         
-        # Slug benzersizlik kontrolü
-        slug_counter = 1
-        while await db.users.find_one({"slug": unique_slug, "username": {"$ne": current_user.username}}):
-            unique_slug = f"{base_slug}{str(uuid.uuid4())[:4]}"
-            slug_counter += 1
-            if slug_counter > 10:
-                unique_slug = f"{base_slug}{str(uuid.uuid4())[:8]}"
-                break
-        
-        # User'ın slug'ını güncelle
         await db.users.update_one(
             {"username": current_user.username},
             {"$set": {"slug": unique_slug}}
         )
         
-        # Settings'e yeni slug'ı ekle
         update_data["slug"] = unique_slug
-        
         logging.info(f"Company name changed. New slug: {unique_slug}")
     
     await db.settings.update_one(query, {"$set": update_data}, upsert=True)
@@ -8276,7 +8707,7 @@ async def export_customers(request: Request, current_user: UserInDB = Depends(ge
 
 @api_router.get("/customers/{phone}/history")
 async def get_customer_history(request: Request, phone: str, current_user: UserInDB = Depends(get_current_user)):
-    db = await get_db_from_request(request); query = {"phone": phone, "organization_id": current_user.organization_id}
+    db = await get_db_from_request(request); query = {"phone": phone, "organization_id": current_user.organization_id, "status": {"$ne": "Ödeme Bekleniyor"}}
     appointments = await db.appointments.find(query, {"_id": 0}).sort("appointment_date", -1).to_list(1000)
     for appointment in appointments:
         if isinstance(appointment['created_at'], str): appointment['created_at'] = datetime.fromisoformat(appointment['created_at'].replace('Z', '+00:00'))
@@ -8865,7 +9296,7 @@ async def get_public_business(request: Request, slug: str):
     }
 
 @api_router.get("/public/availability/{organization_id}")
-async def get_availability(request: Request, organization_id: str, service_id: str, date: str, staff_id: Optional[str] = None):
+async def get_availability(request: Request, organization_id: str, service_id: str, date: str, staff_id: Optional[str] = None, exclude_appointment_id: Optional[str] = None):
     """Model D: Personel bazlı akıllı müsaitlik kontrolü - business_hours ve days_off kullanır"""
     db = await get_db_from_request(request)
     
@@ -9058,16 +9489,19 @@ async def get_availability(request: Request, organization_id: str, service_id: s
     
     # Personellerin o gün için TÜM randevularını al (tüm hizmetler dahil) - başlangıç ve bitiş saatleriyle
     # staff_member_id=None (atanmamış) randevuları da dahil et — tek kişilik org'larda çakışma kaçmasın
+    appt_query = {
+        "organization_id": organization_id,
+        "appointment_date": date,
+        "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]},
+        "$or": [
+            {"staff_member_id": {"$in": staff_ids}},
+            {"staff_member_id": None}
+        ]
+    }
+    if exclude_appointment_id:
+        appt_query["id"] = {"$ne": exclude_appointment_id}
     all_staff_appointments = await db.appointments.find(
-        {
-            "organization_id": organization_id,
-            "appointment_date": date,
-            "status": {"$ne": "İptal"},
-            "$or": [
-                {"staff_member_id": {"$in": staff_ids}},
-                {"staff_member_id": None}
-            ]
-        },
+        appt_query,
         {"_id": 0, "appointment_time": 1, "staff_member_id": 1, "service_name": 1, "service_id": 1}
     ).to_list(1000)
     
@@ -9082,7 +9516,7 @@ async def get_availability(request: Request, organization_id: str, service_id: s
             {
                 "organization_id": organization_id,
                 "appointment_date": date,
-                "status": {"$ne": "İptal"}
+                "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}
             },
             {"_id": 0, "appointment_time": 1, "staff_member_id": 1, "service_id": 1}
         ).to_list(10)
@@ -9276,6 +9710,7 @@ async def get_internal_availability(
     service_id: str,
     date: str,
     staff_id: Optional[str] = None,
+    exclude_appointment_id: Optional[str] = None,
     current_user: UserInDB = Depends(get_current_user)
 ):
     """İç kullanım müsaitlik endpoint'i.
@@ -9398,12 +9833,15 @@ async def get_internal_availability(
             service_duration = service.get('duration', 30)
 
             # Organizasyondaki tüm randevular: aynı gün/saatte çakışma varsa slotu "busy" say.
+            int_appt_query = {
+                "organization_id": organization_id,
+                "appointment_date": date,
+                "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]},
+            }
+            if exclude_appointment_id:
+                int_appt_query["id"] = {"$ne": exclude_appointment_id}
             org_appointments = await db.appointments.find(
-                {
-                    "organization_id": organization_id,
-                    "appointment_date": date,
-                    "status": {"$ne": "İptal"},
-                },
+                int_appt_query,
                 {"_id": 0, "appointment_time": 1, "service_id": 1}
             ).to_list(1000)
 
@@ -9526,13 +9964,16 @@ async def get_internal_availability(
     service_duration = service.get('duration', 30)
 
     staff_ids = [staff['username'] for staff in staff_members]
+    int_staff_query = {
+        "organization_id": organization_id,
+        "appointment_date": date,
+        "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]},
+        "staff_member_id": {"$in": staff_ids}
+    }
+    if exclude_appointment_id:
+        int_staff_query["id"] = {"$ne": exclude_appointment_id}
     all_staff_appointments = await db.appointments.find(
-        {
-            "organization_id": organization_id,
-            "appointment_date": date,
-            "status": {"$ne": "İptal"},
-            "staff_member_id": {"$in": staff_ids}
-        },
+        int_staff_query,
         {"_id": 0, "appointment_time": 1, "staff_member_id": 1, "service_id": 1}
     ).to_list(1000)
 
@@ -9674,6 +10115,7 @@ async def verify_turnstile(token: str, client_ip: str = "") -> bool:
         logging.warning("TURNSTILE_SECRET_KEY eksik — Turnstile atlanıyor (dev mode)")
         return True
     if not token:
+        logging.warning(f"🔒 Turnstile token boş geldi — IP: {client_ip}")
         return False
     try:
         def _check():
@@ -9735,7 +10177,7 @@ async def create_pending_verification(redis_client, phone: str, org_id: str, app
     Aynı numara için eski pending varsa EZİLİR — upsert mantığı.
     APScheduler gerekmez, Redis TTL otomatik temizler.
     """
-    code = f"RND-{secrets.randbelow(90000) + 10000}"
+    code = str(secrets.randbelow(900000) + 100000)
     phone_map_key = f"plann:pending:phone:{phone}:{org_id}"
     ttl = 900  # 15 dakika
     if redis_client:
@@ -9768,14 +10210,11 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     )
 
     # ═══════════════════════════════════════════════════════════
-    # 🔒 KATMAN 1: CLOUDFLARE TURNSTILE
+    # 🔒 KATMAN 1: CLOUDFLARE TURNSTILE (soft — diğer katmanlar korur)
     # ═══════════════════════════════════════════════════════════
     turnstile_ok = await verify_turnstile(appointment.turnstile_token or "", client_ip)
     if not turnstile_ok:
-        raise HTTPException(
-            status_code=400,
-            detail="Güvenlik doğrulaması başarısız. Lütfen sayfayı yenileyip tekrar deneyin.",
-        )
+        logging.warning(f"⚠️ Turnstile doğrulama başarısız — IP: {client_ip}, devam ediliyor (soft mode)")
 
     # ═══════════════════════════════════════════════════════════
     # 🔒 KATMAN 2: IP RATE LIMIT (15 istek / 12 saat)
@@ -9794,9 +10233,12 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     # ═══════════════════════════════════════════════════════════
     # 🔒 KATMAN 3: TANINIK MÜŞTERİ BYPASS (MongoDB customers)
     # ═══════════════════════════════════════════════════════════
+    # Normalize phone: strip +, leading 0, country code → last 10 digits
+    _raw_phone = re.sub(r'\D', '', appointment.phone or "")
+    _phone_suffix = _raw_phone[-10:] if len(_raw_phone) >= 10 else _raw_phone
     existing_customer = await db.customers.find_one({
         "organization_id": organization_id,
-        "phone": appointment.phone,
+        "phone": {"$regex": f"{re.escape(_phone_suffix)}$"},
     })
 
     # ═══════════════════════════════════════════════════════════
@@ -9810,9 +10252,18 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             high_risk = True
             logging.info(f"🌍 Geo uyuşmazlık: IP={geo_country}, tel={phone_country} → yüksek risk")
 
+    # Hizmetin ödeme kuralını önceden kontrol et (doğrulama kararı için gerekli)
+    service_for_rule = await db.services.find_one({"id": appointment.service_id}, {"_id": 0, "payment_rule": 1})
+    payment_rule = (service_for_rule or {}).get("payment_rule", "on_site")
+
     # KATMAN 3 KARAR: VIP bypass mı, WhatsApp doğrulama mı?
     skip_verification = False
-    if existing_customer and not high_risk:
+
+    # Online ödeme hizmetlerinde doğrulama atla — ödeme = kimlik doğrulama
+    if payment_rule in ("online", "deposit"):
+        skip_verification = True
+        logging.info(f"✅ Online ödeme hizmeti → doğrulama atlanıyor (payment_rule={payment_rule})")
+    elif existing_customer and not high_risk:
         if redis_client:
             known_key = f"plann:rate:known:{appointment.phone}"
             known_count = await redis_client.incr(known_key)
@@ -9827,7 +10278,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             skip_verification = True  # Redis yoksa bypass ver
 
     # ═══════════════════════════════════════════════════════════
-    # 🔒 KATMAN 5: WHATSAPP NUMARA DOĞRULAMA
+    # 🔒 KATMAN 5: WHATSAPP NUMARA DOĞRULAMA (Kod BİZ göndeririz)
     # ═══════════════════════════════════════════════════════════
     if not skip_verification:
         # WA flood kontrolü (5 kod / 1 saat)
@@ -9855,20 +10306,58 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             redis_client, appointment.phone, organization_id, appointment_payload
         )
 
-        wa_business_number = os.getenv("WHATSAPP_BUSINESS_NUMBER", "")
-        wa_number_clean = re.sub(r"\D", "", wa_business_number)
-        wa_link = (
-            f"https://wa.me/{wa_number_clean}?text=Randevu+onay%C4%B1:+{code}"
-            if wa_number_clean else ""
-        )
-        logging.info(f"📱 WhatsApp doğrulama: {appointment.phone} → {code}")
+        # Doğrulama kodunu müşteriye WhatsApp Authentication Template ile gönder
+        try:
+            from whatsapp_service import format_phone_number, detect_language_from_phone
+            phone_clean = format_phone_number(appointment.phone)
+            wa_lang = detect_language_from_phone(appointment.phone)
+            wa_template_name = "randevu_dogrulama" if wa_lang == "TR" else "randevu_dogrulama_en"
+            wa_lang_code = "tr" if wa_lang == "TR" else "en"
+
+            wa_api_url = f"https://graph.facebook.com/{os.getenv('META_API_VERSION', 'v21.0')}/{os.getenv('META_PHONE_NUMBER_ID')}/messages"
+            wa_headers = {
+                "Authorization": f"Bearer {os.getenv('META_ACCESS_TOKEN')}",
+                "Content-Type": "application/json",
+            }
+            wa_payload = {
+                "messaging_product": "whatsapp",
+                "to": phone_clean,
+                "type": "template",
+                "template": {
+                    "name": wa_template_name,
+                    "language": {"code": wa_lang_code},
+                    "components": [
+                        {
+                            "type": "body",
+                            "parameters": [
+                                {"type": "text", "text": code}
+                            ]
+                        },
+                        {
+                            "type": "button",
+                            "sub_type": "url",
+                            "index": "0",
+                            "parameters": [
+                                {"type": "text", "text": code}
+                            ]
+                        }
+                    ]
+                }
+            }
+            wa_resp = await asyncio.to_thread(
+                lambda: requests.post(wa_api_url, json=wa_payload, headers=wa_headers, timeout=10)
+            )
+            if wa_resp.status_code == 200:
+                logging.info(f"📱 Doğrulama kodu müşteriye gönderildi: {appointment.phone} → {code}")
+            else:
+                logging.warning(f"⚠️ WA doğrulama kodu gönderilemedi: {wa_resp.status_code} {wa_resp.text[:200]}")
+        except Exception as wa_err:
+            logging.error(f"❌ WA doğrulama kodu gönderim hatası: {wa_err}")
 
         return {
             "needs_verification": True,
             "code": code,
-            "wa_number": wa_business_number,
-            "wa_link": wa_link,
-            "message": "Lütfen WhatsApp'tan doğrulama kodunu gönderin.",
+            "message": "Doğrulama kodunuz WhatsApp'a gönderildi.",
         }
 
     # ═══════════════════════════════════════════════════════════
@@ -9934,7 +10423,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             "organization_id": organization_id,
             "staff_member_id": appointment.staff_member_id,
             "appointment_date": appointment.appointment_date,
-            "status": {"$ne": "İptal"}
+            "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}
             },
             {"_id": 0, "appointment_time": 1, "service_id": 1}
         ).to_list(100)
@@ -10025,7 +10514,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                             {"staff_member_id": None}
                         ],
                         "appointment_date": appointment.appointment_date,
-                        "status": {"$ne": "İptal"}
+                        "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}
                     },
                     {"_id": 0, "appointment_time": 1, "service_id": 1}
                 ).to_list(100)
@@ -10116,7 +10605,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                             {"staff_member_id": None}
                         ],
                         "appointment_date": appointment.appointment_date,
-                        "status": {"$ne": "İptal"}
+                        "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}
                     },
                     {"_id": 0, "appointment_time": 1, "service_id": 1}
                 ).to_list(100)
@@ -10194,25 +10683,31 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
         appointment_data['session_number'] = 1
         appointment_data['session_total'] = service_session_count
         appointment_data['payment_status'] = 'paid'
-    
-    # Randevu durumunu kontrol et (bitiş saatine göre)
-    try:
-        turkey_tz = ZoneInfo("Europe/Istanbul")
-        now = datetime.now(turkey_tz)
-        dt_str = f"{appointment.appointment_date} {appointment.appointment_time}"
-        naive_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
-        appointment_dt = naive_dt.replace(tzinfo=turkey_tz)
-        # Randevu bitiş saatini hesapla (başlangıç saati + hizmet süresi)
-        service_duration_minutes = service.get('duration', 30)
-        completion_threshold = appointment_dt + timedelta(minutes=service_duration_minutes)
-        if now >= completion_threshold:
-            appointment_data['status'] = 'Tamamlandı'
-            appointment_data['completed_at'] = datetime.now(timezone.utc).isoformat()
-        else:
+
+    # Online/deposit ödeme varsa: randevuyu "Ödeme Bekleniyor" olarak oluştur
+    payment_rule = service.get('payment_rule', '')
+    if payment_rule in ('online', 'deposit'):
+        appointment_data['payment_status'] = 'pending_payment'
+        appointment_data['status'] = 'Ödeme Bekleniyor'
+
+    # Randevu durumunu kontrol et (bitiş saatine göre) — "Ödeme Bekleniyor" override edilmez
+    if appointment_data.get('status') != 'Ödeme Bekleniyor':
+        try:
+            turkey_tz = ZoneInfo("Europe/Istanbul")
+            now = datetime.now(turkey_tz)
+            dt_str = f"{appointment.appointment_date} {appointment.appointment_time}"
+            naive_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+            appointment_dt = naive_dt.replace(tzinfo=turkey_tz)
+            service_duration_minutes = service.get('duration', 30)
+            completion_threshold = appointment_dt + timedelta(minutes=service_duration_minutes)
+            if now >= completion_threshold:
+                appointment_data['status'] = 'Tamamlandı'
+                appointment_data['completed_at'] = datetime.now(timezone.utc).isoformat()
+            else:
+                appointment_data['status'] = 'Bekliyor'
+        except (ValueError, TypeError) as e:
+            logging.warning(f"Public randevu durumu ayarlanırken tarih hatası: {e}")
             appointment_data['status'] = 'Bekliyor'
-    except (ValueError, TypeError) as e:
-        logging.warning(f"Public randevu durumu ayarlanırken tarih hatası: {e}")
-        appointment_data['status'] = 'Bekliyor'
     
     appointment_obj = Appointment(**appointment_data, organization_id=organization_id)
     doc = appointment_obj.model_dump()
@@ -10402,22 +10897,26 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
         except Exception as e:
             logging.error(f"Background notification error: {e}")
     
-    # Emit WebSocket event for real-time update (bu hızlı, bekletmez)
-    appointment_for_emit = appointment_obj.model_dump()
-    appointment_for_emit['created_at'] = appointment_for_emit['created_at'].isoformat()
-    logger.info(f"About to emit appointment_created for org: {organization_id} (public endpoint)")
-    try:
-        await emit_to_organization(
-            organization_id,
-            'appointment_created',
-            {'appointment': appointment_for_emit}
-        )
-        logger.info(f"Successfully emitted appointment_created for org: {organization_id} (public endpoint)")
-    except Exception as emit_error:
-        logger.error(f"Failed to emit appointment_created (public endpoint): {emit_error}", exc_info=True)
-    
-    # Background task olarak başlat (kullanıcıyı bekletmez - WhatsApp ve push notification arka planda gönderilir)
-    asyncio.create_task(send_notifications_background())
+    is_pending_payment = appointment_data.get('payment_status') == 'pending_payment'
+
+    if not is_pending_payment:
+        # Emit WebSocket event for real-time update (bu hızlı, bekletmez)
+        appointment_for_emit = appointment_obj.model_dump()
+        appointment_for_emit['created_at'] = appointment_for_emit['created_at'].isoformat()
+        logger.info(f"About to emit appointment_created for org: {organization_id} (public endpoint)")
+        try:
+            await emit_to_organization(
+                organization_id,
+                'appointment_created',
+                {'appointment': appointment_for_emit}
+            )
+            logger.info(f"Successfully emitted appointment_created for org: {organization_id} (public endpoint)")
+        except Exception as emit_error:
+            logger.error(f"Failed to emit appointment_created (public endpoint): {emit_error}", exc_info=True)
+
+        asyncio.create_task(send_notifications_background())
+    else:
+        logging.info(f"⏳ Ödeme bekleniyor — bildirimler ödeme sonrası gönderilecek: {doc.get('id', '')}")
     
     return {"message": "Randevu başarıyla oluşturuldu", "appointment": appointment_obj}
 
@@ -10441,6 +10940,110 @@ async def check_verification_status(code: str, request: Request):
 
     # Kod yok ve verified da değil → süresi dolmuş
     return {"status": "expired", "message": "Doğrulama kodunun süresi doldu. Lütfen tekrar deneyin."}
+
+
+@api_router.post("/public/verify-code")
+async def verify_code_and_create_appointment(request: Request):
+    """Müşteri doğrulama kodunu girer → randevu oluşturulur"""
+    redis_client = getattr(request.app.state, 'redis_client', None)
+    if not redis_client:
+        raise HTTPException(status_code=503, detail="Servis geçici olarak kullanılamıyor.")
+
+    body = await request.json()
+    code = (body.get("code") or "").strip().upper()
+    entered_phone = body.get("phone", "")
+
+    if not code:
+        raise HTTPException(status_code=400, detail="Doğrulama kodu gerekli.")
+
+    # Redis'ten pending kodu al
+    pending_key = f"plann:pending:{code}"
+    raw = await redis_client.hgetall(pending_key)
+    if not raw:
+        raise HTTPException(status_code=400, detail="Doğrulama kodu bulunamadı veya süresi doldu.")
+
+    data = {
+        (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+        for k, v in raw.items()
+    }
+    stored_phone = data.get("phone", "")
+    org_id = data.get("org_id", "")
+
+    # Telefon numarası eşleşmesi (son 9 hane)
+    def _norm(p):
+        return re.sub(r"\D", "", p).lstrip("0")
+
+    if entered_phone and _norm(entered_phone)[-9:] != _norm(stored_phone)[-9:]:
+        raise HTTPException(status_code=400, detail="Telefon numarası eşleşmiyor.")
+
+    # Randevu oluştur
+    db = await get_db_from_request(request)
+    try:
+        apt_dict = json.loads(data.get("appointment_data", "{}"))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Randevu verisi işlenirken hata oluştu.")
+
+    quota_ok, quota_error = await check_quota_and_increment(db, org_id)
+    if not quota_ok:
+        raise HTTPException(status_code=403, detail=quota_error)
+
+    service = await db.services.find_one({"id": apt_dict.get("service_id")}, {"_id": 0})
+    if not service:
+        await db.organization_plans.update_one({"organization_id": org_id}, {"$inc": {"quota_usage": -1}})
+        raise HTTPException(status_code=404, detail="Hizmet bulunamadı.")
+
+    apt_obj = Appointment(**{
+        **apt_dict,
+        "organization_id": org_id,
+        "service_name": service.get("name", ""),
+        "service_price": service.get("price", 0),
+        "service_duration": service.get("duration", 30),
+        "source": "public_booking_code_verified",
+        "status": "Bekliyor",
+    })
+    doc = apt_obj.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.appointments.insert_one(doc)
+
+    # Müşteriyi kaydet
+    await db.customers.update_one(
+        {"organization_id": org_id, "phone": stored_phone},
+        {
+            "$set": {"name": apt_dict.get("customer_name", ""), "phone": stored_phone, "organization_id": org_id, "updated_at": datetime.now(timezone.utc).isoformat()},
+            "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": datetime.now(timezone.utc).isoformat(), "notes": ""},
+        },
+        upsert=True,
+    )
+
+    # Redis temizle
+    phone_map_key = f"plann:pending:phone:{stored_phone}:{org_id}"
+    await redis_client.delete(pending_key)
+    await redis_client.delete(phone_map_key)
+    await redis_client.setex(f"plann:verified:{code}", 300, "1")
+
+    # WebSocket event
+    try:
+        apt_clean = {k: v for k, v in doc.items() if k != "_id"}
+        await emit_to_organization(org_id, "appointment_created", {"appointment": apt_clean})
+    except Exception:
+        pass
+
+    # Cache temizle
+    try:
+        mock_user = type('obj', (object,), {'organization_id': org_id})
+        await invalidate_cache(request, "dashboard_stats", mock_user)
+        await invalidate_cache(request, "customers_list", mock_user)
+    except Exception:
+        pass
+
+    logging.info(f"✅ Doğrulama kodu ile randevu oluşturuldu: {code} → {stored_phone}")
+
+    return {
+        "status": "verified",
+        "message": "Doğrulama tamamlandı, randevunuz oluşturuldu.",
+        "appointment_id": doc.get("id"),
+        "service_payment_rule": service.get("payment_rule", "on_site"),
+    }
 
 
 # === SUPER ADMIN ENDPOINT'LERİ ===
@@ -10611,6 +11214,45 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
         last_day_str = last_day_of_month.strftime("%Y-%m-%d")
         
         all_settings = await db.settings.find({}).to_list(10000)
+        org_ids = [s["organization_id"] for s in all_settings if s.get("organization_id")]
+
+        # Batch: admin users
+        admin_users_list = await db.users.find(
+            {"organization_id": {"$in": org_ids}, "role": "admin"},
+            {"_id": 0, "organization_id": 1, "full_name": 1, "username": 1}
+        ).to_list(len(org_ids))
+        admin_map = {a["organization_id"]: a for a in admin_users_list}
+
+        # Batch: plans
+        plans_list = await db.organization_plans.find(
+            {"organization_id": {"$in": org_ids}}
+        ).to_list(len(org_ids))
+        plan_map = {p["organization_id"]: p for p in plans_list}
+
+        # Batch: monthly appointment counts
+        appt_pipeline = [
+            {"$match": {"organization_id": {"$in": org_ids}, "created_at": {"$gte": first_day_str, "$lte": last_day_str}}},
+            {"$group": {"_id": "$organization_id", "count": {"$sum": 1}}}
+        ]
+        appt_counts = await db.appointments.aggregate(appt_pipeline).to_list(len(org_ids))
+        appt_map = {a["_id"]: a["count"] for a in appt_counts}
+
+        # Batch: customer counts
+        cust_pipeline = [
+            {"$match": {"organization_id": {"$in": org_ids}}},
+            {"$group": {"_id": "$organization_id", "count": {"$sum": 1}}}
+        ]
+        cust_counts = await db.customers.aggregate(cust_pipeline).to_list(len(org_ids))
+        cust_map = {c["_id"]: c["count"] for c in cust_counts}
+
+        # Batch: staff counts
+        staff_pipeline = [
+            {"$match": {"organization_id": {"$in": org_ids}, "role": "staff"}},
+            {"$group": {"_id": "$organization_id", "count": {"$sum": 1}}}
+        ]
+        staff_counts = await db.users.aggregate(staff_pipeline).to_list(len(org_ids))
+        staff_map = {s["_id"]: s["count"] for s in staff_counts}
+
         organizations_list = []
         
         for setting in all_settings:
@@ -10621,13 +11263,11 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
             isletme_adi = setting.get('company_name', 'İsimsiz İşletme')
             telefon_numarasi = setting.get('support_phone', 'Telefon Yok')
             
-            # Admin kullanıcıyı bul (işletme sahibi)
-            admin_user = await db.users.find_one({"organization_id": org_id, "role": "admin"})
+            admin_user = admin_map.get(org_id)
             admin_full_name = admin_user.get('full_name', '-') if admin_user else '-'
             admin_email = admin_user.get('username', '-') if admin_user else '-'
             
-            # Abonelik bilgileri
-            plan_doc = await db.organization_plans.find_one({"organization_id": org_id})
+            plan_doc = plan_map.get(org_id)
             billing_cycle = 'monthly'
             days_left = None
             toplam_odeme = 0
@@ -10642,7 +11282,6 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
                 abonelik_paketi = plan_info.get('name', 'Trial') if plan_info else 'Trial'
                 billing_cycle = plan_doc.get('billing_cycle', 'monthly')
                 
-                # Kalan gün hesapla
                 if plan_id == 'tier_trial':
                     trial_end = plan_doc.get('trial_end_date')
                     if trial_end:
@@ -10656,7 +11295,6 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
                     else:
                         abonelik_durumu = "Trial"
                 else:
-                    # Ücretli plan
                     next_payment = plan_doc.get('next_payment_date')
                     if next_payment:
                         if isinstance(next_payment, str):
@@ -10669,22 +11307,10 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
                     else:
                         abonelik_durumu = "Aktif"
                 
-                # Toplam ödeme hesapla
                 if plan_id != 'tier_trial':
                     monthly_price = plan_info.get('monthly_price', 0) if plan_info else 0
                     yearly_price = plan_info.get('yearly_price', 0) if plan_info else 0
                     toplam_odeme = monthly_price if billing_cycle == 'monthly' else yearly_price
-            
-            # İstatistikler
-            pipeline = [
-                {"$match": {"organization_id": org_id, "created_at": {"$gte": first_day_str, "$lte": last_day_str}}},
-                {"$group": {"_id": None, "count": {"$sum": 1}}}
-            ]
-            appointments_result = await db.appointments.aggregate(pipeline).to_list(1)
-            bu_ayki_randevu_sayisi = appointments_result[0]["count"] if appointments_result else 0
-            
-            toplam_musteri_sayisi = await db.customers.count_documents({"organization_id": org_id})
-            toplam_personel_sayisi = await db.users.count_documents({"organization_id": org_id, "role": "staff"})
             
             organizations_list.append({
                 "organization_id": org_id,
@@ -10697,9 +11323,9 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
                 "abonelik_durumu": abonelik_durumu,
                 "days_left": days_left,
                 "toplam_odeme": toplam_odeme,
-                "bu_ayki_randevu_sayisi": bu_ayki_randevu_sayisi,
-                "toplam_musteri_sayisi": toplam_musteri_sayisi,
-                "toplam_personel_sayisi": toplam_personel_sayisi
+                "bu_ayki_randevu_sayisi": appt_map.get(org_id, 0),
+                "toplam_musteri_sayisi": cust_map.get(org_id, 0),
+                "toplam_personel_sayisi": staff_map.get(org_id, 0)
             })
         
         return {"organizations": organizations_list}
@@ -11635,10 +12261,23 @@ async def ai_chat_endpoint(
         
         # Limit kontrolü (Sınırsız değilse)
         if ai_message_limit != -1 and current_ai_usage >= ai_message_limit:
+            remaining_pct = 0
             raise HTTPException(
                 status_code=403,
                 detail=f"Aylık AI kullanım limitiniz doldu ({ai_message_limit} mesaj). Kesintisiz hizmet için paketinizi yükseltin."
             )
+        
+        # Tier bazlı AI erişim seviyesi
+        ai_tier_map = {
+            "tier_trial": "basic",
+            "tier_1_standard": "standard",
+            "tier_2_profesyonel": "pro",
+            "tier_3_premium": "pro",
+            "tier_4_business": "full",
+            "tier_5_enterprise": "full",
+            "tier_6_kurumsal": "full",
+        }
+        ai_tier = ai_tier_map.get(plan_id, "basic")
         
         # Organizasyon bilgisini al
         settings = await db.settings.find_one({"organization_id": organization_id})
@@ -11654,7 +12293,8 @@ async def ai_chat_endpoint(
             organization_id=organization_id,
             organization_name=organization_name,
             language=body.language or "tr",
-            can_view_all_appointments=getattr(current_user, 'can_view_all_appointments', False)
+            can_view_all_appointments=getattr(current_user, 'can_view_all_appointments', False),
+            ai_tier=ai_tier
         )
         
         if not result.get('success'):
@@ -11689,6 +12329,14 @@ async def ai_chat_endpoint(
 
 # --- Router prefix'i buraya taşındı ---
 app.include_router(api_router, prefix="/api")
+
+# --- Financial Engine Router ---
+try:
+    from financial.financial_endpoints import router as financial_router
+    app.include_router(financial_router, tags=["Financial Engine"])
+    logging.info("✅ Financial Engine router registered")
+except Exception as fin_import_err:
+    logging.warning(f"⚠️ Financial Engine router import failed: {fin_import_err}")
 
 # === WhatsApp Webhook (Meta Cloud API) ===
 
@@ -11955,10 +12603,10 @@ async def whatsapp_webhook(request: Request):
                         continue
                     logger.info(f"📩 Gelen WA mesajı: from={from_number} type={msg_type}")
 
-                    # ── RND doğrulama kodu kontrolü ──────────────────────────
+                    # ── Doğrulama kodu kontrolü (6 haneli sayı) ──────────────────────────
                     if msg_type == "text":
-                        text_body = message.get("text", {}).get("body", "")
-                        rnd_match = re.search(r"\bRND-\d{5}\b", text_body.upper())
+                        text_body = message.get("text", {}).get("body", "").strip()
+                        rnd_match = re.search(r"\b\d{6}\b", text_body)
                         if rnd_match:
                             redis_client_wh = getattr(request.app.state, "redis_client", None)
                             result = await _process_whatsapp_verification(

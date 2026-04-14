@@ -65,6 +65,18 @@ TEMPLATES: Dict[str, Dict[str, Dict[str, str]]] = {
             "lang_code":        "en",
         },
     },
+    "SESSION_PACKAGE": {
+        "TR": {
+            "with_location":    "seans_paketi_onay_konumlu",
+            "without_location": "seans_paketi_onay_metin",
+            "lang_code":        "tr",
+        },
+        "EN": {
+            "with_location":    "seans_paketi_onay_konumlu_en",
+            "without_location": "seans_paketi_onay_metin_en",
+            "lang_code":        "en",
+        },
+    },
 }
 
 VALID_TEMPLATE_TYPES = set(TEMPLATES.keys())
@@ -260,6 +272,33 @@ def send_meta_whatsapp_template(
 
 
 # ============================================================================
+# DÜZ METİN MESAJ GÖNDERİMİ (newline destekler)
+# ============================================================================
+
+def send_whatsapp_text(to_number: str, body: str) -> str:
+    """Template sonrası takip mesajı gibi düz metin gönderir. Newline destekler."""
+    if not WHATSAPP_ENABLED:
+        return "disabled"
+    if not META_ACCESS_TOKEN or not META_PHONE_NUMBER_ID:
+        raise Exception("Meta WhatsApp credentials eksik.")
+
+    formatted_to = format_phone_number(to_number)
+    url = f"https://graph.facebook.com/{META_API_VERSION}/{META_PHONE_NUMBER_ID}/messages"
+    headers = {"Authorization": f"Bearer {META_ACCESS_TOKEN}", "Content-Type": "application/json"}
+    payload = {"messaging_product": "whatsapp", "to": formatted_to, "type": "text", "text": {"body": body}}
+
+    response = requests.post(url, headers=headers, json=payload, timeout=15)
+    if not response.ok:
+        logger.error(f"Meta WA text error: status={response.status_code} body={response.text}")
+        response.raise_for_status()
+
+    data = response.json()
+    msg_id = data.get("messages", [{}])[0].get("id", "unknown")
+    logger.info(f"Meta WA text gönderildi. id={msg_id} to={formatted_to}")
+    return msg_id
+
+
+# ============================================================================
 # ANA GÖNDERIM FONKSİYONU
 # ============================================================================
 
@@ -275,20 +314,19 @@ def send_whatsapp_template(
     business_lat: Optional[Union[float, int, str]] = None,
     business_lng: Optional[Union[float, int, str]] = None,
     business_address: Optional[str] = None,
+    session_count: Optional[int] = None,
+    session_dates_text: Optional[str] = None,
 ) -> str:
     """
     Müşteri diline ve işletme koordinatına göre doğru Meta WA şablonunu seçip gönderir.
 
-    Senaryo A (koordinat VARSA):
-      Şablon: randevu_*_konumlu[_eng]
-      Header: location (lat, lng, işletme adı, açık adres)
-      CONFIRMATION body: {{1}} müşteri  {{2}} işletme  {{3}} tarih  {{4}} saat  {{5}} hizmet  {{6}} iletişim
-      REMINDER body:     {{1}}-{{6}} aynı
+    CONFIRMATION / REMINDER:
+      Senaryo A (konum VAR): header=location, body={{1..6}}
+      Senaryo B (konum YOK): header=text, body={{1..7}}
 
-    Senaryo B (koordinat YOKSA):
-      Şablon: randevu_*_metin[_v2][_eng]
-      Header: text (işletme adı)
-      CONFIRMATION+REMINDER body: {{1}}-{{5}} + {{6}} iletişim + {{7}} adres/konum metni
+    SESSION_PACKAGE (her iki senaryo):
+      body: {{1}} müşteri, {{2}} hizmet, {{3}} toplam seans, {{4}} seans listesi, {{5}} iletişim
+      Senaryo A: header=location  |  Senaryo B: header=text (işletme adı)
     """
     try:
         if not WHATSAPP_ENABLED:
@@ -302,29 +340,37 @@ def send_whatsapp_template(
                 f"Geçerli değerler: {list(VALID_TEMPLATE_TYPES)}"
             )
 
-        language = detect_language_from_phone(to_number)   # "TR" veya "EN"
+        language = detect_language_from_phone(to_number)
         template_info = TEMPLATES[template_type_upper][language]
         lang_code = template_info["lang_code"]
         formatted_date = format_date_for_display(appointment_date)
         has_location = _has_valid_coordinates(business_lat, business_lng)
 
         if has_location:
-            # ── SENARYO A: Konumlu şablon ──────────────────────────────────
             lat = float(business_lat)
             lng = float(business_lng)
             addr_text = _normalise_template_var(business_address, fallback=company_name)
             template_name = template_info["with_location"]
             header = _build_location_header(lat, lng, company_name, addr_text)
+        else:
+            template_name = template_info["without_location"]
+            header = _build_text_header(company_name)
 
+        if template_type_upper == "SESSION_PACKAGE":
+            body = _build_body([
+                customer_name,
+                service_name,
+                str(session_count or ""),
+                session_dates_text or "",
+                support_phone,
+            ])
+        elif has_location:
             body = _build_body([
                 customer_name, company_name,
                 formatted_date, appointment_time, service_name,
                 support_phone,
             ])
         else:
-            # ── SENARYO B: Metin şablon ────────────────────────────────────
-            template_name = template_info["without_location"]
-            header = _build_text_header(company_name)
             location_fallback = "Konum girilmedi" if language == "TR" else "Location not provided"
             location_text = _normalise_template_var(business_address, fallback=location_fallback)
             body = _build_body([

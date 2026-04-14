@@ -83,12 +83,12 @@ Yöntem 3 - AI Asistan ile (bana söyle):
 
 === İŞLETMEYİ NASIL BÜYÜTÜRÜRÜm? ===
 1. Online Rezervasyon Sayfası:
-   - Ayarlar → İşletme → Online Rezervasyon URL'ini kopyala (plannapp.co/senin-slug)
-   - Instagram bio, Google My Business, WhatsApp'a ekle → müşteriler 7/24 randevu alır
+   - Ayarlar → İşletme → Online Rezervasyon URL'ini kopyala (plannapp.co/senin-isletme-adin)
+   - Instagram bio,WhatsApp'a ekle → müşteriler 7/24 randevu alır
    - No-show önlemek için WhatsApp hatırlatma açık olsun
 
 2. WhatsApp Bildirimleri:
-   - Her randevuya otomatik onay + 24 saat önce hatırlatma gönderilir
+   - Her randevuya otomatik onay + belirtilen saat önce hatırlatma gönderilir
    - Ayarlar → Bildirimler kısmından kontrol edilebilir
 
 3. Performansı Analiz Et:
@@ -105,16 +105,51 @@ Yöntem 3 - AI Asistan ile (bana söyle):
    - Personel bazlı gelir takibi: Ayarlar → Personel → Performans
 
 === GENEL BİLGİLER ===
-1. GENEL: PLANN, işletme yönetim sistemidir. İki rol: Admin ve Personel.
+1. GENEL: PLANN, işletme randevu yönetim sistemidir. İki rol: Admin ve Personel.
 2. TAKVİM: Randevu "Hizmet Süresi"ne göre 15dk adımlarla hesaplanır. Geçmiş tarihe randevu alınamaz.
 3. FİNANS (Sadece Admin): Gelirler otomatik, giderler manuel eklenir. Personel ödemeleri bordrodan yönetilir.
 4. PERSONEL: Personel eklenirken davet emaili gönderilir. Çalışma saatleri işletme saatlerinden kopyalanır.
-5. ONLINE RANDEVU: plannapp.co/slug adresinden müşteriler randevu alır. 'Farketmez' otomatik personel atar.
-6. HİZMET: Her hizmet için isim, fiyat, süre (dk) tanımlanır. Süre randevu slotlarını belirler.
+5. ONLINE RANDEVU: plannapp.co/isletme-adı adresinden müşteriler randevu alır. 'Farketmez' otomatik personel atar.
+6. HİZMET: Her hizmet için isim, fiyat, süre (dk) tanımlanır,seans paketiyse seans özelliği seçilir. Süre randevu slotlarını belirler.
 7. MÜŞTERİ: Telefon numarasıyla otomatik kayıt. Geçmiş ve notlar görülebilir.
-8. AYARLAR: İşletme adı, logo, fotoğraflar, konum, slug, çalışma saatleri, WhatsApp bildirimi.
-9. ABONELİK: Trial (ücretsiz), Standart (1090₺), Profesyonel (1490₺), Kurumsal (2850₺).
-10. GÜVENLİK: Personel sadece kendi verilerini görebilir.
+8. AYARLAR: İşletme adı, logo, fotoğraflar, konum, slug, çalışma saatleri, WhatsApp bildirimi,personel ve hizmet yönetimi.
+9. ABONELİK: Deneme (ücretsiz), Standart (1090₺), Profesyonel (1490₺), Kurumsal (2850₺),Standart paket 100 randevu limiti,Profesyonel paket 300 randevu limiti,Kurumsal paket sınırsız randevu limiti (aylık) kalan tüm özellikler her pakette açık.
+10. GÜVENLİK: Personel sadece kendi verilerini görebilir,Yetkisi açılırsa tüm randevuları görüp kontrol edebilir,işletme ayarlarına müdahele edemez ve göremez.
+
+=== SEANS PAKETİ SİSTEMİ ===
+1. Hizmetlerde "Seans" özelliği açılabilir (ör: 6 seanslık paket)
+2. İlk seans online rezervasyon veya admin panelinden oluşturulur
+3. Kalan seanslar "Seansları Planla" ile toplu oluşturulur (bulk-session endpoint)
+4. Her seans: session_number/session_total, session_group_id ile gruplu
+5. Seans iptal: Müşteriler → detay → "Kalan Seansları İptal Et"
+6. Seans iade: Online ödeme yapıldıysa orantılı iade yapılır (ör: 6 seans 5000₺, 3 seans iptal = 2500₺ iade)
+7. Admin panelinden oluşturulan (ödemesiz) seans paketlerinde iade seçeneği yoktur
+
+=== ONLINE ÖDEME SİSTEMİ ===
+1. Hizmetlere "Online Ödeme" veya "Kapora" kuralı atanabilir (Ayarlar → Hizmetler)
+2. Müşteri online rezervasyon yapar → Stripe checkout açılır
+3. Ödeme yapılmadan randevu "Ödeme Bekleniyor" durumunda kalır (görünmez)
+4. Ödeme tamamlanınca randevu "Bekliyor" olur ve bildirimler gönderilir
+5. Checkout'tan geri dönülürse randevu oluşturulmaz
+6. Platform komisyonu: Alıcı veya satıcı öder modeli
+7. Ödeme akışı: Ödeme → Capture → Settlement (T+2) → Available → Payout
+
+=== CÜZDAN ve ÖDEME ÇEKME ===
+1. Cüzdan: Ayarlar → Cüzdan'dan erişilir
+2. Her online ödeme cüzdana yansır (transaction olarak)
+3. Transaction durumları: pending → captured → settled → available → paid_out / refunded
+4. Settlement süresi: T+2 gün (ödeme sonrası 2 gün)
+5. İade penceresi: 12 saat
+6. Ödeme çekme (payout): Bakiye eşiğe ulaşınca (₺12.000) "Para Çek" aktif olur
+7. Ön koşullar: KYC onaylı, IBAN kayıtlı, 48 saat IBAN cooldown
+8. Ödeme Wise üzerinden yapılır
+
+=== İADE SİSTEMİ ===
+1. Tekli randevu iade: Müşteriler → detay → "İade Et" veya Dashboard → 3 nokta → "İptal Et ve İade Yap"
+2. Seans grubu iade: Müşteriler → detay → "Kalan Seansları İptal Et" → "İptal Et ve İade Yap"
+3. Orantılı hesaplama: (iptal edilen seans sayısı / toplam seans) × toplam tutar
+4. İade cüzdandan düşer ve Stripe'a iade başlatılır
+5. Sadece online ödeme yapılmış randevularda iade seçeneği çıkar
 """
 
 def get_system_instruction(user_role: str, user_name: str, org_name: str = "İşletme", language: str = "tr") -> str:
@@ -160,6 +195,18 @@ def get_system_instruction(user_role: str, user_name: str, org_name: str = "İş
 - "Nasıl hizmet eklerim?" → SYSTEM_DOCUMENTATION'daki adımları ver
 - "Nasıl randevu oluştururum?" → 3 yöntemi açıkla
 - "İşletmemi nasıl büyütürüm?" → büyüme ipuçlarını ver
+
+🔧 SEANS İŞLEMLERİ:
+- "Seans paketleri?" → get_session_groups
+- "Ahmet'in seansları?" → get_session_groups(customer_name="Ahmet")
+- "Seansları iptal et" → get_session_groups → ID bul → cancel_session_group
+- "Seansları iptal et ve iade yap" → cancel_session_group(refund=true) — iade için UI yönlendir
+
+💰 CÜZDAN İŞLEMLERİ:
+- "Cüzdan bakiyem?" → get_wallet_info
+- "Ne kadar kazandım?" → get_wallet_info
+- "Son işlemler?" → get_wallet_info
+- "Para çekebilir miyim?" → get_wallet_info → bakiye kontrolü
 
 🔧 DİĞER İŞLEMLER:
 - "Randevu iptal et" → get_dashboard_status → ID bul → cancel_appointment
@@ -803,9 +850,154 @@ async def get_analytics_tool(db, org_id: str, period: str = "this_month",
         return {"success": False, "message": f"❌ Analiz hatası: {str(e)}"}
 
 
+async def get_wallet_info_tool(db, org_id: str) -> Dict:
+    """Cüzdan bilgilerini getir"""
+    try:
+        wallet = await db.merchant_wallets.find_one({"organization_id": org_id})
+        if not wallet:
+            return {"success": True, "message": "💰 Henüz cüzdan oluşturulmamış. Online ödeme alındığında otomatik oluşturulur.", "data": {}}
+
+        available = (wallet.get("available_balance_minor", 0) or 0) / 100
+        pending = (wallet.get("pending_balance_minor", 0) or 0) / 100
+        settled = (wallet.get("settled_balance_minor", 0) or 0) / 100
+        paid_out = (wallet.get("total_paid_out_minor", 0) or 0) / 100
+        refunded = (wallet.get("total_refunded_minor", 0) or 0) / 100
+        total_earned = (wallet.get("total_earned_minor", 0) or 0) / 100
+        frozen = (wallet.get("frozen_balance_minor", 0) or 0) / 100
+        reserved = (wallet.get("reserved_balance_minor", 0) or 0) / 100
+
+        recent = await db.merchant_transactions.find({"organization_id": org_id}).sort("created_at", -1).limit(10).to_list(10)
+        recent_list = []
+        for t in recent:
+            recent_list.append({
+                "type": t.get("type", "payment"),
+                "amount": (t.get("amount_display_minor", 0) or 0) / 100,
+                "state": t.get("state"),
+                "customer": t.get("customer_name", ""),
+                "date": t.get("created_at", "")[:10] if t.get("created_at") else ""
+            })
+
+        return {
+            "success": True,
+            "message": f"💰 Cüzdan: {available}₺ kullanılabilir, {pending}₺ beklemede, {total_earned}₺ toplam kazanç",
+            "data": {
+                "available": available,
+                "pending": pending,
+                "settled": settled,
+                "paid_out": paid_out,
+                "refunded": refunded,
+                "frozen": frozen,
+                "reserved": reserved,
+                "total_earned": total_earned,
+                "recent_transactions": recent_list
+            }
+        }
+    except Exception as e:
+        return {"success": False, "message": f"❌ Cüzdan hatası: {str(e)}"}
+
+
+async def get_session_group_info_tool(db, org_id: str, customer_phone: str = None, customer_name: str = None) -> Dict:
+    """Seans paketi bilgilerini getir"""
+    try:
+        query = {"organization_id": org_id, "session_group_id": {"$exists": True, "$ne": None}}
+        if customer_phone:
+            query["phone"] = {"$regex": customer_phone.replace("+", "\\+?")}
+        if customer_name:
+            query["customer_name"] = {"$regex": customer_name, "$options": "i"}
+
+        apts = await db.appointments.find(query).sort("created_at", -1).to_list(500)
+
+        groups = {}
+        for a in apts:
+            gid = a["session_group_id"]
+            if gid not in groups:
+                groups[gid] = {"service": a.get("service_name"), "customer": a.get("customer_name"), "phone": a.get("phone"), "sessions": []}
+            groups[gid]["sessions"].append({
+                "number": a.get("session_number"),
+                "total": a.get("session_total"),
+                "date": a.get("appointment_date"),
+                "time": a.get("appointment_time"),
+                "status": a.get("status"),
+                "payment_status": a.get("payment_status")
+            })
+
+        for g in groups.values():
+            g["sessions"].sort(key=lambda x: x.get("number", 0))
+
+        groups_list = [{"group_id": gid, **info} for gid, info in groups.items()]
+
+        return {
+            "success": True,
+            "message": f"📋 {len(groups_list)} seans paketi bulundu",
+            "data": {"session_groups": groups_list}
+        }
+    except Exception as e:
+        return {"success": False, "message": f"❌ Seans bilgisi hatası: {str(e)}"}
+
+
+async def cancel_session_group_tool(db, org_id: str, session_group_id: str, from_session_number: int = 1, refund: bool = False) -> Dict:
+    """Seans grubunu iptal et (opsiyonel iade ile)"""
+    try:
+        if not refund:
+            result = await db.appointments.update_many(
+                {
+                    "session_group_id": session_group_id,
+                    "organization_id": org_id,
+                    "session_number": {"$gte": from_session_number},
+                    "status": {"$nin": ["İptal Edildi", "Tamamlandı"]}
+                },
+                {"$set": {"status": "İptal Edildi"}}
+            )
+            return {
+                "success": True,
+                "message": f"✅ {result.modified_count} seans iptal edildi (iade yapılmadı)"
+            }
+        else:
+            return {
+                "success": True,
+                "message": "⚠️ İade işlemi için lütfen Müşteriler → Müşteri Detay → 'Kalan Seansları İptal Et' → 'İptal Et ve İade Yap' seçeneğini kullanın. AI üzerinden iade henüz desteklenmiyor."
+            }
+    except Exception as e:
+        return {"success": False, "message": f"❌ Seans iptal hatası: {str(e)}"}
+
+
+# === AI TIER CONFIGURATION ===
+# Tier bazlı tool erişim hakları
+AI_TIER_TOOLS = {
+    "basic": [
+        "create_appointment",
+        "cancel_appointment",
+        "get_dashboard_status",
+        "add_customer",
+    ],
+    "standard": [
+        "create_appointment",
+        "cancel_appointment",
+        "delete_appointment",
+        "get_dashboard_status",
+        "add_customer",
+        "delete_customer",
+        "get_analytics",
+    ],
+    "pro": [
+        "create_appointment",
+        "cancel_appointment",
+        "delete_appointment",
+        "get_dashboard_status",
+        "add_customer",
+        "delete_customer",
+        "get_analytics",
+        "get_session_groups",
+        "cancel_session_group",
+        "get_wallet_info",
+    ],
+    "full": None,  # None = tüm tool'lara erişim
+}
+
+
 # === GEMINI TOOLS DECLARATION ===
-def get_gemini_tools():
-    """Gemini için tool tanımlamaları - Gemini SDK formatında"""
+def get_gemini_tools(ai_tier: str = "full"):
+    """Gemini için tool tanımlamaları - Tier bazlı filtreleme ile"""
     from google.generativeai.types import FunctionDeclaration, Tool
     
     create_appointment_func = FunctionDeclaration(
@@ -920,15 +1112,59 @@ def get_gemini_tools():
         }
     )
 
-    return Tool(function_declarations=[
-        create_appointment_func,
-        cancel_appointment_func,
-        delete_appointment_func,
-        add_customer_func,
-        delete_customer_func,
-        get_dashboard_func,
-        get_analytics_func,
-    ])
+    get_wallet_func = FunctionDeclaration(
+        name="get_wallet_info",
+        description="Cüzdan bilgilerini getir: kullanılabilir bakiye, beklemedeki ödeme, son işlemler. Kullanıcı 'cüzdan', 'bakiye', 'para', 'ödeme', 'kazanç' dediğinde çağır.",
+        parameters={"type": "object", "properties": {}, "required": []}
+    )
+
+    get_session_groups_func = FunctionDeclaration(
+        name="get_session_groups",
+        description="Seans paketlerini getir. Müşteri telefon veya ismiyle filtrelenebilir. 'seanslar', 'seans paketi', 'paket bilgisi' dediğinde çağır.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "customer_phone": {"type": "string", "description": "Müşteri telefon numarası (opsiyonel)"},
+                "customer_name": {"type": "string", "description": "Müşteri adı (opsiyonel)"}
+            },
+            "required": []
+        }
+    )
+
+    cancel_session_group_func = FunctionDeclaration(
+        name="cancel_session_group",
+        description="Seans grubunu iptal et. İade isteniyorsa refund=true yap. 'seansları iptal et', 'seans iptali' dediğinde çağır. Önce get_session_groups ile grup ID'sini bul.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "session_group_id": {"type": "string", "description": "Seans grubu ID'si (get_session_groups'tan al)"},
+                "from_session_number": {"type": "integer", "description": "Kaçıncı seanstan itibaren iptal (varsayılan: 1)"},
+                "refund": {"type": "boolean", "description": "İade yapılsın mı? (true/false)"}
+            },
+            "required": ["session_group_id"]
+        }
+    )
+
+    all_tools = {
+        "create_appointment": create_appointment_func,
+        "cancel_appointment": cancel_appointment_func,
+        "delete_appointment": delete_appointment_func,
+        "add_customer": add_customer_func,
+        "delete_customer": delete_customer_func,
+        "get_dashboard_status": get_dashboard_func,
+        "get_analytics": get_analytics_func,
+        "get_wallet_info": get_wallet_func,
+        "get_session_groups": get_session_groups_func,
+        "cancel_session_group": cancel_session_group_func,
+    }
+
+    allowed = AI_TIER_TOOLS.get(ai_tier)
+    if allowed is not None:
+        filtered = [t for name, t in all_tools.items() if name in allowed]
+    else:
+        filtered = list(all_tools.values())
+
+    return Tool(function_declarations=filtered)
 
 
 # === MAIN CHAT FUNCTION ===
@@ -941,19 +1177,21 @@ async def chat_with_ai(
     organization_id: str,
     organization_name: str = "İşletme",
     language: str = "tr",
-    can_view_all_appointments: bool = False
+    can_view_all_appointments: bool = False,
+    ai_tier: str = "full"
 ) -> Dict[str, Any]:
     """
-    AI ile sohbet et - Tool calling destekli
+    AI ile sohbet et - Tool calling destekli, tier bazlı erişim kontrolü
     
     Args:
         db: MongoDB database instance
         user_message: Kullanıcının mesajı
-        chat_history: Önceki mesajlar [{"role": "user"/"model", "parts": [{"text": "..."}]}]
+        chat_history: Önceki mesajlar
         user_role: admin veya staff
-        username: Kullanıcı adı (staff için kendi verilerini filtrelemek için)
+        username: Kullanıcı adı
         organization_id: Organizasyon ID
         organization_name: Organizasyon adı
+        ai_tier: "basic" | "standard" | "pro" | "full"
     
     Returns:
         {"success": bool, "message": str, "history": list}
@@ -1145,7 +1383,7 @@ async def chat_with_ai(
             model = genai.GenerativeModel(
                 model_name='gemini-3-flash-preview',
                 system_instruction=system_instruction,
-                tools=get_gemini_tools(),
+                tools=get_gemini_tools(ai_tier),
                 safety_settings=safety_settings
             )
         except Exception:
@@ -1153,7 +1391,7 @@ async def chat_with_ai(
                 model = genai.GenerativeModel(
                     model_name='gemini-2.5-flash',
                     system_instruction=system_instruction,
-                    tools=get_gemini_tools(),
+                    tools=get_gemini_tools(ai_tier),
                     safety_settings=safety_settings
                 )
             except Exception as e:
@@ -1279,6 +1517,21 @@ async def chat_with_ai(
                         period=func_args.get('period', 'this_month'),
                         start_date=func_args.get('start_date'),
                         end_date=func_args.get('end_date'),
+                    )
+                elif func_name == "get_wallet_info":
+                    result = await get_wallet_info_tool(db, organization_id)
+                elif func_name == "get_session_groups":
+                    result = await get_session_group_info_tool(
+                        db, organization_id,
+                        customer_phone=func_args.get('customer_phone'),
+                        customer_name=func_args.get('customer_name')
+                    )
+                elif func_name == "cancel_session_group":
+                    result = await cancel_session_group_tool(
+                        db, organization_id,
+                        session_group_id=func_args.get('session_group_id'),
+                        from_session_number=func_args.get('from_session_number', 1),
+                        refund=func_args.get('refund', False)
                     )
                 else:
                     result = {"success": False, "message": f"❌ Bilinmeyen fonksiyon: {func_name}"}

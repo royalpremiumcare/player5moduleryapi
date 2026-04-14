@@ -12,7 +12,7 @@ YENI_KLASOR = Path("/var/www/player5moduleryapi/yeni_datalar")
 CIKTI_KLASOR = Path("/var/www/player5moduleryapi/Pazarlama_Dosyalari")
 
 # =========================================================
-# SEKTÖR DÜZELTİCİ MOTOR (Eski dataları temizlemek için eklendi)
+# SEKTÖR DÜZELTİCİ MOTOR (Kategorileri standart yapar)
 # =========================================================
 SECTOR_GROUPS = {
     "Diş Kliniği": ["dis", "dent", "ortodonti", "smile"],
@@ -41,20 +41,16 @@ def normalize_text(value: object) -> str:
     return text
 
 def assign_clean_sector(row) -> str:
-    """İşletme adı ve eski sektör bilgisini birleştirip yeni temiz sektörü bulur."""
     isletme_adi = str(row.get("Isletme_Adi", ""))
     eski_sektor = str(row.get("Sektor", ""))
-    
-    # İkisini de normalize edip birleştiriyoruz (Daha iyi sonuç için)
     combined_norm = normalize_text(isletme_adi) + " " + normalize_text(eski_sektor)
-    
     for sector_name, keywords in SECTOR_GROUPS.items():
         if any(kw in combined_norm for kw in keywords):
             return sector_name
     return "Diğer (Sağlık & Bakım)"
 
 # =========================================================
-# TELEFON VE BÖLGE YARDIMCILARI
+# TELEFON STANDARTLAŞTIRMA
 # =========================================================
 def fix_phone(p):
     if pd.isna(p): return ""
@@ -66,7 +62,11 @@ def fix_phone(p):
     if len(digits) == 10 and digits.startswith("5"): return "+90" + digits
     return p
 
+# =========================================================
+# BÖLGE TESPİT EDİCİ (GÜNCELLENDİ)
+# =========================================================
 def get_bolge(dosya_adi):
+    """Dosya isminden şehri otomatik algılar. Kaç part olduğu fark etmez."""
     cevirici = str.maketrans("IİıiÇçŞşĞğÖöÜü", "iiiiccssggoouu")
     ad = str(dosya_adi).translate(cevirici).lower()
     
@@ -74,7 +74,10 @@ def get_bolge(dosya_adi):
     if "anadolu" in ad: return "Istanbul_Anadolu"
     if "izmir" in ad: return "Izmir"
     if "ankara" in ad: return "Ankara"
-    return "Diger_Sehirler"
+    if "konya" in ad: return "Konya" # Konya desteği eklendi
+    
+    # Eğer listede yoksa, dosya adının ilk kelimesini şehir kabul et
+    return "Diger_" + ad.split('_')[0].capitalize()
 
 def klasorden_veri_yukle(klasor_yolu: Path):
     dfs = []
@@ -87,7 +90,6 @@ def klasorden_veri_yukle(klasor_yolu: Path):
             df = pd.read_csv(dosya, dtype=str)
             df.rename(columns=lambda x: str(x).strip(), inplace=True)
             
-            # Eski ve Yeni kolon isimlerini eşleştir
             col_map = {
                 "title": "Isletme_Adi",
                 "phone": "Telefon",
@@ -98,16 +100,11 @@ def klasorden_veri_yukle(klasor_yolu: Path):
             df.rename(columns=col_map, inplace=True)
             
             for col in ["Isletme_Adi", "Telefon", "Sektor"]:
-                if col not in df.columns:
-                    df[col] = ""
+                if col not in df.columns: df[col] = ""
                     
             df["Sehir_Bolge"] = get_bolge(dosya.name)
-            
-            # Sütunları sırala
             df = df[["Sehir_Bolge", "Isletme_Adi", "Telefon", "Sektor"]]
             df["Telefon"] = df["Telefon"].apply(fix_phone)
-            
-            # 🎯 YENİ: Eski dataların da sektörünü günümüz formatına dönüştür
             df["Sektor"] = df.apply(assign_clean_sector, axis=1)
             
             dfs.append(df)
@@ -115,8 +112,7 @@ def klasorden_veri_yukle(klasor_yolu: Path):
         except Exception as e:
             print(f"  ❌ {dosya.name} okunamadı: {e}")
             
-    if dfs:
-        return pd.concat(dfs, ignore_index=True)
+    if dfs: return pd.concat(dfs, ignore_index=True)
     return pd.DataFrame()
 
 def main():
@@ -124,7 +120,7 @@ def main():
     print("🔄 BÖLGESEL PARÇALAYICI & OTOMATİK SEKTÖR DÜZELTİCİ")
     print("="*60)
     
-    print("\n[1] Yeni Datalar Yükleniyor...")
+    print("\n[1] Yeni Datalar Yükleniyor (Partlar dahil)...")
     df_yeni = klasorden_veri_yukle(YENI_KLASOR)
     
     print("\n[2] Eski Datalar Yükleniyor...")
@@ -133,37 +129,29 @@ def main():
     df_master = pd.concat([df_yeni, df_eski], ignore_index=True)
     
     if df_master.empty:
-        print("\n⚠️ Birleştirilecek veri yok!")
+        print("\n⚠️ İşlenecek veri bulunamadı!")
         return
 
     toplam_satir = len(df_master)
-    
-    # Telefonu boş olanları at ve Mükerrer kayıtları sil
     df_master = df_master[df_master["Telefon"] != ""]
+    
+    # Mükerrerleri sil (Part 1 ve Part 2 arasındaki aynı numaralar burada elenir)
     df_master.drop_duplicates(subset=["Telefon"], keep="first", inplace=True)
     
     net_satir = len(df_master)
-    silinen_cift = toplam_satir - net_satir
+    print(f"\n📊 Toplam Satır: {toplam_satir} | Eşsiz Müşteri: {net_satir}\n")
     
-    print(f"\n📊 İşlenen Toplam: {toplam_satir} | 🗑️ Silinen Çift: {silinen_cift} | 🎯 NET EŞSİZ: {net_satir}\n")
-    
-    # Çıktı klasörünü oluştur
     CIKTI_KLASOR.mkdir(parents=True, exist_ok=True)
     
-    print("📂 PAZARLAMACI İÇİN ŞEHİRLERE GÖRE DOSYALAR OLUŞTURULUYOR:")
+    print("📂 ŞEHİRLERE GÖRE TEMİZ DOSYALAR OLUŞTURULUYOR:")
     for sehir, df_sehir in df_master.groupby("Sehir_Bolge"):
         dosya_adi = CIKTI_KLASOR / f"Temiz_Data_{sehir}.csv"
-        
-        # Sadece 3 kolon bırak
         df_ihrac = df_sehir[["Isletme_Adi", "Telefon", "Sektor"]]
         df_ihrac.to_csv(dosya_adi, index=False, encoding="utf-8-sig")
-        
-        # Bilgi mesajı
         print(f"  -> 📌 {sehir}: {len(df_ihrac)} benzersiz kayıt ({dosya_adi.name})")
 
     print("\n" + "="*60)
-    print("✅ İŞLEM KUSURSUZ ŞEKİLDE TAMAMLANDI!")
-    print(f"Bölünmüş ve sektörleri DÜZELTİLMİŞ dosyalarınızı şu klasörde bulabilirsiniz:\n{CIKTI_KLASOR}")
+    print("✅ TÜM PARTLAR BİRLEŞTİRİLDİ VE TEMİZLENDİ!")
     print("="*60 + "\n")
 
 if __name__ == "__main__":

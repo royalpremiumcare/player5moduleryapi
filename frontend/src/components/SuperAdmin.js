@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BarChart2, Building2, MessageSquare, MessageCircle, Target, Users, LogOut, Menu, X } from "lucide-react";
+import { BarChart2, Building2, MessageSquare, MessageCircle, Target, Users, LogOut, Menu, X, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import SAOverview from "./superadmin/SAOverview";
@@ -8,6 +8,7 @@ import SAContacts from "./superadmin/SAContacts";
 import SAWhatsApp from "./superadmin/SAWhatsApp";
 import SALeads from "./superadmin/SALeads";
 import SAUsers from "./superadmin/SAUsers";
+import SAFinancial from "./superadmin/SAFinancial";
 
 const NAV_ITEMS = [
   { id: "overview",       label: "Genel Bakış",    icon: BarChart2 },
@@ -16,6 +17,7 @@ const NAV_ITEMS = [
   { id: "whatsapp",       label: "WhatsApp",       icon: MessageCircle },
   { id: "leads",          label: "Lead Yönetimi",  icon: Target },
   { id: "users",          label: "Kullanıcılar",   icon: Users },
+  { id: "financial",      label: "Finansal",       icon: Wallet },
 ];
 
 const SuperAdmin = ({ onNavigate }) => {
@@ -31,6 +33,7 @@ const SuperAdmin = ({ onNavigate }) => {
       case "whatsapp":      return <SAWhatsApp />;
       case "leads":         return <SALeads />;
       case "users":         return <SAUsers />;
+      case "financial":     return <SAFinancial />;
       default:              return <SAOverview />;
     }
   };

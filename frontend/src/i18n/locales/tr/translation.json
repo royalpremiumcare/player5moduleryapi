@@ -131,6 +131,14 @@
         "title": "Gelir Gider Yönetimi",
         "description": "İşletmenize ait gelir giderleri takip edip ön muhasebe sisteminden faydalanın."
       },
+      "onlinePayment": {
+        "title": "Online Ödeme Sistemi",
+        "description": "Hizmetlerinize online ödeme veya kapora kuralı tanımlayın. Müşteriler randevu alırken güvenli şekilde ödeme yapsın; tam tutar veya yüzde bazlı kapora seçeneğiyle."
+      },
+      "sessionPackages": {
+        "title": "Seans Paketi Yönetimi",
+        "description": "Çoklu seans hizmetleri oluşturun, seansları toplu planlayın ve takip edin. Müşterilerinize WhatsApp ile seans planı otomatik gönderilsin."
+      },
       "reporting": {
         "title": "Raporlama & İstatistikler",
         "description": "Müşteri, personel ve hizmet istatistiklerinizi görüntüleyin. Gelir giderlerinizi takip edin."
@@ -199,7 +207,9 @@
         "prioritySupport": "Öncelikli Destek",
         "customIntegrations": "Özel Entegrasyonlar",
         "appointmentReminder": "Randevu Hatırlatma Dahil",
-        "unlimitedAppointments": "Sınırsız Randevu"
+        "unlimitedAppointments": "Sınırsız Randevu",
+        "onlinePayment": "Online Ödeme Alın (Kapora veya Tam Ödeme)",
+        "sessionPackages": "Seans Paketi Yönetimi"
       }
     },
     "testimonials": {
@@ -615,7 +625,14 @@
       "settingUpdated": "Ayar güncellendi",
       "settingUpdateFailed": "Ayar güncellenemedi",
       "minutes": "dk",
-      "pricePlaceholder": "Örn: Saç Kesimi, Bakım, Danışmanlık"
+      "pricePlaceholder": "Örn: Saç Kesimi, Bakım, Danışmanlık",
+      "paymentRule": "Ödeme Kuralı",
+      "paymentRuleOnSite": "Yerinde Ödeme",
+      "paymentRuleOnline": "Tamamı Online Ödeme",
+      "paymentRuleDeposit": "Sadece Kapora",
+      "depositPercentage": "Kapora Oranı (%)",
+      "depositPercentageNote": "Müşteri online ödeme sırasında toplam tutarın bu yüzdesini öder",
+      "depositInvalid": "Kapora oranı 1-99 arasında olmalıdır"
     },
     "fields": {
       "name": "Hizmet Adı",
@@ -1267,5 +1284,47 @@
     "upgradeDesc": "Aylık AI kullanım limitiniz doldu. Kesintisiz hizmet için paketinizi yükseltin.",
     "placeholder": "Mesajınızı yazın...",
     "disclaimer": "AI bazen hata yapabilir. Önemli kararlar için doğrulayın."
+  },
+  "financial": {
+    "title": "Finansal Yönetim",
+    "overview": "Genel Bakış",
+    "wallets": "Cüzdanlar",
+    "totalPoolGbp": "Toplam Havuz (GBP)",
+    "gbpMerchants": "GBP İşletmeler",
+    "tryMerchants": "TRY İşletmeler",
+    "exchangeRate": "GBP/TRY Kur",
+    "allMarkets": "Tüm Pazarlar",
+    "orgId": "Org ID",
+    "currency": "Para Birimi",
+    "available": "Kullanılabilir",
+    "pending": "Bekleyen",
+    "frozen": "Dondurulan",
+    "kyc": "KYC",
+    "kycVerified": "Onaylı",
+    "kycPending": "Bekliyor",
+    "kycApprove": "KYC Onayla",
+    "kycApproved": "KYC onaylandı",
+    "freezeWallet": "Cüzdanı Dondur",
+    "walletFrozen": "Cüzdan donduruldu",
+    "noWallets": "Cüzdan bulunamadı",
+    "actions": "İşlemler",
+    "totalWallets": "Toplam {{count}} cüzdan",
+    "page": "Sayfa {{current}}/{{total}}",
+    "refresh": "Yenile",
+    "searchOrg": "Org ID veya isim ara...",
+    "cancelOnly": "Sadece İptal Et",
+    "cancelOnlyDesc": "Kalan seanslar iptal edilir, iade yapılmaz. Ödeme tutarı cüzdanınızda kalır.",
+    "cancelAndRefund": "İptal Et ve İade Yap",
+    "cancelAndRefundDesc": "Kalan seanslar iptal edilir ve kalan seans tutarı müşteriye iade edilir.",
+    "refund": "İade Et",
+    "refunding": "İade ediliyor...",
+    "refundInitiated": "İade başlatıldı",
+    "refundFailed": "İade başarısız",
+    "confirmRefund": "Bu randevu için iade başlatmak istediğinize emin misiniz?",
+    "redirectingToPayment": "Ödeme sayfasına yönlendiriliyorsunuz...",
+    "checkoutFailed": "Ödeme sayfası oluşturulamadı. Randevunuz oluşturuldu, ödemeyi yerinde yapabilirsiniz.",
+    "processing": "İşleniyor...",
+    "confirm": "Onayla",
+    "selectOption": "Lütfen bir seçenek belirleyin"
   }
 }

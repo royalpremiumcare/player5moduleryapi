@@ -406,7 +406,7 @@ const SettingsProfile = ({ onNavigate }) => {
                     value={settings.company_name}
                     onChange={(e) => setSettings({ ...settings, company_name: e.target.value })}
                     required
-                    className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                    className="bg-white border border-zinc-300 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
                   />
                   <p className="text-xs text-zinc-600 font-medium">{t('settings.profile.fields.companyNameNote')}</p>
                 </div>
@@ -423,7 +423,7 @@ const SettingsProfile = ({ onNavigate }) => {
                     onChange={(e) => setSettings({ ...settings, support_phone: e.target.value })}
                     placeholder="+90 555 123 45 67"
                     required
-                    className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                    className="bg-white border border-zinc-300 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
                   />
                   <p className="text-xs text-zinc-600 font-medium">{t('settings.profile.fields.supportPhoneNote')}</p>
                 </div>

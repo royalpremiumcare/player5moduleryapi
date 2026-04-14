@@ -22,6 +22,8 @@ import SettingsProfile from "@/components/SettingsProfile";
 import LocationSettings from "@/components/LocationSettings";
 import SettingsOnlineBooking from "@/components/SettingsOnlineBooking";
 import Finance from "@/components/Finance";
+import MerchantWallet from "@/components/MerchantWallet";
+import MerchantPaymentSettings from "@/components/MerchantPaymentSettings";
 import Subscribe from "@/components/Subscribe";
 import Customers from "@/components/Customers";
 import ImportData from "@/components/ImportData";
@@ -664,7 +666,7 @@ function App() {
       // Initialize Socket.IO connection
       const socket = io(socketUrl, {
         path: '/api/socket.io',
-        transports: ['websocket', 'polling'],
+        transports: ['websocket'],
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         reconnectionAttempts: 5,
@@ -772,6 +774,15 @@ function App() {
       });
       
       socket.on('appointment_deleted', () => {
+        if (loadAppointmentsRef.current) {
+          loadAppointmentsRef.current();
+        }
+        if (userRoleRef.current === 'admin' && loadStatsRef.current) {
+          loadStatsRef.current();
+        }
+      });
+
+      socket.on('appointments_bulk_updated', () => {
         if (loadAppointmentsRef.current) {
           loadAppointmentsRef.current();
         }
@@ -1178,6 +1189,10 @@ function App() {
               setShowForm(true);
               setSelectedAppointment(null);
             }}
+            onRefresh={async () => {
+              await loadAppointments();
+              if (userRole === 'admin') await loadStats();
+            }}
           />
         )}
         {currentView === "services" && userRole === 'admin' && (
@@ -1260,6 +1275,12 @@ function App() {
               setShowForm(false);
             }}
           />
+        )}
+        {currentView === "merchant-wallet" && userRole === 'admin' && (
+          <MerchantWallet onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
+        )}
+        {currentView === "merchant-payment-settings" && userRole === 'admin' && (
+          <MerchantPaymentSettings onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
         )}
         {currentView === "subscribe" && userRole === 'admin' && (
           <Subscribe 
@@ -1380,6 +1401,7 @@ function App() {
       <Toaster 
         position="top-center" 
         richColors 
+        style={{ zIndex: 9999 }}
         toastOptions={{
           style: {
             marginTop: 'calc(env(safe-area-inset-top, 0px) + 16px)'

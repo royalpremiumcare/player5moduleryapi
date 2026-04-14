@@ -25,7 +25,7 @@ services:
     container_name: plann_backend
     restart: always
     # KRİTİK: socket_app kullanılmalı (Socket.IO mount'u için), workers 4 + Redis manager ile çoklu işçi desteği
-    command: uvicorn server:socket_app --host 0.0.0.0 --port 8002 --workers 4
+    command: uvicorn server:socket_app --host 0.0.0.0 --port 8002 --workers 17
     ports:
       - "8002:8002"
     volumes:
@@ -42,7 +42,7 @@ services:
     container_name: plann_frontend
     restart: always
     ports:
-      - "80:80"
+      - "8081:80"
     depends_on:
       - backend
 

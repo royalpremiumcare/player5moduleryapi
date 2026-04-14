@@ -51,6 +51,9 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   // Session Planner States
   const [showSessionPlanner, setShowSessionPlanner] = useState(false);
   const [sessionPlannerAppointment, setSessionPlannerAppointment] = useState(null);
+  // Cancel + Refund Dialog
+  const [cancelRefundDialog, setCancelRefundDialog] = useState(null);
+  const [cancellingRefund, setCancellingRefund] = useState(false);
 
   // Break States
   const [todayBreaks, setTodayBreaks] = useState([]);
@@ -166,6 +169,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       socket.on('appointment_created', () => { if (onRefresh) onRefresh(); if (userRole === 'staff' && !canViewAll) loadPersonnelStats(); });
       socket.on('appointment_updated', () => { if (onRefresh) onRefresh(); if (userRole === 'staff' && !canViewAll) loadPersonnelStats(); });
       socket.on('appointment_deleted', () => { if (onRefresh) onRefresh(); if (userRole === 'staff' && !canViewAll) loadPersonnelStats(); });
+      socket.on('appointments_bulk_updated', () => { if (onRefresh) onRefresh(); if (userRole === 'staff' && !canViewAll) loadPersonnelStats(); });
     }
     return () => { if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; } };
   }, [token, onRefresh, userRole, loadPersonnelStats]);
@@ -175,6 +179,24 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const handleDelete = async (id) => { try { await api.delete(`/appointments/${id}`); toast.success(t('dashboard.toast.appointmentDeleted')); setDeleteDialog(null); onRefresh(); } catch (e) { toast.error(t('dashboard.toast.deleteError')); } };
   const handleAddBreak = async () => { if (!newBreakStart || !newBreakEnd) return; setAddingBreak(true); try { await api.post("/staff/breaks", { date: today, start_time: newBreakStart, end_time: newBreakEnd }); setShowBreakDialog(false); loadTodayBreaks(); } catch (e) { toast.error(e.response?.data?.detail); } finally { setAddingBreak(false); } };
   const handleDeleteBreak = async (id) => { try { await api.delete(`/staff/breaks/${id}`); toast.success(t('dashboard.breaks.breakDeleted')); loadTodayBreaks(); } catch (e) { toast.error(t('dashboard.breaks.deleteError')); } };
+  const handleCancelOnly = async (id) => {
+    setCancellingRefund(true);
+    try {
+      await api.put(`/appointments/${id}`, { status: t('dashboard.status.cancelled') });
+      toast.success(i18n.language === 'tr' ? 'Randevu iptal edildi' : 'Appointment cancelled');
+      setCancelRefundDialog(null); onRefresh();
+    } catch (e) { toast.error(i18n.language === 'tr' ? 'İptal başarısız' : 'Cancel failed'); }
+    finally { setCancellingRefund(false); }
+  };
+  const handleCancelAndRefund = async (id) => {
+    setCancellingRefund(true);
+    try {
+      await api.post(`/appointments/${id}/refund`);
+      toast.success(i18n.language === 'tr' ? 'Randevu iptal edildi ve iade başlatıldı' : 'Cancelled and refund initiated');
+      setCancelRefundDialog(null); onRefresh();
+    } catch (e) { toast.error(e.response?.data?.detail || (i18n.language === 'tr' ? 'İade başarısız' : 'Refund failed')); }
+    finally { setCancellingRefund(false); }
+  };
   const handleCall = (phone) => window.location.href = `tel:${phone}`;
   const handleWhatsApp = (phone) => { let clean = phone.replace(/\D/g, ""); if (clean.startsWith("0")) clean = clean.substring(1); if (!clean.startsWith("90")) clean = "90" + clean; window.open(`https://wa.me/${clean}`, "_blank"); };
 
@@ -240,15 +262,19 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
   const shouldSplit = morningAppointments.length > 0 && afternoonAppointments.length > 0;
 
+  const isCancelledStatus = (s) => s === 'İptal' || s === 'İptal Edildi' || s === 'Cancelled';
+
   const filteredTomorrow = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
     if (!aptDate || aptDate !== tomorrow) return false;
+    if (isCancelledStatus(apt.status)) return false;
     if (userRole === 'staff' && !canViewAll && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
     return true;
   });
   const upcoming = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
     if (!aptDate || aptDate <= tomorrow) return false;
+    if (isCancelledStatus(apt.status)) return false;
     if (userRole === 'staff' && !canViewAll && currentStaffUsername && apt.staff_member_id !== currentStaffUsername) return false;
     return true;
   }).filter(apt => staffFilter === "all" || apt.staff_member_id === staffFilter).sort((a, b) => (a.appointment_date || a.date).localeCompare(b.appointment_date || b.date));
@@ -264,7 +290,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const currencySymbol = ((settings?.support_phone || '').replace(/\s/g, '').startsWith('+44') || (settings?.support_phone || '').replace(/\s/g, '').startsWith('44')) ? '£' : '₺';
 
   const renderAppointmentCard = (apt) => {
-    const isCancelled = apt.status === "İptal" || apt.status === t('dashboard.status.cancelled');
+    const isCancelled = apt.status === "İptal" || apt.status === "İptal Edildi" || apt.status === "Cancelled" || apt.status === t('dashboard.status.cancelled');
     const isCompleted = apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed');
     const hasNote = apt.notes && apt.notes.trim().length > 0;
     const isExpanded = expandedNoteId === apt.id;
@@ -272,7 +298,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       <div
         key={apt.id}
         onClick={() => hasNote && toggleNote(apt.id)}
-        className={`bg-white rounded-xl p-4 border border-gray-200 border-l-4 shadow-sm hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 ${isCancelled ? 'opacity-60' : ''} ${hasNote ? 'cursor-pointer' : ''} ${apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'border-l-amber-400' : apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed') ? 'border-l-green-500' : apt.status === "İptal" || apt.status === t('dashboard.status.cancelled') ? 'border-l-red-500' : 'border-l-gray-300'}`}
+        className={`bg-white rounded-xl p-4 border border-gray-200 border-l-4 shadow-sm hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 ${isCancelled ? 'opacity-60' : ''} ${hasNote ? 'cursor-pointer' : ''} ${apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'border-l-amber-400' : apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed') ? 'border-l-green-500' : isCancelled ? 'border-l-red-500' : 'border-l-gray-300'}`}
       >
         <div className="flex gap-4">
           <div className="flex flex-col items-center justify-center min-w-[60px] border-r border-gray-100 pr-4">
@@ -320,7 +346,11 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild><button onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95"><MoreVertical className="w-5 h-5" /></button></DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
-                    {!isCancelled && !isCompleted && <DropdownMenuItem onClick={() => handleStatusChange(apt.id, t('dashboard.status.cancelled'))} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>}
+                    {!isCancelled && !isCompleted && (
+                      ['paid', 'deposit_paid'].includes(apt.payment_status)
+                        ? <DropdownMenuItem onClick={() => setCancelRefundDialog(apt)} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
+                        : <DropdownMenuItem onClick={() => handleStatusChange(apt.id, t('dashboard.status.cancelled'))} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> {t('common.edit')}</DropdownMenuItem>
                     {apt.session_group_id && apt.session_number && apt.session_total && apt.session_number < apt.session_total && !isCancelled && (
                       <DropdownMenuItem onClick={() => { setSessionPlannerAppointment(apt); setShowSessionPlanner(true); }} className="text-blue-600">
@@ -603,6 +633,37 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         <AlertDialogContent className="rounded-2xl max-w-xs shadow-lg">
           <AlertDialogHeader><AlertDialogTitle>{t('dashboard.deleteDialog.title')}</AlertDialogTitle><AlertDialogDescription>{t('dashboard.deleteDialog.description', { name: deleteDialog?.customer_name })}</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel className="rounded-xl transition-all hover:scale-105 active:scale-95">{t('dashboard.deleteDialog.cancel')}</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete(deleteDialog?.id)} className="bg-red-600 hover:bg-red-700 rounded-xl transition-all hover:scale-105 active:scale-95">{t('dashboard.deleteDialog.delete')}</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel + Refund Dialog */}
+      <AlertDialog open={!!cancelRefundDialog} onOpenChange={() => setCancelRefundDialog(null)}>
+        <AlertDialogContent className="rounded-2xl max-w-sm shadow-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-lg font-black text-zinc-900">
+              {i18n.language === 'tr' ? 'Randevu İptal' : 'Cancel Appointment'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-600 font-medium">
+              {cancelRefundDialog?.customer_name} — {cancelRefundDialog?.service_name}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2.5">
+            <button type="button" disabled={cancellingRefund}
+              onClick={() => handleCancelOnly(cancelRefundDialog?.id)}
+              className="w-full p-3 rounded-xl border-2 border-zinc-200 hover:border-zinc-400 text-left transition-all disabled:opacity-50">
+              <p className="font-bold text-zinc-900 text-sm">{i18n.language === 'tr' ? 'Sadece İptal Et' : 'Cancel Only'}</p>
+              <p className="text-xs text-zinc-500 mt-0.5">{i18n.language === 'tr' ? 'Randevu iptal edilir, iade yapılmaz' : 'Cancel without refund'}</p>
+            </button>
+            <button type="button" disabled={cancellingRefund}
+              onClick={() => handleCancelAndRefund(cancelRefundDialog?.id)}
+              className="w-full p-3 rounded-xl border-2 border-red-200 hover:border-red-400 text-left transition-all disabled:opacity-50">
+              <p className="font-bold text-red-700 text-sm">{i18n.language === 'tr' ? 'İptal Et ve İade Yap' : 'Cancel & Refund'}</p>
+              <p className="text-xs text-red-400 mt-0.5">{i18n.language === 'tr' ? 'Randevu iptal edilir ve ödeme iade edilir' : 'Cancel and refund the payment'}</p>
+            </button>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancellingRefund} className="rounded-xl font-bold">{t('common.cancel')}</AlertDialogCancel>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 

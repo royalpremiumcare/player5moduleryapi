@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Calendar, Check, Menu, X, Clock, Users, Smartphone, BarChart3, Bell, Shield, Zap, TrendingUp, Star, MessageSquare, FileText, UserCheck, CircleDollarSign, ChevronDown, Phone, Mail, Globe, MapPin } from "lucide-react";
+import { Calendar, Check, Menu, X, Clock, Users, Smartphone, BarChart3, Bell, Shield, Zap, TrendingUp, Star, MessageSquare, FileText, UserCheck, CircleDollarSign, ChevronDown, Phone, Mail, Globe, MapPin, CreditCard, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -390,6 +390,16 @@ const LandingPage = () => {
       icon: Smartphone,
       title: t('landing.features.multiDevice.title'),
       description: t('landing.features.multiDevice.description')
+    },
+    {
+      icon: CreditCard,
+      title: t('landing.features.onlinePayment.title'),
+      description: t('landing.features.onlinePayment.description')
+    },
+    {
+      icon: Layers,
+      title: t('landing.features.sessionPackages.title'),
+      description: t('landing.features.sessionPackages.description')
     },
     {
       icon: CircleDollarSign,

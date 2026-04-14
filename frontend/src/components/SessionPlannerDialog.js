@@ -29,16 +29,48 @@ const SessionPlannerDialog = ({
   const [checking, setChecking] = useState(false);
   const [creating, setCreating] = useState(false);
   const [allAvailable, setAllAvailable] = useState(false);
+  const [workingHours, setWorkingHours] = useState(null);
 
   const remainingCount = appointment 
     ? (appointment.session_total || 0) - (appointment.session_number || 0) 
     : 0;
 
   useEffect(() => {
+    if (open) {
+      api.get("/settings").then(res => setWorkingHours(res.data?.working_hours || null)).catch(() => {});
+    }
+  }, [open]);
+
+  useEffect(() => {
     if (open && appointment && remainingCount > 0) {
       generateDefaultSessions();
     }
-  }, [open, appointment]);
+  }, [open, appointment, workingHours]);
+
+  const DAY_MAP = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+  const isWorkingDay = (date) => {
+    if (!workingHours) return true;
+    const dayName = DAY_MAP[date.getDay()];
+    const dayConfig = workingHours[dayName];
+    return dayConfig && dayConfig.enabled;
+  };
+
+  const getWorkingTimeRange = (date) => {
+    if (!workingHours) return null;
+    const dayName = DAY_MAP[date.getDay()];
+    const dayConfig = workingHours[dayName];
+    if (!dayConfig || !dayConfig.enabled) return null;
+    return { start: dayConfig.start || "09:00", end: dayConfig.end || "18:00" };
+  };
+
+  const clampTimeToWorkingHours = (time, date) => {
+    const range = getWorkingTimeRange(date);
+    if (!range) return time;
+    if (time < range.start) return range.start;
+    if (time >= range.end) return range.start;
+    return time;
+  };
 
   const generateDefaultSessions = () => {
     if (!appointment) return;
@@ -46,17 +78,30 @@ const SessionPlannerDialog = ({
     const baseTime = appointment.appointment_time || "10:00";
     const newSessions = [];
 
-    for (let i = 0; i < remainingCount; i++) {
+    let dayOffset = 7;
+    let generated = 0;
+    let maxAttempts = remainingCount * 14; // safety limit
+
+    while (generated < remainingCount && maxAttempts > 0) {
+      maxAttempts--;
       const sessionDate = new Date(baseDate);
-      sessionDate.setDate(sessionDate.getDate() + (7 * (i + 1)));
-      const dateStr = sessionDate.toISOString().split('T')[0];
-      newSessions.push({
-        date: dateStr,
-        time: baseTime,
-        available: null,
-        alternatives: [],
-        editing: false
-      });
+      sessionDate.setDate(sessionDate.getDate() + dayOffset);
+
+      if (isWorkingDay(sessionDate)) {
+        const dateStr = sessionDate.toISOString().split('T')[0];
+        const adjustedTime = clampTimeToWorkingHours(baseTime, sessionDate);
+        newSessions.push({
+          date: dateStr,
+          time: adjustedTime,
+          available: null,
+          alternatives: [],
+          editing: false
+        });
+        generated++;
+        dayOffset += 7; // next week same day
+      } else {
+        dayOffset++; // skip to next day
+      }
     }
     setSessions(newSessions);
     setAllAvailable(false);
@@ -164,14 +209,14 @@ const SessionPlannerDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Bilgi Kutusu (Inline Alert) */}
-        <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-2.5">
-          <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-          <div className="text-xs text-blue-800">
+        {/* Bilgi Kutusu */}
+        <div className="p-4 backdrop-blur-md bg-zinc-900/5 border border-zinc-200/60 rounded-xl flex items-start gap-3">
+          <Info className="w-5 h-5 text-zinc-700 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-zinc-700">
             <p className="font-bold mb-1">
               {isTR ? 'Nasıl Çalışır?' : 'How It Works?'}
             </p>
-            <p>
+            <p className="leading-relaxed">
               {isTR 
                 ? 'Tarihler otomatik oluşturuldu (haftalık). Çakışma varsa sarı uyarı ve alternatif saatler gösterilir. Tüm seanslar müsait olana kadar "Hepsini Oluştur" butonu aktif olmaz.'
                 : 'Dates are auto-generated (weekly). Conflicts show yellow warnings with alternative times. "Create All" button stays disabled until all sessions are available.'}
@@ -236,6 +281,21 @@ const SessionPlannerDialog = ({
                   </span>
                 </div>
               )}
+
+              {/* Çalışma saati dışı uyarısı */}
+              {(() => {
+                const range = getWorkingTimeRange(new Date(session.date + 'T00:00:00'));
+                if (range && (session.time < range.start || session.time >= range.end)) {
+                  return (
+                    <div className="mt-1.5 flex items-center gap-1.5 pl-1">
+                      <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-semibold">
+                        ⚠ {isTR ? `Çalışma saatleri: ${range.start} - ${range.end}` : `Working hours: ${range.start} - ${range.end}`}
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               {/* Çakışma uyarısı + alternatifler */}
               {session.available === false && (

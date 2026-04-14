@@ -37,8 +37,9 @@ import {
 import { format } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
+import SessionPlannerDialog from "./SessionPlannerDialog";
 
-const Customers = ({ onNavigate, onNewAppointment }) => {
+const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
   const { userRole, token } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
@@ -67,6 +68,14 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
   const [cancelSessionDialogOpen, setCancelSessionDialogOpen] = useState(false);
   const [sessionGroupToCancel, setSessionGroupToCancel] = useState(null);
   const [cancellingSession, setCancellingSession] = useState(false);
+  const [cancelSourceAppointment, setCancelSourceAppointment] = useState(null);
+  
+  // Tekil Randevu İade
+  const [refundingAppointment, setRefundingAppointment] = useState(null);
+  
+  // Seans Planlayıcı
+  const [showSessionPlanner, setShowSessionPlanner] = useState(false);
+  const [sessionPlannerAppointment, setSessionPlannerAppointment] = useState(null);
   
   // --- REHBER ENTEGRASYONU STATE'LERİ ---
   const [importingContacts, setImportingContacts] = useState(false);
@@ -316,17 +325,43 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
     }
   };
 
+  // --- TEKİL RANDEVU İADE ---
+  const handleSingleRefund = async (appointmentId) => {
+    if (!window.confirm(i18n.language === 'tr' ? 'Bu randevu için iade başlatmak istediğinize emin misiniz?' : 'Are you sure you want to refund this appointment?')) return;
+    setRefundingAppointment(appointmentId);
+    try {
+      const response = await api.post(`/appointments/${appointmentId}/refund`);
+      toast.success(response.data?.message || (i18n.language === 'tr' ? 'İade başlatıldı' : 'Refund initiated'));
+      if (selectedCustomer) await loadCustomerHistory(selectedCustomer.phone);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || (i18n.language === 'tr' ? 'İade başarısız' : 'Refund failed'));
+    } finally {
+      setRefundingAppointment(null);
+    }
+  };
+
   // --- SEANS TOPLU İPTAL ---
-  const handleCancelSessionGroup = async () => {
+  const [cancelMode, setCancelMode] = useState(null); // 'cancel_only' | 'cancel_and_refund'
+
+  const handleCancelSessionGroup = async (mode) => {
     if (!sessionGroupToCancel) return;
     setCancellingSession(true);
+    const fromSession = cancelSourceAppointment?.session_number || 1;
     try {
-      const response = await api.post(`/appointments/session-group/${sessionGroupToCancel}/cancel-remaining`);
-      toast.success(response.data?.message || (i18n.language === 'tr' ? 'Kalan seanslar iptal edildi' : 'Remaining sessions cancelled'));
+      if (mode === 'cancel_and_refund') {
+        const response = await api.post(`/appointments/session-group/${sessionGroupToCancel}/cancel-and-refund`, null, { params: { from_session_number: fromSession } });
+        toast.success(response.data?.message || (i18n.language === 'tr' ? 'Seanslar iptal edildi ve iade başlatıldı' : 'Sessions cancelled and refund initiated'));
+      } else {
+        const response = await api.post(`/appointments/session-group/${sessionGroupToCancel}/cancel-remaining`, null, { params: { from_session_number: fromSession } });
+        toast.success(response.data?.message || (i18n.language === 'tr' ? 'Seanslar iptal edildi' : 'Sessions cancelled'));
+      }
       setCancelSessionDialogOpen(false);
       setSessionGroupToCancel(null);
+      setCancelSourceAppointment(null);
+      setCancelMode(null);
       if (selectedCustomer) await loadCustomerHistory(selectedCustomer.phone);
       await loadCustomers();
+      if (onRefresh) onRefresh();
     } catch (error) {
       toast.error(error.response?.data?.detail || (i18n.language === 'tr' ? 'İptal başarısız' : 'Cancellation failed'));
     } finally {
@@ -610,50 +645,120 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
                 <p className="text-zinc-600 font-medium">{t('customers.loading')}</p>
               </div>
             ) : customerHistory && customerHistory.appointments.length > 0 ? (
-              <div className="space-y-3">
-                {customerHistory.appointments.map((apt, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-4 backdrop-blur-md bg-white/50 rounded-xl border border-white/30 shadow-sm">
+              (() => {
+                const sorted = [...customerHistory.appointments].sort((a, b) => {
+                  const da = new Date(`${a.appointment_date}T${a.appointment_time || '00:00'}`);
+                  const db2 = new Date(`${b.appointment_date}T${b.appointment_time || '00:00'}`);
+                  return db2 - da;
+                });
+                const sessionGroups = {};
+                const singles = [];
+                sorted.forEach(apt => {
+                  if (apt.session_group_id) {
+                    if (!sessionGroups[apt.session_group_id]) sessionGroups[apt.session_group_id] = [];
+                    sessionGroups[apt.session_group_id].push(apt);
+                  } else {
+                    singles.push(apt);
+                  }
+                });
+                Object.values(sessionGroups).forEach(g => g.sort((a, b) => (a.session_number || 0) - (b.session_number || 0)));
+                const groupEntries = Object.entries(sessionGroups).map(([gid, apts]) => ({
+                  type: 'group', gid, apts,
+                  sortDate: new Date(`${apts[0].appointment_date}T${apts[0].appointment_time || '00:00'}`)
+                }));
+                const singleEntries = singles.map(apt => ({
+                  type: 'single', apt,
+                  sortDate: new Date(`${apt.appointment_date}T${apt.appointment_time || '00:00'}`)
+                }));
+                const allEntries = [...groupEntries, ...singleEntries].sort((a, b) => b.sortDate - a.sortDate);
+
+                const StatusBadge = ({ status }) => (
+                  <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                    status === t('dashboard.status.completed') || status === 'Tamamlandı' ? 'bg-green-100 text-green-700' :
+                    status === t('dashboard.status.pending') || status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-700' :
+                    status === 'İptal Edildi' || status === 'Cancelled' ? 'bg-red-100 text-red-700' :
+                    'bg-gray-100 text-gray-700'
+                  }`}>{status}</span>
+                );
+
+                const RefundBtn = ({ apt }) => (
+                  userRole === 'admin' && ['paid', 'deposit_paid'].includes(apt.payment_status) && apt.status !== 'İptal Edildi' && apt.status !== 'Cancelled' ? (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); handleSingleRefund(apt.id); }}
+                      disabled={refundingAppointment === apt.id}
+                      className="text-xs text-orange-600 hover:text-orange-800 font-bold underline disabled:opacity-50">
+                      {refundingAppointment === apt.id ? (i18n.language === 'tr' ? 'İade ediliyor...' : 'Refunding...') : (i18n.language === 'tr' ? 'İade Et' : 'Refund')}
+                    </button>
+                  ) : null
+                );
+
+                const AptRow = ({ apt, showSessionBadge }) => (
+                  <div className="flex items-center justify-between p-3 bg-white/50 rounded-lg border border-white/30">
                     <div>
-                      <p className="font-bold text-zinc-900">
+                      <p className="font-bold text-zinc-900 text-sm">
                         {format(new Date(apt.appointment_date), "d MMMM yyyy", { locale: dateLocale })}
+                        <span className="text-zinc-400 font-medium ml-1">{apt.appointment_time}</span>
                       </p>
-                      <p className="text-sm text-zinc-600 font-medium">{apt.appointment_time} - {apt.service_name}</p>
-                      {userRole === 'admin' && apt.staff_member_id && (!settings || settings.customer_can_choose_staff || settings.admin_provides_service) && (
-                        <p className="text-xs text-zinc-500 mt-1 font-medium">{t('customers.staff')}: {apt.staff_member_id}</p>
-                      )}
-                      {apt.session_number && apt.session_total && (
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">
-                            {i18n.language === 'tr' ? 'Seans' : 'Session'} {apt.session_number}/{apt.session_total}
-                          </span>
-                          {apt.payment_status === 'package_included' && (
-                            <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-bold">
-                              {i18n.language === 'tr' ? 'Paket Dahil' : 'Package'}
-                            </span>
-                          )}
-                          {userRole === 'admin' && apt.session_group_id && apt.session_number < apt.session_total && apt.status !== 'İptal Edildi' && apt.status !== 'Cancelled' && (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setSessionGroupToCancel(apt.session_group_id); setCancelSessionDialogOpen(true); }}
-                              className="text-xs text-red-600 hover:text-red-800 font-bold underline"
-                            >
-                              {i18n.language === 'tr' ? 'Kalan Seansları İptal Et' : 'Cancel Remaining'}
-                            </button>
-                          )}
-                        </div>
+                      <p className="text-sm text-zinc-600 font-medium">{apt.service_name}</p>
+                      {showSessionBadge && apt.session_number && (
+                        <span className="text-xs bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded-full font-bold">
+                          {i18n.language === 'tr' ? 'Seans' : 'Session'} {apt.session_number}/{apt.session_total}
+                        </span>
                       )}
                     </div>
-                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                      apt.status === t('dashboard.status.completed') || apt.status === 'Tamamlandı' ? 'bg-green-100 text-green-700' :
-                      apt.status === t('dashboard.status.pending') || apt.status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-700' :
-                      apt.status === 'İptal Edildi' || apt.status === 'Cancelled' ? 'bg-red-100 text-red-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      {apt.status}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <StatusBadge status={apt.status} />
+                      <RefundBtn apt={apt} />
+                    </div>
                   </div>
-                ))}
-              </div>
+                );
+
+                return (
+                  <div className="space-y-3">
+                    {allEntries.map((entry, idx) => {
+                      if (entry.type === 'single') {
+                        return <AptRow key={entry.apt.id || idx} apt={entry.apt} showSessionBadge={false} />;
+                      }
+                      const { gid, apts } = entry;
+                      const firstApt = apts[0];
+                      const activeCount = apts.filter(a => a.status !== 'İptal Edildi' && a.status !== 'Cancelled').length;
+                      const hasActiveAdmin = userRole === 'admin' && firstApt.session_group_id && apts.some(a => a.session_number < a.session_total && a.status !== 'İptal Edildi' && a.status !== 'Cancelled');
+                      return (
+                        <details key={gid} className="group backdrop-blur-md bg-white/50 rounded-xl border border-white/30 shadow-sm overflow-hidden">
+                          <summary className="flex items-center justify-between p-4 cursor-pointer list-none select-none hover:bg-white/60 transition-colors">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center justify-center w-8 h-8 bg-zinc-100 rounded-lg">
+                                <span className="text-xs font-black text-zinc-700">{apts.length}x</span>
+                              </div>
+                              <div>
+                                <p className="font-bold text-zinc-900 text-sm">{firstApt.service_name}</p>
+                                <p className="text-xs text-zinc-500">{activeCount}/{apts.length} {i18n.language === 'tr' ? 'aktif seans' : 'active sessions'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {hasActiveAdmin && (
+                                <>
+                                  <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSessionPlannerAppointment(firstApt); setShowSessionPlanner(true); }}
+                                    className="text-xs text-blue-600 hover:text-blue-800 font-bold underline">
+                                    {i18n.language === 'tr' ? 'Planla' : 'Plan'}
+                                  </button>
+                                  <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSessionGroupToCancel(firstApt.session_group_id); const paidApt = apts.find(a => ['paid', 'deposit_paid'].includes(a.payment_status)) || firstApt; setCancelSourceAppointment(paidApt); setCancelSessionDialogOpen(true); }}
+                                    className="text-xs text-red-600 hover:text-red-800 font-bold underline">
+                                    {i18n.language === 'tr' ? 'İptal' : 'Cancel'}
+                                  </button>
+                                </>
+                              )}
+                              <svg className="w-4 h-4 text-zinc-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            </div>
+                          </summary>
+                          <div className="px-4 pb-4 space-y-2">
+                            {apts.map(apt => <AptRow key={apt.id} apt={apt} showSessionBadge={true} />)}
+                          </div>
+                        </details>
+                      );
+                    })}
+                  </div>
+                );
+              })()
             ) : (
               <p className="text-zinc-600 text-center py-8 font-medium">{t('customers.historyEmpty')}</p>
             )}
@@ -733,28 +838,119 @@ const Customers = ({ onNavigate, onNewAppointment }) => {
         </Dialog>
 
         {/* Seans Toplu İptal Dialog */}
-        <AlertDialog open={cancelSessionDialogOpen} onOpenChange={setCancelSessionDialogOpen}>
-          <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="text-xl font-black text-zinc-900">
-                {i18n.language === 'tr' ? 'Kalan Seansları İptal Et' : 'Cancel Remaining Sessions'}
+        <AlertDialog open={cancelSessionDialogOpen} onOpenChange={(open) => { setCancelSessionDialogOpen(open); if (!open) { setCancelMode(null); setCancelSourceAppointment(null); } }}>
+          <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border border-zinc-200/60 rounded-2xl shadow-2xl max-w-md p-0 overflow-hidden">
+            {/* Header */}
+            <div className="bg-zinc-900 px-6 py-4">
+              <AlertDialogTitle className="text-lg font-black text-white">
+                {i18n.language === 'tr' ? 'Seansları İptal Et' : 'Cancel Sessions'}
               </AlertDialogTitle>
-              <AlertDialogDescription className="text-zinc-600 font-medium">
+              {cancelSourceAppointment && (
+                <p className="text-zinc-400 text-sm font-medium mt-1">
+                  {cancelSourceAppointment.customer_name} — {cancelSourceAppointment.service_name}
+                  <span className="ml-2 bg-white/20 text-white text-xs px-2 py-0.5 rounded-full font-bold">
+                    {i18n.language === 'tr' ? 'Seans' : 'Session'} {cancelSourceAppointment.session_number}/{cancelSourceAppointment.session_total}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            <div className="px-6 py-5">
+              <AlertDialogDescription className="text-zinc-600 text-sm font-medium mb-4">
                 {i18n.language === 'tr' 
-                  ? 'Bu seans grubundaki bekleyen tüm seanslar iptal edilecektir. Bu işlem geri alınamaz.'
-                  : 'All pending sessions in this session group will be cancelled. This action cannot be undone.'}
+                  ? `Seans ${cancelSourceAppointment?.session_number || '?'} ve sonrasındaki bekleyen seanslar iptal edilecektir.`
+                  : `Session ${cancelSourceAppointment?.session_number || '?'} and all subsequent pending sessions will be cancelled.`}
               </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={cancellingSession} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">
+
+              {/* Conditional: online/deposit payment → show 2 options */}
+              {['paid', 'deposit_paid'].includes(cancelSourceAppointment?.payment_status) ? (
+                <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setCancelMode('cancel_only')}
+                    className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                      cancelMode === 'cancel_only' 
+                        ? 'border-zinc-900 bg-zinc-50 shadow-md' 
+                        : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50'
+                    }`}
+                  >
+                    <p className="text-sm font-bold text-zinc-900">
+                      {i18n.language === 'tr' ? 'Sadece İptal Et' : 'Cancel Only'}
+                    </p>
+                    <p className="text-sm text-zinc-500 mt-1">
+                      {i18n.language === 'tr' 
+                        ? 'Seanslar iptal edilir, iade yapılmaz.'
+                        : 'Sessions are cancelled, no refund issued.'}
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCancelMode('cancel_and_refund')}
+                    className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                      cancelMode === 'cancel_and_refund' 
+                        ? 'border-zinc-900 bg-zinc-50 shadow-md' 
+                        : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50'
+                    }`}
+                  >
+                    <p className="text-sm font-bold text-zinc-900">
+                      {i18n.language === 'tr' ? 'İptal Et ve İade Yap' : 'Cancel & Refund'}
+                    </p>
+                    <p className="text-sm text-zinc-500 mt-1">
+                      {i18n.language === 'tr' 
+                        ? 'Seanslar iptal edilir ve orantılı tutar müşteriye iade edilir.'
+                        : 'Sessions are cancelled and proportional amount is refunded.'}
+                    </p>
+                  </button>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 text-sm text-zinc-700 font-medium">
+                  {i18n.language === 'tr' 
+                    ? 'Seçilen seans ve sonrasındaki bekleyen seanslar iptal edilecektir. Bu işlem geri alınamaz.'
+                    : 'Selected session and all subsequent pending sessions will be cancelled. This cannot be undone.'}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-100 bg-zinc-50/50">
+              <AlertDialogCancel disabled={cancellingSession} className="bg-white border-zinc-200 hover:bg-zinc-50 rounded-xl font-bold text-zinc-700 h-10 px-5">
                 {t('common.cancel')}
               </AlertDialogCancel>
-              <AlertDialogAction onClick={handleCancelSessionGroup} disabled={cancellingSession} className="bg-red-600 hover:bg-red-700 rounded-xl font-bold shadow-lg">
-                {cancellingSession ? (i18n.language === 'tr' ? 'İptal ediliyor...' : 'Cancelling...') : (i18n.language === 'tr' ? 'Evet, İptal Et' : 'Yes, Cancel')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
+              {['paid', 'deposit_paid'].includes(cancelSourceAppointment?.payment_status) ? (
+                <AlertDialogAction 
+                  onClick={() => handleCancelSessionGroup(cancelMode)} 
+                  disabled={cancellingSession || !cancelMode} 
+                  className="bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg disabled:opacity-40 h-10 px-5"
+                >
+                  {cancellingSession 
+                    ? (i18n.language === 'tr' ? 'İşleniyor...' : 'Processing...') 
+                    : (i18n.language === 'tr' ? 'Onayla' : 'Confirm')}
+                </AlertDialogAction>
+              ) : (
+                <AlertDialogAction 
+                  onClick={() => handleCancelSessionGroup('cancel_only')} 
+                  disabled={cancellingSession} 
+                  className="bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg disabled:opacity-40 h-10 px-5"
+                >
+                  {cancellingSession 
+                    ? (i18n.language === 'tr' ? 'İptal ediliyor...' : 'Cancelling...') 
+                    : (i18n.language === 'tr' ? 'İptal Et' : 'Cancel Sessions')}
+                </AlertDialogAction>
+              )}
+            </div>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Seans Planlama Dialog */}
+        <SessionPlannerDialog
+          open={showSessionPlanner}
+          onOpenChange={setShowSessionPlanner}
+          appointment={sessionPlannerAppointment}
+          onSuccess={async () => {
+            if (selectedCustomer) await loadCustomerHistory(selectedCustomer.phone);
+            await loadCustomers();
+            if (onRefresh) onRefresh();
+          }}
+        />
       </div>
     );
   }

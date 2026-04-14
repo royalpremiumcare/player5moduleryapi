@@ -16,9 +16,9 @@ import requests
 # =========================================================
 @dataclass(frozen=True)
 class Config:
-    job_id: str = "0f58a60d-dd41-477a-b66d-aef9100125cd"
+    job_id: str = "bcaa9c5b-0608-4c07-a4ac-f47ffff2a826"
     api_base_url: str = "http://46.225.238.228:8080/api/v1/jobs"
-    output_file: Path = Path("İstanbul_Anadolu.csv")
+    output_file: Path = Path("Ankara_Part_2.csv")
     removed_file: Path = Path("silinen_kayitlar.csv")
     timeout_seconds: int = 60
 

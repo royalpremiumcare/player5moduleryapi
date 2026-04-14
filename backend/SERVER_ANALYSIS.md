@@ -1,4 +1,4 @@
-# PLANN Randevu SaaS Backend - server.py Detaylı Analiz Dokümantasyonu
+# PLANN Backend — Kapsamlı Sistem Analiz Dokümantasyonu
 
 ## 📋 İçindekiler
 
@@ -7,32 +7,48 @@
 3. [Başlangıç ve Yaşam Döngüsü](#başlangıç-ve-yaşam-döngüsü)
 4. [Güvenlik ve Kimlik Doğrulama](#güvenlik-ve-kimlik-doğrulama)
 5. [Veri Modelleri](#veri-modelleri)
-6. [API Endpoint'leri](#api-endpointleri)
-7. [WebSocket ve Real-Time İletişim](#websocket-ve-real-time-iletişim)
-8. [SMS ve E-posta Entegrasyonları](#sms-ve-e-posta-entegrasyonları)
-9. [Kota ve Abonelik Yönetimi](#kota-ve-abonelik-yönetimi)
-10. [Randevu Yönetimi](#randevu-yönetimi)
-11. [Müsaitlik Hesaplama](#müsaitlik-hesaplama)
-12. [Finans ve Kasa Yönetimi](#finans-ve-kasa-yönetimi)
-13. [Personel Yönetimi](#personel-yönetimi)
-14. [Müşteri Yönetimi](#müşteri-yönetimi)
-15. [Yardımcı Fonksiyonlar](#yardımcı-fonksiyonlar)
+6. [Randevu Durumları ve Yaşam Döngüsü](#randevu-durumları-ve-yaşam-döngüsü)
+7. [Seans Paketi Sistemi](#seans-paketi-sistemi)
+8. [Online Ödeme Sistemi (Stripe Merchant Checkout)](#online-ödeme-sistemi)
+9. [Ödeme Bekleniyor Akışı](#ödeme-bekleniyor-akışı)
+10. [Cüzdan (Wallet) Sistemi](#cüzdan-wallet-sistemi)
+11. [İade (Refund) Sistemi](#iade-refund-sistemi)
+12. [WhatsApp Bildirim Sistemi](#whatsapp-bildirim-sistemi)
+13. [API Endpoint'leri](#api-endpointleri)
+14. [WebSocket ve Real-Time İletişim](#websocket-ve-real-time-iletişim)
+15. [Push Notification Sistemi](#push-notification-sistemi)
+16. [E-posta Entegrasyonu](#e-posta-entegrasyonu)
+17. [Kota ve Abonelik Yönetimi](#kota-ve-abonelik-yönetimi)
+18. [SaaS Abonelik Ödeme (Stripe Subscription)](#saas-abonelik-ödeme)
+19. [Müsaitlik Hesaplama](#müsaitlik-hesaplama)
+20. [Finans ve Kasa Yönetimi](#finans-ve-kasa-yönetimi)
+21. [Personel Yönetimi](#personel-yönetimi)
+22. [Müşteri Yönetimi](#müşteri-yönetimi)
+23. [AI Entegrasyonu](#ai-entegrasyonu)
+24. [Zamanlanmış Görevler (Cron Jobs)](#zamanlanmış-görevler)
+25. [Yardımcı Fonksiyonlar](#yardımcı-fonksiyonlar)
 
 ---
 
 ## 🎯 Genel Bakış
 
-`server.py`, PLANN randevu SaaS platformunun backend API'sini oluşturan FastAPI tabanlı bir uygulamadır. Sistem, multi-tenant (çok kiracılı) mimari kullanarak her işletmenin (`organization`) kendi verilerini izole bir şekilde yönetmesini sağlar.
+PLANN, multi-tenant (çok kiracılı) randevu, müşteri yönetimi ve ödeme altyapısı sunan SaaS platformudur. Backend, FastAPI tabanlı monolitik bir uygulama (`server.py`, ~12.500+ satır) ve modüler `financial/` paketiyle çalışır. Sistem Türkiye (TRY) ve İngiltere (GBP) pazarlarına çift para birimi desteğiyle hizmet verir.
 
 **Temel Özellikler:**
-- Multi-tenant SaaS mimarisi
-- JWT tabanlı kimlik doğrulama
-- Real-time güncellemeler (WebSocket/Socket.IO)
-- Otomatik SMS hatırlatmaları
-- Dinamik müsaitlik hesaplama
-- Finans ve kasa yönetimi
-- Personel ve müşteri yönetimi
-- Abonelik ve kota yönetimi
+- Multi-tenant SaaS mimarisi (`organization_id` izolasyonu)
+- JWT tabanlı kimlik doğrulama (admin, staff, superadmin, marketing rolleri)
+- Real-time güncellemeler (Socket.IO + Redis pub/sub)
+- WhatsApp bildirim sistemi (Meta Cloud API, çoklu template)
+- **Seans paketi sistemi** (toplu randevu oluşturma ve yönetimi)
+- **Online ödeme sistemi** (Stripe Merchant Checkout, merchant cüzdanı, payout)
+- **"Ödeme Bekleniyor" akışı** (ödeme tamamlanana kadar randevu görünmez)
+- **İade sistemi** (tekil ve orantılı seans grubu iadesi)
+- Dinamik müsaitlik hesaplama (15dk aralıklı slot sistemi)
+- AI asistan (Gemini) ve Voice AI desteği
+- Push notification (Web Push VAPID + Firebase Cloud Messaging)
+- Stripe SaaS abonelik + PayTR (TR) abonelik ödeme
+- Finans modülü (gelir/gider/personel hakediş)
+- CSV/Excel export
 
 ---
 
@@ -40,33 +56,49 @@
 
 ### Kullanılan Teknolojiler
 
-| Teknoloji | Versiyon/Kütüphane | Kullanım Amacı |
+| Teknoloji | Kütüphane / Araç | Kullanım Amacı |
 |-----------|-------------------|----------------|
-| **FastAPI** | - | RESTful API framework |
+| **FastAPI** | 0.110.x | RESTful API framework |
 | **Motor** | AsyncIOMotorClient | MongoDB async driver |
-| **Socket.IO** | python-socketio | Real-time WebSocket iletişimi |
+| **Socket.IO** | python-socketio (AsyncServer + AsyncRedisManager) | Real-time WebSocket iletişimi |
 | **JWT** | python-jose | Token tabanlı kimlik doğrulama |
 | **Passlib** | bcrypt | Şifre hashleme |
-| **APScheduler** | AsyncIOScheduler | Zamanlanmış görevler (SMS hatırlatmaları) |
-| **Brevo** | sib_api_v3_sdk | E-posta gönderimi |
-| **İletimerkezi** | requests | SMS gönderimi |
-| **Redis** | - | Cache ve rate limiting |
-| **Pydantic** | BaseModel | Veri validasyonu |
+| **APScheduler** | AsyncIOScheduler | Zamanlanmış görevler |
+| **Stripe** | stripe-python | SaaS abonelik + merchant ödeme |
+| **Brevo** | sib_api_v3_sdk | Transactional e-posta gönderimi |
+| **Meta WhatsApp Cloud API** | whatsapp_service.py | WhatsApp bildirim (CONFIRMATION, REMINDER, SESSION_PACKAGE) |
+| **Redis** | redis-py async | Cache, rate limiting, Socket.IO scaling, distributed lock |
+| **Pydantic** | BaseModel / ConfigDict | Veri validasyonu |
+| **Google Gemini** | google-generativeai / google-genai | AI asistan + Voice AI |
+| **Sentry** | sentry-sdk | Hata izleme ve performance tracing |
+| **Web Push** | pywebpush (VAPID) | Web push notification |
+| **Firebase** | firebase-admin | Android/iOS push notification (FCM) |
+| **Wise API** | requests | Uluslararası payout |
+| **Pillow** | PIL | Resim işleme (logo upload) |
+| **slowapi** | limits | Rate limiting |
 
-### Veritabanı Yapısı
+### Veritabanı Yapısı (MongoDB Collections)
 
-**MongoDB Collections:**
-- `users` - Kullanıcılar (admin, staff)
-- `appointments` - Randevular
-- `services` - Hizmetler
-- `customers` - Müşteriler
-- `transactions` - Finansal işlemler
-- `expenses` - Giderler
-- `settings` - İşletme ayarları
-- `organization_plans` - Abonelik planları
-- `audit_logs` - Denetim günlükleri
-- `customer_notes` - Müşteri notları
-- `password_reset_tokens` - Şifre sıfırlama token'ları
+| Collection | Açıklama |
+|-----------|----------|
+| `users` | Kullanıcılar (admin, staff, superadmin, marketing) |
+| `appointments` | Randevular (seans bilgileri, ödeme durumu dahil) |
+| `services` | Hizmetler (session_count, payment_rule dahil) |
+| `customers` | Müşteriler |
+| `transactions` | İşletme iç finansal işlemler (gelir/gider) |
+| `expenses` | Giderler |
+| `settings` | İşletme ayarları (slug, base_currency, location, business_hours) |
+| `organization_plans` | Abonelik planları ve kota bilgileri |
+| `audit_logs` | Denetim günlükleri |
+| `customer_notes` | Müşteri notları |
+| `password_reset_tokens` | Şifre sıfırlama token'ları |
+| `push_subscriptions` | Web Push ve FCM abonelikleri |
+| `merchant_transactions` | **Merchant ödeme işlemleri** (Stripe, state machine ile yönetilen) |
+| `merchant_wallets` | **Merchant cüzdan bakiyeleri** |
+| `webhook_events` | **Webhook idempotency kayıtları** |
+| `payout_batches` | **Payout batch kayıtları** (Wise) |
+| `exchange_rates` | **Döviz kuru geçmişi** (GBP/TRY) |
+| `payment_logs` | SaaS abonelik ödeme logları |
 
 ---
 
@@ -78,33 +110,17 @@ Uygulama başlangıcında ve kapanışında çalışan async context manager.
 
 **Başlangıç Adımları:**
 
-1. **MongoDB Bağlantısı**
-   - `MONGO_URL` environment variable'ından bağlantı bilgisi alınır
-   - `AsyncIOMotorClient` ile bağlantı kurulur
-   - Bağlantı başarısız olursa "lazy initialization" yapılır (ilk request'te bağlanır)
+1. **MongoDB Bağlantısı** — `MONGO_URL` env ile `AsyncIOMotorClient` bağlantısı; başarısız olursa lazy initialization
+2. **Redis Bağlantısı** — Cache, rate limiting ve Socket.IO scaling için; başarısız olursa dummy limiter
+3. **Rate Limiter** — Redis varsa gerçek, yoksa dummy limiter
+4. **Firebase Initialization** — FCM push notification için `firebase-admin` başlatma
+5. **SMS/WhatsApp Reminder Scheduler** — `AsyncIOScheduler`, her 5 dakikada `check_and_send_reminders()`
+6. **Database Indexes:**
+   - `appointments`: `organization_id`, `appointment_date`, `staff_member_id`, `phone`, `status`
+   - `users`: `organization_id`, `role`, `slug` (unique)
+   - `settings`: `organization_id` (unique), `slug` (unique)
 
-2. **Redis Bağlantısı**
-   - Cache ve rate limiting için Redis bağlantısı kurulur
-   - Bağlantı başarısız olursa "dummy rate limiter" kullanılır
-
-3. **Rate Limiter İnisiyalizasyonu**
-   - Redis varsa gerçek rate limiter, yoksa dummy limiter kullanılır
-
-4. **SMS Reminder Scheduler**
-   - `AsyncIOScheduler` başlatılır
-   - Her 5 dakikada bir `check_and_send_reminders()` çalışır
-   - İlk kontrol hemen yapılır (test için)
-
-5. **Database Indexes**
-   - Performans için MongoDB index'leri oluşturulur:
-     - `appointments`: `organization_id`, `appointment_date`, `staff_member_id`, `phone`, `status`
-     - `users`: `organization_id`, `role`, `slug` (unique)
-     - `settings`: `organization_id` (unique), `slug` (unique)
-
-**Kapanış Adımları:**
-- Scheduler durdurulur
-- MongoDB bağlantısı kapatılır
-- Redis bağlantısı kapatılır
+**Kapanış:** Scheduler durdurulur, MongoDB ve Redis bağlantıları kapatılır.
 
 ---
 
@@ -112,807 +128,646 @@ Uygulama başlangıcında ve kapanışında çalışan async context manager.
 
 ### JWT Token Yönetimi
 
-**Token Oluşturma:**
-```python
-create_access_token(data: dict, expires_delta: Optional[timedelta] = None)
-```
-- `data`: Token içinde saklanacak bilgiler (username, role, organization_id)
-- `expires_delta`: Token geçerlilik süresi (varsayılan: 24 saat)
-- `SECRET_KEY`: Environment variable'dan alınır (production'da mutlaka değiştirilmeli)
-
-**Token Doğrulama:**
-```python
-get_current_user(request: Request, token: str = Depends(oauth2_scheme))
-```
-- JWT token decode edilir
-- `sub` (username) alanından kullanıcı bulunur
-- Kullanıcı veritabanından çekilir ve `UserInDB` modeli olarak döndürülür
+- **Token oluşturma:** `create_access_token(data, expires_delta)` — varsayılan süre: 24 saat
+- **Token doğrulama:** `get_current_user(request, token)` — JWT decode → DB'den kullanıcı çekme
+- **Token payload:** `sub` (username), `role`, `org_id`, `can_view_all_appointments`
+- **Roller:** `superadmin`, `admin`, `staff`, `marketing`
 
 ### Şifre Yönetimi
 
-**Hashleme:**
-```python
-get_password_hash(password: str) -> str
-```
-- Bcrypt algoritması kullanılır
-- Her hash benzersizdir (salt otomatik eklenir)
-
-**Doğrulama:**
-```python
-verify_password(plain_password: str, hashed_password: str) -> bool
-```
+- `get_password_hash()` — Bcrypt
+- `verify_password()` — Bcrypt doğrulama
 
 ### Rate Limiting
 
-Her endpoint için farklı rate limit'ler tanımlanabilir:
-- `register`: Kayıt işlemleri
-- `login`: Giriş işlemleri
-- `forgot-password`: Şifre sıfırlama
+- `slowapi` + `limits` async storage (Redis)
+- Endpoint bazlı limit tanımları: `register`, `login`, `forgot-password`
+- `RATE_LIMIT_ENABLED` env flag ile açılır/kapanır
+
+### Multi-Tenant İzolasyonu
+
+- **HER sorgu** `organization_id` filtresi içerir (superadmin hariç)
+- Staff kullanıcılar `can_view_all_appointments` yetkisine sahip değilse sadece kendi randevularını görür
+
+### Audit Logging
+
+- `create_audit_log()` ile tüm önemli işlemler (CREATE, UPDATE, DELETE) loglanır
+- Kullanıcı bilgileri, IP adresi, eski/yeni değerler saklanır
+- `AUDIT_LOGS_ENABLED` env flag ile kontrol edilir
 
 ---
 
 ## 📊 Veri Modelleri
 
-### User Modelleri
+### Service Modeli
 
-**`User` (BaseModel)**
-- `username`: E-posta adresi (unique)
-- `full_name`: Ad Soyad
-- `organization_id`: İşletme ID'si (UUID)
-- `role`: "admin" veya "staff"
-- `slug`: URL-friendly kullanıcı adı
-- `permitted_service_ids`: Personelin verebileceği hizmet ID'leri
-- `payment_type`: "salary" (sabit maaş) veya "commission" (komisyon)
-- `payment_amount`: Maaş/komisyon tutarı
-- `status`: "active" veya "pending" (davet bekleyen personel)
-- `invitation_token`: Personel daveti için token
-- `days_off`: Haftalık tatil günleri (örn: `["sunday", "monday"]`)
+```python
+class Service(BaseModel):
+    organization_id: str
+    id: str
+    name: str
+    price: float
+    duration: int = 30
+    order: Optional[int] = None
+    session_count: Optional[int] = None       # Seans sayısı (>1 ise seans paketi)
+    payment_rule: Optional[str] = None         # "online" | "deposit" | None (on_site)
+    deposit_percentage: Optional[int] = None   # Kapora yüzdesi (deposit için)
+```
 
-**`UserInDB` (User + hashed_password)**
-- Şifre hash'i içerir
+### Appointment Modeli
 
-**`UserCreate`**
-- Kayıt için kullanılan model
-- `organization_name`, `support_phone`, `sector` gibi ek alanlar içerir
+```python
+class Appointment(BaseModel):
+    organization_id: str
+    id: str
+    customer_name: str
+    phone: str
+    service_id: str
+    service_name: str
+    service_price: float
+    appointment_date: str         # "YYYY-MM-DD"
+    appointment_time: str         # "HH:MM"
+    notes: str = ""
+    status: str = "Bekliyor"     # "Bekliyor" | "Tamamlandı" | "İptal" | "İptal Edildi" | "Ödeme Bekleniyor"
+    staff_member_id: Optional[str] = None
+    service_duration: Optional[int] = None
+    source: Optional[str] = None  # "admin_bulk", "public_booking", vb.
+    # Seans paketi alanları
+    session_group_id: Optional[str] = None
+    session_number: Optional[int] = None
+    session_total: Optional[int] = None
+    # Ödeme durumu
+    payment_status: Optional[str] = None  # "paid" | "pending_payment" | "package_included" | "refunded" | "no_payment_required"
+```
 
-### Appointment Modelleri
+### User Modeli
 
-**`Appointment` (BaseModel)**
-- `id`: UUID
-- `customer_name`: Müşteri adı
-- `phone`: Telefon numarası
-- `service_id`: Hizmet ID'si
-- `service_name`: Hizmet adı
-- `service_price`: Hizmet fiyatı
-- `service_duration`: Hizmet süresi (dakika)
-- `appointment_date`: Tarih (YYYY-MM-DD)
-- `appointment_time`: Saat (HH:MM)
-- `status`: "Bekliyor", "Tamamlandı", "İptal"
-- `staff_member_id`: Atanan personel
-- `notes`: Notlar
-- `created_at`: Oluşturulma zamanı
-- `completed_at`: Tamamlanma zamanı
-
-**`AppointmentCreate`**
-- Yeni randevu oluşturma için
-
-**`AppointmentUpdate`**
-- Randevu güncelleme için (tüm alanlar optional)
-
-### Service Modelleri
-
-**`Service` (BaseModel)**
-- `id`: UUID
-- `name`: Hizmet adı
-- `price`: Fiyat (TL)
-- `duration`: Süre (dakika, varsayılan: 30)
-- `organization_id`: İşletme ID'si
+```python
+class User(BaseModel):
+    username: str                    # E-posta (unique)
+    full_name: str
+    organization_id: str
+    role: str                        # "admin" | "staff" | "superadmin" | "marketing"
+    slug: str                        # URL-friendly kullanıcı adı
+    permitted_service_ids: list      # Personelin verebileceği hizmetler
+    payment_type: str                # "salary" | "commission"
+    payment_amount: float
+    status: str                      # "active" | "pending"
+    invitation_token: Optional[str]
+    days_off: list                   # ["sunday", "monday"]
+    can_view_all_appointments: bool  # Tüm randevuları görebilir mi?
+```
 
 ### Settings Modeli
 
-**`Settings` (BaseModel)**
-- `company_name`: İşletme adı
-- `support_phone`: Destek telefonu
-- `slug`: URL-friendly işletme adı
-- `logo_url`: Logo URL'i
-- `sms_reminder_hours`: SMS hatırlatma süresi (saat)
-- `admin_provides_service`: İşletme sahibi hizmet veriyor mu?
-- `customer_can_choose_staff`: Müşteri personel seçebilir mi?
-- `business_hours`: Genel çalışma saatleri (her gün için `is_open`, `open_time`, `close_time`)
+```python
+class Settings(BaseModel):
+    organization_id: str
+    company_name: str
+    support_phone: str
+    slug: str                            # URL-friendly işletme adı (unique)
+    logo_url: Optional[str]
+    sms_reminder_hours: int
+    admin_provides_service: bool
+    customer_can_choose_staff: bool
+    business_hours: dict                 # Her gün: {is_open, open_time, close_time}
+    base_currency: str                   # "GBP" | "TRY"
+    fee_preference: str                  # "seller_pays" | "buyer_pays"
+    payout_tier: str                     # "standard" | "fast" | "vip"
+    kyc_verified: bool
+    wise_recipient_verified: bool
+    location: dict                       # {coordinates: {lat, lng}, address}
+```
 
-### Transaction Modeli
+---
 
-**`Transaction` (BaseModel)**
-- Otomatik oluşturulur (randevu tamamlandığında)
-- `appointment_id`: İlişkili randevu
-- `amount`: Tutar
-- `date`: Tarih
+## 🔄 Randevu Durumları ve Yaşam Döngüsü
+
+### Tüm Durumlar
+
+| Durum | Kod | Açıklama |
+|-------|-----|----------|
+| **Bekliyor** | `status: "Bekliyor"` | Aktif randevu, henüz gerçekleşmedi |
+| **Tamamlandı** | `status: "Tamamlandı"` | Bitiş saati geçmiş (otomatik) veya manuel |
+| **İptal** | `status: "İptal"` | İptal edilmiş |
+| **İptal Edildi** | `status: "İptal Edildi"` | İptal edilmiş (alternatif format) |
+| **Ödeme Bekleniyor** | `status: "Ödeme Bekleniyor"` | Online/deposit ödeme bekleyen — **görünmez** |
+
+### "Ödeme Bekleniyor" Özel Davranışları
+
+Bu status'teki randevular **sistemin her yerinde filtrelenir:**
+- ❌ `GET /api/appointments` listesinde görünmez
+- ❌ `GET /api/stats/dashboard` istatistiklerine dahil edilmez
+- ❌ Müsaitlik hesaplamada slot bloklamaz
+- ❌ `GET /api/customers/{phone}/history` müşteri geçmişinde görünmez
+- ❌ WhatsApp, Push, WebSocket bildirimi gönderilmez
+- ❌ `_check_slot_conflict` çakışma kontrolünde sayılmaz
+- ❌ `_find_alternative_slots` alternatif slot aramada sayılmaz
+
+### Otomatik Tamamlanma
+
+Her `GET /api/appointments` ve `GET /api/stats/dashboard` çağrısında:
+1. "Bekliyor" randevuları kontrol edilir
+2. Bitiş saati hesaplanır: `appointment_time + service_duration`
+3. Şu an ≥ bitiş saati ise → "Tamamlandı" + `Transaction` kaydı + `completed_at`
+
+---
+
+## 📦 Seans Paketi Sistemi
+
+### Genel Bakış
+
+Hizmetler seans tabanlı olabilir (`session_count > 1`). İlk seans public booking veya admin panelinden oluşturulur, kalan seanslar toplu olarak planlanır.
+
+### Veri Modelleri
+
+```python
+class SessionSlot(BaseModel):
+    date: str      # "YYYY-MM-DD"
+    time: str      # "HH:MM"
+
+class BulkSessionCreate(BaseModel):
+    customer_name: str
+    phone: str
+    service_id: str
+    staff_member_id: Optional[str] = None
+    notes: str = ""
+    session_group_id: Optional[str] = None      # Yeniden planlama için
+    starting_session_number: int = 1
+    session_total: Optional[int] = None
+    sessions: list[SessionSlot]
+```
+
+### `POST /api/appointments/bulk-session`
+
+**Akış:**
+
+```
+1. Hizmet doğrulama (service_id, organization_id)
+   ↓
+2. Personel doğrulama (staff yetkisi, permitted_service_ids)
+   ↓
+3. Kota kontrolü (her seans için ayrı ayrı artırılır)
+   ↓
+4. Yeniden planlama kontrolü:
+   - session_group_id varsa → aynı grubun starting_session_number'dan itibaren
+     "Tamamlandı" ve "İptal Edildi" olmayan seansları otomatik iptal et
+   ↓
+5. Her slot için çakışma kontrolü:
+   - Redis distributed lock (aynı anda çift randevu engeli)
+   - _check_slot_conflict → çakışma varsa alternatif personel ara
+   - check_break_conflict → mola saatleri kontrolü
+   - Personelsiz mod: çakışma var ama warning ile devam
+   ↓
+6. Atomik insert_many ile tüm randevular oluşturulur
+   ↓
+7. Müşteri kaydı (upsert)
+   ↓
+8. Cache invalidation + WebSocket emit (appointments_bulk_created)
+   ↓
+9. WhatsApp SESSION_PACKAGE bildirimi (arka planda)
+```
+
+### Seans Özellikleri
+
+- **session_group_id:** Aynı gruba ait tüm seansları birleştirir (UUID)
+- **session_number:** 1'den başlayan seans numarası
+- **session_total:** Toplam seans sayısı
+- **payment_status:** İlk seans = `"paid"`, diğerleri = `"package_included"`
+- **service_price:** İlk seans = hizmet fiyatı, diğerleri = 0
+- **source:** `"admin_bulk"`
+
+### Yardımcı Fonksiyonlar
+
+```python
+async def _check_slot_conflict(db, organization_id, staff_id, date, time, service_duration) -> bool:
+    # "İptal", "İptal Edildi", "Ödeme Bekleniyor" hariç mevcut randevularla overlap kontrolü
+    # True = çakışma var
+
+async def _find_available_staff_for_slot(db, organization_id, service_id, date, time, service_duration, exclude_staff_id) -> str | None:
+    # Hizmeti verebilen (permitted_service_ids) tüm personeller arasında
+    # çakışma ve mola kontrolü yaparak müsait birini bulur
+```
+
+---
+
+## 💳 Online Ödeme Sistemi
+
+### Genel Bakış
+
+Hizmetlerin `payment_rule` alanına göre online ödeme alınır. Financial modülü `backend/financial/` altında modüler yapıdadır.
+
+### Hizmet Ödeme Kuralları
+
+| `payment_rule` | Davranış |
+|----------------|----------|
+| `None` / `"on_site"` | Ödeme işletmede, online ödeme yok |
+| `"online"` | Tam tutar online ödeme zorunlu |
+| `"deposit"` | Kapora (sabit veya yüzde) online, kalan işletmede |
+
+### Financial Modülü Dosya Yapısı
+
+```
+backend/financial/
+├── __init__.py
+├── merchant_checkout.py    # Stripe Checkout oluşturma, webhook handling
+├── fee_calculator.py       # Platform komisyon hesaplama (buyer_pays / seller_pays)
+├── financial_endpoints.py  # FastAPI router: cüzdan, payout, ayarlar, superadmin
+├── state_machine.py        # Transaction state machine (SINGLE SOURCE OF TRUTH)
+├── payout_service.py       # Wise payout batch oluşturma ve işleme
+├── wise_service.py         # Wise API entegrasyonu
+├── compliance.py           # KYC, IBAN cooldown, AML kontrolleri
+├── currency_shield.py      # GBP/TRY kur takibi, buffer oranları
+├── cron_jobs.py            # Finansal zamanlanmış görevler
+├── schemas.py              # Pydantic modeller (merchant_transactions, wallets, vb.)
+├── money.py                # Para birimi yardımcıları, tier konfigürasyonu
+├── email_notifications.py  # Finansal e-posta bildirimleri
+└── migration.py            # Veri migrasyon araçları
+```
+
+### `POST /api/public/checkout`
+
+Müşteri tarafı checkout session oluşturma (auth gerektirmez).
+
+**Akış:**
+
+```
+1. Merchant settings + service yükle
+   ↓
+2. base_currency (GBP/TRY), tier, fee_preference belirle
+   ↓
+3. Fee hesapla (fee_calculator.py):
+   - seller_pays → komisyon merchant'tan kesilir
+   - buyer_pays → komisyon müşteriye yansıtılır
+   ↓
+4. Deposit kuralı uygula (full_online / deposit / on_site)
+   ↓
+5. Stripe Checkout Session oluştur
+   ↓
+6. Pending transaction oluştur (state_machine)
+   ↓
+7. Checkout URL döndür
+```
+
+### Fee Calculator
+
+```python
+@dataclass(frozen=True)
+class FeeResult:
+    gross_minor: int              # Müşterinin ödediği toplam (minor unit)
+    net_minor: int                # Merchant'ın aldığı net tutar
+    fee_minor: int                # Platform komisyonu
+    fee_rate_bps: int             # Komisyon oranı (basis points)
+    stripe_currency: str          # Stripe'a gönderilen para birimi
+    base_currency: str
+    deposit_applied: bool         # Kapora uygulandı mı?
+    deposit_minor: int            # Kapora tutarı
+    full_service_price_minor: int # Hizmetin tam fiyatı
+```
+
+### Stripe Merchant Webhook
+
+Webhook handler (`handle_stripe_merchant_webhook`), Stripe'dan gelen `checkout.session.completed` ve diğer event'leri işler:
+
+1. **Webhook idempotency:** `webhook_events` collection'ında `event_id` kontrolü
+2. Ödeme onaylandığında:
+   - Transaction state: `pending` → `captured`
+   - Randevu: `status` → `"Bekliyor"`, `payment_status` → `"paid"`
+   - WhatsApp CONFIRMATION + Push notification gönderimi
+   - WebSocket `appointment_created` event
+
+---
+
+## ⏳ Ödeme Bekleniyor Akışı
+
+### Randevu Oluşturma (Online/Deposit Hizmet)
+
+Public booking'den online/deposit `payment_rule`'lu bir hizmet için randevu oluşturulduğunda:
+
+```
+POST /api/public/appointments
+   ↓
+Hizmetin payment_rule kontrol edilir
+   ↓
+payment_rule == "online" veya "deposit" ise:
+   appointment_data['payment_status'] = 'pending_payment'
+   appointment_data['status'] = 'Ödeme Bekleniyor'
+   ↓
+Randevu DB'ye kaydedilir — AMA:
+   ❌ WhatsApp bildirimi GÖNDERİLMEZ
+   ❌ Push notification GÖNDERİLMEZ
+   ❌ WebSocket event GÖNDERİLMEZ
+   ↓
+Frontend müşteriyi Stripe Checkout'a yönlendirir
+```
+
+### Ödeme Sonrası Aktivasyon
+
+```
+Stripe webhook → checkout.session.completed
+   ↓
+Randevu güncellenir:
+   status: "Ödeme Bekleniyor" → "Bekliyor"
+   payment_status: "pending_payment" → "paid"
+   ↓
+Bildirimler gönderilir:
+   ✅ WhatsApp CONFIRMATION template
+   ✅ Push notification
+   ✅ WebSocket appointment_created event
+   ↓
+Randevu artık her yerde GÖRÜNÜR
+```
+
+### Checkout İptali
+
+Müşteri Stripe Checkout sayfasını kapatırsa:
+- Randevu `"Ödeme Bekleniyor"` olarak kalır
+- Sistemde **görünmez** (hayalet randevu)
+- Slot'u bloklamaz, istatistiklere dahil değildir
+
+### Filtrelenen Tüm Noktalar
+
+```python
+# Her yerde status filter olarak kullanılır:
+{"status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}}
+
+# Filtreleme uygulanan fonksiyonlar:
+- get_appointments()
+- get_dashboard_stats()
+- get_availability() (public + internal)
+- get_customer_history()
+- _check_slot_conflict()
+- _find_available_staff_for_slot()
+- _find_alternative_slots()
+- Tüm conflict check noktaları
+```
+
+---
+
+## 💰 Cüzdan (Wallet) Sistemi
+
+### Endpoint'ler
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `GET /api/merchant/wallet` | Cüzdan özeti (bakiyeler, bekleyen, donmuş) |
+| `POST /api/merchant/payout/request` | Payout talebi oluştur |
+| `GET /api/merchant/transactions` | Transaction listesi (filtrelenebilir) |
+| `GET /api/merchant/payout/eligibility` | Payout uygunluk kontrolü |
+| `GET /api/merchant/payout/history` | Payout geçmişi |
+
+### Transaction State Machine
+
+**SINGLE SOURCE OF TRUTH — `state_machine.py`**
+
+Tüm geçerli state geçişleri:
+
+```
+pending → authorized → captured → settled → available → reserved → paid_out
+pending → canceled
+pending → async_failed
+captured → refunded
+available → refunded
+available → frozen → disputed → resolved_won (→ fonlar available'a döner)
+available → frozen → disputed → resolved_lost (→ kalıcı kayıp)
+reserved → paid_out
+reserved → failed (→ available rollback)
+```
+
+### Settlement Süreci
+
+- **T+2 gün:** `captured` → `settled` → `available` (settlement_check_job, her 2 saatte)
+- Settlement sonrası fonlar merchant cüzdanında kullanılabilir hale gelir
+
+### Payout Uygunluk Koşulları
+
+1. ✅ KYC doğrulanmış (`kyc_verified: true`)
+2. ✅ Wise recipient doğrulanmış
+3. ✅ IBAN cooldown geçmiş (48 saat — banka bilgileri değişikliği sonrası)
+4. ✅ Donmuş bakiye yok
+5. ✅ Minimum eşik (₺12.000 standard tier)
+6. ✅ AML limitlerine uygun
+
+### Payout Marketleri
+
+| Pazar | Yöntem | Maliyet |
+|-------|--------|---------|
+| **GBP** | Wise BACS local transfer | £0.20–0.40 |
+| **TRY** | Wise GBP→TRY cross-border | ~£5–6 |
+
+---
+
+## 🔄 İade (Refund) Sistemi
+
+### Tekil Randevu İadesi
+
+**`POST /api/appointments/{appointment_id}/refund`**
+
+1. Randevu ve ilişkili `merchant_transactions` bulunur
+2. `stripe_payment_intent_id` ile Stripe refund başlatılır
+3. Seans paketi parçası ise → orantılı iade (`amount / session_total`)
+4. Seans paketi parçası ise → ayrı `"refund"` type transaction oluşturulur
+5. Değilse → StateMachine ile `captured/available` → `refunded` geçişi
+6. Wallet güncellenir: `available_balance -= refund_amount`, `total_refunded += refund_amount`
+7. Randevu: `payment_status` → `"refunded"`, `status` → `"İptal Edildi"`
+
+### Seans Grubu Toplu İptal
+
+**`POST /api/appointments/session-group/{group_id}/cancel-remaining?from_session_number=N`**
+
+- Belirtilen seans numarasından itibaren bekleyen seansları iptal eder
+- Kota geri verilir (iptal edilen seans sayısı kadar)
+- İade **yapmaz** (sadece iptal)
+
+### Seans Grubu Toplu İptal + İade
+
+**`POST /api/appointments/session-group/{group_id}/cancel-and-refund?from_session_number=N`**
+
+- Seansları iptal eder
+- **Orantılı iade hesaplar:** `refund_amount = total_amount * (cancel_count / total_in_group)`
+- Tam grup iptali → full refund, kısmi → partial refund
+- Partial refund: ayrı `"refund"` type transaction oluşturulur
+- Full refund: StateMachine ile `refunded` state'e geçiş
+- Stripe refund başlatılır + wallet güncellenir
+
+### Dashboard İptal Dialogu
+
+- **"Sadece İptal Et"** — Sadece randevuyu iptal eder, iade yok
+- **"İptal Et ve İade Yap"** — İptal + Stripe iade başlatır
+- İade butonu SADECE `payment_status` = `"paid"` veya `"deposit_paid"` olan randevularda gösterilir
+- `"package_included"` randevularda iade butonu **gösterilmez**
+
+---
+
+## 📱 WhatsApp Bildirim Sistemi
+
+### Template Yapısı
+
+`whatsapp_service.py` içinde 3 ana template tipi:
+
+| Template | Kullanım |
+|----------|----------|
+| **CONFIRMATION** | Randevu onayı (oluşturma sonrası) |
+| **REMINDER** | Randevu hatırlatması (scheduler, X saat önce) |
+| **SESSION_PACKAGE** | Seans paketi bilgisi (toplu planlama sonrası) |
+
+### Dil ve Konum Matrisi
+
+Her template için 4 varyant:
+
+| | TR + Konum | TR + Metin | EN + Konum | EN + Metin |
+|---|---|---|---|---|
+| CONFIRMATION | `randevu_onay_konumlu_v2` | `randevu_onay_metin` | `randevu_onay_konumlu_eng_v2` | `randevu_onay_metin_eng_v2` |
+| REMINDER | `randevu_hatirlatma_konumlu` | `randevu_hatirlatma_metin_v2` | `randevu_hatirlatma_konumlu_eng` | `randevu_hatirlatma_metin_v2_eng` |
+| SESSION_PACKAGE | `seans_paketi_onay_konumlu` | `seans_paketi_onay_metin` | (EN varyantlar) | (EN varyantlar) |
+
+### Dil Tespiti
+
+`detect_language_from_phone(phone)` — Telefon numarasına göre:
+- `+90...` → `TR`
+- `+44...` → `EN`
+- Diğer → `EN` (fallback)
+
+### SESSION_PACKAGE Template Parametreleri
+
+5 parametre:
+1. `{{1}}` — Müşteri adı
+2. `{{2}}` — Hizmet adı
+3. `{{3}}` — Toplam seans sayısı
+4. `{{4}}` — Seans tarihleri listesi
+5. `{{5}}` — İletişim numarası
+
+**Önemli:** Meta WhatsApp API template parametrelerinde `\n` (newline) desteklenmez. Seans tarihleri `|` (pipe) ayracı ile formatlanır:
+```
+15 Oca 2026 10:00 | 22 Oca 2026 10:00 | 29 Oca 2026 10:00
+```
+
+### Konum Senaryoları
+
+- **Senaryo A (koordinat VAR):** Header = location (lat/lng), body = 5-6 parametre
+- **Senaryo B (koordinat YOK):** Header = text (işletme adı), body = 7 parametre (adres metin olarak eklenir)
 
 ---
 
 ## 🌐 API Endpoint'leri
 
-### 🔑 Kimlik Doğrulama Endpoint'leri
-
-#### `POST /api/register`
-**Açıklama:** Yeni işletme sahibi (admin) kaydı
-
-**Request Body:**
-```json
-{
-  "username": "admin@example.com",
-  "password": "secure_password",
-  "full_name": "İşletme Sahibi",
-  "organization_name": "İşletme Adı",
-  "support_phone": "05000000000",
-  "sector": "Kuaför"
-}
-```
-
-**İşlemler:**
-1. Kullanıcı adı (e-posta) kontrolü (unique olmalı)
-2. Şifre hash'lenir
-3. Yeni `organization_id` oluşturulur
-4. Admin kullanıcı oluşturulur
-5. Varsayılan `Settings` kaydı oluşturulur
-6. Trial plan oluşturulur (7 gün, 50 randevu)
-7. `slug` oluşturulur (URL-friendly)
-
-**Response:** `User` modeli (şifre hariç)
-
----
-
-#### `POST /api/token`
-**Açıklama:** Kullanıcı girişi (OAuth2 Password Flow)
-
-**Request Body (Form Data):**
-- `username`: E-posta adresi
-- `password`: Şifre
-
-**İşlemler:**
-1. Kullanıcı veritabanından bulunur
-2. Şifre doğrulanır
-3. `status` kontrolü: "pending" kullanıcılar giriş yapamaz
-4. JWT token oluşturulur
-5. Token içinde: `sub` (username), `role`, `organization_id`
-
-**Response:**
-```json
-{
-  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-  "token_type": "bearer"
-}
-```
-
----
-
-#### `POST /api/forgot-password`
-**Açıklama:** Şifre sıfırlama e-postası gönderir
-
-**Request Body:**
-```json
-{
-  "username": "user@example.com"
-}
-```
-
-**İşlemler:**
-1. Kullanıcı bulunur
-2. Rastgele token oluşturulur
-3. Token veritabanına kaydedilir (süre: 1 saat)
-4. Brevo API ile e-posta gönderilir
-5. E-postada şifre sıfırlama linki bulunur
-
----
-
-#### `POST /api/reset-password`
-**Açıklama:** Token ile şifre sıfırlama
-
-**Request Body:**
-```json
-{
-  "token": "reset_token_here",
-  "new_password": "new_secure_password"
-}
-```
-
-**İşlemler:**
-1. Token doğrulanır (süre ve geçerlilik kontrolü)
-2. Yeni şifre hash'lenir
-3. Kullanıcı şifresi güncellenir
-4. Token silinir
-
----
-
-#### `POST /api/auth/setup-password`
-**Açıklama:** Personel davet token'ı ile şifre belirleme
-
-**Request Body:**
-```json
-{
-  "token": "invitation_token_here",
-  "new_password": "secure_password"
-}
-```
-
-**İşlemler:**
-1. `invitation_token` ile kullanıcı bulunur
-2. Yeni şifre hash'lenir
-3. Kullanıcı şifresi güncellenir
-4. `status` "active" yapılır
-5. `invitation_token` silinir
-
----
-
-### 📅 Randevu Endpoint'leri
-
-#### `GET /api/appointments`
-**Açıklama:** Randevuları listele
-
-**Query Parameters:**
-- `date`: Belirli bir tarih (YYYY-MM-DD)
-- `start_date`, `end_date`: Tarih aralığı
-- `status`: "Bekliyor", "Tamamlandı", "İptal"
-- `search`: Müşteri adı veya telefon ile arama
-- `staff_member_id`: Belirli bir personel (admin için)
-
-**İşlemler:**
-1. **Rol Kontrolü:**
-   - `staff`: Sadece kendi randevuları
-   - `admin`: Tüm randevular (filtreleme ile)
-
-2. **Otomatik Tamamlanma:**
-   - "Bekliyor" statusündeki randevular kontrol edilir
-   - Bitiş saati (başlangıç + hizmet süresi) geçmişse:
-     - Status "Tamamlandı" yapılır
-     - `Transaction` kaydı oluşturulur
-     - `completed_at` ayarlanır
-
-3. **Service Duration Ekleme:**
-   - Her randevu için `service_duration` alanı eklenir
-   - Hizmet veritabanından çekilir (performans için batch)
-
-**Response:** `List[Appointment]`
-
----
-
-#### `POST /api/appointments`
-**Açıklama:** Yeni randevu oluştur (Admin/Personel paneli)
-
-**Request Body:**
-```json
-{
-  "customer_name": "Ali Kılıç",
-  "phone": "05321234567",
-  "service_id": "service-uuid",
-  "appointment_date": "2025-11-15",
-  "appointment_time": "10:00",
-  "notes": "Notlar",
-  "staff_member_id": "staff-username" // Optional
-}
-```
-
-**İşlemler:**
-
-1. **Kota Kontrolü:**
-   - `check_quota_and_increment()` çağrılır
-   - Limit aşıldıysa hata döner
-
-2. **Hizmet Kontrolü:**
-   - Hizmet bulunur ve doğrulanır
-   - Personel için `permitted_service_ids` kontrolü
-
-3. **Personel Atama:**
-   
-   **A) Belirli Personel Seçildiyse:**
-   - Çakışma kontrolü yapılır
-   - Hizmet süresine göre bitiş saati hesaplanır
-   - Mevcut randevularla çakışma kontrolü
-   - Çakışma varsa hata döner
-   
-   **B) Otomatik Atama:**
-   - Hizmeti verebilen personeller bulunur
-   - `admin_provides_service` ayarı kontrol edilir
-   - Her personel için çakışma kontrolü yapılır
-   - İlk müsait personel seçilir
-   - Hiç müsait personel yoksa hata döner
-
-4. **Randevu Durumu:**
-   - Bitiş saati geçmişse: "Tamamlandı"
-   - Değilse: "Bekliyor"
-
-5. **Müşteri Ekleme:**
-   - Telefon ve isim ile duplicate kontrolü
-   - Yeni müşteri `customers` collection'ına eklenir
-   - WebSocket event: `customer_added`
-
-6. **WebSocket Event:**
-   - `appointment_created` event'i gönderilir
-
-**Response:** `Appointment`
-
----
-
-#### `PUT /api/appointments/{appointment_id}`
-**Açıklama:** Randevu güncelle
-
-**İşlemler:**
-1. Randevu bulunur ve yetki kontrolü yapılır
-2. Güncelleme verileri uygulanır
-3. SMS gönderimi (eğer telefon değiştiyse)
-4. WebSocket event: `appointment_updated`
-
----
-
-#### `DELETE /api/appointments/{appointment_id}`
-**Açıklama:** Randevu sil
-
-**İşlemler:**
-1. Randevu bulunur
-2. İlişkili `Transaction` kaydı silinir (varsa)
-3. Randevu silinir
-4. WebSocket event: `appointment_deleted`
-
----
-
-#### `GET /api/appointments/{appointment_id}`
-**Açıklama:** Tek bir randevu detayı
-
----
-
-### 🌍 Public Endpoint'leri
-
-#### `GET /api/public/info/{organization_id}`
-**Açıklama:** İşletme bilgileri (müşteri sayfası için)
-
-**Response:**
-```json
-{
-  "business_name": "İşletme Adı",
-  "logo_url": "https://...",
-  "services": [...],
-  "staff_members": [...],
-  "settings": {
-    "customer_can_choose_staff": true,
-    "work_start_hour": 9,
-    "work_end_hour": 18
-  }
-}
-```
-
----
-
-#### `GET /api/public/availability/{organization_id}`
-**Açıklama:** Müsait saatleri hesapla (müşteri sayfası için)
-
-**Query Parameters:**
-- `service_id`: Hizmet ID'si
-- `date`: Tarih (YYYY-MM-DD)
-- `staff_id`: Personel ID'si (optional, "Farketmez" için boş)
-
-**İşlemler:**
-
-1. **İşletme Ayarları:**
-   - `business_hours` alınır
-   - `admin_provides_service` kontrol edilir
-
-2. **Gün Kontrolü:**
-   - Tarihin hangi güne denk geldiği bulunur
-   - İşletme o gün kapalı mı kontrol edilir
-
-3. **Personel Kontrolü:**
-   
-   **A) Belirli Personel Seçildiyse:**
-   - Personelin `days_off` kontrolü
-   - İzinliyse boş liste döner
-   
-   **B) Otomatik Atama:**
-   - Hizmeti verebilen tüm personeller bulunur
-   - Tüm personeller izinliyse boş liste döner
-
-4. **Slot Hesaplama:**
-   - `STEP_INTERVAL = 15` dakika (gizli adım aralığı)
-   - Açılış-kapanış saatleri arasında 15 dakikalık slotlar oluşturulur
-   - Her slot için:
-     - Bitiş saati hesaplanır (başlangıç + hizmet süresi)
-     - Geçmiş saat kontrolü (bugün için)
-     - Kapanış saati kontrolü
-     - Randevu çakışma kontrolü
-
-5. **Çakışma Kontrolü:**
-   - Mevcut randevuların bitiş saatleri hesaplanır (hizmet süresine göre)
-   - Overlap kontrolü: `(start < appt_end) AND (end > appt_start)`
-   - Çakışma varsa `busy_slots` listesine eklenir
-
-6. **Otomatik Atama Mantığı:**
-   - Her slot için tüm personeller kontrol edilir
-   - En az bir personel müsaitse slot `available_slots`'a eklenir
-   - Tüm personeller doluysa `busy_slots`'a eklenir
-
-**Response:**
-```json
-{
-  "available_slots": ["09:00", "09:15", "10:30", ...],
-  "all_slots": ["09:00", "09:15", "09:30", ...],
-  "busy_slots": ["10:00", "11:00", ...],
-  "message": "Müsait saatler"
-}
-```
-
----
-
-#### `POST /api/public/appointments`
-**Açıklama:** Müşteri sayfasından randevu oluştur
-
-**İşlemler:**
-1. Kota kontrolü
-2. Personel atama (aynı mantık admin paneli gibi)
-3. Randevu oluşturulur
-4. Müşteri otomatik eklenir
-5. SMS gönderilir (onay SMS'i)
-6. WebSocket event: `appointment_created`
-
----
-
-### 🛠️ Hizmet Endpoint'leri
-
-#### `GET /api/services`
-**Açıklama:** Tüm hizmetleri listele
-
-#### `POST /api/services`
-**Açıklama:** Yeni hizmet ekle (Sadece admin)
-
-**Request Body:**
-```json
-{
-  "name": "Saç Kesimi",
-  "price": 150.0,
-  "duration": 30
-}
-```
-
-#### `PUT /api/services/{service_id}`
-**Açıklama:** Hizmet güncelle
-
-#### `DELETE /api/services/{service_id}`
-**Açıklama:** Hizmet sil
-
----
-
-### 👥 Personel Yönetimi Endpoint'leri
-
-#### `POST /api/staff/add`
-**Açıklama:** Yeni personel davet et (E-posta ile)
-
-**Request Body:**
-```json
-{
-  "username": "staff@example.com",
-  "full_name": "Personel Adı",
-  "phone": "05321234567",
-  "permitted_service_ids": ["service-id-1", "service-id-2"]
-}
-```
-
-**İşlemler:**
-1. Kullanıcı adı kontrolü (unique)
-2. Rastgele `invitation_token` oluşturulur
-3. Personel "pending" status ile oluşturulur
-4. Şifre alanı boş bırakılır
-5. Brevo API ile davet e-postası gönderilir
-6. E-postada şifre belirleme linki bulunur
-
----
-
-#### `PUT /api/staff/{staff_id}/payment`
-**Açıklama:** Personel ödeme ayarlarını güncelle
-
-**Request Body:**
-```json
-{
-  "payment_type": "commission", // "salary" veya "commission"
-  "payment_amount": 50.0 // Yüzde veya sabit tutar
-}
-```
-
----
-
-#### `PUT /api/staff/{staff_id}/days-off`
-**Açıklama:** Personel tatil günlerini güncelle
-
-**Request Body:**
-```json
-{
-  "days_off": ["sunday", "monday"]
-}
-```
-
----
-
-#### `PUT /api/staff/{staff_id}/services`
-**Açıklama:** Personelin verebileceği hizmetleri güncelle
-
-**Request Body:**
-```json
-{
-  "service_ids": ["service-id-1", "service-id-2"]
-}
-```
-
----
-
-#### `DELETE /api/staff/{staff_id}`
-**Açıklama:** Personel sil
-
----
-
-### 💰 Finans Endpoint'leri
-
-#### `GET /api/finance/summary`
-**Açıklama:** Finans özeti (Gelir, Gider, Net Kâr)
-
-**Query Parameters:**
-- `period`: "today", "this_month", "last_month"
-
-**İşlemler:**
-1. **Gelir Hesaplama:**
-   - "Tamamlandı" statusündeki randevular
-   - Tarih aralığına göre filtrelenir
-   - `service_price` toplamı
-
-2. **Gider Hesaplama:**
-   - `expenses` collection'ından
-   - `period == "this_month"` için sadece ay kontrolü (tarih kontrolü yok)
-   - Diğer period'lar için tarih aralığı kontrolü
-
-3. **Net Kâr:**
-   - `total_revenue - total_expenses`
-
-**Response:**
-```json
-{
-  "period": "this_month",
-  "start_date": "2025-11-01",
-  "end_date": "2025-11-14",
-  "total_revenue": 5000.0,
-  "total_expenses": 2000.0,
-  "net_profit": 3000.0
-}
-```
-
----
-
-#### `GET /api/expenses`
-**Açıklama:** Giderleri listele
-
-#### `POST /api/expenses`
-**Açıklama:** Yeni gider ekle
-
-**Request Body:**
-```json
-{
-  "title": "Kira",
-  "amount": 5000.0,
-  "category": "Sabit Giderler",
-  "date": "2025-11-01"
-}
-```
-
----
-
-#### `GET /api/finance/payroll`
-**Açıklama:** Personel hakedişleri
-
-**Query Parameters:**
-- `period`: "today", "this_month", "last_month"
-
-**İşlemler:**
-1. Her personel için:
-   - Tamamlanan randevular bulunur
-   - Ödeme tipine göre hesaplama:
-     - `salary`: Sabit maaş
-     - `commission`: Randevu tutarı × yüzde
-   - Yapılan ödemeler bulunur
-   - Bakiye = Hakediş - Ödemeler
-
-**Response:**
-```json
-{
-  "period": "this_month",
-  "staff_payments": [
-    {
-      "staff_id": "staff-username",
-      "full_name": "Personel Adı",
-      "payment_type": "commission",
-      "payment_amount": 50.0,
-      "completed_appointments": 10,
-      "total_earned": 5000.0,
-      "total_paid": 2000.0,
-      "balance": 3000.0
-    }
-  ]
-}
-```
-
----
-
-#### `POST /api/finance/payroll/payment`
-**Açıklama:** Personel ödemesi yap
-
-**Request Body:**
-```json
-{
-  "staff_id": "staff-username",
-  "amount": 3000.0,
-  "date": "2025-11-14",
-  "notes": "Maaş ödemesi"
-}
-```
-
-**İşlemler:**
-1. Ödeme `expenses` collection'ına eklenir
-2. `category`: "Personel Ödemeleri"
-3. Audit log oluşturulur
-
----
-
-### 📊 İstatistik Endpoint'leri
-
-#### `GET /api/stats/dashboard`
-**Açıklama:** Admin dashboard istatistikleri
-
-**İşlemler:**
-1. Bugünkü "Bekliyor" randevuları otomatik tamamla
-2. Bugünkü randevu sayısı
-3. Yarınki randevu sayısı
-4. Bu ay toplam gelir
-5. Bu ay toplam gider
-6. Net kâr
-
----
-
-#### `GET /api/stats/personnel`
-**Açıklama:** Personel dashboard istatistikleri
-
-**İşlemler:**
-1. Personelin bugünkü randevuları
-2. Personelin bugünkü geliri
-3. Bu ay toplam gelir
-
----
-
-### ⚙️ Ayarlar Endpoint'leri
-
-#### `GET /api/settings`
-**Açıklama:** İşletme ayarlarını getir
-
-#### `PUT /api/settings`
-**Açıklama:** İşletme ayarlarını güncelle
-
-**Request Body:** `Settings` modeli
-
-#### `POST /api/settings/logo`
-**Açıklama:** Logo yükle
-
-**Request:** Multipart form data (file)
-
----
-
-### 👤 Müşteri Endpoint'leri
-
-#### `GET /api/customers`
-**Açıklama:** Müşterileri listele
-
-**İşlemler:**
-1. `appointments` collection'ından unique müşteriler çekilir
-2. `customers` collection'ından manuel eklenen müşteriler çekilir
-3. Duplicate kontrolü yapılır (telefon + isim)
-4. Birleştirilmiş liste döndürülür
-
----
-
-#### `POST /api/customers`
-**Açıklama:** Yeni müşteri ekle (Sadece admin)
-
-**Request Body:**
-```json
-{
-  "name": "Müşteri Adı",
-  "phone": "05321234567"
-}
-```
-
-**İşlemler:**
-1. Duplicate kontrolü (telefon + isim, case-insensitive)
-2. Yeni müşteri `customers` collection'ına eklenir
-3. WebSocket event: `customer_added`
-
----
-
-#### `DELETE /api/customers/{phone}`
-**Açıklama:** Müşteri sil
-
-**İşlemler:**
-1. Müşteri `customers` collection'ından silinir
-2. İlişkili randevular silinir
-3. İlişkili transaction'lar silinir
-4. WebSocket event: `customer_deleted`
-
----
-
-#### `GET /api/customers/{phone}/history`
-**Açıklama:** Müşteri geçmişi (randevular, işlemler)
-
----
-
-#### `PUT /api/customers/{phone}/notes`
-**Açıklama:** Müşteri notlarını güncelle
-
-**Request Body:**
-```json
-{
-  "notes": "Müşteri notları"
-}
-```
-
----
-
-### 📦 Abonelik Endpoint'leri
-
-#### `GET /api/plans`
-**Açıklama:** Tüm planları listele (herkese açık)
-
-**Response:** `PLANS` listesi
-
----
-
-#### `GET /api/plan/current`
-**Açıklama:** Mevcut plan bilgisini getir
-
-**Response:**
-```json
-{
-  "plan_id": "tier_1_standard",
-  "quota_usage": 45,
-  "quota_limit": 100,
-  "trial_end_date": "2025-11-21T00:00:00Z",
-  "is_first_month": true
-}
-```
-
----
-
-#### `PUT /api/plan/update`
-**Açıklama:** Plan güncelle (paket değiştirme)
-
-**Request Body:**
-```json
-{
-  "plan_id": "tier_2_profesyonel"
-}
-```
-
----
-
-### 📤 Export Endpoint'leri
-
-#### `GET /api/export/appointments`
-**Açıklama:** Randevuları CSV olarak export et
-
-#### `GET /api/export/customers`
-**Açıklama:** Müşterileri CSV olarak export et
-
----
-
-### 📝 Audit Log Endpoint'leri
-
-#### `GET /api/audit-logs`
-**Açıklama:** Denetim günlüklerini listele
-
-**Query Parameters:**
-- `start_date`, `end_date`: Tarih aralığı
-- `action`: "CREATE", "UPDATE", "DELETE"
-- `resource_type`: "APPOINTMENT", "CUSTOMER", vb.
+### 🔑 Kimlik Doğrulama
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `POST /api/register` | Yeni işletme sahibi (admin) kaydı + trial plan + slug |
+| `POST /api/token` | OAuth2 giriş → JWT token |
+| `POST /api/forgot-password` | Şifre sıfırlama e-postası (Brevo) |
+| `POST /api/reset-password` | Token ile şifre sıfırlama |
+| `POST /api/auth/setup-password` | Personel davet token'ı ile şifre belirleme |
+
+### 📅 Randevu İşlemleri
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `GET /api/appointments` | Randevuları listele (role-based, "Ödeme Bekleniyor" hariç) |
+| `POST /api/appointments` | Admin/staff panelinden randevu oluştur |
+| `PUT /api/appointments/{id}` | Randevu güncelle |
+| `DELETE /api/appointments/{id}` | Randevu sil |
+| `GET /api/appointments/{id}` | Tek randevu detayı |
+| `POST /api/appointments/bulk-session` | **Seans paketi toplu oluşturma** |
+| `POST /api/appointments/session-group/{group_id}/cancel-remaining` | **Seans grubu toplu iptal** |
+| `POST /api/appointments/session-group/{group_id}/cancel-and-refund` | **Seans grubu iptal + orantılı iade** |
+| `POST /api/appointments/{id}/refund` | **Tekil randevu Stripe iadesi** |
+
+### 🌍 Public Endpoint'ler
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `GET /api/public/info/{org_id}` | İşletme bilgileri (müşteri booking sayfası) |
+| `GET /api/public/availability/{org_id}` | Müsait saatler (slot hesaplama) |
+| `POST /api/public/appointments` | Müşteri sayfasından randevu oluştur |
+| `POST /api/public/checkout` | **Stripe Checkout Session oluştur** (merchant ödeme) |
+
+### 🛠️ Hizmet Yönetimi
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `GET /api/services` | Hizmetleri listele |
+| `POST /api/services` | Yeni hizmet ekle (session_count, payment_rule dahil) |
+| `PUT /api/services/{id}` | Hizmet güncelle |
+| `DELETE /api/services/{id}` | Hizmet sil |
+
+### 👥 Personel Yönetimi
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `POST /api/staff/add` | Personel davet et (e-posta ile) |
+| `PUT /api/staff/{id}/payment` | Ödeme ayarları (salary/commission) |
+| `PUT /api/staff/{id}/days-off` | Tatil günleri |
+| `PUT /api/staff/{id}/services` | Hizmet yetkileri |
+| `DELETE /api/staff/{id}` | Personel sil |
+
+### 💰 İşletme Finans
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `GET /api/finance/summary` | Gelir/gider özeti (period bazlı) |
+| `GET /api/expenses` | Giderleri listele |
+| `POST /api/expenses` | Gider ekle |
+| `GET /api/finance/payroll` | Personel hakedişleri |
+| `POST /api/finance/payroll/payment` | Personel ödemesi yap |
+
+### 💳 Merchant Ödeme (Financial Modülü)
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `GET /api/merchant/wallet` | Cüzdan bakiye özeti |
+| `GET /api/merchant/transactions` | Merchant transaction listesi |
+| `GET /api/merchant/payment-settings` | Ödeme ayarları |
+| `PUT /api/merchant/payment-settings` | Ödeme ayarları güncelle (fee_preference, bank details) |
+| `GET /api/merchant/payout/eligibility` | Payout uygunluk kontrolü |
+| `POST /api/merchant/payout/request` | Payout talebi |
+| `GET /api/merchant/payout/history` | Payout geçmişi |
+| `GET /api/merchant/fee-preview` | Komisyon önizleme |
+
+### 📊 İstatistikler
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `GET /api/stats/dashboard` | Admin dashboard ("Ödeme Bekleniyor" hariç) |
+| `GET /api/stats/personnel` | Personel dashboard |
+
+### 👤 Müşteri Yönetimi
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `GET /api/customers` | Müşteri listesi |
+| `POST /api/customers` | Yeni müşteri ekle |
+| `DELETE /api/customers/{phone}` | Müşteri sil |
+| `GET /api/customers/{phone}/history` | Müşteri geçmişi ("Ödeme Bekleniyor" hariç) |
+| `PUT /api/customers/{phone}/notes` | Müşteri notu güncelle |
+
+### ⚙️ Ayarlar ve Diğer
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `GET /api/settings` | İşletme ayarları |
+| `PUT /api/settings` | Ayarları güncelle |
+| `POST /api/settings/logo` | Logo yükle |
+| `GET /api/plans` | Tüm SaaS planları |
+| `GET /api/plan/current` | Mevcut plan + kota bilgisi |
+| `GET /api/audit-logs` | Denetim günlükleri |
+| `GET /api/export/appointments` | Randevuları CSV export |
+| `GET /api/export/customers` | Müşterileri CSV export |
+| `POST /api/ai/chat` | AI asistan sohbet |
+
+### 🔗 Webhook Endpoint'leri
+
+| Endpoint | Açıklama |
+|----------|----------|
+| `POST /api/webhook/stripe` | SaaS Stripe webhook |
+| `POST /webhook/stripe` | SaaS Stripe webhook (uyumluluk) |
+| `POST /payments/webhook/stripe` | SaaS Stripe webhook (uyumluluk) |
+| `POST /api/merchant/webhook/stripe` | Merchant Stripe webhook (financial modülü) |
+| `POST /api/merchant/webhook/wise` | Wise payout webhook |
+| `POST /webhook` | WhatsApp webhook |
+| `POST /api/webhook` | WhatsApp webhook (uyumluluk) |
 
 ---
 
@@ -920,96 +775,73 @@ Her endpoint için farklı rate limit'ler tanımlanabilir:
 
 ### Socket.IO Yapılandırması
 
-**Server:**
 ```python
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins=socketio_cors_origins,
-    logger=True
+    cors_allowed_origins=socketio_cors_origins
 )
+# Redis manager ile cross-worker event broadcasting
 socket_app = socketio.ASGIApp(sio, socketio_path='/api/socket.io', other_asgi_app=app)
 ```
 
 ### Event Handler'lar
 
-#### `connect(sid, environ)`
-- Client bağlandığında
-- `connection_established` event'i gönderilir
+| Event | Yön | Açıklama |
+|-------|-----|----------|
+| `connect` | Server | Client bağlandı → `connection_established` emit |
+| `disconnect` | Server | Client bağlantısı kesildi |
+| `join_organization` | Client→Server | Room'a katıl: `org_{organization_id}` |
+| `leave_organization` | Client→Server | Room'dan ayrıl |
 
-#### `disconnect(sid)`
-- Client bağlantısı kesildiğinde
+### Gönderilen Event'ler
 
-#### `join_organization(sid, data)`
-- Client bir organization room'una katılır
-- `data.organization_id` ile room adı: `org_{organization_id}`
-- Tüm organization güncellemeleri bu room'a gönderilir
+| Event | Tetikleyici |
+|-------|-------------|
+| `appointment_created` | Randevu oluşturulduğunda (ödeme tamamlandıysa) |
+| `appointment_updated` | Randevu güncellendiğinde |
+| `appointment_deleted` | Randevu silindiğinde |
+| `appointments_bulk_created` | Seans paketi oluşturulduğunda |
+| `customer_added` | Yeni müşteri eklendiğinde |
+| `customer_deleted` | Müşteri silindiğinde |
 
-#### `leave_organization(sid, data)`
-- Client organization room'undan ayrılır
+### `emit_to_organization(organization_id, event, data)`
 
-### Event Gönderimi
+Belirli bir organization'ın tüm bağlı client'larına `org_{organization_id}` room'u üzerinden event gönderir.
 
-**`emit_to_organization(organization_id, event, data)`**
-- Belirli bir organization'ın tüm client'larına event gönderir
-- Kullanım örnekleri:
-  - `appointment_created`
-  - `appointment_updated`
-  - `appointment_deleted`
-  - `customer_added`
-  - `customer_deleted`
+**Önemli:** `"Ödeme Bekleniyor"` randevuları için WebSocket event gönderilmez.
 
 ---
 
-## 📧 SMS ve E-posta Entegrasyonları
+## 🔔 Push Notification Sistemi
 
-### SMS Gönderimi
+### Desteklenen Platformlar
 
-**`send_sms(to_phone: str, message: str) -> bool`**
+| Platform | Teknoloji |
+|----------|-----------|
+| **Web** | VAPID Web Push (pywebpush) |
+| **Android** | Firebase Cloud Messaging (FCM) |
+| **iOS** | Firebase Cloud Messaging (FCM) |
 
-**İşlemler:**
-1. Telefon numarası temizlenir (sadece rakamlar)
-2. Türkiye formatına çevrilir (90, 0 prefix'leri kaldırılır)
-3. Mesaj temizlenir (fazla boşluklar, max 480 karakter)
-4. İletimerkezi API'ye GET request gönderilir
-5. XML response parse edilir
-6. Başarı/hata loglanır
+### `send_push_notification(db, organization_id, title, body, data, user_id)`
 
-**SMS Tipleri:**
-- **Onay SMS'i:** Randevu oluşturulduğunda
-- **Hatırlatma SMS'i:** Randevudan X saat önce (scheduler ile)
-- **İptal SMS'i:** Randevu iptal edildiğinde
+1. `push_subscriptions` collection'ından ilgili org'un aboneliklerini çeker
+2. Platform kontrolü:
+   - `android`/`ios` → Firebase `messaging.send()` ile FCM
+   - Web → `webpush()` ile VAPID push
+3. Geçersiz abonelikler otomatik temizlenir (410/404 response)
 
-**`build_sms_message(...)`**
-- SMS mesajı template'i oluşturur
-- Tarih formatı: `DD.MM.YYYY`
-- Mesaj içeriği:
-  - İşletme adı
-  - Müşteri adı
-  - Hizmet adı
-  - Tarih ve saat
-  - Destek telefonu
+---
 
-### E-posta Gönderimi
+## 📧 E-posta Entegrasyonu
 
-**Brevo (Sendinblue) API kullanılır**
+### Brevo (Sendinblue) Transactional E-posta
 
-#### `send_personnel_invitation_email(...)`
-**Açıklama:** Personel davet e-postası
-
-**İçerik:**
-- Konu: "PLANN Davetiyesi: Hesabınızı Oluşturun"
-- HTML template (logolu)
-- Mesaj: İşletme sahibi personeli davet etti
-- Buton: "Şifremi Belirle ve Giriş Yap"
-- Link: `https://plannapp.co/setup-password?token={invitation_token}`
-
-#### `send_password_reset_email(...)`
-**Açıklama:** Şifre sıfırlama e-postası
-
-**İçerik:**
-- Konu: "PLANN Şifre Sıfırlama"
-- HTML template
-- Şifre sıfırlama linki
+| Fonksiyon | Kullanım |
+|-----------|----------|
+| `send_email()` | Genel e-posta gönderimi |
+| `send_personnel_invitation_email()` | Personel davet e-postası |
+| `send_password_reset_email()` | Şifre sıfırlama e-postası |
+| `_build_subscription_email()` | Abonelik aktivasyon e-postası (TR/EN) |
 
 ---
 
@@ -1017,63 +849,61 @@ socket_app = socketio.ASGIApp(sio, socketio_path='/api/socket.io', other_asgi_ap
 
 ### Plan Yapısı
 
-**`PLANS` Listesi:**
-- `tier_trial`: 7 gün trial, 50 randevu
-- `tier_1_standard`: 100 randevu/ay, 520 TL/ay
-- `tier_2_profesyonel`: 300 randevu/ay, 780 TL/ay
-- `tier_3_premium`: 600 randevu/ay, 1100 TL/ay
-- `tier_4_business`: 900 randevu/ay, 1300 TL/ay
-- `tier_5_enterprise`: 1500 randevu/ay, 1800 TL/ay
+| Plan | Randevu/Ay | AI Mesaj Limiti | Aylık Fiyat (TL) | Yıllık Fiyat (TL) |
+|------|-----------|-----------------|-------------------|-------------------|
+| Trial | 50 | 100 | 0 | — |
+| Standart | 100 | 500 | 710 | 7.100 |
+| Profesyonel | 300 | 3.000 | 1.020 | 10.200 |
+| Premium | 600 | 10.000 | 1.530 | 15.300 |
+| Business | 900 | Sınırsız | 1.940 | 19.400 |
+| Enterprise | 1.200 | Sınırsız | 2.350 | 23.500 |
+| Kurumsal | Sınırsız | Sınırsız | 3.580 | 35.800 |
 
 ### Kota Kontrolü
 
-**`check_quota_and_increment(db, organization_id) -> (bool, str)`**
+```python
+check_quota_and_increment(db, organization_id) -> (bool, str)
+```
 
-**İşlemler:**
-1. Organization plan'ı getirilir (yoksa trial oluşturulur)
-2. Trial kontrolü: Trial süresi dolmuşsa hata
-3. Kota reset kontrolü: Reset tarihi geçmişse kullanım sıfırlanır
-4. Kota limit kontrolü: Kullanım >= limit ise hata
-5. Kullanım artırılır
+1. Organization plan getirilir (yoksa trial oluşturulur)
+2. Trial süresi dolmuş mu kontrolü
+3. Kota reset: reset tarihi geçmişse kullanım sıfırlanır (30 günlük döngü)
+4. Kullanım >= limit ise hata döner
+5. Kullanım +1 artırılır
 
-**Kota Reset:**
-- Her ay otomatik reset (30 gün)
-- `quota_reset_date` kontrol edilir
-- Geçmişse kullanım 0 yapılır ve yeni reset tarihi ayarlanır
+### Stripe Yıllık Abonelik Kota Reset
+
+Stripe yearly subscription'lar aylık webhook göndermediği için, her ay başında `quota_last_reset_date` kontrolü ile kota otomatik sıfırlanır.
 
 ---
 
-## 📅 Randevu Yönetimi
+## 💳 SaaS Abonelik Ödeme
 
-### Randevu Durumları
+### Stripe Subscription
 
-- **"Bekliyor":** Randevu henüz gerçekleşmedi
-- **"Tamamlandı":** Randevu bitiş saatine ulaştı (otomatik)
-- **"İptal":** Randevu iptal edildi
+**`POST /api/payments/create-checkout-session`**
 
-### Otomatik Tamamlanma
+1. Plan ve billing cycle (monthly/yearly) alınır
+2. Kullanıcının dil ve para birimi belirlenir
+3. **Lookup key** oluşturulur: `{plan}_{cycle}_{currency}` (ör: `standard_monthly_gbp`, `professional_monthly_try`)
+4. Stripe'da lookup key ile fiyat aranır
+5. Stripe Checkout Session (subscription mode) oluşturulur
+6. Frontend checkout URL'e yönlendirilir
 
-**Çalışma Mantığı:**
-1. Her `GET /api/appointments` çağrısında
-2. "Bekliyor" statusündeki randevular kontrol edilir
-3. Bitiş saati hesaplanır: `appointment_time + service_duration`
-4. Şu anki saat >= bitiş saati ise:
-   - Status "Tamamlandı" yapılır
-   - `Transaction` kaydı oluşturulur
-   - `completed_at` ayarlanır
+### Stripe SaaS Webhook
 
-**Aynı mantık:**
-- `GET /api/stats/dashboard`
-- `GET /api/stats/personnel`
-- Randevu oluşturulurken (eğer geçmiş tarihliyse)
+**`POST /api/webhook/stripe`** (+ uyumluluk path'leri)
 
-### Transaction Oluşturma
+1. `stripe.Webhook.construct_event()` ile signature doğrulaması
+2. `checkout.session.completed` event'i işlenir:
+   - Plan aktivasyonu (kota güncelleme)
+   - Abonelik e-postası gönderimi
+   - Payment log kaydı
 
-Randevu tamamlandığında otomatik olarak:
-- `transactions` collection'ına kayıt eklenir
-- `appointment_id`: İlişkili randevu
-- `amount`: Hizmet fiyatı
-- `date`: Randevu tarihi
+### PayTR (Türkiye)
+
+**`POST /api/subscription/paytr/initiate`** — PayTR iframe token oluşturma
+**`POST /api/subscription/paytr/callback`** — PayTR webhook (hash doğrulama + plan aktivasyonu)
 
 ---
 
@@ -1081,632 +911,194 @@ Randevu tamamlandığında otomatik olarak:
 
 ### Algoritma
 
-1. **Gün Kontrolü:**
-   - Tarihin hangi güne denk geldiği bulunur
-   - İşletme o gün kapalı mı?
-   - Personel o gün izinli mi?
+**`GET /api/public/availability/{organization_id}`**
 
-2. **Slot Oluşturma:**
-   - `STEP_INTERVAL = 15` dakika (gizli)
-   - Açılış-kapanış saatleri arasında 15 dakikalık slotlar
-
-3. **Filtreleme:**
+```
+1. İşletme ayarları (business_hours) yükle
+   ↓
+2. Gün kontrolü: İşletme o gün açık mı?
+   ↓
+3. Personel kontrolü:
+   A) Belirli personel → days_off kontrolü
+   B) Otomatik atama → hizmeti verebilen tüm personeller
+   ↓
+4. Slot oluşturma: STEP_INTERVAL = 15 dakika
+   Açılış → kapanış arası 15dk aralıklarla slotlar
+   ↓
+5. Her slot için filtreleme:
    - Geçmiş saatler (bugün için)
-   - Kapanış saati kontrolü
-   - Randevu çakışmaları
-
-4. **Çakışma Kontrolü:**
-   - Her mevcut randevu için bitiş saati hesaplanır
-   - Overlap kontrolü: `(new_start < existing_end) AND (new_end > existing_start)`
-
-5. **Otomatik Atama:**
+   - Kapanış saati kontrolü (slot + hizmet süresi ≤ kapanış)
+   - Çakışma kontrolü: "İptal", "İptal Edildi", "Ödeme Bekleniyor" hariç randevular
+   - Overlap: (new_start < existing_end) AND (new_end > existing_start)
+   ↓
+6. Otomatik atama mantığı:
    - Tüm personeller kontrol edilir
-   - En az bir personel müsaitse slot available
-   - Tüm personeller doluysa slot busy
+   - En az bir personel müsaitse → slot available
+   - Tüm personeller doluysa → slot busy
+```
+
+**Response:**
+```json
+{
+  "available_slots": ["09:00", "09:15", "10:30"],
+  "all_slots": ["09:00", "09:15", "09:30"],
+  "busy_slots": ["10:00", "11:00"]
+}
+```
 
 ---
 
 ## 💰 Finans ve Kasa Yönetimi
 
-### Gelir Hesaplama
+### İşletme İç Finansı (server.py)
 
-- **Kaynak:** "Tamamlandı" statusündeki randevular
-- **Hesaplama:** `service_price` toplamı
-- **Otomatik:** Randevu tamamlandığında `Transaction` oluşturulur
+- **Gelir:** "Tamamlandı" randevuların `service_price` toplamı
+- **Gider:** `expenses` collection'ından
+- **Net Kâr:** Gelir – Gider
+- **Personel Hakedişleri:**
+  - `salary` → sabit maaş
+  - `commission` → randevu tutarı × yüzde
 
-### Gider Hesaplama
+### Merchant Ödeme Finansı (financial/ modülü)
 
-- **Kaynak:** `expenses` collection'ı
-- **Kategoriler:**
-  - Sabit Giderler (kira, fatura)
-  - Personel Ödemeleri
-  - Malzeme
-  - Diğer
-
-### Personel Hakedişleri
-
-**Hesaplama:**
-- **Sabit Maaş:** `payment_amount` (aylık)
-- **Komisyon:** `(randevu_tutarı × payment_amount / 100) × randevu_sayısı`
-
-**Ödeme:**
-- Admin personel ödemesi yapar
-- `POST /api/finance/payroll/payment` endpoint'i kullanılır
-- Ödeme `expenses` collection'ına eklenir
-- Bakiye = Hakediş - Ödemeler
+Ayrı bir para akışı; müşterilerden Stripe ile alınan ödemeler:
+- `merchant_transactions` collection'ında takip edilir
+- State machine ile durum yönetimi
+- `merchant_wallets` ile bakiye takibi
+- Wise üzerinden payout
 
 ---
 
 ## 👥 Personel Yönetimi
 
-### Personel Ekleme Akışı
+### Ekleme Akışı
 
-1. Admin personel bilgilerini girer (şifre olmadan)
-2. Sistem `invitation_token` oluşturur
+```
+1. Admin personel bilgilerini girer (şifre YOK)
+   ↓
+2. invitation_token oluşturulur
+   ↓
 3. Personel "pending" status ile kaydedilir
-4. Brevo API ile davet e-postası gönderilir
+   ↓
+4. Brevo ile davet e-postası gönderilir
+   ↓
 5. Personel e-postadaki linke tıklar
-6. Şifre belirler (`POST /api/auth/setup-password`)
-7. Status "active" yapılır
+   ↓
+6. POST /api/auth/setup-password ile şifre belirler
+   ↓
+7. status → "active", invitation_token silinir
+```
 
-### Personel İzin Günleri
+### Özellikler
 
-- `days_off`: Haftalık tatil günleri listesi
-- Örnek: `["sunday", "monday"]`
-- Müsaitlik hesaplamada kullanılır
-- İzinli günlerde personel müsait değildir
-
-### Personel Hizmet Yetkileri
-
-- `permitted_service_ids`: Personelin verebileceği hizmet ID'leri
-- Admin tarafından ayarlanır
-- Randevu oluştururken kontrol edilir
+- **days_off:** Haftalık tatil günleri (müsaitlik hesaplamada kullanılır)
+- **permitted_service_ids:** Verebileceği hizmetler (randevu + seans oluştururken kontrol edilir)
+- **payment_type/amount:** `salary` (sabit) veya `commission` (yüzde bazlı)
+- **can_view_all_appointments:** Tüm randevuları görebilme yetkisi
 
 ---
 
 ## 👤 Müşteri Yönetimi
 
-### Müşteri Kaynakları
+### Kaynaklar
 
-1. **Randevu Oluşturma:**
-   - Admin/Personel panelinden
-   - Public booking sayfasından
-   - Otomatik olarak `customers` collection'ına eklenir
-
-2. **Manuel Ekleme:**
-   - Admin "Yeni Müşteri" butonundan
-   - Sadece isim ve telefon
+1. **Randevu oluşturma:** Admin/staff veya public booking'den otomatik eklenir
+2. **Manuel ekleme:** Admin tarafından isim + telefon ile
 
 ### Duplicate Kontrolü
 
-- Telefon numarası + İsim (case-insensitive)
-- Aynı müşteri tekrar eklenmez
+Telefon numarası + isim (case-insensitive) kombinasyonuyla çift kayıt engellenir.
 
 ### Müşteri Notları
 
-- Her müşteri için notlar saklanır
-- Admin ve personel (kendi müşterileri için) not ekleyebilir
 - `customer_notes` collection'ında saklanır
+- Admin ve yetkili staff erişebilir
+
+---
+
+## 🤖 AI Entegrasyonu
+
+### Gemini AI Asistan
+
+- **`POST /api/ai/chat`** — Metin tabanlı AI sohbet
+- `ai_service.py` → `chat_with_ai()` fonksiyonu
+- Plan bazlı mesaj limiti (trial: 100, standart: 500, premium: 10.000, business+: sınırsız)
+
+### Voice AI
+
+- `voice_ai_service.py` → Gemini Live Audio entegrasyonu
+- Socket.IO üzerinden real-time ses akışı
+- `voice_start`, `voice_audio`, `voice_stop` event'leri
+
+---
+
+## ⏰ Zamanlanmış Görevler (Cron Jobs)
+
+### Hatırlatma Scheduler (server.py)
+
+- **Her 5 dakika:** `check_and_send_reminders()` — WhatsApp hatırlatma gönderimi
+- Redis distributed lock: `reminder_lock:{YYYYMMDDHHMM}` (çakışma engeli)
+- Tolerance: ±6 dakika penceresi
+
+### Financial Cron Jobs (financial/cron_jobs.py)
+
+| Job | Zamanlama | Açıklama |
+|-----|-----------|----------|
+| `currency_shield_job` | 01:00 UTC (gece) | GBP/TRY kur güncelleme, spike tespiti |
+| `settlement_check_job` | Her 2 saat | T+2 settlement: captured → settled → available |
+| `refund_reserve_release_job` | Her saat | Refund reserve window süresi dolmuş işlemler |
+| `auto_payout_job` | 03:00 UTC (gece) | Otomatik payout batch oluşturma |
+| `wise_status_check_job` | Her 30 dk | Wise transfer durumu kontrolü |
+| `quote_cleanup_job` | Her saat | Süresi dolmuş quote temizliği |
+| `failed_webhook_retry_job` | Her 15 dk | Başarısız webhook'ları yeniden deneme |
+| `daily_reconciliation_job` | 23:30 UTC (gece) | Günlük mutabakat raporu |
 
 ---
 
 ## 🛠️ Yardımcı Fonksiyonlar
 
-### `slugify(text: str) -> str`
-- Türkçe karakterleri Latin'e çevirir
-- URL-friendly slug oluşturur
-- Örnek: "İşletme Adı" → "isletmeadi"
-
-### `make_json_serializable(obj)`
-- MongoDB ObjectId'leri string'e çevirir
-- Datetime'ları ISO format'a çevirir
-- WebSocket event'leri için kullanılır
-
-### `clean_dict_for_audit(data: dict) -> dict`
-- Audit log için veri temizleme
-- MongoDB `_id` alanlarını kaldırır
-
-### `create_audit_log(...)`
-- Denetim günlüğü kaydı oluşturur
-- Tüm önemli işlemler loglanır:
-  - CREATE, UPDATE, DELETE işlemleri
-  - Kullanıcı bilgileri
-  - IP adresi
-  - Eski ve yeni değerler
-
----
-
-## 🔄 Önemli Akışlar
-
-### Randevu Oluşturma Akışı
-
-```
-1. Kota kontrolü
-   ↓
-2. Hizmet doğrulama
-   ↓
-3. Personel atama (belirli veya otomatik)
-   ↓
-4. Çakışma kontrolü
-   ↓
-5. Randevu oluşturma
-   ↓
-6. Durum belirleme (Bekliyor/Tamamlandı)
-   ↓
-7. Müşteri ekleme (duplicate kontrolü)
-   ↓
-8. WebSocket event gönderme
-   ↓
-9. SMS gönderimi (public booking için)
-```
-
-### SMS Hatırlatma Akışı
-
-```
-1. Scheduler her 5 dakikada çalışır
-   ↓
-2. Tüm organization'ların ayarları alınır
-   ↓
-3. Her organization için:
-   - reminder_hours hesaplanır
-   - Zaman aralığı belirlenir (tolerance: ±6 dakika)
-   ↓
-4. Bu aralıktaki randevular bulunur
-   ↓
-5. Her randevu için:
-   - SMS mesajı oluşturulur
-   - SMS gönderilir
-   - reminder_sent = True yapılır
-```
-
-### Randevu Otomatik Tamamlanma Akışı
-
-```
-1. GET /api/appointments çağrılır
-   ↓
-2. "Bekliyor" statusündeki randevular bulunur
-   ↓
-3. Her randevu için:
-   - Bitiş saati hesaplanır (başlangıç + süre)
-   - Şu anki saat >= bitiş saati mi?
-   ↓
-4. Evet ise:
-   - Status = "Tamamlandı"
-   - Transaction oluşturulur
-   - completed_at ayarlanır
-   ↓
-5. Veritabanı güncellenir
-```
-
----
-
-## 🐛 Hata Yönetimi
-
-### HTTP Exception'lar
-
-- **401 Unauthorized:** Token geçersiz veya kullanıcı bulunamadı
-- **403 Forbidden:** Yetki yok (ör: staff admin işlemi yapamaz)
-- **404 Not Found:** Kayıt bulunamadı
-- **422 Unprocessable Entity:** Validasyon hatası
-- **500 Internal Server Error:** Sunucu hatası
-
-### Logging
-
-- **INFO:** Normal işlemler, başarılı işlemler
-- **WARNING:** Uyarılar (ör: MongoDB bağlantı hatası)
-- **ERROR:** Hatalar (ör: SMS gönderim hatası)
-- **DEBUG:** Detaylı debug bilgileri
-
-Log dosyası: `/tmp/backend.log`
+| Fonksiyon | Açıklama |
+|-----------|----------|
+| `slugify(text)` | Türkçe karakterleri Latin'e çevirir, URL-friendly slug |
+| `make_json_serializable(obj)` | ObjectId → string, datetime → ISO format |
+| `clean_dict_for_audit(data)` | Audit log için `_id` temizleme |
+| `create_audit_log(...)` | Denetim günlüğü kaydı oluşturma |
+| `emit_to_organization(org_id, event, data)` | WebSocket event gönderimi |
+| `check_quota_and_increment(db, org_id)` | Kota kontrolü ve artırma |
+| `_check_slot_conflict(...)` | Randevu çakışma kontrolü |
+| `_find_available_staff_for_slot(...)` | Müsait personel bulma |
+| `format_phone_number(phone)` | Telefon numarası formatlama (WhatsApp) |
+| `detect_language_from_phone(phone)` | Telefon numarasından dil tespiti |
 
 ---
 
 ## 🔒 Güvenlik Notları
 
-1. **JWT Secret Key:**
-   - Production'da mutlaka değiştirilmeli
-   - Environment variable olarak saklanmalı
-
-2. **Şifre Hashleme:**
-   - Bcrypt kullanılır (güvenli)
-   - Her hash benzersizdir
-
-3. **Rate Limiting:**
-   - Brute force saldırılarına karşı koruma
-   - Redis ile yönetilir
-
-4. **Multi-Tenant İzolasyonu:**
-   - Her query'de `organization_id` kontrolü
-   - Kullanıcılar sadece kendi organization'larını görebilir
-
-5. **Audit Logging:**
-   - Tüm önemli işlemler loglanır
-   - IP adresi kaydedilir
+1. **JWT Secret Key:** `JWT_SECRET_KEY` env'den alınır, default kullanılmamalı
+2. **Bcrypt Hashleme:** Her hash benzersiz (otomatik salt)
+3. **Rate Limiting:** Redis ile brute force koruması
+4. **Multi-Tenant İzolasyon:** Her sorgu `organization_id` filtresi içerir
+5. **Stripe Webhook Doğrulama:** `stripe.Webhook.construct_event()` ile signature kontrolü
+6. **Webhook Idempotency:** `webhook_events` collection'ında event_id ile çift işleme engeli
+7. **Cloudflare Turnstile:** Public sayfalarda bot koruması
+8. **CORS:** Production'da spesifik domain'ler (`CORS_ORIGINS` env)
+9. **Audit Logging:** Tüm kritik işlemler loglanır (IP, kullanıcı, eski/yeni değer)
+10. **Sentry:** Unhandled exception izleme + performance tracing
+11. **IBAN Cooldown:** Banka bilgisi değişikliğinden sonra 48 saat payout engeli
+12. **AML Limitleri:** Aylık payout eşik kontrolleri
 
 ---
 
-## 📝 Notlar ve İpuçları
+## 📝 Bilinen Mimari Notlar
 
-1. **MongoDB Lazy Initialization:**
-   - Başlangıçta bağlantı başarısız olursa
-   - İlk request'te tekrar denenir
-
-2. **Scheduler Global Instance:**
-   - `_app_instance` global değişkeni kullanılır
-   - Scheduler'dan MongoDB'ye erişim için gerekli
-
-3. **Timezone:**
-   - Türkiye saati: `Europe/Istanbul` (ZoneInfo)
-   - UTC: `timezone.utc`
-
-4. **Service Duration:**
-   - Varsayılan: 30 dakika
-   - Her hizmet için ayrı ayarlanabilir
-   - Müsaitlik hesaplamada kritik
-
-5. **Business Hours:**
-   - Her gün için ayrı ayarlanabilir
-   - `is_open`, `open_time`, `close_time`
-   - Müsaitlik hesaplamada kullanılır
+1. **İki paralel FastAPI uygulaması:** `server.py` (production) ve `app/main.py` (refaktör). **Production'da `server.py` çalışır.**
+2. **server.py monolitik:** ~12.500+ satır. Yeni endpoint eklerken mevcut pattern'e uyum sağlanmalı.
+3. **Financial modülü ayrı router:** `financial_endpoints.py` içinde `APIRouter`, `server.py`'dan `app.include_router()` ile mount edilir.
+4. **Webhook path duplikasyonları:** Uyumluluk için aynı handler birden fazla path'e mount (`/api/webhook/stripe`, `/webhook/stripe`, `/payments/webhook/stripe`)
+5. **Para birimleri minor unit:** TRY ve GBP tutarları kuruş/pence olarak saklanır (merchant_transactions). İşletme iç finansta float kullanılır.
+6. **Redis multi-purpose:** Cache + Rate Limiting + Socket.IO Manager + Distributed Lock + WhatsApp doğrulama
 
 ---
 
-## 🚀 Performans Optimizasyonları
-
-1. **Database Indexes:**
-   - Sık kullanılan query'ler için index'ler
-   - `organization_id` + diğer alanlar
-
-2. **Batch Operations:**
-   - Service duration'lar batch olarak çekilir
-   - N+1 query problemi önlenir
-
-3. **Caching:**
-   - Redis cache kullanılabilir (gelecekte)
-
-4. **Lazy Loading:**
-   - MongoDB bağlantısı lazy initialize edilir
-   - İlk request'te bağlanır
-
----
-
-## 📚 Sonuç
-
-Bu dokümantasyon, `server.py` dosyasının tüm özelliklerini, endpoint'lerini, fonksiyonlarını ve iş akışlarını detaylıca açıklamaktadır. Sistem, multi-tenant SaaS mimarisi ile çalışan, real-time güncellemeler destekleyen, otomatik SMS hatırlatmaları olan kapsamlı bir randevu yönetim sistemidir.
-
-**Önemli Hatırlatmalar:**
-- Production'da environment variable'ları mutlaka ayarlayın
-- JWT secret key'i güvenli tutun
-- MongoDB ve Redis bağlantılarını kontrol edin
-- Log dosyalarını düzenli olarak kontrol edin
-- Rate limiting ayarlarını ihtiyaca göre yapılandırın
-
----
-
-## 💳 PayTR Ödeme Entegrasyonu
-
-### Genel Bakış
-
-PayTR, Türkiye'nin önde gelen ödeme altyapı sağlayıcısıdır. Sistem, abonelik ödemelerini PayTR üzerinden alır ve otomatik plan aktivasyonu yapar.
-
-### PayTR Yapılandırması
-
-**Environment Variables:**
-```bash
-PAYTR_MERCHANT_ID=your_merchant_id
-PAYTR_MERCHANT_KEY=your_merchant_key
-PAYTR_MERCHANT_SALT=your_merchant_salt
-PAYTR_IFRAME_URL=https://www.paytr.com/odeme/guvenli/{token}
-```
-
-### Endpoint'ler
-
-#### `POST /api/subscription/paytr/initiate`
-**Açıklama:** PayTR ödeme iframe'i başlatır
-
-**Request Body:**
-```json
-{
-  "plan_id": "tier_1_standard",
-  "user_email": "user@example.com",
-  "user_name": "Ad Soyad",
-  "user_phone": "05001234567"
-}
-```
-
-**İşlemler:**
-
-1. **Plan Doğrulama:**
-   - Plan ID kontrolü
-   - Plan fiyatı ve detayları alınır
-
-2. **PayTR Token Oluşturma:**
-   - Merchant bilgileri ile hash oluşturulur
-   - PayTR API'ye token request gönderilir
-   - Hash hesaplama:
-     ```python
-     hash_str = f"{merchant_id}{user_ip}{merchant_oid}{email}{payment_amount}{payment_type}{installment_count}{currency}{test_mode}{non_3d}"
-     paytr_token = base64.b64encode(hmac.new(
-         merchant_key.encode(),
-         hash_str.encode(),
-         hashlib.sha256
-     ).digest()).decode()
-     ```
-
-3. **Ödeme Bilgileri:**
-   - `merchant_oid`: Unique order ID (UUID)
-   - `user_basket`: JSON formatında sepet bilgileri
-   - `callback_url`: PayTR'nin callback göndereceği URL
-   - `success_url`: Başarılı ödeme sonrası dönüş URL'i (frontend hash routing)
-   - `fail_url`: Başarısız ödeme sonrası dönüş URL'i
-
-**Response:**
-```json
-{
-  "status": "success",
-  "token": "paytr_iframe_token",
-  "iframe_url": "https://www.paytr.com/odeme/guvenli/paytr_iframe_token"
-}
-```
-
-**Frontend Kullanımı:**
-```javascript
-// Frontend PayTR iframe açar
-window.location.href = response.iframe_url;
-```
-
----
-
-#### `POST /api/subscription/paytr/callback`
-**Açıklama:** PayTR ödeme sonucu callback'i (Webhook)
-
-**Request Body (PayTR'den gelir):**
-```
-merchant_oid=xxx&status=success&total_amount=520.00&hash=xxx&...
-```
-
-**İşlemler:**
-
-1. **Hash Doğrulama:**
-   - PayTR'den gelen hash doğrulanır
-   - Güvenlik için kritik
-   ```python
-   hash_str = f"{merchant_oid}{merchant_salt}{status}{total_amount}"
-   calculated_hash = base64.b64encode(
-       hmac.new(merchant_key.encode(), hash_str.encode(), hashlib.sha256).digest()
-   ).decode()
-   ```
-
-2. **Ödeme Durumu Kontrolü:**
-   - `status == "success"` ise ödeme başarılı
-   - Diğer durumlar: "failed", "pending"
-
-3. **Plan Aktivasyonu:**
-   - Organization plan'ı güncellenir
-   - `plan_id` değiştirilir
-   - `quota_limit` güncellenir
-   - `quota_usage` sıfırlanır
-   - `quota_reset_date` bir ay sonraya ayarlanır
-   - `is_first_month = True` yapılır
-
-4. **Transaction Kaydı:**
-   - `payment_transactions` collection'ına kayıt
-   - Ödeme detayları saklanır
-   - Audit log oluşturulur
-
-5. **PayTR'ye Cevap:**
-   - Başarılı: `OK` döner
-   - Hatalı: Error mesajı döner
-
-**Response:** 
-```
-OK
-```
-
----
-
-#### `POST /api/subscription/paytr/check`
-**Açıklama:** Ödeme durumunu kontrol et (Frontend polling için)
-
-**Request Body:**
-```json
-{
-  "merchant_oid": "order_uuid"
-}
-```
-
-**İşlemler:**
-1. Transaction kaydı aranır
-2. Status döndürülür: "success", "failed", "pending"
-
-**Response:**
-```json
-{
-  "status": "success",
-  "plan_id": "tier_1_standard",
-  "message": "Ödeme başarılı"
-}
-```
-
----
-
-### PayTR Akışı
-
-```
-1. Kullanıcı plan seçer (Frontend)
-   ↓
-2. POST /api/subscription/paytr/initiate
-   - Token oluşturulur
-   - Iframe URL döner
-   ↓
-3. Frontend PayTR iframe'ini açar
-   ↓
-4. Kullanıcı kredi kartı bilgilerini girer
-   ↓
-5. PayTR ödeme işler
-   ↓
-6. POST /api/subscription/paytr/callback (PayTR webhook)
-   - Hash doğrulanır
-   - Plan aktivasyonu yapılır
-   - Transaction kaydedilir
-   ↓
-7. PayTR kullanıcıyı success_url'e yönlendirir
-   ↓
-8. Frontend: "Ödeme Başarılı" mesajı gösterir
-   - Hash routing: /#/payment-success
-   - Toast notification
-   - Dashboard'a yönlendirir
-```
-
----
-
-### Frontend Entegrasyonu
-
-#### URL Routing (AppRouter.js)
-
-**Problem:** PayTR callback sonrası `/dashboard` path'ine yönlendirme yapılıyordu ancak bu route tanımlı değildi → Beyaz ekran
-
-**Çözüm:**
-```javascript
-// /dashboard route eklendi
-<Route 
-  path="/dashboard" 
-  element={isAuthenticated ? <Navigate to="/" replace /> : <Navigate to="/login" replace />} 
-/>
-```
-
-#### Login Redirect (LoginPage.js)
-
-**Değişiklik:**
-```javascript
-// Önce
-window.location.href = '/dashboard';
-
-// Sonra
-window.location.href = '/';
-```
-
-#### Ödeme Başarı Yönetimi (App.js)
-
-**Hash Routing:**
-```javascript
-// PayTR başarılı ödeme sonrası: /#/payment-success
-if (hash === '#/payment-success' && userRole === 'admin') {
-  setCurrentView('dashboard');
-  setShowPaymentSuccess(true);
-  toast.success('🎉 Ödeme başarıyla tamamlandı!', {
-    duration: 8000,
-    position: 'top-center',
-  });
-}
-```
-
-**Query String Fallback:**
-```javascript
-// URL: /?payment=success
-const paymentStatus = urlParams.get('payment');
-if (paymentStatus === 'success' && userRole === 'admin') {
-  // Aynı success işlemleri
-}
-```
-
-**Success Banner:**
-```javascript
-{showPaymentSuccess && (
-  <div className="bg-gradient-to-r from-green-500 to-emerald-600">
-    <h3>🎉 Ödeme Başarılı!</h3>
-    <p>Aboneliğiniz başarıyla aktif edildi.</p>
-  </div>
-)}
-```
-
----
-
-### Güvenlik Önlemleri
-
-1. **Hash Doğrulama:**
-   - Her PayTR callback'inde hash doğrulanır
-   - HMAC-SHA256 kullanılır
-   - Sahte callback'lere karşı koruma
-
-2. **Merchant Credentials:**
-   - Environment variables ile saklanır
-   - Asla frontend'e gönderilmez
-   - Production'da güvenli şekilde saklanmalı
-
-3. **Transaction Logging:**
-   - Tüm ödemeler audit log'a kaydedilir
-   - IP adresi, kullanıcı bilgileri saklanır
-   - Hata durumları loglanır
-
-4. **Rate Limiting:**
-   - Callback endpoint'i rate limit ile korunur
-   - DDoS saldırılarına karşı önlem
-
----
-
-### Test Modu
-
-**PayTR Test Kartları:**
-```
-Kart No: 9792 0305 1008 7269
-Son Kullanma: 12/29
-CVV: 000
-3D Şifre: Herhangi bir şifre
-```
-
-**Test Mode Flag:**
-```python
-test_mode = "1"  # Production'da "0" yapılmalı
-```
-
----
-
-### Hata Yönetimi
-
-**Callback Hataları:**
-- Hash uyuşmazlığı: `400 Bad Request`
-- Transaction kayıt hatası: Loglanır, PayTR'ye error döner
-- Plan aktivasyon hatası: Rollback yapılır
-
-**Frontend Hataları:**
-- Ödeme başarısız: `/payment-failed` sayfasına yönlendirir
-- Timeout: Polling ile status kontrol edilir
-- Network hatası: Kullanıcıya bilgi gösterilir
-
----
-
-### Bug Fixes (2025-11-17)
-
-#### Dashboard Beyaz Ekran Sorunu
-
-**Problem:**
-- PayTR altyapısı ekledikten sonra login'den sonra beyaz ekran geliyordu
-- Console'da hiçbir log yoktu
-- Reason: `/dashboard` path'i tanımlı değildi
-
-**Root Cause Analysis:**
-1. `LoginPage.js`'de login başarılı olduktan sonra `window.location.href = '/dashboard'` yapılıyordu
-2. `AppRouter.js`'de sadece `/` ve diğer path'ler tanımlıydı
-3. `/dashboard` için route olmadığı için React Router hiçbir component render etmiyordu
-4. Sonuç: Beyaz ekran
-
-**Fix:**
-1. `/dashboard` route eklendi (authenticated users için `/`'e redirect)
-2. `LoginPage.js` redirect'i `/`'e değiştirildi
-3. Debug logları eklendi ve temizlendi
-4. Production build yapıldı
-5. Commit & push edildi (commit: `a0753be7`)
-
-**Değişiklikler:**
-- ✅ `AppRouter.js`: `/dashboard` route eklendi
-- ✅ `LoginPage.js`: Login redirect `/` olarak değiştirildi
-- ✅ Debug logları temizlendi (index.js, AuthContext.js, App.js, Dashboard.js)
-- ✅ Build: 356.44 kB gzip
-
----
-
-**Dokümantasyon Tarihi:** 2025-11-17  
-**Versiyon:** 1.5.0 (PayTR Integration & Dashboard Fix)  
-**Dosya:** `/var/www/royalpremiumcare_dev/backend/server.py`
-
+**Dokümantasyon Tarihi:** 2026-04-14
+**Dosya:** `/var/www/player5moduleryapi/backend/SERVER_ANALYSIS.md`
