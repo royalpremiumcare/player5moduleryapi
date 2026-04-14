@@ -67,7 +67,7 @@ const LandingPage = () => {
   const badgeAssetBase = process.env.PUBLIC_URL || '';
   const badgeAssetVersion = '4';
   const dashboardAssetBase = process.env.PUBLIC_URL || '';
-  const dashboardAssetVersion = '1';
+  const dashboardAssetVersion = '4';
   const dashboardImageSrc = i18n.language?.toLowerCase().startsWith('tr')
     ? `${dashboardAssetBase}/screenshots/landing-dashboard-tr.png?v=${dashboardAssetVersion}`
     : `${dashboardAssetBase}/screenshots/landing-dashboard-en.png?v=${dashboardAssetVersion}`;
@@ -634,7 +634,7 @@ const LandingPage = () => {
                 <MessageSquare className="w-5 h-5 text-green-500" />
                 <span className="text-sm font-semibold text-gray-700">{t('landing.hero.newAppointments')}</span>
               </div>
-              <div className="bg-white rounded-2xl shadow-2xl p-4 border border-gray-200">
+              <div className="bg-white rounded-2xl shadow-[0_4px_30px_rgba(0,0,0,0.12)] border border-gray-900/20 p-2 md:p-2.5 hover:shadow-[0_8px_40px_rgba(0,0,0,0.18)] transition-shadow duration-300">
                 <img 
                   src={dashboardImageSrc}
                   alt={i18n.language?.toLowerCase().startsWith('tr') ? 'PLANN Dashboard Önizleme' : 'PLANN Dashboard Preview'}

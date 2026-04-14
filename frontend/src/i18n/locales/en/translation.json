@@ -871,6 +871,9 @@
     "notificationsRepairError": "Repair failed",
     "notificationsBrowserNotSupportedRepair": "Your browser does not support notifications",
     "helpCenter": "Help Centre",
+    "contact": "Contact",
+    "whatsappSupport": "WhatsApp Support",
+    "whatsappSupportSubtitle": "Message us on WhatsApp",
     "helpCentre": {
       "title": "Help Centre",
       "backToSettings": "Back to Settings",

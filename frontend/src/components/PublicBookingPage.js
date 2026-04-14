@@ -725,7 +725,6 @@ const PublicBookingPage = () => {
         const paymentRule = res.data.service_payment_rule;
         if ((paymentRule === 'online' || paymentRule === 'deposit') && res.data.appointment_id) {
           try {
-            toast.info(currentLang === 'en' ? 'Redirecting to payment...' : 'Ödeme sayfasına yönlendiriliyorsunuz...');
             const checkoutRes = await publicApi.post('/public/checkout', {
               organization_id: business.organization_id,
               service_id: selectedService.id,
@@ -734,6 +733,7 @@ const PublicBookingPage = () => {
               customer_phone: verificationPhone,
             });
             if (checkoutRes.data?.checkout_url) {
+              toast.success(currentLang === 'en' ? 'Appointment confirmed! Redirecting to payment...' : 'Randevunuz onaylandı! Ödeme sayfasına yönlendiriliyorsunuz...');
               window.location.href = checkoutRes.data.checkout_url;
               return;
             }

@@ -300,9 +300,8 @@ async def get_wallet(request: Request):
 
     wallet = await db.merchant_wallets.find_one({"organization_id": org_id})
     if not wallet:
-        # Lazy-create wallet for new merchants
         settings = await db.settings.find_one({"organization_id": org_id})
-        bc = settings.get("base_currency", "GBP") if settings else "GBP"
+        bc = settings.get("base_currency", "TRY") if settings else "TRY"
         new_wallet = {
             "organization_id": org_id,
             "base_currency": bc,
@@ -319,7 +318,7 @@ async def get_wallet(request: Request):
         wallet = await db.merchant_wallets.find_one({"organization_id": org_id})
 
     settings = await db.settings.find_one({"organization_id": org_id})
-    base_currency = wallet.get("base_currency", settings.get("base_currency", "GBP") if settings else "GBP")
+    base_currency = wallet.get("base_currency", settings.get("base_currency", "TRY") if settings else "TRY")
     tier = settings.get("payout_tier", "standard") if settings else "standard"
 
     eligibility = await check_payout_eligibility(db, org_id)

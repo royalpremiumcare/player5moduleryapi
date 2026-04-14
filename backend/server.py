@@ -86,6 +86,7 @@ if SECRET_KEY == 'default_karmaşık_bir_secret_key_ekleyin_mutlaka':
     logging.warning("WARNING: JWT_SECRET_KEY is using default value! Please set a secure secret key in production.")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+ACCESS_TOKEN_EXPIRE_MINUTES_REMEMBER = 60 * 24 * 30
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
 
@@ -1946,8 +1947,8 @@ class Settings(BaseModel):
         "wednesday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
         "thursday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
         "friday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
-        "saturday": {"is_open": False, "open_time": "09:00", "close_time": "18:00"},
-        "sunday": {"is_open": False, "open_time": "09:00", "close_time": "18:00"}
+        "saturday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+        "sunday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"}
     })
 
 # Push Notification Subscription Model
@@ -2484,7 +2485,9 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
         if user.status == "pending":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Hesabınız henüz aktif değil. Lütfen e-postanızdaki davet linkine tıklayarak şifrenizi belirleyin.")
         
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        remember_me = "remember_me" in (form_data.scopes or [])
+        expire_minutes = ACCESS_TOKEN_EXPIRE_MINUTES_REMEMBER if remember_me else ACCESS_TOKEN_EXPIRE_MINUTES
+        access_token_expires = timedelta(minutes=expire_minutes)
         token_data = {
             "sub": user.username, 
             "org_id": user.organization_id, 
@@ -3615,7 +3618,7 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
                 "id": {"$ne": appointment_id},
                 "staff_member_id": check_staff,
                 "appointment_date": check_date,
-                "status": {"$ne": "İptal"}
+                "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled"]}
             },
             {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1}
         ).to_list(200)
@@ -3884,7 +3887,7 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                 "organization_id": current_user.organization_id,
                 "staff_member_id": appointment.staff_member_id,
                 "appointment_date": appointment.appointment_date,
-                "status": {"$ne": "İptal"}
+                "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled"]}
             },
             {"_id": 0, "appointment_time": 1, "service_id": 1}
         ).to_list(100)
@@ -4039,7 +4042,7 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                 {
                     "organization_id": current_user.organization_id,
                     "appointment_date": appointment.appointment_date,
-                    "status": {"$ne": "İptal"}
+                    "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled"]}
                 },
                 {"_id": 0, "appointment_time": 1, "service_id": 1}
             ).to_list(1000)
@@ -4104,7 +4107,7 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                         "organization_id": current_user.organization_id,
                         "staff_member_id": staff['username'],
                         "appointment_date": appointment.appointment_date,
-                        "status": {"$ne": "İptal"}
+                        "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled"]}
                     },
                     {"_id": 0, "appointment_time": 1, "service_id": 1}
                 ).to_list(100)
@@ -4383,7 +4386,7 @@ async def _check_slot_conflict(db, organization_id: str, staff_id: str, date: st
     """Belirtilen slotun çakışma durumunu kontrol eder. True = çakışma var."""
     new_start_min = _time_to_minutes(time)
     new_end_min = new_start_min + service_duration
-    query = {"organization_id": organization_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}}
+    query = {"organization_id": organization_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled", "Ödeme Bekleniyor"]}}
     if staff_id:
         query["staff_member_id"] = staff_id
     existing = await db.appointments.find(
@@ -4630,11 +4633,12 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                 wa_address = wa_loc.get("address")
 
                 first_apt = created_appointments[0]
+                new_appt_ids = [a["id"] for a in created_appointments]
                 all_sessions = await db.appointments.find(
-                    {"session_group_id": group_id, "organization_id": current_user.organization_id}
+                    {"session_group_id": group_id, "organization_id": current_user.organization_id, "id": {"$in": new_appt_ids}}
                 ).sort("session_number", 1).to_list(100)
 
-                session_total = all_sessions[0].get("session_total", len(all_sessions)) if all_sessions else len(created_appointments)
+                session_total = first_apt.get("session_total", len(created_appointments))
 
                 number_emojis = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
                 tr_days = ["Pazartesi","Salı","Çarşamba","Perşembe","Cuma","Cumartesi","Pazar"]
@@ -4648,10 +4652,12 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                         dt = _dt.strptime(s.get("appointment_date", ""), "%Y-%m-%d")
                         day_name = tr_days[dt.weekday()]
                         month_name = tr_months[dt.month]
-                        parts.append(f"{emoji} {dt.day} {month_name} {day_name} {dt.year}")
+                        appt_time = s.get("appointment_time", "")
+                        parts.append(f"{emoji} {dt.day} {month_name} {day_name} {appt_time}")
                     except Exception:
                         d = format_date_for_display(s.get("appointment_date", ""))
-                        parts.append(f"{emoji} {d}")
+                        appt_time = s.get("appointment_time", "")
+                        parts.append(f"{emoji} {d} {appt_time}")
                 session_dates_text = " | ".join(parts)
 
                 try:
@@ -9413,8 +9419,8 @@ async def get_availability(request: Request, organization_id: str, service_id: s
                 "wednesday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
                 "thursday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
                 "friday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
-                "saturday": {"is_open": False, "open_time": "09:00", "close_time": "18:00"},
-                "sunday": {"is_open": False, "open_time": "09:00", "close_time": "18:00"}
+                "saturday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "sunday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"}
             }
         }
     
@@ -9591,7 +9597,7 @@ async def get_availability(request: Request, organization_id: str, service_id: s
     appt_query = {
         "organization_id": organization_id,
         "appointment_date": date,
-        "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]},
+        "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled", "Ödeme Bekleniyor"]},
         "$or": [
             {"staff_member_id": {"$in": staff_ids}},
             {"staff_member_id": None}
@@ -9834,8 +9840,8 @@ async def get_internal_availability(
                 "wednesday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
                 "thursday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
                 "friday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
-                "saturday": {"is_open": False, "open_time": "09:00", "close_time": "18:00"},
-                "sunday": {"is_open": False, "open_time": "09:00", "close_time": "18:00"}
+                "saturday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "sunday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"}
             }
         }
 
@@ -11091,6 +11097,13 @@ async def verify_code_and_create_appointment(request: Request):
         await db.organization_plans.update_one({"organization_id": org_id}, {"$inc": {"quota_usage": -1}})
         raise HTTPException(status_code=404, detail="Hizmet bulunamadı.")
 
+    payment_rule = service.get("payment_rule", "on_site")
+    apt_status = "Bekliyor"
+    apt_payment_status = None
+    if payment_rule in ("online", "deposit"):
+        apt_status = "Ödeme Bekleniyor"
+        apt_payment_status = "pending_payment"
+
     apt_obj = Appointment(**{
         **apt_dict,
         "organization_id": org_id,
@@ -11098,7 +11111,8 @@ async def verify_code_and_create_appointment(request: Request):
         "service_price": service.get("price", 0),
         "service_duration": service.get("duration", 30),
         "source": "public_booking_code_verified",
-        "status": "Bekliyor",
+        "status": apt_status,
+        "payment_status": apt_payment_status,
     })
     doc = apt_obj.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
@@ -11137,11 +11151,62 @@ async def verify_code_and_create_appointment(request: Request):
 
     logging.info(f"✅ Doğrulama kodu ile randevu oluşturuldu: {code} → {stored_phone}")
 
+    # WhatsApp randevu onay mesajı gönder (background)
+    async def _send_wa_confirmation():
+        try:
+            settings_data = await db.settings.find_one({"organization_id": org_id})
+            if not settings_data:
+                return
+            company_name = settings_data.get("company_name", "İşletmeniz")
+            support_phone = settings_data.get("support_phone", "Destek Hattı")
+            location = (settings_data.get('location') or {})
+            coordinates = location.get('coordinates', {})
+            lat = coordinates.get('lat')
+            lng = coordinates.get('lng')
+
+            _wa_msg_id = await asyncio.to_thread(
+                send_whatsapp_template,
+                stored_phone,
+                "CONFIRMATION",
+                apt_dict.get("customer_name", ""),
+                company_name,
+                apt_dict.get("appointment_date", ""),
+                apt_dict.get("appointment_time", ""),
+                service.get('name', ''),
+                support_phone,
+                business_lat=lat,
+                business_lng=lng,
+                business_address=location.get('address'),
+            )
+            logging.info(f"✓ WhatsApp confirmation sent (verified): {stored_phone}")
+            try:
+                import time as _time
+                _phone = str(stored_phone).lstrip('+')
+                await db.whatsapp_message_logs.update_one(
+                    {"message_id": _wa_msg_id},
+                    {"$set": {
+                        "message_id": _wa_msg_id,
+                        "recipient": _phone,
+                        "status": "sent",
+                        "timestamp": int(_time.time()),
+                        "recorded_at": datetime.utcnow().isoformat(),
+                        "source": "public_booking_verified"
+                    }},
+                    upsert=True
+                )
+            except Exception:
+                pass
+        except Exception as wa_err:
+            logging.error(f"WhatsApp confirmation error (verified): {wa_err}")
+
+    if payment_rule not in ("online", "deposit"):
+        asyncio.create_task(_send_wa_confirmation())
+
     return {
         "status": "verified",
         "message": "Doğrulama tamamlandı, randevunuz oluşturuldu.",
         "appointment_id": doc.get("id"),
-        "service_payment_rule": service.get("payment_rule", "on_site"),
+        "service_payment_rule": payment_rule,
     }
 
 

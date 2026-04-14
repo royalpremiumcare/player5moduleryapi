@@ -873,6 +873,9 @@
     "notificationsRepairError": "Onarım başarısız oldu",
     "notificationsBrowserNotSupportedRepair": "Tarayıcınız bildirimleri desteklemiyor",
     "helpCenter": "Yardım Merkezi",
+    "contact": "İletişim",
+    "whatsappSupport": "WhatsApp Destek",
+    "whatsappSupportSubtitle": "Bize WhatsApp üzerinden yazın",
     "helpCentre": {
       "title": "Yardım Merkezi",
       "backToSettings": "Ayarlara Dön",

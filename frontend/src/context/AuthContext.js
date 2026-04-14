@@ -33,6 +33,9 @@ export const AuthProvider = ({ children }) => {
       const formData = new URLSearchParams();
       formData.append('username', username);
       formData.append('password', password);
+      if (rememberMe) {
+        formData.append('scope', 'remember_me');
+      }
 
       const response = await axios.post(
         `${BACKEND_URL}/api/token`,

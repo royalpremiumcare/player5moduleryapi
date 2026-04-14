@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { 
   Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, 
   ArrowLeft, DollarSign, Bell, BellOff, MapPin, Wrench, ShieldCheck, Globe,
-  Wallet, CreditCard
+  Wallet, CreditCard, Phone, MessageCircle
 } from "lucide-react"; 
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -364,6 +364,34 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
             subtitle={t('settings.helpCenterSubtitle')}
             onClick={() => onNavigate && onNavigate("help-center")}
           />
+
+          <div className="px-4 py-3 border-b border-zinc-100 last:border-b-0">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-9 h-9 rounded-xl bg-zinc-100 flex items-center justify-center flex-shrink-0">
+                <Phone className="w-[18px] h-[18px] text-zinc-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[15px] font-semibold text-zinc-800 tracking-tight">{t('settings.contact', 'İletişim')}</p>
+                <p className="text-xs text-zinc-400 truncate">+90 540 595 3250</p>
+              </div>
+            </div>
+            <div className="flex gap-2 ml-12">
+              <button
+                onClick={() => window.open('tel:+905405953250')}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-medium transition-colors"
+              >
+                <Phone className="w-3.5 h-3.5" />
+                {t('settings.callUs', 'Ara')}
+              </button>
+              <button
+                onClick={() => window.open('https://wa.me/905405953250', '_blank', 'noopener,noreferrer')}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#128C7E] text-xs font-medium transition-colors"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                WhatsApp
+              </button>
+            </div>
+          </div>
 
           <SettingItem 
             icon={LogOut} 
