@@ -431,6 +431,8 @@ class SuperAdminOverview(BaseModel):
     """SuperAdmin consolidated financial overview."""
     total_pool_gbp_minor: int
     total_pool_gbp_display: str
+    total_pool_try_minor: int = 0
+    total_pool_try_display: str = "₺0.00"
     gbp_merchant_count: int
     try_merchant_count: int
     gbp_available_total_minor: int
@@ -439,6 +441,7 @@ class SuperAdminOverview(BaseModel):
     active_disputes_count: int
     current_gbp_try_rate_micro: int
     current_gbp_try_rate_display: str
+    current_rate_display: str = "N/A"
 
 
 # ---------------------------------------------------------------------------

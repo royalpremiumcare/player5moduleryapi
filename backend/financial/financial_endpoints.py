@@ -850,6 +850,8 @@ async def superadmin_overview(request: Request):
     return SuperAdminOverview(
         total_pool_gbp_minor=totals["total_pool"],
         total_pool_gbp_display=format_display(totals["total_pool"], "GBP"),
+        total_pool_try_minor=totals["try_available"],
+        total_pool_try_display=format_display(totals["try_available"], "TRY"),
         gbp_merchant_count=gbp_count,
         try_merchant_count=try_count,
         gbp_available_total_minor=totals["gbp_available"],
@@ -858,6 +860,7 @@ async def superadmin_overview(request: Request):
         active_disputes_count=active_disputes,
         current_gbp_try_rate_micro=rate_micro,
         current_gbp_try_rate_display=rate_display,
+        current_rate_display=rate_display,
     ).model_dump()
 
 
@@ -884,15 +887,20 @@ async def superadmin_wallets(
     org_ids = [w["organization_id"] for w in wallets if w.get("organization_id")]
     org_names = {}
     org_kyc = {}
+    org_iban_holders = {}
     if org_ids:
         settings_list = await db.settings.find(
             {"organization_id": {"$in": org_ids}},
-            {"_id": 0, "organization_id": 1, "company_name": 1, "business_name": 1, "kyc_verified": 1}
+            {"_id": 0, "organization_id": 1, "company_name": 1, "business_name": 1, "kyc_verified": 1, "account_holder_name": 1, "iban": 1}
         ).to_list(len(org_ids))
         for s in settings_list:
             name = s.get("company_name") or s.get("business_name") or ""
             org_names[s["organization_id"]] = name
             org_kyc[s["organization_id"]] = s.get("kyc_verified", False)
+            org_iban_holders[s["organization_id"]] = {
+                "account_holder_name": s.get("account_holder_name", ""),
+                "iban": s.get("iban", ""),
+            }
 
         # For orgs without a name yet, try admin user's full_name
         missing_ids = [oid for oid in org_ids if not org_names.get(oid)]
@@ -908,12 +916,15 @@ async def superadmin_wallets(
     for w in wallets:
         w.pop("_id", None)
         bc = w.get("base_currency", "TRY")
+        oid = w.get("organization_id", "")
         w["available_display"] = format_display(w.get("available_balance_minor", 0), bc)
         w["pool_gbp_display"] = format_display(w.get("pool_balance_gbp_minor", 0), "GBP")
-        w["org_name"] = org_names.get(w.get("organization_id", ""), "")
-        # Sync kyc_verified from settings if wallet doesn't have it
+        w["org_name"] = org_names.get(oid, "")
+        iban_info = org_iban_holders.get(oid, {})
+        w["account_holder_name"] = iban_info.get("account_holder_name", "")
+        w["iban"] = iban_info.get("iban", "")
         if "kyc_verified" not in w:
-            w["kyc_verified"] = org_kyc.get(w.get("organization_id", ""), False)
+            w["kyc_verified"] = org_kyc.get(oid, False)
 
     return {"items": wallets, "total": total, "page": page, "per_page": per_page}
 

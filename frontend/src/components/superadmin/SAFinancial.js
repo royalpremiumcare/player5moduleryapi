@@ -120,12 +120,18 @@ export default function SAFinancial() {
 
       {/* Overview Cards */}
       {overview && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
               <DollarSign className="h-3.5 w-3.5" /> Toplam Havuz (GBP)
             </div>
             <p className="text-lg font-bold text-gray-900">{overview.total_pool_gbp_display}</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
+              <DollarSign className="h-3.5 w-3.5" /> Toplam Havuz (TRY)
+            </div>
+            <p className="text-lg font-bold text-gray-900">{overview.total_pool_try_display}</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
@@ -143,7 +149,7 @@ export default function SAFinancial() {
             <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
               <TrendingUp className="h-3.5 w-3.5" /> GBP/TRY Kur
             </div>
-            <p className="text-lg font-bold text-gray-900">{overview.current_rate_display || "N/A"}</p>
+            <p className="text-lg font-bold text-gray-900">{overview.current_rate_display || overview.current_gbp_try_rate_display || "N/A"}</p>
           </div>
         </div>
       )}
@@ -219,6 +225,9 @@ export default function SAFinancial() {
                   <tr key={w.organization_id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-3">
                       <div className="text-sm font-medium text-gray-900">{w.org_name || <span className="text-gray-400 italic">Silinmiş İşletme</span>}</div>
+                      {w.account_holder_name && (
+                        <div className="text-[11px] text-indigo-600">IBAN: {w.account_holder_name}</div>
+                      )}
                       <div className="text-[10px] font-mono text-gray-400">{(w.organization_id || "").slice(0, 12)}...</div>
                     </td>
                     <td className="py-3 px-3">

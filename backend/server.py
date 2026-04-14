@@ -2273,7 +2273,9 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
         lang = 'tr'
     user_db_data = user_in.model_dump(exclude={"organization_name", "support_phone"})
     user_db = UserInDB(**user_db_data, hashed_password=hashed_password, organization_id=new_org_id, role="admin", slug=unique_slug, permitted_service_ids=[], onboarding_completed=False, language=lang)
-    await db.users.insert_one(user_db.model_dump())
+    user_doc = user_db.model_dump()
+    user_doc["created_at"] = datetime.now(timezone.utc).isoformat()
+    await db.users.insert_one(user_doc)
     
     # Bu kullanıcı için varsayılan Settings oluştur (kayıt bilgileriyle)
     default_settings = Settings(
@@ -4509,7 +4511,7 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
         )
         if cancel_result.modified_count > 0:
             logging.info(f"♻️ Yeniden planlama: {cancel_result.modified_count} eski seans iptal edildi (group={bulk.session_group_id})")
-
+    
     # Her slot için çakışma kontrolü
     redis_client = getattr(request.app.state, 'redis_client', None)
     lock_keys = []
@@ -4676,7 +4678,7 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
             except Exception as wa_outer_err:
                 logging.warning(f"WhatsApp session notifications error: {wa_outer_err}")
         asyncio.create_task(_send_session_wa())
-
+        
         logging.info(f"✅ Bulk session created: {len(created_appointments)} appointments, group={group_id}")
         clean_appointments = [{k: v for k, v in apt.items() if k != '_id'} for apt in created_appointments]
         return {"message": f"{len(created_appointments)} seans başarıyla oluşturuldu", "session_group_id": group_id, "appointments": clean_appointments}
@@ -4809,7 +4811,7 @@ async def refund_single_appointment(request: Request, appointment_id: str, curre
     if not txn or not txn.get("stripe_payment_intent_id"):
         raise HTTPException(status_code=400, detail="Bu randevu için iade edilebilir ödeme bulunamadı")
 
-    import stripe as stripe_lib
+        import stripe as stripe_lib
     from financial.state_machine import StateMachine
 
     is_session_partial = bool(apt.get("session_group_id") and apt.get("session_total") and apt["session_total"] > 1)
@@ -4817,8 +4819,8 @@ async def refund_single_appointment(request: Request, appointment_id: str, curre
     if is_session_partial:
         refund_amount = int(refund_amount / apt["session_total"])
 
-    if refund_amount <= 0:
-        raise HTTPException(status_code=400, detail="İade tutarı hesaplanamadı")
+        if refund_amount <= 0:
+            raise HTTPException(status_code=400, detail="İade tutarı hesaplanamadı")
 
     try:
         stripe_refund = stripe_lib.Refund.create(
@@ -4889,8 +4891,8 @@ async def refund_single_appointment(request: Request, appointment_id: str, curre
         except Exception as e:
             logging.error(f"State transition after refund failed for tx {txn['id']}: {e}")
 
-    await db.appointments.update_one(
-        {"id": appointment_id},
+        await db.appointments.update_one(
+            {"id": appointment_id},
         {"$set": {"payment_status": "refunded", "status": "İptal Edildi"}}
     )
 
@@ -10788,7 +10790,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
         appointment_data['session_number'] = 1
         appointment_data['session_total'] = service_session_count
         appointment_data['payment_status'] = 'paid'
-
+    
     # Online/deposit ödeme varsa: randevuyu "Ödeme Bekleniyor" olarak oluştur
     payment_rule = service.get('payment_rule', '')
     if payment_rule in ('online', 'deposit'):
@@ -10797,22 +10799,22 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
 
     # Randevu durumunu kontrol et (bitiş saatine göre) — "Ödeme Bekleniyor" override edilmez
     if appointment_data.get('status') != 'Ödeme Bekleniyor':
-        try:
-            turkey_tz = ZoneInfo("Europe/Istanbul")
-            now = datetime.now(turkey_tz)
-            dt_str = f"{appointment.appointment_date} {appointment.appointment_time}"
-            naive_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
-            appointment_dt = naive_dt.replace(tzinfo=turkey_tz)
-            service_duration_minutes = service.get('duration', 30)
-            completion_threshold = appointment_dt + timedelta(minutes=service_duration_minutes)
-            if now >= completion_threshold:
-                appointment_data['status'] = 'Tamamlandı'
-                appointment_data['completed_at'] = datetime.now(timezone.utc).isoformat()
-            else:
-                appointment_data['status'] = 'Bekliyor'
-        except (ValueError, TypeError) as e:
-            logging.warning(f"Public randevu durumu ayarlanırken tarih hatası: {e}")
+    try:
+        turkey_tz = ZoneInfo("Europe/Istanbul")
+        now = datetime.now(turkey_tz)
+        dt_str = f"{appointment.appointment_date} {appointment.appointment_time}"
+        naive_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+        appointment_dt = naive_dt.replace(tzinfo=turkey_tz)
+        service_duration_minutes = service.get('duration', 30)
+        completion_threshold = appointment_dt + timedelta(minutes=service_duration_minutes)
+        if now >= completion_threshold:
+            appointment_data['status'] = 'Tamamlandı'
+            appointment_data['completed_at'] = datetime.now(timezone.utc).isoformat()
+        else:
             appointment_data['status'] = 'Bekliyor'
+    except (ValueError, TypeError) as e:
+        logging.warning(f"Public randevu durumu ayarlanırken tarih hatası: {e}")
+        appointment_data['status'] = 'Bekliyor'
     
     appointment_obj = Appointment(**appointment_data, organization_id=organization_id)
     doc = appointment_obj.model_dump()
@@ -11005,21 +11007,21 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     is_pending_payment = appointment_data.get('payment_status') == 'pending_payment'
 
     if not is_pending_payment:
-        # Emit WebSocket event for real-time update (bu hızlı, bekletmez)
-        appointment_for_emit = appointment_obj.model_dump()
-        appointment_for_emit['created_at'] = appointment_for_emit['created_at'].isoformat()
-        logger.info(f"About to emit appointment_created for org: {organization_id} (public endpoint)")
-        try:
-            await emit_to_organization(
-                organization_id,
-                'appointment_created',
-                {'appointment': appointment_for_emit}
-            )
-            logger.info(f"Successfully emitted appointment_created for org: {organization_id} (public endpoint)")
-        except Exception as emit_error:
-            logger.error(f"Failed to emit appointment_created (public endpoint): {emit_error}", exc_info=True)
-
-        asyncio.create_task(send_notifications_background())
+    # Emit WebSocket event for real-time update (bu hızlı, bekletmez)
+    appointment_for_emit = appointment_obj.model_dump()
+    appointment_for_emit['created_at'] = appointment_for_emit['created_at'].isoformat()
+    logger.info(f"About to emit appointment_created for org: {organization_id} (public endpoint)")
+    try:
+        await emit_to_organization(
+            organization_id,
+            'appointment_created',
+            {'appointment': appointment_for_emit}
+        )
+        logger.info(f"Successfully emitted appointment_created for org: {organization_id} (public endpoint)")
+    except Exception as emit_error:
+        logger.error(f"Failed to emit appointment_created (public endpoint): {emit_error}", exc_info=True)
+    
+    asyncio.create_task(send_notifications_background())
     else:
         logging.info(f"⏳ Ödeme bekleniyor — bildirimler ödeme sonrası gönderilecek: {doc.get('id', '')}")
     
@@ -11785,6 +11787,36 @@ async def get_whatsapp_message_logs(
             query, {"_id": 0}
         ).sort("recorded_at", -1).skip(skip).limit(limit).to_list(limit)
 
+        # Enrich: phone → organization via appointments
+        all_phones = list({l.get("recipient", "") for l in logs if l.get("recipient")})
+        phone_org_map = {}
+        if all_phones:
+            pipeline = [
+                {"$match": {"phone": {"$in": ["+" + p for p in all_phones] + all_phones + ["0" + p[-10:] for p in all_phones if len(p) >= 10]}}},
+                {"$group": {"_id": "$phone", "org_id": {"$first": "$organization_id"}}},
+            ]
+            phone_orgs = await db.appointments.aggregate(pipeline).to_list(1000)
+            for po in phone_orgs:
+                norm = re.sub(r"\D", "", po["_id"]).lstrip("0")
+                phone_org_map[norm[-9:]] = po["org_id"]
+
+            org_ids = list(set(phone_org_map.values()))
+            org_name_map = {}
+            if org_ids:
+                settings_docs = await db.settings.find(
+                    {"organization_id": {"$in": org_ids}},
+                    {"_id": 0, "organization_id": 1, "company_name": 1}
+                ).to_list(len(org_ids))
+                for s in settings_docs:
+                    org_name_map[s["organization_id"]] = s.get("company_name", "")
+
+            for log in logs:
+                recip = log.get("recipient", "")
+                norm_recip = re.sub(r"\D", "", recip).lstrip("0")
+                oid = phone_org_map.get(norm_recip[-9:], "")
+                log["organization_id"] = oid
+                log["org_name"] = org_name_map.get(oid, "") if oid else ""
+
         total = await db.whatsapp_message_logs.count_documents(query)
 
         failed_count    = await db.whatsapp_message_logs.count_documents({"status": "failed"})
@@ -11846,9 +11878,8 @@ async def get_financial_stats(request: Request, current_user: UserInDB = Depends
             "updated_at": {"$gte": thirty_days_ago.isoformat()}
         })
 
-        # Bu ay yeni kayıtlar
-        new_this_month = await db.users.count_documents({
-            "role": "admin",
+        # Bu ay yeni kayıtlar (organization_plans.created_at daha güvenilir)
+        new_this_month = await db.organization_plans.count_documents({
             "created_at": {"$gte": first_day.isoformat()}
         })
 

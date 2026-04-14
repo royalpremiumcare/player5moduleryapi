@@ -40,7 +40,8 @@ export default function SAWhatsApp() {
     const q = search.toLowerCase();
     return data.logs.filter(l =>
       l.recipient?.includes(q) ||
-      l.message_id?.toLowerCase().includes(q)
+      l.message_id?.toLowerCase().includes(q) ||
+      l.org_name?.toLowerCase().includes(q)
     );
   }, [data.logs, search]);
 
@@ -105,8 +106,9 @@ export default function SAWhatsApp() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Durum</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">İşletme</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Alıcı</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Mesaj ID</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Kaynak</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Tarih</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Hata</th>
               </tr>
@@ -115,14 +117,14 @@ export default function SAWhatsApp() {
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    {Array.from({ length: 5 }).map((_, j) => (
+                    {Array.from({ length: 6 }).map((_, j) => (
                       <td key={j} className="px-4 py-3"><div className="h-4 bg-gray-100 rounded w-20" /></td>
                     ))}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-400">
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
                     {statusFilter ? `"${STATUS_CONFIG[statusFilter]?.label}" durumunda log yok` : "Log bulunamadı"}
                   </td>
                 </tr>
@@ -139,8 +141,17 @@ export default function SAWhatsApp() {
                           {cfg.label || log.status}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{log.org_name || <span className="text-gray-400 italic">—</span>}</td>
                       <td className="px-4 py-3 font-mono text-gray-700">+{log.recipient}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-gray-400 max-w-[160px] truncate">{log.message_id}</td>
+                      <td className="px-4 py-3 text-xs">
+                        {(() => {
+                          const src = (log.source || log.template_name || "").toLowerCase();
+                          if (src.includes("reminder")) return <span className="text-amber-600">Hatırlatma</span>;
+                          if (src.includes("confirm") || src.includes("booking")) return <span className="text-green-600">Online</span>;
+                          if (src.includes("session") || src.includes("seans")) return <span className="text-purple-600">Seans</span>;
+                          return <span className="text-blue-600">Panel</span>;
+                        })()}
+                      </td>
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                         {log.recorded_at ? new Date(log.recorded_at).toLocaleString("tr-TR") : "—"}
                       </td>
