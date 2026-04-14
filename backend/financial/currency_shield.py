@@ -218,3 +218,37 @@ async def get_current_rate(db) -> Optional[Dict[str, Any]]:
         {"pair": "GBP_TRY"},
         sort=[("fetched_at", -1)],
     )
+
+
+async def ensure_fresh_exchange_rate(
+    db,
+    max_age_seconds: int = 300,
+) -> Optional[Dict[str, Any]]:
+    """
+    SuperAdmin / finans ekranı için: DB'deki kur çok eskiyse yeniden çek.
+    Varsayılan 300 sn (5 dk) — cron yerine panel açılışında güncel kur.
+    """
+    doc = await get_current_rate(db)
+    now = datetime.now(timezone.utc)
+    need_fetch = doc is None
+    if doc and doc.get("fetched_at"):
+        try:
+            ft = doc["fetched_at"]
+            if isinstance(ft, str):
+                fetched = datetime.fromisoformat(ft.replace("Z", "+00:00"))
+            elif isinstance(ft, datetime):
+                fetched = ft if ft.tzinfo else ft.replace(tzinfo=timezone.utc)
+            else:
+                fetched = None
+            if fetched and (now - fetched).total_seconds() < max_age_seconds:
+                need_fetch = False
+        except Exception:
+            need_fetch = True
+    if not need_fetch:
+        return doc
+    try:
+        rate_micro, source = await fetch_current_rate(db)
+        await recalculate_try_tier_limits(db, rate_micro, source)
+    except Exception as e:
+        logger.warning("ensure_fresh_exchange_rate: yenileme başarısız: %s", e, exc_info=True)
+    return await get_current_rate(db)

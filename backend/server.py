@@ -6630,6 +6630,46 @@ async def handle_stripe_webhook(request: Request):
             except Exception as e:
                 logger.warning(f"Subscription email (webhook) gönderilemedi: {e}")
         
+        # invoice.paid — yenileme dönemleri + Stripe'dan gerçek tahsilat tutarı (subscription_cycle)
+        elif event['type'] == 'invoice.paid':
+            inv = event['data']['object']
+            inv_id = inv.get('id')
+            sub_id = inv.get('subscription')
+            if sub_id and inv_id:
+                plan_doc = await db.organization_plans.find_one({"stripe_subscription_id": sub_id})
+                if plan_doc:
+                    org_id = plan_doc.get('organization_id')
+                    period_end = inv.get('period_end')
+                    if period_end:
+                        ned = datetime.fromtimestamp(int(period_end), tz=timezone.utc)
+                        await db.organization_plans.update_one(
+                            {"organization_id": org_id},
+                            {"$set": {
+                                "next_billing_date": ned.isoformat(),
+                                "quota_reset_date": ned.isoformat(),
+                                "updated_at": datetime.now(timezone.utc).isoformat(),
+                            }},
+                        )
+                    br = inv.get('billing_reason') or ''
+                    if br in ('subscription_cycle', 'subscription_update'):
+                        dup = await db.payment_logs.find_one({"stripe_invoice_id": inv_id})
+                        if not dup:
+                            amount_paid = int(inv.get('amount_paid') or 0)
+                            cur = (inv.get('currency') or 'try').upper()
+                            amt = amount_paid / 100.0
+                            await db.payment_logs.insert_one({
+                                "stripe_invoice_id": inv_id,
+                                "organization_id": org_id,
+                                "plan_id": plan_doc.get('plan_id'),
+                                "status": "completed",
+                                "amount": amt,
+                                "currency": cur,
+                                "payment_provider": "stripe",
+                                "billing_reason": br,
+                                "created_at": datetime.now(timezone.utc).isoformat(),
+                            })
+                            logger.info(f"✅ invoice.paid kaydı eklendi: org={org_id} invoice={inv_id} amount={amt} {cur}")
+        
         # customer.subscription.updated - Abonelik güncellendi (iptal planlandı)
         elif event['type'] == 'customer.subscription.updated':
             subscription = event['data']['object']
@@ -11401,6 +11441,14 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
         appt_counts = await db.appointments.aggregate(appt_pipeline).to_list(len(org_ids))
         appt_map = {a["_id"]: a["count"] for a in appt_counts}
 
+        # Batch: Stripe ödemeleri (payment_logs — checkout/webhook ile dolan kayıtlar)
+        pay_pipeline = [
+            {"$match": {"organization_id": {"$in": org_ids}, "status": {"$in": ["active", "completed"]}}},
+            {"$group": {"_id": "$organization_id", "total": {"$sum": "$amount"}}},
+        ]
+        pay_totals = await db.payment_logs.aggregate(pay_pipeline).to_list(len(org_ids))
+        pay_map = {p["_id"]: int(p.get("total") or 0) for p in pay_totals}
+
         # Batch: customer counts
         cust_pipeline = [
             {"$match": {"organization_id": {"$in": org_ids}}},
@@ -11417,6 +11465,18 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
         staff_counts = await db.users.aggregate(staff_pipeline).to_list(len(org_ids))
         staff_map = {s["_id"]: s["count"] for s in staff_counts}
 
+        def _parse_plan_dt(val):
+            if val is None:
+                return None
+            if isinstance(val, datetime):
+                return val if val.tzinfo else val.replace(tzinfo=timezone.utc)
+            if isinstance(val, str):
+                try:
+                    return datetime.fromisoformat(val.replace("Z", "+00:00"))
+                except ValueError:
+                    return None
+            return None
+
         organizations_list = []
         
         for setting in all_settings:
@@ -11432,64 +11492,70 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
             admin_email = admin_user.get('username', '-') if admin_user else '-'
             
             plan_doc = plan_map.get(org_id)
-            billing_cycle = 'monthly'
+            billing_cycle = "monthly"
             days_left = None
-            toplam_odeme = 0
-            
+            toplam_odeme = pay_map.get(org_id, 0)
+            plan_id = "tier_trial"
+            abonelik_durumu_key = "none"
+
             if not plan_doc:
                 abonelik_paketi = "Trial"
-                plan_id = 'tier_trial'
+                plan_id = "tier_trial"
                 abonelik_durumu = "Kayıt Yok"
             else:
-                plan_id = plan_doc.get('plan_id', 'tier_trial')
-                plan_info = next((p for p in PLANS if p['id'] == plan_id), None)
-                abonelik_paketi = plan_info.get('name', 'Trial') if plan_info else 'Trial'
-                billing_cycle = plan_doc.get('billing_cycle', 'monthly')
-                
-                if plan_id == 'tier_trial':
-                    trial_end = plan_doc.get('trial_end_date')
+                plan_id = plan_doc.get("plan_id", "tier_trial")
+                plan_info = next((p for p in PLANS if p["id"] == plan_id), None)
+                abonelik_paketi = plan_info.get("name", "Trial") if plan_info else "Trial"
+                billing_cycle = plan_doc.get("billing_cycle", "monthly")
+
+                if plan_id == "tier_trial":
+                    trial_end = _parse_plan_dt(plan_doc.get("trial_end_date"))
                     if trial_end:
-                        if isinstance(trial_end, str):
-                            trial_end = datetime.fromisoformat(trial_end.replace('Z', '+00:00'))
                         days_left = (trial_end - now).days
                         if days_left < 0:
                             abonelik_durumu = "Deneme Bitti"
+                            abonelik_durumu_key = "expired"
                         else:
                             abonelik_durumu = f"{days_left} Gün Kaldı"
+                            abonelik_durumu_key = "trial"
                     else:
                         abonelik_durumu = "Trial"
+                        abonelik_durumu_key = "trial"
                 else:
-                    next_payment = plan_doc.get('next_payment_date')
-                    if next_payment:
-                        if isinstance(next_payment, str):
-                            next_payment = datetime.fromisoformat(next_payment.replace('Z', '+00:00'))
-                        days_left = (next_payment - now).days
+                    # Ücretli: önce next_billing_date (Stripe checkout), sonra eski next_payment_date, sonra kota tarihi
+                    deadline = None
+                    for key in ("next_billing_date", "next_payment_date", "quota_reset_date"):
+                        deadline = _parse_plan_dt(plan_doc.get(key))
+                        if deadline:
+                            break
+                    if deadline:
+                        days_left = (deadline - now).days
                         if days_left < 0:
                             abonelik_durumu = "Süresi Doldu"
+                            abonelik_durumu_key = "expired"
                         else:
                             abonelik_durumu = "Aktif"
+                            abonelik_durumu_key = "active"
                     else:
                         abonelik_durumu = "Aktif"
-                
-                if plan_id != 'tier_trial':
-                    monthly_price = plan_info.get('monthly_price', 0) if plan_info else 0
-                    yearly_price = plan_info.get('yearly_price', 0) if plan_info else 0
-                    toplam_odeme = monthly_price if billing_cycle == 'monthly' else yearly_price
-            
+                        abonelik_durumu_key = "active"
+
             organizations_list.append({
                 "organization_id": org_id,
                 "isletme_adi": isletme_adi,
                 "telefon_numarasi": telefon_numarasi,
                 "admin_full_name": admin_full_name,
                 "admin_email": admin_email,
+                "plan_id": plan_id,
                 "abonelik_paketi": abonelik_paketi,
                 "billing_cycle": billing_cycle,
                 "abonelik_durumu": abonelik_durumu,
+                "abonelik_durumu_key": abonelik_durumu_key,
                 "days_left": days_left,
                 "toplam_odeme": toplam_odeme,
                 "bu_ayki_randevu_sayisi": appt_map.get(org_id, 0),
                 "toplam_musteri_sayisi": cust_map.get(org_id, 0),
-                "toplam_personel_sayisi": staff_map.get(org_id, 0)
+                "toplam_personel_sayisi": staff_map.get(org_id, 0),
             })
         
         return {"organizations": organizations_list}
@@ -11768,6 +11834,7 @@ async def get_whatsapp_message_logs(
     current_user: UserInDB = Depends(get_superadmin_user),
     db = Depends(get_db),
     status_filter: Optional[str] = None,   # ?status_filter=failed
+    organization_id: Optional[str] = None,  # işletme detayı — sadece bu org'a ait loglar
     limit: int = 200,
     skip: int = 0,
 ):
@@ -11781,32 +11848,79 @@ async def get_whatsapp_message_logs(
         if status_filter:
             query["status"] = status_filter
 
+        org_name_prefill = ""
+        if organization_id:
+            limit = min(max(limit, 1), 500)
+            recipient_set = set()
+            for coll_name in ("appointments", "customers"):
+                coll = getattr(db, coll_name)
+                async for doc in coll.find({"organization_id": organization_id}, {"phone": 1}):
+                    p = doc.get("phone")
+                    if not p:
+                        continue
+                    d = re.sub(r"\D", "", str(p))
+                    if len(d) >= 9:
+                        recipient_set.add(d)
+                        if len(d) >= 10:
+                            recipient_set.add(d[-10:])
+            sdoc = await db.settings.find_one({"organization_id": organization_id}, {"support_phone": 1, "company_name": 1})
+            if sdoc:
+                org_name_prefill = sdoc.get("company_name", "") or ""
+                sp = sdoc.get("support_phone")
+                if sp:
+                    d = re.sub(r"\D", "", str(sp))
+                    if len(d) >= 9:
+                        recipient_set.add(d)
+                        if len(d) >= 10:
+                            recipient_set.add(d[-10:])
+            if recipient_set:
+                query["recipient"] = {"$in": list(recipient_set)}
+            else:
+                logs = []
+                total = 0
+                failed_count = await db.whatsapp_message_logs.count_documents({"status": "failed"})
+                delivered_count = await db.whatsapp_message_logs.count_documents({"status": "delivered"})
+                read_count = await db.whatsapp_message_logs.count_documents({"status": "read"})
+                sent_count = await db.whatsapp_message_logs.count_documents({"status": "sent"})
+                return {
+                    "logs": [],
+                    "total": 0,
+                    "skip": skip,
+                    "limit": limit,
+                    "summary": {"sent": sent_count, "delivered": delivered_count, "read": read_count, "failed": failed_count},
+                }
+
         logs = await db.whatsapp_message_logs.find(
             query, {"_id": 0}
         ).sort("recorded_at", -1).skip(skip).limit(limit).to_list(limit)
 
-        # Enrich: phone → organization via appointments
-        all_phones = list({l.get("recipient", "") for l in logs if l.get("recipient")})
-        phone_org_map = {}
-        if all_phones:
-            pipeline = [
-                {"$match": {"phone": {"$in": ["+" + p for p in all_phones] + all_phones + ["0" + p[-10:] for p in all_phones if len(p) >= 10]}}},
-                {"$group": {"_id": "$phone", "org_id": {"$first": "$organization_id"}}},
-            ]
-            phone_orgs = await db.appointments.aggregate(pipeline).to_list(1000)
-            for po in phone_orgs:
-                norm = re.sub(r"\D", "", po["_id"]).lstrip("0")
-                phone_org_map[norm[-9:]] = po["org_id"]
+        if organization_id:
+            for log in logs:
+                log["organization_id"] = organization_id
+                log["org_name"] = org_name_prefill
+        else:
+            # Enrich: phone → organization via appointments
+            all_phones = list({l.get("recipient", "") for l in logs if l.get("recipient")})
+            phone_org_map = {}
+            if all_phones:
+                pipeline = [
+                    {"$match": {"phone": {"$in": ["+" + p for p in all_phones] + all_phones + ["0" + p[-10:] for p in all_phones if len(p) >= 10]}}},
+                    {"$group": {"_id": "$phone", "org_id": {"$first": "$organization_id"}}},
+                ]
+                phone_orgs = await db.appointments.aggregate(pipeline).to_list(1000)
+                for po in phone_orgs:
+                    norm = re.sub(r"\D", "", po["_id"]).lstrip("0")
+                    phone_org_map[norm[-9:]] = po["org_id"]
 
-            org_ids = list(set(phone_org_map.values()))
-            org_name_map = {}
-            if org_ids:
-                settings_docs = await db.settings.find(
-                    {"organization_id": {"$in": org_ids}},
-                    {"_id": 0, "organization_id": 1, "company_name": 1}
-                ).to_list(len(org_ids))
-                for s in settings_docs:
-                    org_name_map[s["organization_id"]] = s.get("company_name", "")
+                org_ids = list(set(phone_org_map.values()))
+                org_name_map = {}
+                if org_ids:
+                    settings_docs = await db.settings.find(
+                        {"organization_id": {"$in": org_ids}},
+                        {"_id": 0, "organization_id": 1, "company_name": 1}
+                    ).to_list(len(org_ids))
+                    for s in settings_docs:
+                        org_name_map[s["organization_id"]] = s.get("company_name", "")
 
             for log in logs:
                 recip = log.get("recipient", "")

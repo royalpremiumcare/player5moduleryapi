@@ -45,10 +45,10 @@ export default function OrgDrawer({ org, plans, onClose, onRefresh }) {
   const loadWaLogs = async () => {
     setLoadingWa(true);
     try {
-      const phone = org.telefon_numarasi?.replace(/\D/g, "");
-      const res = await api.get(`/superadmin/whatsapp-logs?limit=100`);
-      const all = res.data.logs || [];
-      setWaLogs(phone ? all.filter(l => l.recipient?.includes(phone.slice(-9))) : all.slice(0, 50));
+      const res = await api.get(
+        `/superadmin/whatsapp-logs?organization_id=${encodeURIComponent(org.organization_id)}&limit=500`
+      );
+      setWaLogs(res.data.logs || []);
     } catch { toast.error("WA logları yüklenemedi"); }
     finally { setLoadingWa(false); }
   };
@@ -231,9 +231,15 @@ export default function OrgDrawer({ org, plans, onClose, onRefresh }) {
                   className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                 >
                   <option value="">Seçin...</option>
-                  {(plans || []).map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} — {p.price_monthly}₺/ay</option>
-                  ))}
+                  {(plans || []).map((p) => {
+                    const y = p.price_yearly != null ? p.price_yearly : 0;
+                    const m = p.price_monthly != null ? p.price_monthly : 0;
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.name} — {m}₺/ay{y > 0 ? ` · ${y}₺/yıl` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
                 {selectedPlan && selectedPlan !== "tier_trial" && (
                   <div className="flex gap-2">

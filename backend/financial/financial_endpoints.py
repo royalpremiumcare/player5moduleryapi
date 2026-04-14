@@ -50,7 +50,7 @@ from .compliance import (
     set_kyc_verified,
 )
 from .wise_service import handle_wise_webhook, create_recipient_tr_iban, create_recipient_uk_bank
-from .currency_shield import get_current_rate
+from .currency_shield import get_current_rate, ensure_fresh_exchange_rate
 
 logger = logging.getLogger(__name__)
 
@@ -841,7 +841,7 @@ async def superadmin_overview(request: Request):
         "state": {"$in": ["frozen", "disputed"]},
     })
 
-    rate_doc = await get_current_rate(db)
+    rate_doc = await ensure_fresh_exchange_rate(db, max_age_seconds=300)
     rate_micro = rate_doc.get("rate_micro", 0) if rate_doc else 0
 
     from .money import rate_from_micro
