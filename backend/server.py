@@ -1,6 +1,7 @@
 from voice_ai_service import get_voice_ai_service
 from whatsapp_service import send_whatsapp_template, detect_language_from_phone
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -898,6 +899,104 @@ ai_service.set_socketio(sio)
 
 # --- Router prefix'i kaldırıldı ---
 api_router = APIRouter()
+
+
+# === HEALTH CHECK ENDPOINT ===
+@api_router.get("/health")
+async def health_check(request: Request):
+    """Comprehensive health check for all system components."""
+    import time as _time
+    checks = {}
+    overall_ok = True
+
+    # 1. MongoDB
+    try:
+        t0 = _time.monotonic()
+        db = getattr(request.app, "db", None)
+        if db is None:
+            raise Exception("db not initialised")
+        await db.command("ping")
+        checks["mongodb"] = {"status": "ok", "latency_ms": round((_time.monotonic() - t0) * 1000, 1)}
+    except Exception as e:
+        checks["mongodb"] = {"status": "error", "detail": str(e)}
+        overall_ok = False
+
+    # 2. Redis
+    try:
+        t0 = _time.monotonic()
+        redis_client = getattr(request.app.state, "redis_client", None) or getattr(request.app, "redis_client", None)
+        if redis_client is None:
+            raise Exception("redis not initialised")
+        await redis_client.ping()
+        checks["redis"] = {"status": "ok", "latency_ms": round((_time.monotonic() - t0) * 1000, 1)}
+    except Exception as e:
+        checks["redis"] = {"status": "error", "detail": str(e)}
+        overall_ok = False
+
+    # 3. Scheduler
+    try:
+        checks["scheduler"] = {
+            "status": "ok" if scheduler.running else "error",
+            "jobs": len(scheduler.get_jobs()),
+        }
+        if not scheduler.running:
+            overall_ok = False
+    except Exception as e:
+        checks["scheduler"] = {"status": "error", "detail": str(e)}
+        overall_ok = False
+
+    # 4. Stripe
+    stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
+    checks["stripe"] = {
+        "status": "ok" if stripe_key.startswith("sk_live_") else "warning",
+        "mode": "live" if stripe_key.startswith("sk_live_") else "test" if stripe_key.startswith("sk_test_") else "missing",
+    }
+
+    # 5. Wise
+    wise_token = os.environ.get("WISE_API_TOKEN", "")
+    wise_env = os.environ.get("WISE_ENVIRONMENT", "sandbox")
+    checks["wise"] = {
+        "status": "ok" if wise_token and wise_env == "production" else "warning",
+        "environment": wise_env,
+        "token_set": bool(wise_token),
+    }
+
+    # 6. Brevo (Email)
+    checks["brevo_email"] = {"status": "ok" if os.environ.get("BREVO_API_KEY") else "error"}
+
+    # 7. WhatsApp (Meta)
+    checks["whatsapp"] = {"status": "ok" if os.environ.get("META_ACCESS_TOKEN") else "error"}
+
+    # 8. Gemini AI
+    checks["gemini_ai"] = {"status": "ok" if os.environ.get("GOOGLE_GEMINI_KEY") else "warning"}
+
+    # 9. Sentry
+    checks["sentry"] = {
+        "status": "ok" if os.environ.get("SENTRY_DSN") else "warning",
+        "env": os.environ.get("SENTRY_ENV", "unknown"),
+    }
+
+    # 10. Database collections
+    if checks["mongodb"]["status"] == "ok":
+        try:
+            col_names = await db.list_collection_names()
+            checks["db_collections"] = {"status": "ok", "count": len(col_names)}
+        except Exception:
+            checks["db_collections"] = {"status": "error"}
+
+    from starlette.status import HTTP_200_OK, HTTP_503_SERVICE_UNAVAILABLE
+    status_code = HTTP_200_OK if overall_ok else HTTP_503_SERVICE_UNAVAILABLE
+
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "healthy" if overall_ok else "degraded",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": "1.0.0",
+            "checks": checks,
+        },
+    )
+
 
 # === SOCKET.IO EVENT HANDLERS ===
 @sio.event

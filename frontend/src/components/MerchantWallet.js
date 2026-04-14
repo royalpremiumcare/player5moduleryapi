@@ -209,15 +209,15 @@ export default function MerchantWallet({ onNavigate }) {
       </div>
 
       {/* Info note */}
-      <div className="bg-white border border-gray-100 rounded-xl p-3 flex items-start gap-2.5">
-        <Shield className="h-4 w-4 text-gray-300 mt-0.5 flex-shrink-0" />
-        <div className="text-xs text-gray-400 space-y-1">
-          <p className="font-medium text-gray-500">Ödeme süreçleri hakkında</p>
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-start gap-2.5">
+        <Shield className="h-4 w-4 text-slate-500 mt-0.5 flex-shrink-0" />
+        <div className="text-xs text-slate-600 space-y-1">
+          <p className="font-semibold text-slate-700">Ödeme süreçleri hakkında</p>
           <ul className="space-y-0.5">
-            <li>• Ödemeler alındıktan sonra <span className="font-semibold text-gray-500">~2 iş günü</span> içinde kullanılabilir bakiyeye geçer.</li>
-            <li>• İade penceresi: ilk <span className="font-semibold text-gray-500">12 saat</span> içinde müşteriye iade yapılabilir.</li>
-            <li>• IBAN değişikliği sonrası güvenlik bekleme süresi: <span className="font-semibold text-gray-500">48 saat</span>.</li>
-            <li>• Ödeme çekimleri Wise üzerinden <span className="font-semibold text-gray-500">1-2 iş günü</span> içinde hesabınıza ulaşır.</li>
+            <li>• Ödemeler alındıktan sonra <span className="font-bold text-slate-800">~2 iş günü</span> içinde kullanılabilir bakiyeye geçer.</li>
+            <li>• İade penceresi: ilk <span className="font-bold text-slate-800">12 saat</span> içinde müşteriye iade yapılabilir.</li>
+            <li>• IBAN değişikliği sonrası güvenlik bekleme süresi: <span className="font-bold text-slate-800">48 saat</span>.</li>
+            <li>• Ödeme çekimleri Wise üzerinden <span className="font-bold text-slate-800">1-2 iş günü</span> içinde hesabınıza ulaşır.</li>
           </ul>
         </div>
       </div>

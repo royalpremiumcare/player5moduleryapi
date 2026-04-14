@@ -595,6 +595,12 @@ async def handle_wise_webhook(
             trigger=f"wise.{wise_status}",
         )
 
+        if new_state in ("paid_out", "failed"):
+            try:
+                await _send_payout_email(db, tx, new_state)
+            except Exception as mail_err:
+                logger.warning("Payout email failed (non-blocking): %s", mail_err)
+
         await db.webhook_events.update_one(
             {"event_id": event_id},
             {"$set": {
@@ -622,3 +628,36 @@ async def handle_wise_webhook(
             }},
         )
         return {"status": "failed", "error": str(e)}
+
+
+async def _send_payout_email(db, tx: dict, new_state: str):
+    """Send payout success/failure email to the merchant (non-blocking)."""
+    import asyncio
+    from .email_notifications import send_payout_success_email, send_payout_failed_email
+
+    org_id = tx.get("organization_id", "")
+    settings = await db.settings.find_one({"organization_id": org_id}, {"_id": 0})
+    user = await db.users.find_one({"organization_id": org_id, "role": "admin"}, {"_id": 0})
+
+    if not user or not settings:
+        logger.warning("Cannot send payout email: user/settings not found for org %s", org_id)
+        return
+
+    to_email = user.get("username", "")
+    merchant_name = settings.get("company_name", "İşletme")
+    amount_minor = tx.get("amount_display_minor", 0)
+    base_currency = tx.get("base_currency", "TRY")
+
+    if not to_email:
+        return
+
+    if new_state == "paid_out":
+        payout_rail = "wise" if tx.get("wise_transfer_id") else "unknown"
+        await asyncio.to_thread(
+            send_payout_success_email, to_email, merchant_name, amount_minor, base_currency, payout_rail
+        )
+    elif new_state == "failed":
+        error_msg = tx.get("failure_reason", "")
+        await asyncio.to_thread(
+            send_payout_failed_email, to_email, merchant_name, amount_minor, base_currency, error_msg
+        )
