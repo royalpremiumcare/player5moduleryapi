@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../api/api";
 import { toast } from "sonner";
-import { Wallet, ArrowUpRight, ArrowDownLeft, Snowflake, Clock, TrendingUp, Send, ChevronRight, Shield, AlertTriangle, ArrowLeft } from "lucide-react";
+import { Wallet, ArrowUpRight, ArrowDownLeft, Snowflake, Clock, TrendingUp, Send, ChevronRight, ChevronDown, Shield, AlertTriangle, ArrowLeft } from "lucide-react";
 
 const formatMoney = (minor, currency) => {
   if (currency === "GBP") {
@@ -25,6 +25,7 @@ export default function MerchantWallet({ onNavigate }) {
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [txPage, setTxPage] = useState(1);
   const [txTotal, setTxTotal] = useState(0);
+  const [showPaymentInfo, setShowPaymentInfo] = useState(false);
 
   const loadWallet = useCallback(async () => {
     try {
@@ -208,18 +209,24 @@ export default function MerchantWallet({ onNavigate }) {
         </div>
       </div>
 
-      {/* Info note */}
-      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-start gap-2.5">
-        <Shield className="h-4 w-4 text-slate-500 mt-0.5 flex-shrink-0" />
-        <div className="text-xs text-slate-600 space-y-1">
-          <p className="font-semibold text-slate-700">Ödeme süreçleri hakkında</p>
-          <ul className="space-y-0.5">
+      {/* Info note — collapsible */}
+      <div
+        className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 cursor-pointer select-none"
+        onClick={() => setShowPaymentInfo(prev => !prev)}
+      >
+        <div className="flex items-center gap-2.5">
+          <Shield className="h-4 w-4 text-slate-500 flex-shrink-0" />
+          <p className="text-xs font-semibold text-slate-700 flex-1">Ödeme süreçleri hakkında</p>
+          <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${showPaymentInfo ? 'rotate-180' : ''}`} />
+        </div>
+        {showPaymentInfo && (
+          <ul className="text-xs text-slate-600 space-y-0.5 mt-2.5 ml-6.5 pl-[26px]">
             <li>• Ödemeler alındıktan sonra <span className="font-bold text-slate-800">~2 iş günü</span> içinde kullanılabilir bakiyeye geçer.</li>
             <li>• İade penceresi: ilk <span className="font-bold text-slate-800">12 saat</span> içinde müşteriye iade yapılabilir.</li>
             <li>• IBAN değişikliği sonrası güvenlik bekleme süresi: <span className="font-bold text-slate-800">48 saat</span>.</li>
             <li>• Ödeme çekimleri Wise üzerinden <span className="font-bold text-slate-800">1-2 iş günü</span> içinde hesabınıza ulaşır.</li>
           </ul>
-        </div>
+        )}
       </div>
 
       {/* Payout warnings */}

@@ -225,10 +225,21 @@ export default function SAFinancial() {
                   <tr key={w.organization_id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-3">
                       <div className="text-sm font-medium text-gray-900">{w.org_name || <span className="text-gray-400 italic">Silinmiş İşletme</span>}</div>
-                      {w.account_holder_name && (
-                        <div className="text-[11px] text-indigo-600">IBAN: {w.account_holder_name}</div>
+                      {w.admin_name && (
+                        <div className="text-[11px] text-gray-500">Admin: {w.admin_name}</div>
                       )}
-                      <div className="text-[10px] font-mono text-gray-400">{(w.organization_id || "").slice(0, 12)}...</div>
+                      {w.account_holder_name && (
+                        <div className="text-[11px] text-indigo-600">IBAN Sahibi: {w.account_holder_name}</div>
+                      )}
+                      {w.iban && (
+                        <div
+                          className="text-[11px] font-mono text-gray-500 cursor-pointer hover:text-indigo-600 transition-colors"
+                          title="Kopyalamak için tıkla"
+                          onClick={() => { navigator.clipboard.writeText(w.iban); toast.success("IBAN kopyalandı"); }}
+                        >
+                          IBAN: {w.iban}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-3">
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${

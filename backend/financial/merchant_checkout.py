@@ -357,7 +357,7 @@ async def _send_post_payment_notifications(db, apt: Dict[str, Any], org_id: str)
                 send_whatsapp_template,
                 customer_phone, "CONFIRMATION", customer_name, company_name,
                 apt_date, apt_time, service_name,
-                support_phone or "+44 7474 626 900",
+                support_phone or "Destek Hattı",
                 business_lat=lat, business_lng=lng, business_address=address,
             )
             logger.info("Post-payment WhatsApp sent to %s", customer_phone)

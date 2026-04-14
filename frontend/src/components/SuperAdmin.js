@@ -40,7 +40,7 @@ const SuperAdmin = ({ onNavigate }) => {
 
   return (
     // h-screen yerine h-full ve w-full verdik ki fixed wrapper'a tam otursun
-    <div className="flex h-full w-full bg-gray-50 overflow-hidden">
+    <div className="superadmin-panel flex h-full w-full bg-gray-50 overflow-hidden">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div

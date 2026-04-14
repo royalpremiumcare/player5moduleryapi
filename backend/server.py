@@ -4287,7 +4287,7 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             appointment_date=appointment.appointment_date,
             appointment_time=appointment.appointment_time,
             service_name=service['name'],
-            support_phone=support_phone or "+44 7474 626 900",
+            support_phone=support_phone or "Destek Hattı",
             business_lat=lat,
             business_lng=lng,
             business_address=location.get('address'),
@@ -4627,7 +4627,7 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
 
                 wa_settings = await db.settings.find_one({"organization_id": current_user.organization_id})
                 wa_company = (wa_settings or {}).get("company_name", "İşletme")
-                wa_support = (wa_settings or {}).get("phone", "")
+                wa_support = (wa_settings or {}).get("support_phone", "") or (wa_settings or {}).get("phone", "")
                 wa_loc = (wa_settings or {}).get("location") or {}
                 wa_coords = wa_loc.get("coordinates", {})
                 wa_lat = wa_coords.get("lat")
@@ -4668,7 +4668,7 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                         first_apt["phone"], "SESSION_PACKAGE",
                         first_apt["customer_name"], wa_company,
                         first_apt["appointment_date"], first_apt["appointment_time"],
-                        first_apt["service_name"], wa_support or "+44 7474 626 900",
+                        first_apt["service_name"], wa_support or "Destek Hattı",
                         business_lat=wa_lat, business_lng=wa_lng, business_address=wa_address,
                         session_count=session_total, session_dates_text=session_dates_text,
                     )
@@ -10799,22 +10799,22 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
 
     # Randevu durumunu kontrol et (bitiş saatine göre) — "Ödeme Bekleniyor" override edilmez
     if appointment_data.get('status') != 'Ödeme Bekleniyor':
-    try:
-        turkey_tz = ZoneInfo("Europe/Istanbul")
-        now = datetime.now(turkey_tz)
-        dt_str = f"{appointment.appointment_date} {appointment.appointment_time}"
-        naive_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
-        appointment_dt = naive_dt.replace(tzinfo=turkey_tz)
-        service_duration_minutes = service.get('duration', 30)
-        completion_threshold = appointment_dt + timedelta(minutes=service_duration_minutes)
-        if now >= completion_threshold:
-            appointment_data['status'] = 'Tamamlandı'
-            appointment_data['completed_at'] = datetime.now(timezone.utc).isoformat()
-        else:
+        try:
+            turkey_tz = ZoneInfo("Europe/Istanbul")
+            now = datetime.now(turkey_tz)
+            dt_str = f"{appointment.appointment_date} {appointment.appointment_time}"
+            naive_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+            appointment_dt = naive_dt.replace(tzinfo=turkey_tz)
+            service_duration_minutes = service.get('duration', 30)
+            completion_threshold = appointment_dt + timedelta(minutes=service_duration_minutes)
+            if now >= completion_threshold:
+                appointment_data['status'] = 'Tamamlandı'
+                appointment_data['completed_at'] = datetime.now(timezone.utc).isoformat()
+            else:
+                appointment_data['status'] = 'Bekliyor'
+        except (ValueError, TypeError) as e:
+            logging.warning(f"Public randevu durumu ayarlanırken tarih hatası: {e}")
             appointment_data['status'] = 'Bekliyor'
-    except (ValueError, TypeError) as e:
-        logging.warning(f"Public randevu durumu ayarlanırken tarih hatası: {e}")
-        appointment_data['status'] = 'Bekliyor'
     
     appointment_obj = Appointment(**appointment_data, organization_id=organization_id)
     doc = appointment_obj.model_dump()
@@ -11007,21 +11007,19 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     is_pending_payment = appointment_data.get('payment_status') == 'pending_payment'
 
     if not is_pending_payment:
-    # Emit WebSocket event for real-time update (bu hızlı, bekletmez)
-    appointment_for_emit = appointment_obj.model_dump()
-    appointment_for_emit['created_at'] = appointment_for_emit['created_at'].isoformat()
-    logger.info(f"About to emit appointment_created for org: {organization_id} (public endpoint)")
-    try:
-        await emit_to_organization(
-            organization_id,
-            'appointment_created',
-            {'appointment': appointment_for_emit}
-        )
-        logger.info(f"Successfully emitted appointment_created for org: {organization_id} (public endpoint)")
-    except Exception as emit_error:
-        logger.error(f"Failed to emit appointment_created (public endpoint): {emit_error}", exc_info=True)
-    
-    asyncio.create_task(send_notifications_background())
+        appointment_for_emit = appointment_obj.model_dump()
+        appointment_for_emit['created_at'] = appointment_for_emit['created_at'].isoformat()
+        logger.info(f"About to emit appointment_created for org: {organization_id} (public endpoint)")
+        try:
+            await emit_to_organization(
+                organization_id,
+                'appointment_created',
+                {'appointment': appointment_for_emit}
+            )
+            logger.info(f"Successfully emitted appointment_created for org: {organization_id} (public endpoint)")
+        except Exception as emit_error:
+            logger.error(f"Failed to emit appointment_created (public endpoint): {emit_error}", exc_info=True)
+        asyncio.create_task(send_notifications_background())
     else:
         logging.info(f"⏳ Ödeme bekleniyor — bildirimler ödeme sonrası gönderilecek: {doc.get('id', '')}")
     

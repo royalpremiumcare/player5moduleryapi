@@ -872,8 +872,10 @@
     "notificationsBrowserNotSupportedRepair": "Your browser does not support notifications",
     "helpCenter": "Help Centre",
     "contact": "Contact",
+    "contactSubtitle": "Phone, WhatsApp, Email",
+    "callUs": "Call Us",
     "whatsappSupport": "WhatsApp Support",
-    "whatsappSupportSubtitle": "Message us on WhatsApp",
+    "whatsappSupportSubtitle": "Send a message, we'll reply quickly",
     "helpCentre": {
       "title": "Help Centre",
       "backToSettings": "Back to Settings",

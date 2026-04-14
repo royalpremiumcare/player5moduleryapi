@@ -874,8 +874,10 @@
     "notificationsBrowserNotSupportedRepair": "Tarayıcınız bildirimleri desteklemiyor",
     "helpCenter": "Yardım Merkezi",
     "contact": "İletişim",
+    "contactSubtitle": "Telefon, WhatsApp, E-posta",
+    "callUs": "Bizi Arayın",
     "whatsappSupport": "WhatsApp Destek",
-    "whatsappSupportSubtitle": "Bize WhatsApp üzerinden yazın",
+    "whatsappSupportSubtitle": "Mesaj gönderin, hızlıca yanıtlayalım",
     "helpCentre": {
       "title": "Yardım Merkezi",
       "backToSettings": "Ayarlara Dön",

@@ -902,16 +902,16 @@ async def superadmin_wallets(
                 "iban": s.get("iban", ""),
             }
 
-        # For orgs without a name yet, try admin user's full_name
-        missing_ids = [oid for oid in org_ids if not org_names.get(oid)]
-        if missing_ids:
-            admins = await db.users.find(
-                {"organization_id": {"$in": missing_ids}, "role": "admin"},
-                {"_id": 0, "organization_id": 1, "full_name": 1, "username": 1}
-            ).to_list(len(missing_ids))
-            for a in admins:
-                if a["organization_id"] not in org_names or not org_names[a["organization_id"]]:
-                    org_names[a["organization_id"]] = a.get("full_name") or a.get("username") or ""
+        # Fetch admin full_name for all orgs (for KYC comparison)
+        org_admin_names = {}
+        admins = await db.users.find(
+            {"organization_id": {"$in": org_ids}, "role": "admin"},
+            {"_id": 0, "organization_id": 1, "full_name": 1, "username": 1}
+        ).to_list(len(org_ids))
+        for a in admins:
+            org_admin_names[a["organization_id"]] = a.get("full_name") or a.get("username") or ""
+            if a["organization_id"] not in org_names or not org_names[a["organization_id"]]:
+                org_names[a["organization_id"]] = a.get("full_name") or a.get("username") or ""
 
     for w in wallets:
         w.pop("_id", None)
@@ -920,6 +920,7 @@ async def superadmin_wallets(
         w["available_display"] = format_display(w.get("available_balance_minor", 0), bc)
         w["pool_gbp_display"] = format_display(w.get("pool_balance_gbp_minor", 0), "GBP")
         w["org_name"] = org_names.get(oid, "")
+        w["admin_name"] = org_admin_names.get(oid, "") if org_ids else ""
         iban_info = org_iban_holders.get(oid, {})
         w["account_holder_name"] = iban_info.get("account_holder_name", "")
         w["iban"] = iban_info.get("iban", "")

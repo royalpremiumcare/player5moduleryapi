@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { 
   Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, 
   ArrowLeft, DollarSign, Bell, BellOff, MapPin, Wrench, ShieldCheck, Globe,
-  Wallet, CreditCard, Phone, MessageCircle
+  Wallet, CreditCard, Phone, MessageCircle, Mail
 } from "lucide-react"; 
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -65,6 +65,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
   const isStaff = userRole === 'staff' || userRole === 'personnel';
   const [notificationStatus, setNotificationStatus] = useState('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const [showContact, setShowContact] = useState(false);
 
   // --- BİLDİRİM MANTIĞI ---
   useEffect(() => {
@@ -228,6 +229,49 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
   };
 
   // --- RENDER ---
+
+  if (showContact) {
+    return (
+      <div className="min-h-screen bg-gray-50/50 pb-24 font-sans selection:bg-gray-200">
+        <div className="px-5 pt-8 pb-4 bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowContact(false)}
+              className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-zinc-600 transition-colors"
+            >
+              <ArrowLeft className="w-6 h-6" />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">{t('settings.contact', 'İletişim')}</h1>
+            </div>
+          </div>
+        </div>
+        <div className="px-5 mt-6 space-y-3">
+          <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
+            <SettingItem
+              icon={Phone}
+              title={t('settings.callUs', 'Bizi Arayın')}
+              subtitle="+90 540 595 3250"
+              onClick={() => window.open('tel:+905405953250')}
+            />
+            <SettingItem
+              icon={MessageCircle}
+              title="WhatsApp"
+              subtitle={t('settings.whatsappSupportSubtitle', 'Mesaj gönderin, hızlıca yanıtlayalım')}
+              onClick={() => window.open('https://wa.me/905405953250', '_blank', 'noopener,noreferrer')}
+            />
+            <SettingItem
+              icon={Mail}
+              title="E-posta"
+              subtitle="info@plannapp.co"
+              onClick={() => window.open('mailto:info@plannapp.co')}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50/50 pb-24 font-sans selection:bg-gray-200">
       
@@ -365,33 +409,12 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
             onClick={() => onNavigate && onNavigate("help-center")}
           />
 
-          <div className="px-4 py-3 border-b border-zinc-100 last:border-b-0">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-9 h-9 rounded-xl bg-zinc-100 flex items-center justify-center flex-shrink-0">
-                <Phone className="w-[18px] h-[18px] text-zinc-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[15px] font-semibold text-zinc-800 tracking-tight">{t('settings.contact', 'İletişim')}</p>
-                <p className="text-xs text-zinc-400 truncate">+90 540 595 3250</p>
-              </div>
-            </div>
-            <div className="flex gap-2 ml-12">
-              <button
-                onClick={() => window.open('tel:+905405953250')}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-medium transition-colors"
-              >
-                <Phone className="w-3.5 h-3.5" />
-                {t('settings.callUs', 'Ara')}
-              </button>
-              <button
-                onClick={() => window.open('https://wa.me/905405953250', '_blank', 'noopener,noreferrer')}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#128C7E] text-xs font-medium transition-colors"
-              >
-                <MessageCircle className="w-3.5 h-3.5" />
-                WhatsApp
-              </button>
-            </div>
-          </div>
+          <SettingItem
+            icon={Phone}
+            title={t('settings.contact', 'İletişim')}
+            subtitle={t('settings.contactSubtitle', 'Telefon, WhatsApp, E-posta')}
+            onClick={() => setShowContact(true)}
+          />
 
           <SettingItem 
             icon={LogOut} 
