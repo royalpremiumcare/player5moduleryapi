@@ -328,6 +328,13 @@ async def fund_single_transfer(transfer_id: str) -> Dict[str, Any]:
             headers=_headers(),
             timeout=15,
         )
+        if resp.status_code >= 400:
+            logger.error(
+                "Fund single transfer failed: id=%s status=%s body=%s",
+                transfer_id,
+                resp.status_code,
+                (resp.text or "")[:2000],
+            )
         resp.raise_for_status()
         data = resp.json()
         logger.info("Single transfer funded: id=%s status=%s", transfer_id, data.get("status"))

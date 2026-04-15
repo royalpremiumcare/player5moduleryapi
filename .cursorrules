@@ -1,0 +1,338 @@
+# PLANN - Proje Kuralları ve Mimari Standartlar
+# Bu dosya, PLANN projesinin tüm geliştirme standartlarını tanımlar.
+# Tüm otonom kodlama ve kod üretimlerinde bu kurallar rehber alınmalıdır.
+
+## Proje Kimliği
+
+- **Proje Adı:** PLANN (plannapp.co / plannapp.co.uk)
+- **Şirket:** PLANNAPP LTD (Company No: 16148498, İngiltere ve Galler)
+- **Ürün:** Randevu, müşteri yönetimi ve ödeme altyapısı sunan SaaS platformu
+- **Hedef Pazar:** Türkiye (TR) ve İngiltere (UK) — çift para birimi (TRY / GBP)
+- **Dil Desteği:** Türkçe ve İngilizce (i18n)
+- **Platform:** Web (PWA) + Mobil (Capacitor / iOS / Android)
+
+---
+
+## Genel Mimari
+
+```
+/var/www/player5moduleryapi/
+├── backend/              # FastAPI + Motor + Socket.IO monolith
+│   ├── server.py         # Ana uygulama (~12.5k satır, tüm rotalar)
+│   ├── app/              # Modüler refaktör (v1 routers, core, schemas)
+│   ├── financial/        # Merchant ödeme motoru (Stripe, Wise, fee, payout)
+│   ├── ai_service.py     # Gemini AI entegrasyonu
+│   ├── whatsapp_service.py # Meta Cloud API WhatsApp
+│   ├── voice_ai_service.py # Gemini Live Audio
+│   ├── cache.py          # Redis cache decorator
+│   ├── rate_limit.py     # slowapi rate limiting
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/             # React (CRA + CRACO) + Tailwind + shadcn
+│   ├── src/
+│   │   ├── components/   # PascalCase .js/.jsx bileşenleri
+│   │   ├── components/ui/# shadcn-style Radix primitifler (kebab-case .jsx)
+│   │   ├── api/api.js    # Merkezi axios instance
+│   │   ├── context/      # AuthContext, ThemeContext
+│   │   ├── i18n/         # i18next, bundled JSON çeviriler
+│   │   └── lib/utils.js  # cn() yardımcı fonksiyonu
+│   ├── Dockerfile
+│   └── tailwind.config.js
+├── docker-compose.yml    # MongoDB + Redis + Backend + Frontend
+├── system_configs/       # Nginx SSL/proxy konfigürasyonları
+└── birlestirici.py, temizlik.py, live_log_viewer.py  # Ops/ETL scriptleri
+```
+
+---
+
+## Backend Kuralları
+
+### Teknoloji Yığını
+- **Framework:** FastAPI 0.110.x
+- **ASGI Server:** Uvicorn (17 worker, Socket.IO wrapping)
+- **Database:** MongoDB (Motor async driver, pymongo 4.5.x)
+- **Cache:** Redis (aioredis/redis-py 5.x async)
+- **Realtime:** python-socketio (AsyncServer + AsyncRedisManager)
+- **Auth:** JWT (python-jose, OAuth2PasswordBearer)
+- **AI:** Google Gemini (google-generativeai, google-genai)
+- **Email:** Brevo (sib-api-v3-sdk)
+- **SMS:** İletimerkezi
+- **Push:** Web Push (VAPID), Firebase Cloud Messaging
+- **Error Tracking:** Sentry
+- **Rate Limiting:** slowapi + limits
+- **Scheduler:** APScheduler (5dk interval hatırlatıcılar)
+
+### Dosya Adlandırma (Backend)
+- Snake_case Python modülleri: `ai_service.py`, `whatsapp_service.py`, `fee_calculator.py`
+- Financial paketi domain-bazlı: `merchant_checkout.py`, `currency_shield.py`, `state_machine.py`
+- Test dosyaları: `test_` prefix ile `backend/tests/` altında
+
+### API Tasarım Kuralları
+- Ana router: `api_router` prefix `/api` ile mount edilir
+- Financial rotalar: `/api/merchant/...`, `/api/superadmin/financial/...`
+- Webhook endpointleri: `/webhook/stripe`, `/payments/webhook/stripe` (uyumluluk duplikasyonları mevcut)
+- WhatsApp webhook: `/webhook` ve `/api/webhook`
+- Response format: Doğrudan dict return, FastAPI otomatik JSON serialize
+- Hata durumlarında `HTTPException` fırlat; status kodları: 400 (bad request), 401 (unauthorized), 403 (forbidden), 404 (not found), 429 (rate limit)
+
+### Veritabanı Kuralları (MongoDB)
+- **Multi-tenant izolasyon:** HER sorgu `organization_id` filtresi içermelidir (superadmin hariç)
+- Collection isimleri: snake_case, çoğul (`users`, `appointments`, `services`, `customers`, `settings`)
+- Financial collectionlar: `merchant_transactions`, `merchant_wallets`, `webhook_events`, `payout_batches`, `exchange_rates`
+- Startup'ta indeks oluşturma: `appointments`, `users` (unique slug), `settings` (unique organization_id)
+- ID alanları: MongoDB ObjectId string'e cast edilerek kullanılır
+- Tarih alanları: `datetime` objeleri, UTC
+- Randevu durumları Türkçe: `Bekliyor`, `Tamamlandı`, `İptal`, `Gelmedi`
+
+### Redis Kullanım Kalıpları
+- **Socket.IO scaling:** `redis://plann_redis:6379/0` (hardcoded manager URL)
+- **HTTP Cache:** `plann:org_{org_id}:{prefix}` key pattern; `cache_result` decorator
+- **Rate Limiting:** slowapi + limits async storage
+- **WhatsApp doğrulama:** `plann:pending:{code}`, `plann:verified:{code}`
+- **Distributed lock:** `reminder_lock:{YYYYMMDDHHMM}` SET NX EX
+- Cache invalidasyonu: İlgili entity değiştiğinde `invalidate_cache` çağrılmalı
+
+### Kimlik Doğrulama
+- `OAuth2PasswordBearer(tokenUrl="/api/token")`
+- JWT payload: `sub` (user_id), `role`, `org_id`, `can_view_all_appointments`
+- Roller: `superadmin`, `admin`, `staff`, `marketing`
+- Her korumalı endpoint `get_current_user` dependency kullanmalı
+- Socket.IO bağlantılarında JWT auth dict, query veya Authorization header'dan alınır
+- Geçersiz token → public session (`is_public: True`)
+
+### Hata Yakalama Standartları
+- Webhook ve scheduler fonksiyonlarında: geniş `try/except` + `logger.error(..., exc_info=True)`
+- API endpointlerinde: `except HTTPException: raise` ile status kodlarını koru, sonra genel `except Exception`
+- Sentry otomatik olarak unhandled exception'ları yakalar
+- Loglama: Python `logging` modülü, `logger = logging.getLogger(__name__)`
+
+### Çoklu Para Birimi ve Ödeme Kuralları (KRİTİK İŞ KURALLARI)
+- **SaaS Abonelik:** Stripe + PayTR (Türkiye için TL)
+  - Lookup key formatı: `{plan}_{cycle}_{currency}` (örn: `professional_monthly_gbp`)
+  - Plan metadata'sında randevu limitleri
+- **Merchant Ödeme Motoru** (financial/ paketi):
+  - `fee_calculator.py`: `seller_pays` (komisyon merchant'tan) vs `buyer_pays` (komisyon müşteriden)
+  - Tier bazlı komisyon oranları `money.get_tier_config` ile
+  - Deposit kuralları: `full_online`, `deposit` (sabit/yüzde), `on_site` (0 online)
+  - `base_currency`: Organizasyon bazında GBP veya TRY
+  - `currency_shield.py`: GBP/TRY kur takibi, buffer oranları, TRY tier limit güncellemesi
+  - Webhook idempotency: `webhook_events` collection'ında `event_id` ile tekrar işleme engeli
+  - State machine: `state_machine.py` ile transaction durumu yönetimi + wallet güncellemesi
+  - Wise API: Uluslararası payout'lar için
+- Para birimleri minor unit (kuruş/pence) olarak saklanır; `formatMoney` ile gösterim
+
+### Environment Variable Standartları
+- Tümü `backend/.env` dosyasından `load_dotenv` ile yüklenir
+- Prefix yok, BÜYÜK_HARF_SNAKE_CASE: `MONGO_URL`, `DB_NAME`, `JWT_SECRET_KEY`
+- Stripe: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY`
+- WhatsApp: `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`, `META_API_VERSION`
+- Feature flag'lar: `AUDIT_LOGS_ENABLED`, `RATE_LIMIT_ENABLED`, `DEBUG`
+- CORS: `CORS_ORIGINS` (virgülle ayrılmış veya `*`)
+- Redis: `REDIS_URL` (varsayılan `redis://plann_redis:6379/0`)
+
+---
+
+## Frontend Kuralları
+
+### Teknoloji Yığını
+- **Framework:** React 18+ (CRA + CRACO)
+- **Styling:** Tailwind CSS + CSS Variables (HSL token sistemi)
+- **UI Primitifler:** Radix UI + shadcn-style `components/ui/` (CVA + cn())
+- **İkonlar:** Lucide React
+- **Routing:** React Router DOM v7
+- **HTTP:** Axios (merkezi instance)
+- **i18n:** i18next + react-i18next (bundled JSON)
+- **Realtime:** socket.io-client
+- **Mobil:** Capacitor (iOS + Android)
+- **Toast:** Sonner
+- **Gözlemleme:** Sentry React
+- **Tarih:** date-fns + locale desteği (tr, enGB)
+
+### Dosya Adlandırma (Frontend)
+- Feature bileşenleri: **PascalCase** `.js` — `Dashboard.js`, `MerchantWallet.js`, `AppointmentFormWizard.js`
+- Super Admin alt bileşenleri: `SA` prefix — `SAFinancial.js`, `SAOverview.js`, `SAOrganizations.js`
+- UI primitifleri (shadcn): **kebab-case** `.jsx` — `button.jsx`, `dropdown-menu.jsx`, `alert-dialog.jsx`
+- Context dosyaları: `AuthContext.js`, `ThemeContext.js`
+- Utility dosyaları: camelCase — `utils.js`, `platform.js`
+
+### Bileşen Mimarisi
+- Fonksiyonel bileşenler, default export
+- Props pattern: `onNavigate`, `onRefresh`, `userRole`, entity payload'ları, callback'ler
+- İç bileşenler dosya içinde tanımlanabilir (örn: `SettingItem` in `Settings.js`)
+- State yönetimi: **useState/useReducer/useCallback/useMemo** — Redux veya Zustand YOK
+- Global state: React Context (AuthContext, ThemeContext)
+- Referanslar (useRef): Socket instance'ları, notification batching, scroll/layout
+
+### Navigasyon Mimarisi (Hibrit)
+- **React Router:** Üst seviye sayfalar (landing, login, register, `/:slug` public booking, `/superadmin`)
+- **App.js içi view state:** Authenticated merchant panel navigasyonu `currentView` state ile
+  - Görünümler: `dashboard`, `calendar`, `settings`, `customers`, `merchant-wallet`, `merchant-payment-settings` vb.
+- `onNavigate` callback'i ile parent-child iletişim
+
+### API İletişim Standartları
+- Merkezi client: `api/api.js` — `axios.create({ baseURL: \`${BACKEND_URL}/api\` })`
+- Request interceptor: `Authorization: Bearer <token>` (localStorage veya sessionStorage)
+- 401 Response: Auth temizle, login'e yönlendir (bazı endpoint'ler hariç)
+- Public sayfalar: Ayrı axios instance, token olmadan
+- Accept-Language header: `i18n.language` ile otomatik gönderim
+- Hata gösterimi: `toast.error(err.response?.data?.detail || genel_mesaj)`
+
+### i18n Kuralları
+- Desteklenen diller: `tr` (Türkçe), `en` (İngilizce), fallback: `en`
+- Çeviri dosyaları: `frontend/src/i18n/locales/{tr,en}/translation.json`
+- Dil tespiti sırası: localStorage → Capacitor device locale → hostname (`plannapp.co.uk` → en, `plannapp.co` → tr) → browser
+- Kullanım: `useTranslation()` hook + `t('key.subkey')` pattern
+- **Her yeni UI metni çeviri dosyalarına eklenmeli, hardcode metin YASAK**
+
+### Kimlik Doğrulama (Frontend)
+- Login: `application/x-www-form-urlencoded` POST → `/api/token`
+- Token saklama: `localStorage` (beni hatırla) veya `sessionStorage`
+- JWT decode: `atob` + `JSON.parse` ile payload çıkarma
+- Socket auth: `{ auth: { token } }` + `join_organization` event'i ile org_id
+- Roller UI'da kontrol: `superadmin` → SuperAdmin paneli, `marketing` → MarketingPanel, `admin/staff` → merchant paneli
+
+---
+
+## Tasarım Dili ve UI Standartları (KRİTİK)
+
+### Felsefe
+- **Minimalist ve premium** — gereksiz süsleme yok, temiz çizgiler
+- **Mobile-first** — safe-area padding, touch-friendly boyutlar (min h-12 butonlar)
+- **Performans odaklı** — Android'de backdrop-blur devre dışı, transition optimizasyonu
+
+### Renk Paleti
+- **Ana Tema:** Siyah (`zinc-900`, `zinc-950`, `black`) — butonlar, header'lar, vurgu alanları
+- **Aksiyonlar / CTA:** `bg-zinc-900 hover:bg-black text-white` (birincil buton standardı)
+- **Başarı / Pozitif:** Emerald/Yeşil (`emerald-600`, `green-500 to emerald-600` gradient)
+- **Veri / Info:** Mavi-İndigo (`blue-500 to indigo-600` gradient)
+- **Uyarı:** Kırmızı (`destructive` token, `red-900`)
+- **Nötr yüzeyler:** `zinc-50`, `zinc-100`, `white` (light mode); `zinc-900`, `zinc-950` (dark mode)
+- **Public Booking sayfası:** Koyu galeri teması — `bg-zinc-950` sidebar, `bg-zinc-900` butonlar, beyaz metin
+- **shadcn token'ları:** CSS Variables (HSL) ile `--primary`, `--background`, `--foreground` vb.
+
+### Dark Mode
+- Tailwind `class` stratejisi (`darkMode: ["class"]`)
+- `ThemeContext` ile toggle, `localStorage` persist
+- CSS variable override: `:root` (light) / `.dark` (dark)
+
+### Stil Kuralları
+- **Tailwind-first:** className string'leri ile stil, inline style sadece safe-area ve istisnai durumlar
+- **cn() fonksiyonu:** Koşullu class birleştirme için `lib/utils.js`'den import
+- **Border radius:** `rounded-xl` (kartlar), `rounded-lg` (butonlar), `rounded-full` (avatar/badge)
+- **Gölge:** `shadow-md` (kartlar), `shadow-lg` (modal/overlay), `shadow-xl` (hero öğeler)
+- **Geçişler:** `transition-all`, `transition-colors`; `active:scale-[0.98]` veya `active:scale-95` buton tıklama efekti
+- **Animasyonlar:** `animate-in`, `fade-in`, `slide-in-from-top` (tailwindcss-animate)
+- **Input minimum font:** 16px (iOS zoom engelleme)
+- **Android:** `body.android-platform` class ile backdrop-blur devre dışı, transition sınırlama
+
+### Bileşen Stil Standardı
+```
+Birincil Buton:   bg-zinc-900 hover:bg-black text-white font-bold rounded-lg/xl h-12 shadow-lg
+İkincil Buton:    bg-white border border-zinc-200 text-zinc-900 hover:bg-zinc-50 rounded-lg
+Kart:             bg-white rounded-xl border border-zinc-100 shadow-md p-4/6
+Badge (başarı):   bg-emerald-50 text-emerald-700 border-emerald-200 rounded-full px-2 py-0.5
+Badge (uyarı):    bg-red-50 text-red-700 border-red-200 rounded-full
+Input:            h-12 rounded-lg/xl border-zinc-300 focus:ring-zinc-900
+Modal overlay:    fixed inset-0 z-50 bg-black/50 flex items-center justify-center
+```
+
+---
+
+## Docker ve Deployment Kuralları
+
+### Docker Compose Mimarisi
+- **mongodb:** `mongo:latest`, `--auth`, port `127.0.0.1:27017:27017` (sadece localhost)
+- **redis:** `redis:alpine`, iç ağ (port publish yok), container adı `plann_redis`
+- **backend:** `build: ./backend`, port `8002:8002`, 17 worker uvicorn, `env_file: ./backend/.env`
+- **frontend:** `build: ./frontend`, port `8081:80`, nginx ile static serve + API proxy
+
+### Nginx (Production / Hetzner)
+- HTTPS (Let's Encrypt / Certbot) port 443
+- Static build: `/var/www/royalpremiumcare_dev/frontend/build`
+- API proxy: `proxy_pass http://127.0.0.1:8002` → `/api/`, `/api/static/`
+- Socket.IO: `^~ /api/socket.io` — WebSocket upgrade, buffering off, uzun timeout'lar
+- SPA fallback: `try_files ... /index.html`
+- Statik dosya caching: JS/CSS, görseller için ayrı kurallar
+
+### Backend Dockerfile
+- `python:3.10-slim` base
+- `requirements.txt` ile bağımlılık kurulumu
+- CMD: `uvicorn server:socket_app --host 0.0.0.0 --port 8002`
+
+### Frontend Dockerfile
+- Multi-stage: `node:18-alpine` build → `nginx:alpine` serve
+- `default.conf` ile intra-compose proxy (`backend:8002`)
+
+---
+
+## Kodlama Stili ve Vibe
+
+### Genel Prensipler
+- Yorumlar ve log mesajları **Türkçe** yazılabilir (proje dili)
+- Değişken ve fonksiyon isimleri **İngilizce** (Python PEP8 / JS camelCase)
+- Pragmatik yaklaşım: Çalışan kodu ship et, sonra refactor et
+- Monolitik `server.py` üzerinde iteratif geliştirme — büyük refactor'dan kaçın
+- Yeni feature'lar mevcut pattern'leri takip etmeli
+
+### Backend Kodlama Stili
+- Fonksiyon isimleri: `snake_case` (Python convention)
+- Endpoint handler'lar: `async def` her zaman
+- DB sorguları: Motor `await db.collection.find_one(...)` pattern
+- Yeni collection eklerken: Startup'ta indeks oluşturma lifespan'e ekle
+- İş mantığı doğrudan endpoint içinde (service layer ayrımı zorunlu değil, mevcut pattern bu)
+- `organization_id` filtresi UNUTULMAMALI (güvenlik kritik)
+
+### Frontend Kodlama Stili
+- Bileşen tanımı: `const ComponentName = ({ props }) => { ... }; export default ComponentName;`
+- Event handler'lar: `handle` prefix — `handleSave`, `handleDelete`, `handleCustomerClick`
+- State isimlendirme: `[value, setValue]` — `[loading, setLoading]`, `[showModal, setShowModal]`
+- API çağrıları: `try/catch` + `toast.error` + `finally { setLoading(false) }`
+- Koşullu render: `{condition && <Component />}` veya ternary
+- Listeler: `.map()` ile `key` prop zorunlu
+
+### Güvenlik Kuralları
+- `.env` dosyaları ASLA commit edilmemeli (`.gitignore`'da)
+- `firebase-admin-key.json` gitignore'da
+- Stripe webhook'ları `stripe.Webhook.construct_event` ile doğrulanmalı
+- Turnstile (Cloudflare) public sayfalarda bot koruması için
+- CORS origin'leri production'da spesifik domain'ler
+- Rate limiting tüm public endpoint'lerde aktif
+
+### Socket.IO Kuralları
+- Server: `socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')`
+- Redis manager: Cross-worker event broadcasting
+- Room pattern: `org_{organization_id}`
+- Event emit: `emit_to_organization(org_id, event_name, data)` pattern
+- Client auth: JWT token `auth` objesi veya query param
+
+---
+
+## Test Standartları
+- Backend: `pytest` + Motor mock'ları
+- Financial testler: `backend/tests/test_webhook_idempotency.py` referans pattern
+- Test dosyası konumu: `backend/tests/`
+- Mock pattern: Collection mock'ları ile DB izolasyonu
+
+---
+
+## Önemli Uyarılar (Bilinen Durumlar)
+
+1. **İki paralel FastAPI uygulaması var:** `server.py` (production) ve `app/main.py` (refaktör). Production'da `server.py` çalışır.
+2. **server.py monolitik:** ~12.5k satır, tüm rotalar burada. Yeni endpoint eklerken mevcut pattern'e uyum sağla.
+3. **Env variable isimleri tutarsız:** `server.py` → `MONGO_URL`, `app/` → `MONGODB_URL`. Production'da `server.py` env'leri geçerli.
+4. **Webhook duplikasyonları:** Uyumluluk için aynı handler birden fazla path'e mount edilmiş. Yeni webhook eklerken bu pattern'i koru.
+5. **Para birimi minor unit:** TRY ve GBP tutarları kuruş/pence olarak saklanır. Gösterimde `formatMoney` kullan.
+
+---
+
+## Bu Kuralları Kullanma Rehberi
+
+Bu dosya, PLANN projesinde yapılacak her türlü geliştirme, hata düzeltme ve yeni özellik ekleme sürecinde rehber olarak kullanılmalıdır. Kod yazarken:
+
+1. **Mevcut pattern'leri takip et** — Yeni kod, etrafındaki kodla tutarlı olmalı
+2. **Multi-tenant güvenliği** — Her DB sorgusu `organization_id` kontrolü içermeli
+3. **i18n zorunlu** — Kullanıcıya gösterilen her metin çeviri dosyasında olmalı
+4. **Tasarım dili** — zinc-900/black birincil, emerald başarı, minimalist ve premium
+5. **Hata yönetimi** — HTTPException + logging + Sentry entegrasyonu
+6. **Test** — Kritik iş mantığı (özellikle financial) test edilmeli
+7. **Güvenlik** — Token doğrulama, rate limiting, CORS, Turnstile

@@ -144,6 +144,7 @@ async def create_customer_checkout_session(
             "net_minor": str(fee_result.net_minor),
             "session_count": str(session_count),
             "payment_rule": deposit_rule.payment_rule if deposit_rule else "full_online",
+            "is_merchant_payment": "true",
         },
         success_url=f"https://plannapp.co/{merchant_slug}?payment=success&session_id={{CHECKOUT_SESSION_ID}}" if merchant_slug else PAYMENT_SUCCESS_URL + "?session_id={CHECKOUT_SESSION_ID}",
         cancel_url=f"https://plannapp.co/{merchant_slug}?payment=cancelled" if merchant_slug else PAYMENT_CANCEL_URL,

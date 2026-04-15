@@ -11,7 +11,9 @@ FastAPI router for all financial endpoints:
 """
 
 import os
+import re
 import logging
+import requests
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
@@ -53,6 +55,25 @@ from .wise_service import handle_wise_webhook, create_recipient_tr_iban, create_
 from .currency_shield import get_current_rate, ensure_fresh_exchange_rate
 
 logger = logging.getLogger(__name__)
+
+def _requests_http_status(exc: BaseException) -> Optional[int]:
+    """requests HTTPError bazen response taşımaz; metinden 403 vb. çıkar."""
+    r = getattr(exc, "response", None)
+    if r is not None:
+        code = getattr(r, "status_code", None)
+        if code is not None:
+            try:
+                return int(code)
+            except (TypeError, ValueError):
+                pass
+    m = re.match(r"^(\d{3})\s", str(exc))
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            pass
+    return None
+
 
 router = APIRouter(redirect_slashes=False)
 
@@ -462,8 +483,42 @@ async def request_payout(request: Request):
     if batches:
         try:
             await process_payout_batch(db, batches[0]["id"])
+        except requests.exceptions.HTTPError as e:
+            wise_body = ""
+            if e.response is not None:
+                wise_body = (e.response.text or "")[:1500]
+            http_st = _requests_http_status(e)
+            logger.error(
+                "Manual payout Wise HTTPError: %s body=%s",
+                e,
+                wise_body,
+                exc_info=True,
+            )
+            # 502 kullanma: CDN (Cloudflare) bazen JSON yerine genel "Bad gateway" HTML sayfası gösterir.
+            hint = None
+            if http_st == 403 or ("forbidden" in (wise_body or "").lower()):
+                hint = (
+                    "TRY çekimi teknik olarak GBP kaynağından ödenir (quote GBP→TRY). "
+                    "Wise Business çoklu para bakiyesinde bu işlem için yeterli GBP olmalı; "
+                    "GBP yoksa veya yetmezse fund adımı genelde 403/forbidden döner. "
+                    "Ayrıca API token’ın bakiyeden ödeme izni ve WISE_PROFILE_ID eşleşmesi gerekir. "
+                    "Test için WISE_ENVIRONMENT=sandbox kullanılabilir."
+                )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "wise_api_error",
+                    "message": (
+                        "Wise ödemeyi başlatamadı. En sık neden: Wise hesabında yeterli GBP bakiyesi olmaması "
+                        "(TRY çekimi GBP’den düşülür). Diğer nedenler: API token izinleri veya profil uyumsuzluğu."
+                    ),
+                    "http_status": http_st,
+                    "wise_response": wise_body or None,
+                    "hint": hint,
+                },
+            )
         except Exception as e:
-            logger.error("Manual payout failed: %s", e)
+            logger.error("Manual payout failed: %s", e, exc_info=True)
             raise HTTPException(status_code=500, detail="Payout processing failed")
 
     return {

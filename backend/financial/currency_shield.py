@@ -23,6 +23,7 @@ from .money import (
     update_try_tier_limit,
     get_all_tiers,
     RATE_MULTIPLIER,
+    TRY_FAST_LIMIT_OVERRIDE_MINOR,
 )
 from .schemas import ExchangeRate
 
@@ -149,9 +150,13 @@ async def recalculate_try_tier_limits(
     tier_targets = {}
 
     for tier_name, cfg in try_tiers.items():
-        new_limit = apply_rate(cfg.gbp_target_minor, new_rate_micro)
-        # Round up to nearest 1000 kuruş (₺10) for clean UX
-        new_limit = ((new_limit + 99_999) // 100_000) * 100_000
+        if tier_name == "fast" and TRY_FAST_LIMIT_OVERRIDE_MINOR is not None:
+            # Geçici test: küçük eşik — ₺10 yuvarlaması limiti bozar, olduğu gibi kullan
+            new_limit = TRY_FAST_LIMIT_OVERRIDE_MINOR
+        else:
+            new_limit = apply_rate(cfg.gbp_target_minor, new_rate_micro)
+            # Round up to nearest 1000 kuruş (₺10) for clean UX
+            new_limit = ((new_limit + 99_999) // 100_000) * 100_000
         new_limits[tier_name] = new_limit
         tier_targets[tier_name] = cfg.gbp_target_minor
 

@@ -6192,6 +6192,57 @@ async def create_checkout_session(
         raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
+def _stripe_obj_get(obj, key, default=None):
+    """StripeObject [] destekler; .get() yok. Dict ile uyumlu erişim."""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    try:
+        val = obj[key]
+        return default if val is None else val
+    except (KeyError, TypeError):
+        pass
+    try:
+        val = getattr(obj, key, None)
+        return default if val is None else val
+    except Exception:
+        return default
+
+
+def _stripe_metadata_dict(stripe_obj):
+    """Session/Price/Product vb. üzerindeki metadata alanını düz dict yap."""
+    meta = _stripe_obj_get(stripe_obj, "metadata", None)
+    if meta is None:
+        return {}
+    if isinstance(meta, dict):
+        return meta
+    try:
+        return dict(meta)
+    except Exception:
+        try:
+            keys = meta.keys() if hasattr(meta, "keys") else []
+            return {k: meta[k] for k in keys}
+        except Exception:
+            return {}
+
+
+def _stripe_line_items_data(obj):
+    """Checkout Session line_items → data listesi."""
+    raw = _stripe_obj_get(obj, "line_items", None)
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return raw
+    inner = _stripe_obj_get(raw, "data", None)
+    if isinstance(inner, list):
+        return inner
+    if isinstance(raw, dict) and "data" in raw:
+        d = raw["data"]
+        return d if isinstance(d, list) else []
+    return []
+
+
 class StripeConfirmCheckoutRequest(BaseModel):
     session_id: str
 
@@ -6221,12 +6272,12 @@ async def confirm_stripe_checkout_session(
             expand=['line_items.data.price.product']
         )
 
-        payment_status = session.get('payment_status')
-        status_value = session.get('status')
+        payment_status = _stripe_obj_get(session, 'payment_status')
+        status_value = _stripe_obj_get(session, 'status')
         if payment_status not in ('paid', 'no_payment_required') and status_value != 'complete':
             raise HTTPException(status_code=400, detail=f"Ödeme tamamlanmamış (payment_status={payment_status}, status={status_value})")
 
-        metadata = session.get('metadata', {}) or {}
+        metadata = _stripe_metadata_dict(session)
         organization_id = metadata.get('organization_id') or metadata.get('user_id')
         if organization_id and organization_id != current_user.organization_id:
             raise HTTPException(status_code=403, detail="session organization uyumsuz")
@@ -6271,26 +6322,22 @@ async def confirm_stripe_checkout_session(
         appointment_limit = None
         quota_limit = None
         try:
-            line_items = session.get('line_items', {})
-            if isinstance(line_items, dict) and 'data' in line_items:
-                line_items = line_items['data']
-            elif not isinstance(line_items, list):
-                line_items = []
+            line_items = _stripe_line_items_data(session)
 
             if line_items and len(line_items) > 0:
-                price_obj = line_items[0].get('price')
+                price_obj = _stripe_obj_get(line_items[0], 'price')
                 if price_obj:
-                    price_metadata = price_obj.get('metadata', {})
+                    price_metadata = _stripe_metadata_dict(price_obj)
                     appointment_limit = price_metadata.get('appointment_limit')
                     if not appointment_limit:
-                        product_obj = price_obj.get('product')
+                        product_obj = _stripe_obj_get(price_obj, 'product')
                         if isinstance(product_obj, dict):
                             product_metadata = product_obj.get('metadata', {})
                             appointment_limit = product_metadata.get('appointment_limit')
                         elif isinstance(product_obj, str):
                             try:
                                 product_retrieved = stripe.Product.retrieve(product_obj)
-                                product_metadata = product_retrieved.get('metadata', {})
+                                product_metadata = _stripe_metadata_dict(product_retrieved)
                                 appointment_limit = product_metadata.get('appointment_limit')
                             except Exception as e:
                                 logger.warning(f"⚠️ Product retrieve hatası: {e}")
@@ -6333,8 +6380,8 @@ async def confirm_stripe_checkout_session(
             "trial_end_date": None,
         }
 
-        subscription_id = session.get('subscription')
-        customer_id = session.get('customer')
+        subscription_id = _stripe_obj_get(session, 'subscription')
+        customer_id = _stripe_obj_get(session, 'customer')
         if subscription_id:
             update_data['stripe_subscription_id'] = subscription_id
             update_data['stripe_customer_id'] = customer_id
@@ -6419,12 +6466,15 @@ async def handle_stripe_webhook(request: Request):
             session_id = session['id']
             
             logger.info(f"💳 Ödeme başarılı: session_id={session_id}")
+            # SaaS aboneliği değil; merchant ödemesi ayrı webhook'ta işlenir
+            if _stripe_metadata_dict(session).get("is_merchant_payment") == "true" or _stripe_obj_get(session, "mode") == "payment":
+                return Response(content="OK", status_code=200)
             
             # Payment log'u bul
             payment_log = await db.payment_logs.find_one({"session_id": session_id})
             
             if not payment_log:
-                metadata = session.get('metadata', {}) or {}
+                metadata = _stripe_metadata_dict(session)
                 plan_id_meta = metadata.get('plan_id')
                 organization_id_meta = metadata.get('organization_id') or metadata.get('user_id')
                 if not plan_id_meta or not organization_id_meta:
@@ -6432,7 +6482,7 @@ async def handle_stripe_webhook(request: Request):
                     return Response(content="OK", status_code=200)
 
                 billing_cycle_meta = metadata.get('billing_cycle', 'monthly')
-                customer_email = session.get('customer_email')
+                customer_email = _stripe_obj_get(session, 'customer_email')
                 now_iso = datetime.now(timezone.utc).isoformat()
                 await db.payment_logs.update_one(
                     {"session_id": session_id},
@@ -6447,10 +6497,10 @@ async def handle_stripe_webhook(request: Request):
                             "created_at": now_iso,
                         },
                         "$set": {
-                            "stripe_customer_id": session.get('customer'),
-                            "stripe_subscription_id": session.get('subscription'),
+                            "stripe_customer_id": _stripe_obj_get(session, 'customer'),
+                            "stripe_subscription_id": _stripe_obj_get(session, 'subscription'),
                             "billing_cycle": billing_cycle_meta,
-                            "currency": (session.get('currency') or '').upper() or None,
+                            "currency": (_stripe_obj_get(session, 'currency') or '').upper() or None,
                             "updated_at": now_iso,
                         }
                     },
@@ -6476,7 +6526,7 @@ async def handle_stripe_webhook(request: Request):
             plan_doc = await get_organization_plan(db, organization_id)
             
             # Billing cycle'ı metadata'dan al
-            metadata = session.get('metadata', {})
+            metadata = _stripe_metadata_dict(session)
             billing_cycle = metadata.get('billing_cycle', 'monthly')
             
             # TASK 1: appointment_limit'i Price Object'in metadata'sından al (Single Source of Truth)
@@ -6493,24 +6543,20 @@ async def handle_stripe_webhook(request: Request):
                     expand=['line_items.data.price.product']
                 )
                 
-                line_items = session_expanded.get('line_items', {})
-                if isinstance(line_items, dict) and 'data' in line_items:
-                    line_items = line_items['data']
-                elif not isinstance(line_items, list):
-                    line_items = []
+                line_items = _stripe_line_items_data(session_expanded)
                 
                 # İlk line item'dan price'ı al
                 if line_items and len(line_items) > 0:
-                    price_obj = line_items[0].get('price')
+                    price_obj = _stripe_obj_get(line_items[0], 'price')
                     if price_obj:
                         # FALLBACK STRATEGY: First check price.metadata, then product.metadata
                         # Step 1: Check Price metadata
-                        price_metadata = price_obj.get('metadata', {})
+                        price_metadata = _stripe_metadata_dict(price_obj)
                         appointment_limit = price_metadata.get('appointment_limit')
                         
                         # Step 2: If not found in price, check product metadata
                         if not appointment_limit:
-                            product_obj = price_obj.get('product')
+                            product_obj = _stripe_obj_get(price_obj, 'product')
                             if product_obj:
                                 # product_obj can be a string (ID) or dict (expanded)
                                 if isinstance(product_obj, dict):
@@ -6522,7 +6568,7 @@ async def handle_stripe_webhook(request: Request):
                                     # Product not expanded, retrieve it
                                     try:
                                         product_retrieved = stripe.Product.retrieve(product_obj)
-                                        product_metadata = product_retrieved.get('metadata', {})
+                                        product_metadata = _stripe_metadata_dict(product_retrieved)
                                         appointment_limit = product_metadata.get('appointment_limit')
                                         if appointment_limit:
                                             logger.info(f"✅ Appointment limit Product metadata'dan alındı (fallback, retrieved): {appointment_limit}")
@@ -6537,7 +6583,7 @@ async def handle_stripe_webhook(request: Request):
                             except (ValueError, TypeError):
                                 logger.warning(f"⚠️ Metadata'daki appointment_limit geçersiz: {appointment_limit}")
                         else:
-                            logger.warning(f"⚠️ Price ve Product metadata'da appointment_limit bulunamadı. Price ID: {price_obj.get('id')}")
+                            logger.warning(f"⚠️ Price ve Product metadata'da appointment_limit bulunamadı. Price ID: {_stripe_obj_get(price_obj, 'id')}")
                 
                 if not quota_limit:
                     # Fallback: Session metadata'dan dene
@@ -6589,8 +6635,8 @@ async def handle_stripe_webhook(request: Request):
             update_data['trial_end_date'] = None
             
             # Stripe subscription bilgilerini kaydet
-            subscription_id = session.get('subscription')
-            customer_id = session.get('customer')
+            subscription_id = _stripe_obj_get(session, 'subscription')
+            customer_id = _stripe_obj_get(session, 'customer')
             
             if subscription_id:
                 update_data['stripe_subscription_id'] = subscription_id
@@ -6633,13 +6679,13 @@ async def handle_stripe_webhook(request: Request):
         # invoice.paid — yenileme dönemleri + Stripe'dan gerçek tahsilat tutarı (subscription_cycle)
         elif event['type'] == 'invoice.paid':
             inv = event['data']['object']
-            inv_id = inv.get('id')
-            sub_id = inv.get('subscription')
+            inv_id = _stripe_obj_get(inv, 'id')
+            sub_id = _stripe_obj_get(inv, 'subscription')
             if sub_id and inv_id:
                 plan_doc = await db.organization_plans.find_one({"stripe_subscription_id": sub_id})
                 if plan_doc:
                     org_id = plan_doc.get('organization_id')
-                    period_end = inv.get('period_end')
+                    period_end = _stripe_obj_get(inv, 'period_end')
                     if period_end:
                         ned = datetime.fromtimestamp(int(period_end), tz=timezone.utc)
                         await db.organization_plans.update_one(
@@ -6650,12 +6696,12 @@ async def handle_stripe_webhook(request: Request):
                                 "updated_at": datetime.now(timezone.utc).isoformat(),
                             }},
                         )
-                    br = inv.get('billing_reason') or ''
+                    br = _stripe_obj_get(inv, 'billing_reason') or ''
                     if br in ('subscription_cycle', 'subscription_update'):
                         dup = await db.payment_logs.find_one({"stripe_invoice_id": inv_id})
                         if not dup:
-                            amount_paid = int(inv.get('amount_paid') or 0)
-                            cur = (inv.get('currency') or 'try').upper()
+                            amount_paid = int(_stripe_obj_get(inv, 'amount_paid') or 0)
+                            cur = (_stripe_obj_get(inv, 'currency') or 'try').upper()
                             amt = amount_paid / 100.0
                             await db.payment_logs.insert_one({
                                 "stripe_invoice_id": inv_id,
@@ -6674,7 +6720,7 @@ async def handle_stripe_webhook(request: Request):
         elif event['type'] == 'customer.subscription.updated':
             subscription = event['data']['object']
             subscription_id = subscription['id']
-            cancel_at_period_end = subscription.get('cancel_at_period_end', False)
+            cancel_at_period_end = _stripe_obj_get(subscription, 'cancel_at_period_end', False)
             
             if cancel_at_period_end:
                 logger.info(f"⚠️ Abonelik iptal planlandı (dönem sonunda): subscription_id={subscription_id}")
@@ -13096,7 +13142,7 @@ async def run_stripe_audit():
                                 # Product not expanded, retrieve it
                                 try:
                                     product_retrieved = stripe.Product.retrieve(product_obj)
-                                    product_metadata = product_retrieved.get('metadata', {})
+                                    product_metadata = _stripe_metadata_dict(product_retrieved)
                                     appointment_limit = product_metadata.get('appointment_limit')
                                     if appointment_limit:
                                         metadata_source = "Product"

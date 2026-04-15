@@ -153,7 +153,7 @@ async def refund_reserve_release_job(db) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. Auto Payout Job — nightly 03:00 UTC
+# 4. Auto Payout Job — interval (1 saat)
 # ---------------------------------------------------------------------------
 
 async def auto_payout_job(db) -> None:
@@ -473,7 +473,7 @@ def register_financial_cron_jobs(scheduler, db) -> None:
 
     scheduler.add_job(
         auto_payout_job, "interval",
-        args=[db], hours=2,
+        args=[db], hours=1,
         id="auto_payout_job",
         replace_existing=True,
     )

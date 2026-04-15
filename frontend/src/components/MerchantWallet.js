@@ -81,7 +81,15 @@ export default function MerchantWallet({ onNavigate }) {
       await loadWallet();
       await loadPayoutHistory();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Ödeme talebi başarısız");
+      const d = err.response?.data?.detail;
+      const base =
+        typeof d === "string"
+          ? d
+          : d?.message ||
+            (d?.wise_response ? `${d.message || "Wise hatası"}: ${String(d.wise_response).slice(0, 280)}` : null) ||
+            "Ödeme talebi başarısız";
+      const msg = d && typeof d === "object" && d.hint ? `${base} ${d.hint}` : base;
+      toast.error(msg);
     } finally {
       setPayoutLoading(false);
     }

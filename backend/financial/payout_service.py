@@ -237,7 +237,10 @@ async def _process_wise_batch(
     db, sm: StateMachine, batch: Dict[str, Any], batch_id: str,
     is_sandbox: bool = False,
 ) -> Dict[str, Any]:
-    """Full Wise API pipeline (quote → batch group → fund). Works with both sandbox and production API."""
+    """Full Wise API pipeline (quote → batch group → fund). Works with both sandbox and production API.
+
+    TRY market: kaynak para GBP (havuz/quote); fund BALANCE ile Wise hesabındaki GBP'den düşülür — yetersiz GBP → 403.
+    """
     market = batch["payout_market"]
     source_currency = "GBP"
     target_currency = market
@@ -265,8 +268,16 @@ async def _process_wise_batch(
             {"$set": {"status": "quoted", "items": batch["items"]}},
         )
 
-        use_single = is_sandbox
-        if not is_sandbox:
+        # Tek kalemli ödemelerde batch group kullanma: transfer batch'e eklenip fund 403 olunca
+        # aynı quote ile single path'e düşülüyor; transfer zaten batch'e bağlı olduğu için
+        # fund_single_transfer tekrar 403 / incoming_payment_waiting üretebiliyor.
+        force_single_transfer = (
+            os.getenv("WISE_FORCE_SINGLE_TRANSFER", "").lower() in ("1", "true", "yes")
+            or len(batch["items"]) == 1
+        )
+        use_single = is_sandbox or force_single_transfer
+
+        if not is_sandbox and not force_single_transfer:
             try:
                 group = await wise_service.create_batch_group(source_currency)
                 await db.payout_batches.update_one(
