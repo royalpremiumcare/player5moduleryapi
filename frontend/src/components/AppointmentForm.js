@@ -69,10 +69,10 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
   }, [appointment]);
 
   useEffect(() => {
-    if (formData.service_id && formData.appointment_date) {
+    if (formData.service_id && formData.appointment_date && settings) {
       loadAvailableSlots();
     }
-  }, [formData.service_id, formData.appointment_date, formData.staff_member_id]);
+  }, [formData.service_id, formData.appointment_date, formData.staff_member_id, settings]);
 
   // Personel için hizmetleri filtrele
   useEffect(() => {
@@ -272,7 +272,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Müşteri Seçimi Toggle (Sadece yeni randevu için) */}
           {!appointment && customers.length > 0 && (
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-200">
               <div className="flex items-center gap-4">
                 <Label className="font-semibold text-gray-900">{t('appointments.form.customerType')}</Label>
                 <div className="flex gap-2">
@@ -415,6 +415,17 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
             </div>
           )}
 
+          {appointment &&
+            appointment.session_total > 1 &&
+            appointment.session_number != null && (
+              <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-sm text-zinc-900">
+                {t("appointments.form.editSessionHint", {
+                  current: appointment.session_number,
+                  total: appointment.session_total,
+                })}
+              </div>
+            )}
+
           <div className="space-y-2">
             <Label htmlFor="service">{t('appointments.form.serviceType')} *</Label>
             {userRole === 'staff' && filteredServices.length === 0 ? (
@@ -496,10 +507,22 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
                     mode="single"
+                    defaultMonth={formData.appointment_date}
                     selected={formData.appointment_date}
                     onSelect={(date) => setFormData({ ...formData, appointment_date: date })}
                     locale={dateLocale}
-                    disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                    disabled={(date) => {
+                      const t0 = new Date(date);
+                      t0.setHours(0, 0, 0, 0);
+                      const today0 = new Date();
+                      today0.setHours(0, 0, 0, 0);
+                      if (appointment) {
+                        const orig = new Date(appointment.appointment_date);
+                        orig.setHours(0, 0, 0, 0);
+                        if (t0.getTime() === orig.getTime()) return false;
+                      }
+                      return t0 < today0;
+                    }}
                   />
                 </PopoverContent>
               </Popover>
@@ -560,7 +583,7 @@ const AppointmentForm = ({ services, appointment, onSave, onCancel }) => {
               data-testid="save-button"
               type="submit"
               disabled={loading || (userRole === 'staff' && filteredServices.length === 0) || availableSlots.length === 0}
-              className="flex-1 bg-blue-500 hover:bg-blue-600"
+              className="flex-1 bg-zinc-900 hover:bg-black text-white font-bold"
             >
               {loading ? t('appointments.form.saving') : appointment ? t('appointments.form.update') : t('appointments.form.save')}
             </Button>

@@ -139,10 +139,10 @@ Yöntem 3 - AI Asistan ile (bana söyle):
 2. Her online ödeme cüzdana yansır (transaction olarak)
 3. Transaction durumları: pending → captured → settled → available → paid_out / refunded
 4. Settlement süresi: T+2 gün (ödeme sonrası 2 gün)
-5. İade penceresi: 12 saat
-6. Ödeme çekme (payout): Bakiye eşiğe ulaşınca (₺12.000) "Para Çek" aktif olur
+5. İade penceresi: 48 saat
+6. Ödeme çekme (payout): Bakiye eşiğe ulaşınca her Çarşamba otomatik olarak banka hesabına aktarılır
 7. Ön koşullar: KYC onaylı, IBAN kayıtlı, 48 saat IBAN cooldown
-8. Ödeme Wise üzerinden yapılır
+8. Ödemeler banka transferi ile aynı gün içinde hesabınıza yansır
 
 === İADE SİSTEMİ ===
 1. Tekli randevu iade: Müşteriler → detay → "İade Et" veya Dashboard → 3 nokta → "İptal Et ve İade Yap"

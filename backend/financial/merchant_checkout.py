@@ -17,6 +17,8 @@ import asyncio
 from .fee_calculator import calculate_fee, DepositRule, FeeResult
 from .state_machine import StateMachine, create_transaction
 from .schemas import WebhookEvent
+from .feature_flags import is_env_flag_enabled
+from .gross_up_service import compute_customer_price, GrossUpError
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,23 @@ async def create_customer_checkout_session(
 
     deposit_rule = _build_deposit_rule(service)
 
+    # Feature flag: FEATURE_GROSS_UP activates processor + payout fees in gross-up.
+    # OFF → legacy behaviour (platform fee only).
+    gross_up_enabled = is_env_flag_enabled("FEATURE_GROSS_UP")
+    gross_up_result = None
+    if gross_up_enabled:
+        try:
+            gross_up_result = compute_customer_price(
+                base_currency=base_currency,
+                service_price_minor=service_price_minor,
+                fee_preference=fee_preference,
+                tier=tier,
+                deposit_rule=deposit_rule,
+            )
+        except GrossUpError as ge:
+            logger.error("gross-up failed, falling back to legacy fee_calculator: %s", ge)
+            gross_up_result = None
+
     fee_result = calculate_fee(
         base_currency=base_currency,
         service_price_minor=service_price_minor,
@@ -90,7 +109,22 @@ async def create_customer_checkout_session(
         session_count=session_count,
     )
 
-    if fee_result.gross_minor == 0:
+    # Choose authoritative amounts: gross_up overrides fee_result customer price
+    # and merchant net when the flag is active and computation succeeded.
+    if gross_up_result is not None:
+        customer_price_minor = gross_up_result.customer_price_minor
+        merchant_net_minor = gross_up_result.merchant_net_minor
+        platform_fee_minor = gross_up_result.platform_fee_minor
+        processor_fee_minor = gross_up_result.stripe_fee_minor
+        payout_fee_minor = gross_up_result.wise_fee_minor
+    else:
+        customer_price_minor = fee_result.gross_minor
+        merchant_net_minor = fee_result.net_minor
+        platform_fee_minor = fee_result.fee_minor
+        processor_fee_minor = 0
+        payout_fee_minor = 0
+
+    if customer_price_minor == 0:
         return {
             "payment_required": False,
             "payment_rule": deposit_rule.payment_rule if deposit_rule else "on_site",
@@ -125,7 +159,7 @@ async def create_customer_checkout_session(
         line_items=[{
             "price_data": {
                 "currency": fee_result.stripe_currency,
-                "unit_amount": fee_result.gross_minor,
+                "unit_amount": customer_price_minor,
                 "product_data": product_data,
             },
             "quantity": 1,
@@ -140,8 +174,16 @@ async def create_customer_checkout_session(
             "customer_phone": customer_phone,
             "base_currency": base_currency,
             "fee_preference": fee_preference,
-            "fee_minor": str(fee_result.fee_minor),
-            "net_minor": str(fee_result.net_minor),
+            # Legacy aliases (dual-write during terminology migration)
+            "fee_minor": str(platform_fee_minor),
+            "net_minor": str(merchant_net_minor),
+            # Canonical names (PLANN v2 terminology)
+            "customer_price_minor": str(customer_price_minor),
+            "merchant_net_minor": str(merchant_net_minor),
+            "platform_fee_minor": str(platform_fee_minor),
+            "stripe_fee_minor": str(processor_fee_minor),
+            "wise_fee_minor": str(payout_fee_minor),
+            "gross_up_applied": "true" if gross_up_result is not None else "false",
             "session_count": str(session_count),
             "payment_rule": deposit_rule.payment_rule if deposit_rule else "full_online",
             "is_merchant_payment": "true",
@@ -162,8 +204,8 @@ async def create_customer_checkout_session(
         organization_id=organization_id,
         base_currency=base_currency,
         tx_type="payment",
-        amount_display_minor=fee_result.net_minor,
-        fee_amount_minor=fee_result.fee_minor,
+        amount_display_minor=merchant_net_minor,
+        fee_amount_minor=platform_fee_minor,
         fee_rate_bps=fee_result.fee_rate_bps,
         fee_preference=fee_preference,
         appointment_id=appointment_id,
@@ -171,11 +213,21 @@ async def create_customer_checkout_session(
         stripe_checkout_session_id=stripe_session.id,
         customer_name=customer_name,
         session_group_id=session_group_id,
+        # PLANN v2 canonical fields
+        customer_price_minor=customer_price_minor,
+        merchant_net_minor=merchant_net_minor,
+        platform_fee_minor=platform_fee_minor,
+        stripe_fee_minor=processor_fee_minor,
+        wise_fee_minor=payout_fee_minor,
+        gross_up_applied=bool(gross_up_result is not None),
+        service_price_minor=service_price_minor,
     )
 
     logger.info(
-        "Checkout session created: org=%s session=%s gross=%d %s",
-        organization_id, stripe_session.id, fee_result.gross_minor, base_currency,
+        "Checkout session created: org=%s session=%s customer_price=%d merchant_net=%d %s grossup=%s",
+        organization_id, stripe_session.id, customer_price_minor,
+        merchant_net_minor, base_currency,
+        gross_up_result is not None,
     )
 
     return {
@@ -183,9 +235,17 @@ async def create_customer_checkout_session(
         "checkout_url": stripe_session.url,
         "session_id": stripe_session.id,
         "transaction_id": tx_doc["id"],
-        "gross_minor": fee_result.gross_minor,
-        "net_minor": fee_result.net_minor,
-        "fee_minor": fee_result.fee_minor,
+        # Legacy aliases (dual-write)
+        "gross_minor": customer_price_minor,
+        "net_minor": merchant_net_minor,
+        "fee_minor": platform_fee_minor,
+        # Canonical PLANN v2 fields
+        "customer_price_minor": customer_price_minor,
+        "merchant_net_minor": merchant_net_minor,
+        "platform_fee_minor": platform_fee_minor,
+        "stripe_fee_minor": processor_fee_minor,
+        "wise_fee_minor": payout_fee_minor,
+        "gross_up_applied": gross_up_result is not None,
         "base_currency": base_currency,
     }
 

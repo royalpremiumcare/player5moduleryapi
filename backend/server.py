@@ -115,6 +115,22 @@ if STRIPE_SECRET_KEY:
 else:
     logger.warning("⚠️ STRIPE_SECRET_KEY not configured. Payment features will not work.")
 
+from bulk_session_idempotency import BulkSessionCreate, SessionSlot, canonical_bulk_session_hash as _canonical_bulk_session_hash
+from session_wave_planner import plan_wave_remaining_sessions
+from appointment_refund_flags import (
+    REFUNDABLE_MERCHANT_STATES,
+    attach_refund_eligible,
+    session_group_ids_from_merchant_transactions,
+)
+from cancel_selected_support import staff_cannot_access_appointments
+from capabilities import (
+    CAP_APPOINTMENT_CANCEL,
+    CAP_APPOINTMENT_REFUND,
+    CAP_SESSION_PLAN,
+    assert_capability_for_user,
+)
+from operation_audit import log_operation_audit
+
 # Success ve Cancel URL'leri
 PAYMENT_SUCCESS_URL = "https://plannapp.co/"
 PAYMENT_SUCCESS_URL_NATIVE = "plannapp://payment-success"
@@ -785,6 +801,107 @@ async def lifespan(app: FastAPI):
             except Exception as fin_err:
                 logging.warning(f"Financial cron jobs registration failed: {fin_err}")
 
+        # Step 4c: PLANN v2 — Migrations + new cron jobs + DLQ handlers
+        if app.db is not None:
+            # 4c.1 Run any pending migrations
+            try:
+                from financial.migrations import runner as mig_runner
+                mig_result = await mig_runner.apply_all(app.db)
+                logging.info(
+                    "  - PLANN v2 migrations: applied=%s errors=%s",
+                    mig_result.get("applied"), mig_result.get("errors"),
+                )
+            except Exception as mig_err:
+                logging.warning(f"PLANN v2 migrations failed: {mig_err}")
+
+            # 4c.2 Register DLQ retry handlers (failure_type → callable)
+            try:
+                from financial import dead_letter_queue as dlq_mod
+                from financial import wednesday_batch as wb_mod
+                from financial.refund_reconciliation_service import (
+                    resolve_refund_reconciliation_by_id,
+                )
+
+                async def _dlq_reconciliation_retry(db, doc):
+                    src_id = doc.get("source_entity_id")
+                    if not src_id:
+                        raise RuntimeError("no source_entity_id")
+                    result = await resolve_refund_reconciliation_by_id(
+                        db, src_id, locked_by="dlq:retry", request=None,
+                    )
+                    if not result.get("ok"):
+                        raise RuntimeError(f"reconciliation retry failed: {result}")
+
+                async def _dlq_wise_fund_retry(db, doc):
+                    # For wise_fund_failed: we don't auto-retry funding (manual admin only)
+                    # Mark as requiring manual review by raising
+                    raise RuntimeError("wise_fund requires manual admin intervention")
+
+                dlq_mod.register_handler(
+                    dlq_mod.FailureType.RECONCILIATION_MISMATCH.value,
+                    _dlq_reconciliation_retry,
+                )
+                dlq_mod.register_handler(
+                    dlq_mod.FailureType.WISE_FUND_FAILED.value,
+                    _dlq_wise_fund_retry,
+                )
+                logging.info("  - PLANN v2 DLQ: handlers registered")
+            except Exception as dlq_err:
+                logging.warning(f"PLANN v2 DLQ handler registration failed: {dlq_err}")
+
+            # 4c.3 New cron jobs (reserve expiry, batch prep, refund SLA, DLQ retry)
+            try:
+                from financial.expiry_service import run_expiry_crons
+                from financial.wednesday_batch import tuesday_batch_prepare_cron
+                from financial.refund_requests import run_sla_monitor_cron
+                from financial.dead_letter_queue import run_retry_cron as dlq_run_retry_cron
+
+                _db = app.db
+
+                async def _run_expiry():
+                    try:
+                        await run_expiry_crons(_db)
+                    except Exception as e:
+                        logging.error(f"run_expiry_crons failed: {e}", exc_info=True)
+
+                async def _run_tuesday_batch():
+                    try:
+                        await tuesday_batch_prepare_cron(_db)
+                    except Exception as e:
+                        logging.error(f"tuesday_batch_prepare_cron failed: {e}", exc_info=True)
+
+                async def _run_refund_sla():
+                    try:
+                        await run_sla_monitor_cron(_db)
+                    except Exception as e:
+                        logging.error(f"run_sla_monitor_cron failed: {e}", exc_info=True)
+
+                async def _run_dlq_retry():
+                    try:
+                        await dlq_run_retry_cron(_db)
+                    except Exception as e:
+                        logging.error(f"dlq_retry_cron failed: {e}", exc_info=True)
+
+                scheduler.add_job(
+                    _run_expiry, IntervalTrigger(hours=1),
+                    id='v2_expiry_crons', replace_existing=True, max_instances=1,
+                )
+                scheduler.add_job(
+                    _run_tuesday_batch, CronTrigger(day_of_week='tue', hour=23, minute=0),
+                    id='v2_tuesday_batch_prepare', replace_existing=True, max_instances=1,
+                )
+                scheduler.add_job(
+                    _run_refund_sla, IntervalTrigger(minutes=15),
+                    id='v2_refund_sla_monitor', replace_existing=True, max_instances=1,
+                )
+                scheduler.add_job(
+                    _run_dlq_retry, IntervalTrigger(minutes=5),
+                    id='v2_dlq_retry', replace_existing=True, max_instances=1,
+                )
+                logging.info("  - PLANN v2 cron jobs: 4 registered (expiry, batch, sla, dlq)")
+            except Exception as cron_err:
+                logging.warning(f"PLANN v2 cron registration failed: {cron_err}")
+
         scheduler.start()
         logging.info("Step 4 SUCCESS: Schedulers started")
         logging.info("  - Recurring Payments: Daily at 02:00 UTC")
@@ -823,6 +940,33 @@ async def lifespan(app: FastAPI):
             # Contact requests indexes
             await app.db.contact_requests.create_index([("created_at", -1)])
             await app.db.contact_requests.create_index([("status", 1)])
+
+            await app.db.operation_audit_logs.create_index(
+                [("organization_id", 1), ("created_at", -1)]
+            )
+
+            try:
+                await app.db.refund_reconciliation_pending.create_index(
+                    [("organization_id", 1), ("status", 1), ("created_at", -1)]
+                )
+                await app.db.refund_reconciliation_pending.create_index(
+                    [("stripe_refund_id", 1)], sparse=True
+                )
+                await app.db.refund_reconciliation_pending.create_index(
+                    [("status", 1), ("next_retry_at", 1)], sparse=True
+                )
+            except Exception as idx_rr:
+                logging.debug(f"refund_reconciliation_pending index: {idx_rr}")
+
+            try:
+                await app.db.merchant_transactions.create_index(
+                    [("stripe_refund_id", 1)],
+                    unique=True,
+                    sparse=True,
+                    name="merchant_tx_stripe_refund_id_unique_sparse",
+                )
+            except Exception as idx_mt:
+                logging.debug(f"merchant_transactions stripe_refund_id index: {idx_mt}")
             
             logging.info("Step 5 SUCCESS: Database indexes created")
         else:
@@ -1910,9 +2054,9 @@ class Service(BaseModel):
 class ServiceCreate(BaseModel): name: str; price: float; duration: int = 30; order: Optional[int] = None; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None
 class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[float] = None; duration: Optional[int] = None; order: Optional[int] = None; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None
 class Appointment(BaseModel):
-    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None; source: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None
+    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None; source: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None; refund_eligible: Optional[bool] = None
 class AppointmentCreate(BaseModel):
-    customer_name: str; phone: str; service_id: str; appointment_date: str; appointment_time: str; notes: str = ""; staff_member_id: Optional[str] = None; turnstile_token: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None
+    customer_name: str; phone: str; service_id: str; appointment_date: str; appointment_time: str; notes: str = ""; staff_member_id: Optional[str] = None; turnstile_token: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None; skip_confirmation_whatsapp: bool = False
 class AppointmentUpdate(BaseModel):
     customer_name: Optional[str] = None; phone: Optional[str] = None; address: Optional[str] = None; service_id: Optional[str] = None; appointment_date: Optional[str] = None; appointment_time: Optional[str] = None; notes: Optional[str] = None; status: Optional[str] = None; staff_member_id: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None
 class Transaction(BaseModel):
@@ -3722,6 +3866,25 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
     except Exception as emit_error:
         logger.error(f"Failed to emit appointment_updated: {emit_error}", exc_info=True)
     
+    # Tarih/saat değişince müşteriye tek WhatsApp (düz metin; çift şablon yok)
+    try:
+        od, ot = appointment.get("appointment_date"), appointment.get("appointment_time")
+        nd, nt = updated_appointment.get("appointment_date"), updated_appointment.get("appointment_time")
+        if (od != nd or ot != nt) and updated_appointment.get("phone"):
+            from whatsapp_service import send_whatsapp_text, format_date_for_display, detect_language_from_phone, WHATSAPP_ENABLED
+            if WHATSAPP_ENABLED:
+                ph = updated_appointment.get("phone")
+                lang = detect_language_from_phone(str(ph))
+                fd = format_date_for_display(nd or "")
+                nm = (updated_appointment.get("customer_name") or "").strip()
+                if lang == "TR":
+                    txt = f"Merhaba {nm},\nRandevunuz güncellendi.\nTarih: {fd}\nSaat: {nt}\n{company_name}"
+                else:
+                    txt = f"Hello {nm},\nYour appointment was updated.\nDate: {fd}\nTime: {nt}\n{company_name}"
+                send_whatsapp_text(ph, txt)
+    except Exception as wa_upd_err:
+        logging.warning(f"Reschedule WhatsApp skipped: {wa_upd_err}")
+    
     return updated_appointment
 
 @api_router.get("/appointments/{appointment_id}", response_model=Appointment)
@@ -3782,7 +3945,14 @@ async def check_break_conflict(db, staff_id: str, date: str, start_time: str, en
 @api_router.post("/appointments", response_model=Appointment)
 async def create_appointment(request: Request, appointment: AppointmentCreate, current_user: UserInDB = Depends(get_current_user)):
     db = await get_db_from_request(request)
-    
+
+    # Otomatik personel: boş / "auto" / "none" → None (tekli randevuda eligible personel döngüsü)
+    _sm = getattr(appointment, "staff_member_id", None)
+    if _sm is not None:
+        _sl = str(_sm).strip().lower()
+        if _sl in ("", "auto", "none"):
+            object.__setattr__(appointment, "staff_member_id", None)
+
     # ---------------------------------------------------------
     # 🔒 ADIM 1: REDIS LOCK (ÇİFTE REZERVASYON ENGELLEYİCİ)
     # ---------------------------------------------------------
@@ -4092,66 +4262,38 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                         detail="Bu saat dilimi doludur. Lütfen başka bir saat seçin."
                     )
         else:
-            # Boş personel bul (duration'a göre çakışma kontrolü ile)
+            # Otomatik atama: org-geneli "bu saat dolu" YOK — eligible personel içinde ilk müsait (_check_slot_conflict ile tek kaynak)
             service_duration = service.get('duration', 30)
-            
-            # Yeni randevunun başlangıç ve bitiş saatlerini hesapla
             new_start_hour, new_start_minute = map(int, appointment.appointment_time.split(':'))
             new_end_minute = new_start_minute + service_duration
             new_end_hour = new_start_hour + (new_end_minute // 60)
             new_end_minute = new_end_minute % 60
             new_end_time = f"{str(new_end_hour).zfill(2)}:{str(new_end_minute).zfill(2)}"
-            
+
             for staff in qualified_staff:
-                # Bu personelin o tarihteki tüm randevularını çek
-                existing_appointments = await db.appointments.find(
-                    {
-                        "organization_id": current_user.organization_id,
-                        "staff_member_id": staff['username'],
-                        "appointment_date": appointment.appointment_date,
-                        "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled"]}
-                    },
-                    {"_id": 0, "appointment_time": 1, "service_id": 1}
-                ).to_list(100)
-                
-                # Çakışma kontrolü
-                has_conflict = False
-                for existing_appt in existing_appointments:
-                    existing_start_time = existing_appt['appointment_time']
-                    existing_service_id = existing_appt.get('service_id')
-                    
-                    # Mevcut randevunun hizmet süresini bul
-                    if existing_service_id:
-                        existing_service = await db.services.find_one({"id": existing_service_id}, {"_id": 0, "duration": 1})
-                        existing_duration = existing_service.get('duration', 30) if existing_service else 30
-                    else:
-                        existing_duration = 30
-                    
-                    # Mevcut randevunun bitiş saatini hesapla
-                    existing_start_hour, existing_start_minute = map(int, existing_start_time.split(':'))
-                    existing_end_minute = existing_start_minute + existing_duration
-                    existing_end_hour = existing_start_hour + (existing_end_minute // 60)
-                    existing_end_minute = existing_end_minute % 60
-                    existing_end_time = f"{str(existing_end_hour).zfill(2)}:{str(existing_end_minute).zfill(2)}"
-                    
-                    # Çakışma kontrolü
-                    if (appointment.appointment_time < existing_end_time and new_end_time > existing_start_time):
-                        has_conflict = True
-                        logging.debug(f"   ⚠️ Staff {staff['username']} has conflict: {appointment.appointment_time}-{new_end_time} overlaps with {existing_start_time}-{existing_end_time}")
-                        break
-                
-                # Mola çakışması kontrolü
-                has_break_conflict = await check_break_conflict(
-                    db, staff['username'], appointment.appointment_date,
-                    appointment.appointment_time, new_end_time, current_user.organization_id
-                )
-                
-                if not has_conflict and not has_break_conflict:
-                    # Bu personel boş ve mola yok!
-                    assigned_staff_id = staff['username']
-                    logging.info(f"✅ Auto-assigned to {staff['username']} for {appointment.appointment_time}")
-                    break
-            
+                sid = staff["username"]
+                if await _check_slot_conflict(
+                    db,
+                    current_user.organization_id,
+                    sid,
+                    appointment.appointment_date,
+                    appointment.appointment_time,
+                    service_duration,
+                ):
+                    continue
+                if await check_break_conflict(
+                    db,
+                    sid,
+                    appointment.appointment_date,
+                    appointment.appointment_time,
+                    new_end_time,
+                    current_user.organization_id,
+                ):
+                    continue
+                assigned_staff_id = sid
+                logging.info(f"✅ Auto-assigned to {sid} for {appointment.appointment_time}")
+                break
+
             if not assigned_staff_id:
                 # Kota artırıldı ama personel bulunamadı, geri al
                 plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
@@ -4277,57 +4419,60 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
     
     send_sms(appointment.phone, sms_message)
     
-    # WhatsApp ONAY mesajı gönderimi
-    try:
-        _wa_msg_id = send_whatsapp_template(
-            to_number=appointment.phone,
-            template_type="CONFIRMATION",
-            customer_name=appointment.customer_name,
-            company_name=company_name,
-            appointment_date=appointment.appointment_date,
-            appointment_time=appointment.appointment_time,
-            service_name=service['name'],
-            support_phone=support_phone or "Destek Hattı",
-            business_lat=lat,
-            business_lng=lng,
-            business_address=location.get('address'),
-        )
+    # WhatsApp ONAY mesajı — paket akışında bulk sonrası SESSION_PACKAGE tek başına gidecek (çift mesaj önlemi)
+    if not getattr(appointment, "skip_confirmation_whatsapp", False):
         try:
-            import time as _time
-            _phone = str(appointment.phone).lstrip('+')
-            await db.whatsapp_message_logs.update_one(
-                {"message_id": _wa_msg_id},
-                {"$set": {
-                    "message_id": _wa_msg_id,
-                    "recipient": _phone,
-                    "status": "sent",
-                    "timestamp": int(_time.time()),
-                    "recorded_at": datetime.utcnow().isoformat(),
-                    "source": "admin_create"
-                }},
-                upsert=True
+            _wa_msg_id = send_whatsapp_template(
+                to_number=appointment.phone,
+                template_type="CONFIRMATION",
+                customer_name=appointment.customer_name,
+                company_name=company_name,
+                appointment_date=appointment.appointment_date,
+                appointment_time=appointment.appointment_time,
+                service_name=service['name'],
+                support_phone=support_phone or "Destek Hattı",
+                business_lat=lat,
+                business_lng=lng,
+                business_address=location.get('address'),
             )
-        except Exception:
-            pass
-    except Exception as whatsapp_error:
-        logger.warning(f"⚠️ WhatsApp mesajı gönderilemedi: {whatsapp_error}")
-        try:
-            import time as _time
-            _phone = str(appointment.phone).lstrip('+')
-            await db.whatsapp_message_logs.update_one(
-                {"message_id": f"fail_{_phone}_{int(_time.time())}"},
-                {"$set": {
-                    "recipient": _phone,
-                    "status": "failed",
-                    "timestamp": int(_time.time()),
-                    "recorded_at": datetime.utcnow().isoformat(),
-                    "errors": [{"code": "SEND_ERROR", "title": str(whatsapp_error)[:300]}],
-                    "source": "admin_create"
-                }},
-                upsert=True
-            )
-        except Exception:
-            pass
+            try:
+                import time as _time
+                _phone = str(appointment.phone).lstrip('+')
+                await db.whatsapp_message_logs.update_one(
+                    {"message_id": _wa_msg_id},
+                    {"$set": {
+                        "message_id": _wa_msg_id,
+                        "recipient": _phone,
+                        "status": "sent",
+                        "timestamp": int(_time.time()),
+                        "recorded_at": datetime.utcnow().isoformat(),
+                        "source": "admin_create"
+                    }},
+                    upsert=True
+                )
+            except Exception:
+                pass
+        except Exception as whatsapp_error:
+            logger.warning(f"⚠️ WhatsApp mesajı gönderilemedi: {whatsapp_error}")
+            try:
+                import time as _time
+                _phone = str(appointment.phone).lstrip('+')
+                await db.whatsapp_message_logs.update_one(
+                    {"message_id": f"fail_{_phone}_{int(_time.time())}"},
+                    {"$set": {
+                        "recipient": _phone,
+                        "status": "failed",
+                        "timestamp": int(_time.time()),
+                        "recorded_at": datetime.utcnow().isoformat(),
+                        "errors": [{"code": "SEND_ERROR", "title": str(whatsapp_error)[:300]}],
+                        "source": "admin_create"
+                    }},
+                    upsert=True
+                )
+            except Exception:
+                pass
+    else:
+        logging.info("WhatsApp CONFIRMATION skipped (skip_confirmation_whatsapp) — paket şablonu bekleniyor")
     
     # Audit log
     await create_audit_log(
@@ -4360,17 +4505,27 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
     return appointment_obj
 
 # === SESSION PACKAGE MODELS ===
-class SessionSlot(BaseModel):
-    date: str
-    time: str
-
-class BulkSessionCreate(BaseModel):
-    customer_name: str; phone: str; service_id: str; staff_member_id: Optional[str] = None; notes: str = ""
-    session_group_id: Optional[str] = None; starting_session_number: int = 1; session_total: Optional[int] = None
-    sessions: list[SessionSlot]
-
 class BulkCheckRequest(BaseModel):
-    service_id: str; staff_id: Optional[str] = None; slots: list[str]
+    service_id: str
+    staff_id: Optional[str] = None
+    slots: list[str]
+    staff_ids: Optional[list[Optional[str]]] = None
+
+
+class WavePlanRequest(BaseModel):
+    service_id: str
+    first_session_date: str
+    first_session_time: str
+    remaining_count: int = Field(ge=1, le=50)
+    staff_member_id: Optional[str] = None
+
+
+class CancelSelectedRequest(BaseModel):
+    appointment_ids: List[str]
+    refund: bool = False
+
+IDEMPOTENCY_BULK_SESSION_TTL_SEC = int(os.environ.get("IDEMPOTENCY_BULK_SESSION_TTL_SEC", str(72 * 3600)))
+IDEMPOTENCY_BULK_SESSION_LOCK_SEC = int(os.environ.get("IDEMPOTENCY_BULK_SESSION_LOCK_SEC", "120"))
 
 # === SESSION PACKAGE ENDPOINTS ===
 
@@ -4385,7 +4540,8 @@ def _minutes_to_time(minutes: int) -> str:
     return f"{str(minutes // 60).zfill(2)}:{str(minutes % 60).zfill(2)}"
 
 async def _check_slot_conflict(db, organization_id: str, staff_id: str, date: str, time: str, service_duration: int) -> bool:
-    """Belirtilen slotun çakışma durumunu kontrol eder. True = çakışma var."""
+    """Belirtilen slotun çakışma durumunu kontrol eder. True = çakışma var.
+    staff_id boş/None ise: o gün tüm personellerin randevuları arasında zaman çakışması aranır (işletme takvimi)."""
     new_start_min = _time_to_minutes(time)
     new_end_min = new_start_min + service_duration
     query = {"organization_id": organization_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled", "Ödeme Bekleniyor"]}}
@@ -4465,12 +4621,52 @@ async def _find_available_staff_for_slot(db, organization_id: str, service_id: s
         return sid
     return None
 
+
+async def _assert_staff_can_provide_service(
+    db,
+    organization_id: str,
+    service_id: str,
+    staff_username: str,
+    org_settings: Optional[dict] = None,
+) -> str:
+    """Açık personel ataması için: kullanıcı var mı, hizmete yetkili mi."""
+    staff_username = (staff_username or "").strip()
+    if not staff_username:
+        raise HTTPException(status_code=400, detail="Geçersiz personel")
+    admin_provides = True
+    if org_settings is not None:
+        admin_provides = org_settings.get("admin_provides_service", True)
+    user = await db.users.find_one(
+        {"username": staff_username, "organization_id": organization_id},
+        {"_id": 0, "role": 1, "permitted_service_ids": 1},
+    )
+    if not user:
+        raise HTTPException(status_code=400, detail=f"Personel bulunamadı: {staff_username}")
+    permitted = user.get("permitted_service_ids") or []
+    if service_id not in permitted:
+        raise HTTPException(status_code=400, detail="Seçilen personel bu hizmeti veremez")
+    if user.get("role") == "admin" and not admin_provides:
+        raise HTTPException(status_code=400, detail="Yönetici bu hizmeti veremez")
+    return staff_username
+
+
 @api_router.post("/appointments/bulk-session")
 async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current_user: UserInDB = Depends(get_current_user)):
     """Seans paketi oluştur — atomik toplu randevu oluşturma"""
     db = await get_db_from_request(request)
+    redis_client = getattr(request.app.state, 'redis_client', None)
+    request_id = str(uuid.uuid4())
+    assert_capability_for_user(current_user, CAP_SESSION_PLAN, request_id=request_id)
     if not bulk.sessions:
-        raise HTTPException(status_code=400, detail="En az bir seans slotu gereklidir")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_code": "validation_failed",
+                "message": "En az bir seans slotu gereklidir",
+                "request_id": request_id,
+            },
+        )
     
     # Hizmet doğrulama
     service = await db.services.find_one({"id": bulk.service_id, "organization_id": current_user.organization_id}, {"_id": 0})
@@ -4484,6 +4680,55 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
         if service["id"] not in (current_user.permitted_service_ids or []):
             raise HTTPException(status_code=403, detail="Bu hizmete randevu alma yetkiniz yok")
         assigned_staff_id = current_user.username
+
+    payload_hash = _canonical_bulk_session_hash(bulk)
+    idem_header = (request.headers.get("Idempotency-Key") or request.headers.get("idempotency-key") or "").strip()
+    idem_main_key = None
+    idem_proc_key = None
+    if idem_header and redis_client:
+        safe_idem = hashlib.sha256(f"{current_user.organization_id}:{idem_header}".encode()).hexdigest()[:48]
+        idem_main_key = f"plann:idempotency:bulk_session:{current_user.organization_id}:{safe_idem}"
+        idem_proc_key = idem_main_key + ":processing"
+        raw = await redis_client.get(idem_main_key)
+        if raw:
+            try:
+                stored = json.loads(raw)
+                if stored.get("payload_hash") == payload_hash:
+                    return JSONResponse(content=stored["response"], status_code=stored.get("http_status", 201))
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "success": False,
+                        "error_code": "idempotency_key_mismatch",
+                        "message": "Idempotency-Key already used with a different request body",
+                        "request_id": request_id,
+                    },
+                )
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+        got = await redis_client.set(idem_proc_key, payload_hash, nx=True, ex=IDEMPOTENCY_BULK_SESSION_LOCK_SEC)
+        if not got:
+            raw = await redis_client.get(idem_main_key)
+            if raw:
+                try:
+                    stored = json.loads(raw)
+                    if stored.get("payload_hash") == payload_hash:
+                        return JSONResponse(content=stored["response"], status_code=stored.get("http_status", 201))
+                except Exception:
+                    pass
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "success": False,
+                    "error_code": "idempotency_in_progress",
+                    "message": "A request with this Idempotency-Key is in progress",
+                    "request_id": request_id,
+                },
+            )
+    elif idem_header and not redis_client:
+        logging.warning("Idempotency-Key set but Redis unavailable; replay disabled for this request")
     
     # Kota kontrolü (toplam seans sayısı kadar)
     total_sessions = len(bulk.sessions)
@@ -4496,7 +4741,15 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                     {"organization_id": current_user.organization_id},
                     {"$inc": {"quota_usage": -i}}
                 )
-            raise HTTPException(status_code=403, detail=quota_error)
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "success": False,
+                    "error_code": "validation_failed",
+                    "message": str(quota_error),
+                    "request_id": request_id,
+                },
+            )
     
     # Yeniden planlama: aynı session_group_id ile geliyorsa eski seansları iptal et
     if bulk.session_group_id:
@@ -4512,37 +4765,95 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
         if cancel_result.modified_count > 0:
             logging.info(f"♻️ Yeniden planlama: {cancel_result.modified_count} eski seans iptal edildi (group={bulk.session_group_id})")
     
-    # Her slot için çakışma kontrolü
-    redis_client = getattr(request.app.state, 'redis_client', None)
+    # Her slot için çakışma kontrolü (satır bazlı personel: SessionSlot.staff_member_id)
+    org_settings = await db.settings.find_one(
+        {"organization_id": current_user.organization_id},
+        {"_id": 0, "admin_provides_service": 1},
+    )
     lock_keys = []
     staff_assignments = {}
+    # Aynı bulk isteğinde iki satırın çakışmasını DB'ye yazmadan yakala
+    bulk_reserved_ranges = []  # list of (date_str, start_min, end_min)
     try:
         for idx, session in enumerate(bulk.sessions):
-            if redis_client and assigned_staff_id:
-                lk = f"plann:lock:appt:{current_user.organization_id}:{assigned_staff_id}:{session.date}:{session.time}"
+            slot_staff = assigned_staff_id
+            if current_user.role == "staff" and not current_user.can_view_all_appointments:
+                slot_staff = current_user.username
+            else:
+                per_slot = getattr(session, "staff_member_id", None)
+                if per_slot and str(per_slot).strip():
+                    slot_staff = await _assert_staff_can_provide_service(
+                        db,
+                        current_user.organization_id,
+                        bulk.service_id,
+                        str(per_slot).strip(),
+                        org_settings,
+                    )
+
+            new_start_min = _time_to_minutes(session.time)
+            new_end_min = new_start_min + service_duration
+            for bd, bs, be in bulk_reserved_ranges:
+                if bd == session.date and new_start_min < be and new_end_min > bs:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "success": False,
+                            "error_code": "slot_conflict",
+                            "message": f"Seans {idx+1}: Aynı istekte bu tarih/saat çakışıyor.",
+                            "request_id": request_id,
+                            "failed_indexes": [idx],
+                        },
+                    )
+
+            if redis_client and slot_staff:
+                lk = f"plann:lock:appt:{current_user.organization_id}:{slot_staff}:{session.date}:{session.time}"
                 acquired = await redis_client.setnx(lk, "locked")
                 if not acquired:
-                    raise HTTPException(status_code=409, detail=f"Seans {idx+1} ({session.date} {session.time}) için başka bir işlem yapılıyor.")
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "success": False,
+                            "error_code": "slot_conflict",
+                            "message": f"Seans {idx+1} ({session.date} {session.time}) için başka bir işlem yapılıyor.",
+                            "request_id": request_id,
+                            "failed_indexes": [idx],
+                        },
+                    )
                 await redis_client.expire(lk, 10)
                 lock_keys.append(lk)
-            
-            slot_staff = assigned_staff_id
-            has_conflict = await _check_slot_conflict(db, current_user.organization_id, slot_staff, session.date, session.time, service_duration)
+
+            # Tek doğruluk kaynağı: istemcinin gönderdiği personel + slot — org-geneli veya otomatik personel ataması yok.
+            has_conflict = False
             has_break = False
-            if slot_staff and not has_conflict:
-                end_time = _minutes_to_time(_time_to_minutes(session.time) + service_duration)
-                has_break = await check_break_conflict(db, slot_staff, session.date, session.time, end_time, current_user.organization_id)
+            if slot_staff:
+                has_conflict = await _check_slot_conflict(
+                    db, current_user.organization_id, slot_staff, session.date, session.time, service_duration
+                )
+                if not has_conflict:
+                    end_time = _minutes_to_time(_time_to_minutes(session.time) + service_duration)
+                    has_break = await check_break_conflict(
+                        db, slot_staff, session.date, session.time, end_time, current_user.organization_id
+                    )
+            else:
+                logging.warning(
+                    "bulk-session row %s: no staff on slot; skipping conflict/break check (legacy)",
+                    idx + 1,
+                )
+
             if has_conflict or has_break:
-                if not assigned_staff_id:
-                    logging.warning(f"Seans {idx+1}: {session.date} {session.time} çakışma var (personelsiz mod), yine de oluşturuluyor")
-                    staff_assignments[idx] = slot_staff
-                    continue
-                alt_staff = await _find_available_staff_for_slot(db, current_user.organization_id, bulk.service_id, session.date, session.time, service_duration, exclude_staff_id=slot_staff)
-                if alt_staff:
-                    slot_staff = alt_staff
-                else:
-                    raise HTTPException(status_code=400, detail=f"Seans {idx+1}: {session.date} {session.time} saatinde hiç müsait personel yok.")
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "success": False,
+                        "error_code": "slot_conflict",
+                        "message": f"Seans {idx+1}: {session.date} {session.time} müsait değil (personel: {slot_staff or '-'}).",
+                        "request_id": request_id,
+                        "failed_indexes": [idx],
+                        "conflicts": [{"row_index": idx, "reason": "slot_or_break_conflict"}],
+                    },
+                )
             staff_assignments[idx] = slot_staff
+            bulk_reserved_ranges.append((session.date, new_start_min, new_end_min))
         
         # Tümü geçti — randevuları oluştur
         group_id = bulk.session_group_id or str(uuid.uuid4())
@@ -4576,7 +4887,7 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                 "appointment_time": session.time,
                 "notes": bulk.notes,
                 "status": apt_status,
-                "staff_member_id": staff_assignments.get(idx, assigned_staff_id),
+                "staff_member_id": staff_assignments.get(idx),
                 "service_duration": service_duration,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "session_group_id": group_id,
@@ -4589,9 +4900,23 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                 apt_doc['completed_at'] = datetime.now(timezone.utc).isoformat()
             created_appointments.append(apt_doc)
         
-        # Atomik insert
+        # Atomik insert — mümkünse transaction (tek commit); aksi halde insert_many
         if created_appointments:
-            await db.appointments.insert_many(created_appointments)
+            tx_ok = False
+            motor_client = getattr(db, "client", None)
+            if motor_client is not None:
+                try:
+                    async with await motor_client.start_session() as mongo_sess:
+                        async with mongo_sess.start_transaction():
+                            await db.appointments.insert_many(created_appointments, session=mongo_sess)
+                    tx_ok = True
+                except Exception as tx_err:
+                    logging.warning(
+                        "bulk-session: transaction insert not applied (%s); retrying without session",
+                        tx_err,
+                    )
+            if not tx_ok:
+                await db.appointments.insert_many(created_appointments)
         
         # Müşteri kaydı (upsert)
         try:
@@ -4680,8 +5005,63 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
         asyncio.create_task(_send_session_wa())
         
         logging.info(f"✅ Bulk session created: {len(created_appointments)} appointments, group={group_id}")
+        await create_audit_log(
+            db=db,
+            organization_id=current_user.organization_id,
+            user_id=current_user.username,
+            user_full_name=current_user.full_name or current_user.username,
+            action="CREATE",
+            resource_type="APPOINTMENT_BULK",
+            resource_id=group_id,
+            new_value={
+                "kind": "bulk_session",
+                "session_group_id": group_id,
+                "created_appointment_ids": [a["id"] for a in created_appointments],
+                "session_count": len(created_appointments),
+                "idempotency_key": idem_header or None,
+                "request_id": request_id,
+            },
+            ip_address=request.client.host if request.client else None,
+        )
+        await log_operation_audit(
+            db,
+            request_id=request_id,
+            organization_id=current_user.organization_id,
+            actor_user_id=current_user.username,
+            action="bulk_session",
+            target_kind="session_group",
+            target_ids=[group_id],
+            result="success",
+            meta={
+                "created_appointment_ids": [a["id"] for a in created_appointments],
+                "idempotency_key": idem_header,
+            },
+        )
         clean_appointments = [{k: v for k, v in apt.items() if k != '_id'} for apt in created_appointments]
-        return {"message": f"{len(created_appointments)} seans başarıyla oluşturuldu", "session_group_id": group_id, "appointments": clean_appointments}
+        created_ids = [a["id"] for a in created_appointments]
+        response_body = {
+            "success": True,
+            "message": f"{len(created_appointments)} seans başarıyla oluşturuldu",
+            "created_appointment_ids": created_ids,
+            "session_group_id": group_id,
+            "idempotency_key": idem_header or None,
+            "request_id": request_id,
+            "appointments": clean_appointments,
+        }
+        if idem_main_key and redis_client:
+            try:
+                await redis_client.set(
+                    idem_main_key,
+                    json.dumps({
+                        "payload_hash": payload_hash,
+                        "http_status": 201,
+                        "response": response_body,
+                    }, ensure_ascii=False),
+                    ex=IDEMPOTENCY_BULK_SESSION_TTL_SEC,
+                )
+            except Exception as ex:
+                logging.warning(f"Idempotency persist failed: {ex}")
+        return JSONResponse(content=response_body, status_code=201)
     
     except HTTPException:
         # Kota geri al
@@ -4698,6 +5078,11 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                     await redis_client.delete(lk)
                 except Exception:
                     pass
+        if redis_client and idem_proc_key:
+            try:
+                await redis_client.delete(idem_proc_key)
+            except Exception:
+                pass
 
 @api_router.post("/availability/bulk-check")
 async def bulk_check_availability(request: Request, check: BulkCheckRequest, current_user: UserInDB = Depends(get_current_user)):
@@ -4707,9 +5092,27 @@ async def bulk_check_availability(request: Request, check: BulkCheckRequest, cur
     if not service:
         raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
     service_duration = service.get('duration', 30)
-    staff_id = check.staff_id
+    if check.staff_ids is not None and len(check.staff_ids) != len(check.slots):
+        raise HTTPException(status_code=400, detail="staff_ids uzunluğu slots ile aynı olmalıdır")
+    org_settings = await db.settings.find_one(
+        {"organization_id": current_user.organization_id},
+        {"_id": 0, "admin_provides_service": 1},
+    )
     results = []
-    for slot_str in check.slots:
+    for i, slot_str in enumerate(check.slots):
+        staff_id = check.staff_id
+        if current_user.role == "staff" and not current_user.can_view_all_appointments:
+            staff_id = current_user.username
+        elif check.staff_ids is not None and i < len(check.staff_ids):
+            ov = check.staff_ids[i]
+            if ov is not None and str(ov).strip():
+                staff_id = await _assert_staff_can_provide_service(
+                    db,
+                    current_user.organization_id,
+                    check.service_id,
+                    str(ov).strip(),
+                    org_settings,
+                )
         try:
             parts = slot_str.split('T')
             date = parts[0]
@@ -4742,6 +5145,55 @@ async def bulk_check_availability(request: Request, check: BulkCheckRequest, cur
             result_item["suggested_staff_name"] = suggested_staff_name
         results.append(result_item)
     return results
+
+
+@api_router.post("/sessions/wave-plan")
+async def wave_plan_package_sessions(
+    request: Request,
+    body: WavePlanRequest,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Kalan paket seansları — haftalık hedef + dalga saat sırası + personel fallback (PLANN sözleşmesi)."""
+    db = await get_db_from_request(request)
+    assert_capability_for_user(current_user, CAP_SESSION_PLAN, request_id=str(uuid.uuid4()))
+    settings = await db.settings.find_one({"organization_id": current_user.organization_id}, {"_id": 0})
+    if not settings:
+        raise HTTPException(status_code=400, detail="Ayarlar bulunamadı")
+
+    admin_provides = settings.get("admin_provides_service", True)
+    staff_query: dict = {
+        "organization_id": current_user.organization_id,
+        "permitted_service_ids": {"$in": [body.service_id]},
+    }
+    if not admin_provides:
+        staff_query["role"] = {"$ne": "admin"}
+
+    staff_members = await db.users.find(
+        staff_query,
+        {"_id": 0, "username": 1, "full_name": 1, "days_off": 1, "role": 1, "permitted_service_ids": 1},
+    ).to_list(200)
+
+    if not staff_members and current_user.role == "admin":
+        staff_members = []
+
+    sessions, unplanned = await plan_wave_remaining_sessions(
+        db,
+        current_user.organization_id,
+        body.service_id,
+        body.first_session_date,
+        body.first_session_time,
+        body.remaining_count,
+        settings,
+        staff_members,
+        preferred_staff_username=(body.staff_member_id or "").strip() or None,
+    )
+
+    return {
+        "sessions": sessions,
+        "unplanned_count": unplanned,
+        "message": "OK" if unplanned == 0 else "partial",
+    }
+
 
 @api_router.post("/appointments/session-group/{group_id}/cancel-remaining")
 async def cancel_remaining_sessions(request: Request, group_id: str, from_session_number: int = Query(1, ge=1), current_user: UserInDB = Depends(get_current_user)):
@@ -4811,7 +5263,6 @@ async def refund_single_appointment(request: Request, appointment_id: str, curre
     if not txn or not txn.get("stripe_payment_intent_id"):
         raise HTTPException(status_code=400, detail="Bu randevu için iade edilebilir ödeme bulunamadı")
 
-        import stripe as stripe_lib
     from financial.state_machine import StateMachine
 
     is_session_partial = bool(apt.get("session_group_id") and apt.get("session_total") and apt["session_total"] > 1)
@@ -4823,7 +5274,7 @@ async def refund_single_appointment(request: Request, appointment_id: str, curre
             raise HTTPException(status_code=400, detail="İade tutarı hesaplanamadı")
 
     try:
-        stripe_refund = stripe_lib.Refund.create(
+        stripe_refund = stripe.Refund.create(
             payment_intent=txn["stripe_payment_intent_id"],
             amount=refund_amount,
             reason="requested_by_customer",
@@ -4833,7 +5284,7 @@ async def refund_single_appointment(request: Request, appointment_id: str, curre
                 "transaction_id": txn["id"],
             },
         )
-    except stripe_lib.error.StripeError as e:
+    except stripe.error.StripeError as e:
         logging.error(f"Stripe refund failed for appointment {appointment_id}: {e}")
         raise HTTPException(status_code=400, detail=f"Stripe iade hatası: {str(e)}")
 
@@ -5100,6 +5551,436 @@ async def cancel_remaining_sessions_and_refund(request: Request, group_id: str, 
         "refund": refund_result,
     }
 
+
+async def _insert_refund_reconciliation_pending(
+    db,
+    *,
+    organization_id: str,
+    request_id: str,
+    failed_step: str,
+    stripe_refund_id: str,
+    stripe_payment_intent_id: str,
+    merchant_transaction_id: str,
+    session_group_id: str,
+    appointment_ids: list,
+    refund_amount_minor: int,
+    is_full_refund: bool,
+    error_message: str,
+    snapshot_prev_partial_minor: int | None = None,
+) -> None:
+    """Stripe iade alındıktan sonra DB/state güncellemesi başarısız — mutabakat kuyruğu."""
+    doc = {
+        "id": str(uuid.uuid4()),
+        "organization_id": organization_id,
+        "status": "pending",
+        "failed_step": failed_step,
+        "stripe_refund_id": stripe_refund_id,
+        "stripe_payment_intent_id": stripe_payment_intent_id,
+        "merchant_transaction_id": merchant_transaction_id,
+        "session_group_id": session_group_id,
+        "appointment_ids": list(appointment_ids),
+        "refund_amount_minor": int(refund_amount_minor),
+        "is_full_refund": bool(is_full_refund),
+        "error_message": str(error_message)[:4000],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "request_id": request_id,
+        "retry_count": 0,
+        "next_retry_at": None,
+        "locked_by": None,
+        "locked_at": None,
+    }
+    if snapshot_prev_partial_minor is not None:
+        doc["snapshot_prev_partial_minor"] = int(snapshot_prev_partial_minor)
+    try:
+        await db.refund_reconciliation_pending.insert_one(doc)
+    except Exception as e:
+        logging.error(f"refund_reconciliation_pending insert failed: {e}", exc_info=True)
+
+
+def _raise_stripe_refund_db_failed(request_id: str, stripe_refund_id: str) -> None:
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "success": False,
+            "error_code": "stripe_refund_succeeded_db_failed",
+            "refund_status": "pending_reconciliation",
+            "message": "Ödeme iadesi alındı; kayıtlar senkronize edilemedi. Mutabakat kuyruğuna eklendi. Gerekirse destek ile iletişime geçin.",
+            "request_id": request_id,
+            "stripe_refund_id": stripe_refund_id,
+        },
+    )
+
+
+@api_router.post("/appointments/cancel-selected")
+async def cancel_selected_appointments(
+    request: Request,
+    body: CancelSelectedRequest,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Seçili randevu id\'lerini toplu iptal; refund=true ise (admin) önce Stripe iade, sonra DB güncelle — tek session_group_id paketi."""
+    request_id = str(uuid.uuid4())
+    assert_capability_for_user(current_user, CAP_APPOINTMENT_CANCEL, request_id=request_id)
+    db = await get_db_from_request(request)
+    raw_ids = [str(x).strip() for x in (body.appointment_ids or []) if str(x).strip()]
+    if not raw_ids:
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "validation_failed", "message": "appointment_ids gerekli", "request_id": request_id},
+        )
+    ids = list(dict.fromkeys(raw_ids))
+
+    appts = await db.appointments.find(
+        {"id": {"$in": ids}, "organization_id": current_user.organization_id},
+        {"_id": 0},
+    ).to_list(500)
+    if len(appts) != len(ids):
+        found = {a["id"] for a in appts}
+        missing = [i for i in ids if i not in found]
+        raise HTTPException(
+            status_code=404,
+            detail={"error_code": "validation_failed", "message": f"Randevu bulunamadı: {missing[:5]}", "request_id": request_id},
+        )
+
+    blocked = frozenset({"Tamamlandı", "İptal", "İptal Edildi", "Cancelled"})
+    for a in appts:
+        if a.get("status") in blocked:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error_code": "validation_failed",
+                    "message": "Seçilen randevulardan biri iptal edilemez (tamamlanmış veya zaten iptal).",
+                    "request_id": request_id,
+                },
+            )
+
+    if current_user.role == "staff" and not getattr(current_user, "can_view_all_appointments", False):
+        if staff_cannot_access_appointments(appts, current_user.username):
+            raise HTTPException(
+                status_code=403,
+                detail={"error_code": "permission_denied", "message": "Bu randevulara erişim yetkiniz yok", "request_id": request_id},
+            )
+
+    k = len(ids)
+
+    if not body.refund:
+        await db.appointments.update_many(
+            {"id": {"$in": ids}, "organization_id": current_user.organization_id},
+            {"$set": {"status": "İptal Edildi"}},
+        )
+        try:
+            await db.organization_plans.update_one(
+                {"organization_id": current_user.organization_id},
+                {"$inc": {"quota_usage": -k}},
+            )
+        except Exception as e:
+            logging.warning(f"Quota refund error (cancel-selected): {e}")
+        try:
+            await invalidate_cache(request, "dashboard_stats", current_user)
+            await invalidate_cache(request, "customers_list", current_user)
+            await emit_to_organization(
+                current_user.organization_id,
+                "appointments_bulk_updated",
+                {"cancelled": k, "appointment_ids": ids},
+            )
+        except Exception as e:
+            logging.warning(f"Post-cancel-selected cleanup: {e}")
+        await create_audit_log(
+            db=db,
+            organization_id=current_user.organization_id,
+            user_id=current_user.username,
+            user_full_name=current_user.full_name or current_user.username,
+            action="UPDATE",
+            resource_type="APPOINTMENT",
+            resource_id=request_id,
+            new_value={
+                "operation": "cancel_selected",
+                "refund": False,
+                "appointment_ids": ids,
+                "cancelled_count": k,
+                "request_id": request_id,
+            },
+            ip_address=request.client.host if request.client else None,
+        )
+        await log_operation_audit(
+            db,
+            request_id=request_id,
+            organization_id=current_user.organization_id,
+            actor_user_id=current_user.username,
+            action="cancel_selected",
+            target_kind="appointment",
+            target_ids=ids,
+            result="success",
+            meta={"refund": False},
+        )
+        return {
+            "success": True,
+            "cancelled_ids": ids,
+            "refund_status": "none",
+            "refunded_amount_minor": None,
+            "stripe_refund_id": None,
+            "error_code": None,
+            "request_id": request_id,
+        }
+
+    assert_capability_for_user(current_user, CAP_APPOINTMENT_REFUND, request_id=request_id)
+
+    sgids = {a.get("session_group_id") for a in appts if a.get("session_group_id")}
+    if len(sgids) != 1:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "validation_failed",
+                "message": "İade için seçim tek bir seans paketine (aynı session_group_id) ait olmalıdır.",
+                "request_id": request_id,
+            },
+        )
+    group_id = sgids.pop()
+    session_total = max((int(a.get("session_total") or 0) for a in appts), default=k)
+    if session_total < 1:
+        session_total = k
+
+    REFUNDABLE_STATES = ("captured", "settled", "available")
+    txn = await db.merchant_transactions.find_one({
+        "organization_id": current_user.organization_id,
+        "session_group_id": group_id,
+        "state": {"$in": list(REFUNDABLE_STATES)},
+    })
+    if not txn:
+        fs = await db.appointments.find_one(
+            {"session_group_id": group_id, "organization_id": current_user.organization_id, "session_number": 1},
+            {"_id": 0, "id": 1},
+        )
+        if fs:
+            txn = await db.merchant_transactions.find_one({
+                "organization_id": current_user.organization_id,
+                "appointment_id": fs["id"],
+                "state": {"$in": list(REFUNDABLE_STATES)},
+            })
+
+    if not txn or not txn.get("stripe_payment_intent_id"):
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "validation_failed", "message": "İade edilebilir ödeme bulunamadı", "request_id": request_id},
+        )
+
+    total_capture = int(txn.get("amount_display_minor") or 0)
+    prev_part = int(txn.get("partial_refund_total_minor") or 0)
+    per_session = int(total_capture / session_total) if session_total > 0 else 0
+    refund_amount = per_session * k
+    remaining_cap = max(0, total_capture - prev_part)
+    refund_amount = min(refund_amount, remaining_cap)
+    if refund_amount <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "validation_failed", "message": "İade tutarı sıfır veya kalan tutar yetersiz", "request_id": request_id},
+        )
+
+    is_full_refund = k >= session_total
+
+    try:
+        stripe_refund = stripe.Refund.create(
+            payment_intent=txn["stripe_payment_intent_id"],
+            amount=refund_amount,
+            reason="requested_by_customer",
+            metadata={
+                "organization_id": current_user.organization_id,
+                "session_group_id": group_id,
+                "transaction_id": txn["id"],
+                "cancel_selected": "1",
+            },
+        )
+    except stripe.error.StripeError as e:
+        logging.error(f"cancel-selected Stripe error: {e}")
+        err_code = "stripe_insufficient_balance" if "balance" in str(e).lower() else "validation_failed"
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_code": err_code,
+                "message": str(e),
+                "request_id": request_id,
+                "refund_status": "failed",
+            },
+        )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    from financial.state_machine import StateMachine
+    if is_full_refund:
+        sm = StateMachine(db)
+        try:
+            await sm.transition(
+                tx_id=txn["id"],
+                new_state="refunded",
+                trigger="cancel_selected_refund",
+                metadata={
+                    "stripe_refund_id": stripe_refund.id,
+                    "refund_amount_minor": refund_amount,
+                    "appointment_ids": ids,
+                },
+            )
+        except Exception as e:
+            logging.error(f"StateMachine after cancel-selected: {e}", exc_info=True)
+            await _insert_refund_reconciliation_pending(
+                db,
+                organization_id=current_user.organization_id,
+                request_id=request_id,
+                failed_step="state_machine",
+                stripe_refund_id=stripe_refund.id,
+                stripe_payment_intent_id=txn.get("stripe_payment_intent_id") or "",
+                merchant_transaction_id=txn["id"],
+                session_group_id=group_id,
+                appointment_ids=ids,
+                refund_amount_minor=refund_amount,
+                is_full_refund=True,
+                error_message=str(e),
+            )
+            _raise_stripe_refund_db_failed(request_id, stripe_refund.id)
+    else:
+        try:
+            await db.merchant_transactions.update_one(
+                {"id": txn["id"]},
+                {
+                    "$set": {"partial_refund_total_minor": prev_part + refund_amount, "updated_at": now_iso},
+                    "$push": {"state_history": {
+                        "state": "partial_refund",
+                        "timestamp": now_iso,
+                        "trigger": "cancel_selected_partial",
+                        "refund_amount_minor": refund_amount,
+                        "stripe_refund_id": stripe_refund.id,
+                        "appointment_ids": ids,
+                    }},
+                },
+            )
+            refund_tx_doc = {
+                "id": str(uuid.uuid4()),
+                "organization_id": current_user.organization_id,
+                "base_currency": txn.get("base_currency", "TRY"),
+                "type": "refund",
+                "state": "refunded",
+                "amount_display_minor": refund_amount,
+                "fee_amount_minor": 0,
+                "stripe_refund_id": stripe_refund.id,
+                "stripe_payment_intent_id": txn.get("stripe_payment_intent_id"),
+                "session_group_id": group_id,
+                "parent_transaction_id": txn["id"],
+                "customer_name": txn.get("customer_name"),
+                "customer_phone": txn.get("customer_phone"),
+                "created_at": now_iso,
+                "updated_at": now_iso,
+                "state_history": [{"state": "refunded", "timestamp": now_iso, "trigger": "cancel_selected_partial"}],
+            }
+            await db.merchant_transactions.insert_one(refund_tx_doc)
+            await db.merchant_wallets.update_one(
+                {"organization_id": current_user.organization_id},
+                {"$inc": {"available_balance_minor": -refund_amount, "total_refunded_minor": refund_amount}, "$set": {"updated_at": now_iso}},
+            )
+        except Exception as e:
+            logging.error(f"cancel-selected partial merchant DB failed: {e}", exc_info=True)
+            await _insert_refund_reconciliation_pending(
+                db,
+                organization_id=current_user.organization_id,
+                request_id=request_id,
+                failed_step="partial_merchant_updates",
+                stripe_refund_id=stripe_refund.id,
+                stripe_payment_intent_id=txn.get("stripe_payment_intent_id") or "",
+                merchant_transaction_id=txn["id"],
+                session_group_id=group_id,
+                appointment_ids=ids,
+                refund_amount_minor=refund_amount,
+                is_full_refund=False,
+                error_message=str(e),
+                snapshot_prev_partial_minor=prev_part,
+            )
+            _raise_stripe_refund_db_failed(request_id, stripe_refund.id)
+
+    try:
+        await db.appointments.update_many(
+            {"id": {"$in": ids}, "organization_id": current_user.organization_id},
+            {"$set": {"status": "İptal Edildi", "payment_status": "refunded"}},
+        )
+    except Exception as e:
+        logging.error(f"cancel-selected appointments update after Stripe refund: {e}", exc_info=True)
+        await _insert_refund_reconciliation_pending(
+            db,
+            organization_id=current_user.organization_id,
+            request_id=request_id,
+            failed_step="appointments_cancel",
+            stripe_refund_id=stripe_refund.id,
+            stripe_payment_intent_id=txn.get("stripe_payment_intent_id") or "",
+            merchant_transaction_id=txn["id"],
+            session_group_id=group_id,
+            appointment_ids=ids,
+            refund_amount_minor=refund_amount,
+            is_full_refund=is_full_refund,
+            error_message=str(e),
+        )
+        _raise_stripe_refund_db_failed(request_id, stripe_refund.id)
+    try:
+        await db.organization_plans.update_one(
+            {"organization_id": current_user.organization_id},
+            {"$inc": {"quota_usage": -k}},
+        )
+    except Exception as e:
+        logging.warning(f"Quota adjust cancel-selected refund: {e}")
+
+    try:
+        await invalidate_cache(request, "dashboard_stats", current_user)
+        await invalidate_cache(request, "customers_list", current_user)
+        await emit_to_organization(
+            current_user.organization_id,
+            "appointments_bulk_updated",
+            {"session_group_id": group_id, "cancelled": k, "appointment_ids": ids},
+        )
+    except Exception as e:
+        logging.warning(f"cancel-selected post cleanup: {e}")
+
+    await create_audit_log(
+        db=db,
+        organization_id=current_user.organization_id,
+        user_id=current_user.username,
+        user_full_name=current_user.full_name or current_user.username,
+        action="UPDATE",
+        resource_type="APPOINTMENT",
+        resource_id=request_id,
+        new_value={
+            "operation": "cancel_selected",
+            "refund": True,
+            "session_group_id": group_id,
+            "appointment_ids": ids,
+            "cancelled_count": k,
+            "refunded_amount_minor": refund_amount,
+            "stripe_refund_id": stripe_refund.id,
+            "request_id": request_id,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+    await log_operation_audit(
+        db,
+        request_id=request_id,
+        organization_id=current_user.organization_id,
+        actor_user_id=current_user.username,
+        action="cancel_selected",
+        target_kind="session_group",
+        target_ids=[group_id],
+        result="success",
+        meta={
+            "refund": True,
+            "appointment_ids": ids,
+            "refunded_amount_minor": refund_amount,
+            "stripe_refund_id": stripe_refund.id,
+        },
+    )
+    return {
+        "success": True,
+        "cancelled_ids": ids,
+        "refund_status": "succeeded",
+        "refunded_amount_minor": refund_amount,
+        "stripe_refund_id": stripe_refund.id,
+        "error_code": None,
+        "request_id": request_id,
+    }
+
+
 @api_router.get("/appointments", response_model=List[Appointment])
 async def get_appointments(
     request: Request, 
@@ -5207,6 +6088,23 @@ async def get_appointments(
         await db.appointments.update_many({"organization_id": current_user.organization_id, "id": {"$in": ids_to_update}}, {"$set": {"status": "Tamamlandı", "completed_at": datetime.now(timezone.utc).isoformat()}})
     if transactions_to_create:
         await db.transactions.insert_many(transactions_to_create)
+    
+    # UI: Stripe üzerinden iade edilebilir paket ödemesi var mı (aynı session_group)
+    _gids = list({a.get("session_group_id") for a in appointments_from_db if a.get("session_group_id")})
+    _eligible = set()
+    if _gids:
+        _tx = await db.merchant_transactions.find(
+            {
+                "organization_id": current_user.organization_id,
+                "session_group_id": {"$in": _gids},
+                "state": {"$in": list(REFUNDABLE_MERCHANT_STATES)},
+                "stripe_payment_intent_id": {"$exists": True, "$nin": [None, ""]},
+            },
+            {"_id": 0, "session_group_id": 1},
+        ).to_list(500)
+        _eligible = session_group_ids_from_merchant_transactions(_tx)
+    attach_refund_eligible(appointments_from_db, _eligible)
+    
     return appointments_from_db
 
 # === SERVICES ROUTES ===
@@ -9914,6 +10812,11 @@ async def get_internal_availability(
     """
     db = await get_db_from_request(request)
     organization_id = current_user.organization_id
+
+    if staff_id is not None:
+        _sid = str(staff_id).strip().lower()
+        if _sid in ("", "auto", "none"):
+            staff_id = None
 
     settings = await db.settings.find_one({"organization_id": organization_id}, {"_id": 0})
     if not settings:

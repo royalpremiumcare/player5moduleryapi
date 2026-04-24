@@ -20,7 +20,7 @@ const TIER_META = {
 
 const TC_TEXT = `PLANN Ödeme Hizmet Koşulları
 
-Son Güncelleme: 13 Nisan 2026
+Son Güncelleme: 21 Nisan 2026 (v2)
 
 Bu koşullar, PLANNAPP LTD ("PLANN", "biz") tarafından sunulan ödeme tahsilat ve hesaba aktarım hizmetlerinin kullanımını düzenler. Ödeme ayarlarınızı kaydederek aşağıdaki koşulları kabul etmiş sayılırsınız.
 
@@ -30,32 +30,42 @@ Bu koşullar, PLANNAPP LTD ("PLANN", "biz") tarafından sunulan ödeme tahsilat 
 • Cüzdan: İşletmenin PLANN üzerindeki sanal hesabı; tahsil edilen ödemelerin biriktiği havuz.
 • Çekim (Payout): Cüzdandaki bakiyenin işletmenin banka hesabına aktarılması.
 • Platform Hizmet Bedeli: Her işlem başına kesilen, online randevu altyapısı, güvenli ödeme işleme ve müşteri destek hizmetlerini kapsayan ücret.
+• Ödeme Havuzu (Batch): Haftalık olarak eşik üstü cüzdanlardan toplanan ve toplu işlenen ödeme grubu.
 
 2. Ticari Vekalet ve Ödeme Tahsilat Hizmeti
 2.1. PLANN, İngiltere ve Galler'de kayıtlı PLANNAPP LTD (Company No: 16148498) tüzel kişiliği altında faaliyet gösterir.
 2.2. PLANN, Stripe altyapısı aracılığıyla müşterilerinizden güvenli kredi/banka kartı ödemesi tahsil eder. Bu tahsilat, PLANNAPP LTD adına ve hesabına gerçekleştirilir.
-2.3. Tahsil edilen tutarlar, platform hizmet bedeli düşüldükten sonra işletme cüzdanınıza yansıtılır.
-2.4. PLANN, ödeme işlemlerinde ticari vekil (commercial agent) rolü üstlenir; işletme ile müşteri arasındaki hizmet sözleşmesinin doğrudan tarafı değildir.
+2.3. Tahsil edilen tutarlar, platform hizmet bedeli ve işlem maliyetleri (Stripe/Wise) düşüldükten sonra işletme cüzdanınıza yansıtılır.
+2.4. PLANN, ödeme işlemlerinde ticari vekil (commercial agent) rolü üstlenir ve ödeme akışının operasyonel organizatörüdür; işletme ile müşteri arasındaki hizmet sözleşmesinin doğrudan tarafı değildir.
 2.5. İşletme, PLANN'ın müşterilerinden ödeme tahsil etmesine açıkça yetki verir.
+2.6. PLANN, teknik risk, dolandırıcılık şüphesi, dispute veya tekrarlayan iade durumlarında ödeme havuzunu askıya alma veya manuel inceleme uygulama hakkını saklı tutar.
 
 3. Platform Hizmet Bedeli ve Ücretler
-3.1. Platform hizmet bedeli, seçtiğiniz çekim planına (Hızlı Çekim / Dengeli Plan / Yüksek Hacim) göre yüzdelik oran olarak belirlenir ve ödeme ayarları ekranında açıkça gösterilir.
+3.1. Platform hizmet bedeli, seçtiğiniz çekim planına (Hızlı Çekim / Dengeli Plan / Yüksek Hacim) göre yüzdelik oran + sabit ücret olarak belirlenir ve ödeme ayarları ekranında açıkça gösterilir.
 3.2. Platform hizmet bedeli; 7/24 online randevu altyapısı, güvenli kredi kartı işleme, sanal POS, kur koruma (TRY pazar için) ve müşteri destek hizmetlerinin tamamını kapsar.
-3.3. Cüzdanınızdaki bakiyenin banka hesabınıza aktarımında (çekim/payout) hiçbir havale veya transfer masrafı kesilmez.
-3.4. Platform hizmet bedeli tercihinize göre sizden veya müşterinizden tahsil edilir. Bu tercih ödeme ayarlarından değiştirilebilir.
+3.3. Cüzdanınızdaki bakiyenin banka hesabınıza aktarımında (çekim/payout) hiçbir havale veya transfer masrafı işletmeden kesilmez; bu masraflar platform hizmet bedeli içindedir.
+3.4. Platform hizmet bedeli tercihinize göre sizden (seller_pays) veya müşterinizden (buyer_pays) tahsil edilir. Bu tercih ödeme ayarlarından değiştirilebilir ve randevu bazında özel olarak da uygulanabilir.
+3.5. "Müşteri öder" modunda; platform hizmet bedeli, Stripe kesintisi ve Wise havale maliyeti müşteri ödemesine eklenir. Bu sayede işletme, hedeflediği net tutara tam olarak ulaşır.
 
 4. Çekim (Payout) Koşulları
-4.1. Çekim talebi oluşturabilmeniz için cüzdan bakiyenizin seçili planınızın minimum eşiğine ulaşması gerekir.
-4.2. İlk çekim talebinizden önce KYC (Kimlik Doğrulama) sürecinin tamamlanmış olması zorunludur.
-4.3. Banka bilgilerinizde (IBAN/Sort Code) değişiklik yapmanız halinde güvenlik amacıyla 72 saatlik bekleme süresi uygulanır.
-4.4. Çekimler, Wise ödeme altyapısı üzerinden işlenir ve işlem süreleri banka/ülkeye göre 1-3 iş günü arasında değişebilir.
+4.1. Çekimler otomatik batch (toplu) mantığıyla işlenir — manuel çekim butonu kaldırılmıştır.
+4.2. Her Salı gece eşik üstü cüzdanlar taranır; eşiği aşanlar bir sonraki Çarşamba ödeme havuzuna alınır.
+4.3. Ödemeler Wise paneli üzerinden manuel olarak onaylanıp fonlanır; aksi durumlarda bir sonraki haftaya veya retry kuyruğuna ertelenir.
+4.4. Çekim yapılabilmesi için cüzdan bakiyenizin seçili planınızın minimum eşiğine ulaşmış olması gerekir.
+4.5. İlk çekim talebinizden önce KYC (Kimlik Doğrulama) sürecinin tamamlanmış olması zorunludur.
+4.6. Banka bilgilerinizde (IBAN/Sort Code) değişiklik yapmanız halinde güvenlik amacıyla 72 saatlik bekleme süresi uygulanır.
+4.7. Çekimler Wise ödeme altyapısı üzerinden işlenir; işlem süreleri banka/ülkeye göre 1-3 iş günü arasında değişebilir.
+4.8. Batch'e alınan tutar 7 gün içinde fonlanmazsa otomatik olarak kullanılabilir bakiyeye geri döner.
 
 5. İade ve İhtilaf (Dispute) Politikası
-5.1. İade işlemlerini işletme paneli üzerinden siz başlatabilirsiniz.
-5.2. İade durumunda yalnızca hizmet bedeli müşteriye iade edilir. Platform hizmet bedeli iade kapsamı dışındadır ve PLANNAPP LTD hesabında kalır.
-5.3. Seans paketi kapsamındaki iadeler, kullanılmayan kalan seans sayısına orantılı olarak hesaplanır. Kullanılmış seanslar iade edilmez.
-5.4. Müşteri kart ihtilafı (chargeback) durumunda, ilgili tutar cüzdan bakiyenizden dondurulur ve ihtilaf sonucuna göre çözümlenir.
-5.5. Kapora ödemeleri, müşterinin iptal etmesi halinde işletmeye ait kalır ve otomatik iade yapılmaz.
+5.1. İade talepleri işletme paneli üzerinden "İade Talebi Oluştur" akışı ile başlatılır; talep gerekçe içermelidir.
+5.2. İade talepleri yalnızca PLANN yöneticisinin (SuperAdmin) onayı ile işleme alınır. Onay sonrası Stripe üzerinden iade yapılır ve kaydınıza yansıtılır.
+5.3. Öncelik seviyeleri: Normal (12 saat), Yüksek (4 saat), Acil (1 saat). Süresi aşan talepler otomatik olarak eskale edilir.
+5.4. İade durumunda yalnızca hizmet bedeli müşteriye iade edilir. Platform hizmet bedeli iade kapsamı dışındadır ve PLANNAPP LTD hesabında kalır.
+5.5. Seans paketi kapsamındaki iadeler, kullanılmayan kalan seans sayısına orantılı olarak hesaplanır. Kullanılmış seanslar iade edilmez.
+5.6. Müşteri kart ihtilafı (chargeback) durumunda, ilgili tutar cüzdan bakiyenizden dondurulur ve ihtilaf sonucuna göre çözümlenir.
+5.7. Kapora ödemeleri, müşterinin iptal etmesi halinde işletmeye ait kalır ve otomatik iade yapılmaz.
+5.8. İade veya dispute kaybı cüzdanınızı eksiye düşürürse, "bekleyen borç" oluşur ve ödemeler bu borç kapanana kadar durdurulur. Gelecek tahsilatlar önce bu borcu kapatır.
 
 6. KYC ve Güvenlik
 6.1. Ödeme hizmetinden yararlanmak için işletme kimlik doğrulaması (KYC) zorunludur.
@@ -90,7 +100,7 @@ export default function MerchantPaymentSettings({ onNavigate }) {
       const res = await api.get("/merchant/payment-settings");
       setSettings(res.data);
       setForm({
-        payout_mode: res.data.payout_mode,
+        payout_mode: "auto", // Weekly auto batch is the only supported mode
         payout_tier: res.data.payout_tier,
         fee_preference: res.data.fee_preference,
         iban: res.data.iban || "",
@@ -260,7 +270,7 @@ export default function MerchantPaymentSettings({ onNavigate }) {
 
         {settings.wise_recipient_verified ? (
           <div className="flex items-center gap-1.5 text-green-600 text-xs">
-            <Shield className="h-3.5 w-3.5" /> Wise recipient doğrulandı
+            <Shield className="h-3.5 w-3.5" /> Banka hesabınız doğrulandı
           </div>
         ) : (
           <div className="flex items-center gap-1.5 text-gray-400 text-xs">
@@ -358,37 +368,7 @@ export default function MerchantPaymentSettings({ onNavigate }) {
         </p>
       </div>
 
-      {/* Payout Mode */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-        <p className="text-sm font-medium text-gray-900">Ödeme Modu</p>
-        {[
-          { value: "manual", label: "Manuel", desc: "Ödeme talep ettiğinizde gönderilir" },
-          { value: "auto", label: "Otomatik", desc: "Eşiğe ulaşınca otomatik gönderilir" },
-        ].map((opt) => {
-          const isSelected = form.payout_mode === opt.value;
-          return (
-            <button
-              key={opt.value}
-              onClick={() => setForm({ ...form, payout_mode: opt.value })}
-              className={`w-full p-3 rounded-xl border-2 text-left transition-all ${
-                isSelected
-                  ? "border-zinc-900 bg-white"
-                  : "border-gray-200 hover:border-gray-300 bg-white"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-900">{opt.label}</p>
-                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                  isSelected ? "border-zinc-900" : "border-gray-300"
-                }`}>
-                  {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-zinc-900" />}
-                </div>
-              </div>
-              <p className="text-sm text-gray-500 mt-1">{opt.desc}</p>
-            </button>
-          );
-        })}
-      </div>
+      {/* Payout Mode selector removed — all orgs use weekly auto batch */}
 
       {/* T&C Checkbox */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">

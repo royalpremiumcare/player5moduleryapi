@@ -441,6 +441,27 @@ async def daily_reconciliation_job(db) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Refund reconciliation — Stripe iade sonrası iç DB kuyruğu
+# ---------------------------------------------------------------------------
+
+async def refund_reconciliation_job(db) -> None:
+    """pending refund_reconciliation_pending kayıtlarını dene (kilit + retry)."""
+    if not await _acquire_lock("refund_reconciliation", ttl=240):
+        logger.debug("refund_reconciliation job skipped — lock held")
+        return
+    try:
+        from financial.refund_reconciliation_service import run_refund_reconciliation_cron
+
+        out = await run_refund_reconciliation_cron(db, limit=15)
+        logger.info(
+            "refund_reconciliation_job: finished processed=%s (satır bazlı ayrıntı refund_reconciliation_cron loglarında)",
+            out.get("processed", 0),
+        )
+    except Exception as e:
+        logger.exception("refund_reconciliation_job failed: %s", e)
+
+
+# ---------------------------------------------------------------------------
 # Register all jobs with APScheduler
 # ---------------------------------------------------------------------------
 
@@ -471,12 +492,16 @@ def register_financial_cron_jobs(scheduler, db) -> None:
         replace_existing=True,
     )
 
-    scheduler.add_job(
-        auto_payout_job, "interval",
-        args=[db], hours=1,
-        id="auto_payout_job",
-        replace_existing=True,
-    )
+    # auto_payout_job disabled — replaced by Wednesday weekly batch cron.
+    # Kept import + function for backwards compat + on-demand testing, but
+    # not scheduled. Threshold-based instant payouts are intentionally
+    # removed to enforce the weekly settlement cadence.
+    # scheduler.add_job(
+    #     auto_payout_job, "interval",
+    #     args=[db], hours=1,
+    #     id="auto_payout_job",
+    #     replace_existing=True,
+    # )
 
     scheduler.add_job(
         wise_status_check_job, "interval",
@@ -506,4 +531,11 @@ def register_financial_cron_jobs(scheduler, db) -> None:
         replace_existing=True,
     )
 
-    logger.info("Financial cron jobs registered: 8 jobs")
+    scheduler.add_job(
+        refund_reconciliation_job, "interval",
+        args=[db], minutes=5,
+        id="refund_reconciliation_job",
+        replace_existing=True,
+    )
+
+    logger.info("Financial cron jobs registered: 9 jobs")

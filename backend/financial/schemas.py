@@ -38,7 +38,9 @@ TRANSACTION_TYPES = {
 TRANSACTION_STATES = {
     "pending", "authorized", "captured", "async_failed",
     "settled", "available",
-    "reserved", "paid_out",
+    # Legacy + new batch pipeline states
+    "reserved", "reserved_for_batch", "queued_for_wise",
+    "wise_fund_pending", "wise_fund_failed", "paid_out",
     "frozen", "disputed", "resolved_won", "resolved_lost",
     "refunded", "canceled", "failed",
 }

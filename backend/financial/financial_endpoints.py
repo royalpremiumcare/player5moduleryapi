@@ -42,6 +42,8 @@ from .schemas import (
     SuperAdminOverview,
 )
 from .fee_calculator import calculate_fee_preview, DepositRule
+from .feature_flags import is_env_flag_enabled
+from .gross_up_service import compute_customer_price as _gross_up_compute, GrossUpError
 from .merchant_checkout import create_customer_checkout_session, handle_stripe_merchant_webhook
 from .payout_service import check_payout_eligibility, create_payout_batch, process_payout_batch
 from .compliance import (
@@ -276,34 +278,9 @@ async def update_payment_settings(request: Request, body: MerchantPayoutSettings
         except Exception as e:
             logger.warning("KYC alert email failed: %s", e)
 
-    # payout_mode "auto" olarak değiştirildiyse hemen payout kontrolü tetikle
-    new_payout_mode = update_data.get("payout_mode") or body.payout_mode
-    if new_payout_mode == "auto":
-        try:
-            from .payout_service import check_payout_eligibility, create_payout_batch, process_payout_batch
-            eligibility = await check_payout_eligibility(db, org_id)
-            if eligibility.get("eligible"):
-                refreshed_settings = await db.settings.find_one({"organization_id": org_id})
-                wallet = await db.merchant_wallets.find_one({"organization_id": org_id})
-                if wallet:
-                    bc = refreshed_settings.get("base_currency", "TRY")
-                    org_data = {
-                        "organization_id": org_id,
-                        "amount_display_minor": eligibility["effective_available_minor"],
-                        "amount_gbp_minor": wallet.get("pool_balance_gbp_minor", 0) if bc == "TRY" else eligibility["effective_available_minor"],
-                        "wise_recipient_id": refreshed_settings.get("wise_recipient_id") or "",
-                    }
-                    batches = await create_payout_batch(db, bc, [org_data], "auto_immediate")
-                    for batch in batches:
-                        try:
-                            await process_payout_batch(db, batch["id"])
-                            logger.info("Auto-immediate payout triggered for org %s batch %s", org_id, batch["id"])
-                        except Exception as e:
-                            logger.error("Auto-immediate payout failed for batch %s: %s", batch["id"], e)
-            else:
-                logger.info("Auto payout mode set but not eligible yet for org %s: %s", org_id, eligibility.get("reasons"))
-        except Exception as e:
-            logger.error("Auto-immediate payout check failed for org %s: %s", org_id, e)
+    # NOTE: Immediate "auto-payout on settings save" removed — all payouts now
+    # run exclusively on the Wednesday weekly batch cron. Changing payout_mode
+    # no longer triggers an instant payout.
 
     return {"status": "updated"}
 
@@ -386,7 +363,7 @@ async def get_transactions(
     total = await db.merchant_transactions.count_documents(query)
     skip = (page - 1) * per_page
 
-    cursor = db.merchant_transactions.find(query).sort("created_at", -1).skip(skip).limit(per_page)
+    cursor = db.merchant_transactions.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page)
     txs = await cursor.to_list(length=per_page)
 
     settings = await db.settings.find_one({"organization_id": org_id})
@@ -542,26 +519,37 @@ async def get_payout_history(
     settings = await db.settings.find_one({"organization_id": org_id})
     base_currency = settings.get("base_currency", "TRY") if settings else "TRY"
 
-    query = {"items.organization_id": org_id}
+    # Destekle: (1) legacy batch'ler (items[].organization_id) + (2) v2 batch'ler (tek-org, items yok)
+    query = {
+        "$or": [
+            {"items.organization_id": org_id},
+            {"organization_id": org_id},
+        ]
+    }
     total = await db.payout_batches.count_documents(query)
     skip = (page - 1) * per_page
 
-    cursor = db.payout_batches.find(query).sort("created_at", -1).skip(skip).limit(per_page)
+    cursor = db.payout_batches.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page)
     batches = await cursor.to_list(length=per_page)
 
     items = []
     for b in batches:
-        my_items = [i for i in b.get("items", []) if i.get("organization_id") == org_id]
-        total_minor = sum(i.get("amount_display_minor", 0) for i in my_items)
+        if b.get("items"):
+            my_items = [i for i in b.get("items", []) if i.get("organization_id") == org_id]
+            total_minor = sum(i.get("amount_display_minor", 0) for i in my_items)
+        else:
+            # v2 single-org batch
+            total_minor = int(b.get("total_amount_minor") or 0)
+
         items.append(PayoutHistoryItem(
             id=b.get("id", ""),
             status=b.get("status", ""),
             total_display=format_display(total_minor, base_currency),
             total_minor=total_minor,
-            payout_rail=b.get("payout_rail", ""),
-            triggered_by=b.get("triggered_by", ""),
+            payout_rail=b.get("payout_rail", "wise"),
+            triggered_by=b.get("triggered_by", "auto"),
             created_at=b.get("created_at", ""),
-            completed_at=b.get("completed_at"),
+            completed_at=b.get("completed_at") or b.get("funded_at"),
         ).model_dump())
 
     return {"items": items, "total": total, "page": page, "per_page": per_page}
@@ -651,8 +639,49 @@ async def public_fee_preview(
         base_currency, service_price, tier, session_count, deposit_rule,
     )
 
-    preview["currency_symbol"] = CURRENCY_SYMBOLS.get(base_currency, "₺")
+    # PLANN v2 — Gross-up override: replace seller_pays / buyer_pays with full
+    # processor + payout + platform fee gross-up so public UI matches checkout.
+    if is_env_flag_enabled("FEATURE_GROSS_UP"):
+        try:
+            gu_seller = _gross_up_compute(
+                base_currency=base_currency,
+                service_price_minor=service_price,
+                fee_preference="seller_pays",
+                tier=tier,
+                deposit_rule=deposit_rule,
+            )
+            gu_buyer = _gross_up_compute(
+                base_currency=base_currency,
+                service_price_minor=service_price,
+                fee_preference="buyer_pays",
+                tier=tier,
+                deposit_rule=deposit_rule,
+            )
+            # Total embedded fee = customer_pays - merchant_net (single line for UI)
+            preview["seller_pays"] = {
+                "customer_pays": gu_seller.customer_price_minor,
+                "merchant_receives": gu_seller.merchant_net_minor,
+                "platform_fee": gu_seller.customer_price_minor - gu_seller.merchant_net_minor,
+            }
+            preview["buyer_pays"] = {
+                "customer_pays": gu_buyer.customer_price_minor,
+                "merchant_receives": gu_buyer.merchant_net_minor,
+                "platform_fee": gu_buyer.customer_price_minor - gu_buyer.merchant_net_minor,
+            }
+            preview["deposit_applied"] = gu_buyer.deposit_applied
+            preview["deposit_minor"] = gu_buyer.deposit_minor
+            preview["gross_up_applied"] = True
+        except GrossUpError as e:
+            logger.warning("fee-preview gross-up failed, falling back to legacy: %s", e)
+            preview["gross_up_applied"] = False
+        except Exception as e:
+            logger.error("fee-preview gross-up unexpected error: %s", e, exc_info=True)
+            preview["gross_up_applied"] = False
+    else:
+        preview["gross_up_applied"] = False
+
     preview["fee_preference"] = fee_preference
+    preview["currency_symbol"] = CURRENCY_SYMBOLS.get(base_currency, "₺")
     return preview
 
 
@@ -674,7 +703,7 @@ async def get_session_credits(
     if customer_phone:
         query["customer_phone"] = customer_phone
 
-    credits = await db.session_credits.find(query).to_list(length=100)
+    credits = await db.session_credits.find(query, {"_id": 0}).to_list(length=100)
     return {"items": credits}
 
 
@@ -870,7 +899,7 @@ async def superadmin_overview(request: Request):
     """SuperAdmin consolidated financial overview."""
     db = _get_db(request)
 
-    # Pool balance: sum of all wallets' pool_balance_gbp_minor
+    # Pool balance + pending/earned/refunded breakdowns per currency
     pipeline = [
         {"$group": {
             "_id": None,
@@ -881,10 +910,33 @@ async def superadmin_overview(request: Request):
             "try_available": {"$sum": {
                 "$cond": [{"$eq": ["$base_currency", "TRY"]}, "$available_balance_minor", 0]
             }},
+            "gbp_pending": {"$sum": {
+                "$cond": [{"$eq": ["$base_currency", "GBP"]}, {"$ifNull": ["$pending_balance_minor", 0]}, 0]
+            }},
+            "try_pending": {"$sum": {
+                "$cond": [{"$eq": ["$base_currency", "TRY"]}, {"$ifNull": ["$pending_balance_minor", 0]}, 0]
+            }},
+            "gbp_earned": {"$sum": {
+                "$cond": [{"$eq": ["$base_currency", "GBP"]}, {"$ifNull": ["$total_earned_minor", 0]}, 0]
+            }},
+            "try_earned": {"$sum": {
+                "$cond": [{"$eq": ["$base_currency", "TRY"]}, {"$ifNull": ["$total_earned_minor", 0]}, 0]
+            }},
+            "gbp_refunded": {"$sum": {
+                "$cond": [{"$eq": ["$base_currency", "GBP"]}, {"$ifNull": ["$total_refunded_minor", 0]}, 0]
+            }},
+            "try_refunded": {"$sum": {
+                "$cond": [{"$eq": ["$base_currency", "TRY"]}, {"$ifNull": ["$total_refunded_minor", 0]}, 0]
+            }},
         }},
     ]
     agg = await db.merchant_wallets.aggregate(pipeline).to_list(1)
-    totals = agg[0] if agg else {"total_pool": 0, "gbp_available": 0, "try_available": 0}
+    totals = agg[0] if agg else {
+        "total_pool": 0, "gbp_available": 0, "try_available": 0,
+        "gbp_pending": 0, "try_pending": 0,
+        "gbp_earned": 0, "try_earned": 0,
+        "gbp_refunded": 0, "try_refunded": 0,
+    }
 
     gbp_count = await db.merchant_wallets.count_documents({"base_currency": "GBP"})
     try_count = await db.merchant_wallets.count_documents({"base_currency": "TRY"})
@@ -902,7 +954,7 @@ async def superadmin_overview(request: Request):
     from .money import rate_from_micro
     rate_display = str(rate_from_micro(rate_micro)) if rate_micro else "N/A"
 
-    return SuperAdminOverview(
+    payload = SuperAdminOverview(
         total_pool_gbp_minor=totals["total_pool"],
         total_pool_gbp_display=format_display(totals["total_pool"], "GBP"),
         total_pool_try_minor=totals["try_available"],
@@ -917,6 +969,23 @@ async def superadmin_overview(request: Request):
         current_gbp_try_rate_display=rate_display,
         current_rate_display=rate_display,
     ).model_dump()
+
+    # Extended pending/earned/refunded breakdown (not in schema — passthrough)
+    payload.update({
+        "gbp_pending_total_minor":   totals["gbp_pending"],
+        "gbp_pending_total_display": format_display(totals["gbp_pending"], "GBP"),
+        "try_pending_total_minor":   totals["try_pending"],
+        "try_pending_total_display": format_display(totals["try_pending"], "TRY"),
+        "gbp_earned_total_minor":    totals["gbp_earned"],
+        "gbp_earned_total_display":  format_display(totals["gbp_earned"], "GBP"),
+        "try_earned_total_minor":    totals["try_earned"],
+        "try_earned_total_display":  format_display(totals["try_earned"], "TRY"),
+        "gbp_refunded_total_minor":  totals["gbp_refunded"],
+        "gbp_refunded_total_display": format_display(totals["gbp_refunded"], "GBP"),
+        "try_refunded_total_minor":  totals["try_refunded"],
+        "try_refunded_total_display": format_display(totals["try_refunded"], "TRY"),
+    })
+    return payload
 
 
 @router.get("/api/superadmin/financial/wallets", dependencies=[Depends(_require_superadmin)])
@@ -1132,3 +1201,836 @@ async def superadmin_kyc_verify(request: Request, org_id: str):
         ip_address=request.client.host if request.client else None,
     )
     return {"status": "verified", "organization_id": org_id}
+
+
+@router.post(
+    "/api/superadmin/financial/refunds/reconciliation/{reconciliation_id}/resolve",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def superadmin_resolve_refund_reconciliation(request: Request, reconciliation_id: str):
+    """Stripe iade sonrası iç kayıt kuyruğundaki tek kaydı kilitleyip yeniden dener (mutabakat)."""
+    db = _get_db(request)
+    user = request.state.current_user
+    username = user.get("username", "superadmin")
+    from financial.refund_reconciliation_service import resolve_refund_reconciliation_by_id
+
+    result = await resolve_refund_reconciliation_by_id(
+        db,
+        reconciliation_id,
+        locked_by=f"superadmin:{username}",
+        request=request,
+    )
+    if result.get("ok"):
+        return result
+    hs = result.get("http_status")
+    if hs == 404:
+        raise HTTPException(status_code=404, detail=result)
+    if hs == 409:
+        raise HTTPException(status_code=409, detail=result.get("error", "lock_not_acquired"))
+    if hs == 400:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 3h. PLANN v2 — Refund Requests
+# ---------------------------------------------------------------------------
+
+from . import refund_requests as refund_req_mod
+from . import wednesday_batch as wb_mod
+from . import dead_letter_queue as dlq_mod
+from . import feature_flags as ff_mod
+from .audit_service import write_audit
+
+# Multi-layer rate limit (opt-in via FEATURE_MULTI_LAYER_RATE_LIMIT)
+try:
+    import sys
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from multi_layer_rate_limit import enforce_multi_layer, get_profile as get_rl_profile
+    _RL_AVAILABLE = True
+except Exception as _rl_err:
+    logger.warning("multi_layer_rate_limit not importable: %s", _rl_err)
+    _RL_AVAILABLE = False
+
+    async def enforce_multi_layer(*args, **kwargs):  # type: ignore[misc]
+        return
+
+    def get_rl_profile(name):  # type: ignore[misc]
+        return {}
+
+
+def _redis_for_request(request: Request):
+    return getattr(request.app.state, "redis_client", None)
+
+
+class RefundRequestCreate(BaseModel):
+    merchant_transaction_id: str
+    refund_amount_minor: int
+    reason: str
+    appointment_ids: Optional[List[str]] = None
+    priority: str = "normal"
+    customer_waiting: bool = False
+    note: str = ""
+    idempotency_key: Optional[str] = None
+
+
+@router.post("/api/merchant/refund-requests", dependencies=[Depends(_require_admin)])
+async def create_merchant_refund_request(request: Request, body: RefundRequestCreate, user=Depends(_require_auth)):
+    """Merchant creates a refund request (requires SuperAdmin approval)."""
+    db = _get_db(request)
+    org_id = user.get("org_id") or user.get("organization_id")
+    if not org_id:
+        raise HTTPException(status_code=400, detail="org_id missing")
+
+    # Kill-switch: SuperAdmin panelinden devre dışı bırakılabilir (arıza durumunda)
+    if not await ff_mod.is_feature_enabled(db, "refund_requests_ui", organization_id=org_id, default=True):
+        raise HTTPException(
+            status_code=503,
+            detail="İade talepleri şu anda kapalı. Lütfen daha sonra tekrar deneyin.",
+        )
+
+    # Multi-layer rate limit: 5/hour per account
+    await enforce_multi_layer(
+        request, _redis_for_request(request),
+        limits=get_rl_profile("refund_request"),
+        context={"account": user.get("sub") or org_id},
+    )
+
+    try:
+        doc = await refund_req_mod.create_refund_request(
+            db,
+            organization_id=org_id,
+            requested_by_user_id=user.get("sub", ""),
+            merchant_transaction_id=body.merchant_transaction_id,
+            refund_amount_minor=body.refund_amount_minor,
+            reason=body.reason,
+            appointment_ids=body.appointment_ids,
+            priority=body.priority,
+            customer_waiting=body.customer_waiting,
+            note=body.note,
+            idempotency_key=body.idempotency_key,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        await write_audit(
+            db, organization_id=org_id, actor=user.get("sub", ""),
+            actor_role=user.get("role", "admin"),
+            action="refund_request_created",
+            details={"request_id": doc["id"], "amount_minor": body.refund_amount_minor},
+            target_entity_type="refund_request", target_entity_id=doc["id"],
+        )
+    except Exception:
+        pass
+    return doc
+
+
+@router.get("/api/merchant/refund-requests", dependencies=[Depends(_require_admin)])
+async def list_merchant_refund_requests(
+    request: Request, user=Depends(_require_auth),
+    status: Optional[str] = None, limit: int = Query(50, ge=1, le=200),
+):
+    db = _get_db(request)
+    org_id = user.get("org_id") or user.get("organization_id")
+    items = await refund_req_mod.list_org_refund_requests(db, org_id, status=status, limit=limit)
+    return {"items": items}
+
+
+@router.get("/api/merchant/customers/search", dependencies=[Depends(_require_admin)])
+async def merchant_search_payments(
+    request: Request, user=Depends(_require_auth),
+    q: str = Query("", max_length=100),
+    by: str = Query("name"),
+    limit: int = Query(30, ge=1, le=100),
+):
+    db = _get_db(request)
+    org_id = user.get("org_id") or user.get("organization_id")
+    if by not in ("name", "phone", "amount", "date"):
+        raise HTTPException(status_code=400, detail="invalid by param")
+
+    # Multi-layer rate limit: IP 30/min, account 200/hour
+    await enforce_multi_layer(
+        request, _redis_for_request(request),
+        limits=get_rl_profile("customer_search"),
+        context={"account": user.get("sub") or org_id},
+    )
+
+    items = await refund_req_mod.search_customer_payments(
+        db, organization_id=org_id, query=q, by=by, limit=limit,
+    )
+    return {"items": items}
+
+
+# SuperAdmin refund_requests
+@router.get("/api/superadmin/refund-requests", dependencies=[Depends(_require_superadmin)])
+async def sa_list_refund_requests(request: Request, limit: int = Query(100, ge=1, le=500)):
+    """Pending refund requests (awaiting SuperAdmin decision)."""
+    db = _get_db(request)
+    items = await refund_req_mod.list_pending_for_admin(db, limit=limit)
+    return {"items": items}
+
+
+@router.get(
+    "/api/superadmin/refund-requests/history",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_list_refund_history(
+    request: Request,
+    status: Optional[str] = Query(None, regex="^(executed|rejected|failed)$"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Completed refund requests (executed / rejected / failed) for history panel."""
+    db = _get_db(request)
+    items = await refund_req_mod.list_completed_for_admin(db, status=status, limit=limit)
+    return {"items": items}
+
+
+class RefundRequestDecision(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post(
+    "/api/superadmin/refund-requests/{request_id}/approve",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_approve_refund_request(
+    request: Request, request_id: str, user=Depends(_require_auth),
+):
+    db = _get_db(request)
+    # Inject stripe refund caller
+    import stripe
+
+    def _stripe_refund(pi_id, amount):
+        if not pi_id:
+            raise RuntimeError("no stripe_payment_intent_id on request")
+        return stripe.Refund.create(payment_intent=pi_id, amount=int(amount))
+
+    result = await refund_req_mod.approve_refund_request(
+        db, request_id=request_id, reviewer_id=user.get("sub", "superadmin"),
+        stripe_refund_call=_stripe_refund,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result)
+    try:
+        req_doc = await db.refund_requests.find_one({"id": request_id})
+        await write_audit(
+            db, organization_id=(req_doc or {}).get("organization_id", ""),
+            actor=user.get("sub", ""), actor_role="superadmin",
+            action="refund_request_approved",
+            details={"request_id": request_id, "stripe_refund_id": result.get("stripe_refund_id")},
+            target_entity_type="refund_request", target_entity_id=request_id,
+        )
+    except Exception:
+        pass
+    return result
+
+
+@router.post(
+    "/api/superadmin/refund-requests/{request_id}/reject",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_reject_refund_request(
+    request: Request, request_id: str, body: RefundRequestDecision, user=Depends(_require_auth),
+):
+    db = _get_db(request)
+    result = await refund_req_mod.reject_refund_request(
+        db, request_id=request_id, reviewer_id=user.get("sub", "superadmin"),
+        reason=body.reason or "",
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result)
+    try:
+        req_doc = await db.refund_requests.find_one({"id": request_id})
+        await write_audit(
+            db, organization_id=(req_doc or {}).get("organization_id", ""),
+            actor=user.get("sub", ""), actor_role="superadmin",
+            action="refund_request_rejected",
+            details={"request_id": request_id, "reason": body.reason},
+            target_entity_type="refund_request", target_entity_id=request_id,
+        )
+    except Exception:
+        pass
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 3i. PLANN v2 — Wallet Status (merchant-facing)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/merchant/wallet/status", dependencies=[Depends(_require_admin)])
+async def get_wallet_status_v2(request: Request, user=Depends(_require_auth)):
+    db = _get_db(request)
+    org_id = user.get("org_id") or user.get("organization_id")
+    return await wb_mod.compute_wallet_status(db, org_id)
+
+
+@router.get("/api/merchant/features", dependencies=[Depends(_require_admin)])
+async def get_merchant_features(request: Request, user=Depends(_require_auth)):
+    """Merchant-facing feature flag durumu (UI gating icin)."""
+    db = _get_db(request)
+    org_id = user.get("org_id") or user.get("organization_id")
+    return {
+        "refund_requests_ui": await ff_mod.is_feature_enabled(
+            db, "refund_requests_ui", organization_id=org_id, default=True,
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 3j. PLANN v2 — Wednesday Batch (SuperAdmin)
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/api/superadmin/financial/batches/awaiting",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_list_batches_awaiting(
+    request: Request,
+    limit: int = Query(100, ge=1, le=500),
+    include_failed: bool = Query(False),
+    include_completed: bool = Query(False),
+):
+    db = _get_db(request)
+    items = await wb_mod.list_batches_awaiting_admin(
+        db, limit=limit, include_failed=include_failed,
+        include_completed=include_completed,
+    )
+    return {"items": items}
+
+
+@router.post(
+    "/api/superadmin/financial/batches/{batch_id}/prepare-wise",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_prepare_batch_wise(request: Request, batch_id: str, user=Depends(_require_auth)):
+    db = _get_db(request)
+
+    async def _wise_prepare(batch):
+        # Delegate to wise_service — create quote + transfer (not fund)
+        try:
+            from .wise_service import prepare_batch_group
+            return await prepare_batch_group(db, batch)
+        except Exception as e:
+            # Fallback: raise so caller handles DLQ
+            raise RuntimeError(f"wise_prepare: {e}")
+
+    result = await wb_mod.prepare_batch_for_wise(
+        db, batch_id=batch_id, admin_id=user.get("sub", "superadmin"),
+        wise_prepare_fn=_wise_prepare,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result)
+    try:
+        batch = await db.payout_batches.find_one({"id": batch_id})
+        await write_audit(
+            db, organization_id=(batch or {}).get("organization_id", ""),
+            actor=user.get("sub", ""), actor_role="superadmin",
+            action="batch_wise_prepared",
+            details={"batch_id": batch_id, "wise_quote_id": result.get("wise_quote_id")},
+            target_entity_type="payout_batch", target_entity_id=batch_id,
+        )
+    except Exception:
+        pass
+    return result
+
+
+class BulkPrepareBody(BaseModel):
+    batch_ids: Optional[List[str]] = None  # null = all awaiting batches
+
+
+@router.post(
+    "/api/superadmin/financial/batches/bulk-prepare-wise",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_bulk_prepare_batches_wise(
+    request: Request, body: BulkPrepareBody = BulkPrepareBody(), user=Depends(_require_auth),
+):
+    """Prepare all (or selected) awaiting_admin_fund batches as a SINGLE Wise
+    batch group, so the Wise panel shows one consolidated "N GBP Transfer batch"
+    entry the admin can fund in one click.
+    """
+    db = _get_db(request)
+
+    async def _unified_wise_prepare(batches):
+        try:
+            from .wise_service import prepare_unified_batch_group
+            return await prepare_unified_batch_group(db, batches)
+        except Exception as e:
+            raise RuntimeError(f"unified_wise_prepare: {e}")
+
+    result = await wb_mod.bulk_prepare_batches_for_wise(
+        db, batch_ids=body.batch_ids,
+        admin_id=user.get("sub", "superadmin"),
+        unified_prepare_fn=_unified_wise_prepare,
+    )
+    try:
+        await write_audit(
+            db, organization_id="",
+            actor=user.get("sub", ""), actor_role="superadmin",
+            action="batch_bulk_prepare",
+            details={
+                "processed": result.get("processed"),
+                "success": result.get("success"),
+                "failed": result.get("failed"),
+            },
+            target_entity_type="payout_batch",
+            target_entity_id=",".join(body.batch_ids or [])[:200] or "all_awaiting",
+        )
+    except Exception:
+        pass
+    return result
+
+
+class BatchFundConfirm(BaseModel):
+    note: str = ""
+
+
+@router.post(
+    "/api/superadmin/financial/batches/{batch_id}/confirm-fund",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_confirm_batch_fund(
+    request: Request, batch_id: str, body: BatchFundConfirm, user=Depends(_require_auth),
+):
+    db = _get_db(request)
+    result = await wb_mod.confirm_manual_fund(
+        db, batch_id=batch_id, admin_id=user.get("sub", "superadmin"), note=body.note,
+    )
+    try:
+        batch = await db.payout_batches.find_one({"id": batch_id})
+        await write_audit(
+            db, organization_id=(batch or {}).get("organization_id", ""),
+            actor=user.get("sub", ""), actor_role="superadmin",
+            action="batch_funded",
+            details={"batch_id": batch_id, "note": body.note, "result": result},
+            target_entity_type="payout_batch", target_entity_id=batch_id,
+        )
+    except Exception:
+        pass
+    return result
+
+
+class BulkFundConfirm(BaseModel):
+    batch_ids: Optional[List[str]] = None  # null = all wise_fund_pending
+    note: str = ""
+
+
+@router.post(
+    "/api/superadmin/financial/batches/bulk-confirm-fund",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_bulk_confirm_batches_fund(
+    request: Request, body: BulkFundConfirm = BulkFundConfirm(), user=Depends(_require_auth),
+):
+    """Confirm manual fund for every wise_fund_pending batch (or selected) in one call."""
+    db = _get_db(request)
+    result = await wb_mod.bulk_confirm_manual_fund(
+        db,
+        batch_ids=body.batch_ids,
+        admin_id=user.get("sub", "superadmin"),
+        note=body.note,
+    )
+    try:
+        await write_audit(
+            db, organization_id="",
+            actor=user.get("sub", ""), actor_role="superadmin",
+            action="batch_bulk_funded",
+            details={
+                "processed": result.get("processed"),
+                "success": result.get("success"),
+                "failed": result.get("failed"),
+                "note": body.note[:500],
+            },
+            target_entity_type="payout_batch",
+            target_entity_id=",".join(body.batch_ids or [])[:200] or "all_wise_fund_pending",
+        )
+    except Exception:
+        pass
+    return result
+
+
+class BatchFailMark(BaseModel):
+    reason: str
+
+
+@router.post(
+    "/api/superadmin/financial/batches/{batch_id}/mark-failed",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_mark_batch_failed(
+    request: Request, batch_id: str, body: BatchFailMark, user=Depends(_require_auth),
+):
+    if not body.reason or len(body.reason.strip()) < 3:
+        raise HTTPException(status_code=400, detail="reason required (>=3 chars)")
+    db = _get_db(request)
+    result = await wb_mod.mark_batch_failed(
+        db, batch_id=batch_id, admin_id=user.get("sub", "superadmin"), reason=body.reason,
+    )
+    try:
+        batch = await db.payout_batches.find_one({"id": batch_id})
+        await write_audit(
+            db, organization_id=(batch or {}).get("organization_id", ""),
+            actor=user.get("sub", ""), actor_role="superadmin",
+            action="batch_failed",
+            details={"batch_id": batch_id, "reason": body.reason},
+            target_entity_type="payout_batch", target_entity_id=batch_id,
+        )
+    except Exception:
+        pass
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 3k. PLANN v2 — Dead Letter Queue (SuperAdmin)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/superadmin/financial/dlq", dependencies=[Depends(_require_superadmin)])
+async def sa_list_dlq(
+    request: Request,
+    status: Optional[str] = None,
+    failure_type: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=500),
+):
+    db = _get_db(request)
+    query = {}
+    if status:
+        query["status"] = status
+    if failure_type:
+        query["failure_type"] = failure_type
+    cursor = db.dead_letter_queue.find(query, {"_id": 0}).sort("created_at", -1).limit(limit)
+    items = await cursor.to_list(limit)
+    return {"items": items}
+
+
+@router.post(
+    "/api/superadmin/financial/dlq/{dlq_id}/retry",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_dlq_retry(request: Request, dlq_id: str, user=Depends(_require_auth)):
+    db = _get_db(request)
+    result = await dlq_mod.manual_retry(db, dlq_id, user.get("sub", "superadmin"))
+    try:
+        await write_audit(
+            db, organization_id="", actor=user.get("sub", ""), actor_role="superadmin",
+            action="dlq_manual_retry", details={"dlq_id": dlq_id},
+            target_entity_type="dlq", target_entity_id=dlq_id,
+        )
+    except Exception:
+        pass
+    return result
+
+
+class DLQResolve(BaseModel):
+    note: str
+
+
+@router.post(
+    "/api/superadmin/financial/dlq/{dlq_id}/resolve",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_dlq_resolve(request: Request, dlq_id: str, body: DLQResolve, user=Depends(_require_auth)):
+    db = _get_db(request)
+    result = await dlq_mod.manual_resolve(db, dlq_id, user.get("sub", "superadmin"), body.note)
+    try:
+        await write_audit(
+            db, organization_id="", actor=user.get("sub", ""), actor_role="superadmin",
+            action="dlq_manual_resolve", details={"dlq_id": dlq_id, "note": body.note},
+            target_entity_type="dlq", target_entity_id=dlq_id,
+        )
+    except Exception:
+        pass
+    return result
+
+
+@router.post(
+    "/api/superadmin/financial/dlq/{dlq_id}/abandon",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_dlq_abandon(request: Request, dlq_id: str, body: DLQResolve, user=Depends(_require_auth)):
+    db = _get_db(request)
+    result = await dlq_mod.manual_abandon(db, dlq_id, user.get("sub", "superadmin"), body.note)
+    try:
+        await write_audit(
+            db, organization_id="", actor=user.get("sub", ""), actor_role="superadmin",
+            action="dlq_manual_abandon", details={"dlq_id": dlq_id, "reason": body.note},
+            target_entity_type="dlq", target_entity_id=dlq_id,
+        )
+    except Exception:
+        pass
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 3l. PLANN v2 — Feature Flags (SuperAdmin)
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/api/superadmin/financial/feature-flags",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_list_feature_flags(request: Request):
+    db = _get_db(request)
+    return await ff_mod.list_all_flags(db)
+
+
+class FlagGlobalSet(BaseModel):
+    value: bool
+
+
+@router.post(
+    "/api/superadmin/financial/feature-flags/{name}/global",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_set_flag_global(
+    request: Request, name: str, body: FlagGlobalSet, user=Depends(_require_auth),
+):
+    db = _get_db(request)
+    try:
+        await ff_mod.set_flag_global(db, name, body.value, user.get("sub", "superadmin"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        await write_audit(
+            db, organization_id="", actor=user.get("sub", ""), actor_role="superadmin",
+            action="feature_flag_changed",
+            details={"flag": name, "scope": "global", "value": body.value},
+        )
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+class FlagOrgSet(BaseModel):
+    organization_id: str
+    value: Optional[bool] = None  # None → remove override
+
+
+@router.post(
+    "/api/superadmin/financial/feature-flags/{name}/org",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_set_flag_org(
+    request: Request, name: str, body: FlagOrgSet, user=Depends(_require_auth),
+):
+    db = _get_db(request)
+    try:
+        await ff_mod.set_flag_org_override(
+            db, name, body.organization_id, body.value, user.get("sub", "superadmin"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        await write_audit(
+            db, organization_id=body.organization_id,
+            actor=user.get("sub", ""), actor_role="superadmin",
+            action="feature_flag_changed",
+            details={"flag": name, "scope": "org", "value": body.value,
+                     "organization_id": body.organization_id},
+        )
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+class FlagKillSwitch(BaseModel):
+    disabled: bool
+
+
+@router.post(
+    "/api/superadmin/financial/feature-flags/{name}/kill-switch",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_flag_kill_switch(
+    request: Request, name: str, body: FlagKillSwitch, user=Depends(_require_auth),
+):
+    db = _get_db(request)
+    try:
+        await ff_mod.set_emergency_disable(db, name, body.disabled, user.get("sub", "superadmin"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "emergency_disable": body.disabled}
+
+
+# ---------------------------------------------------------------------------
+# 3m. PLANN v2 — Reconciliation Summary + Export
+# ---------------------------------------------------------------------------
+
+from . import reconciliation as recon_mod
+
+
+@router.get(
+    "/api/superadmin/financial/reconciliation/multi_summary",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_reconciliation_multi_summary(
+    request: Request,
+    start_iso: str = Query(...),
+    end_iso: str = Query(...),
+    organization_id: Optional[str] = None,
+):
+    """Return reconciliation summary per currency (TRY, GBP)."""
+    db = _get_db(request)
+    return await recon_mod.compute_multi_currency_summary(
+        db, start_iso=start_iso, end_iso=end_iso, organization_id=organization_id,
+    )
+
+
+@router.get(
+    "/api/superadmin/financial/reconciliation/discrepancies",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_reconciliation_discrepancies(
+    request: Request,
+    start_iso: str = Query(...),
+    end_iso: str = Query(...),
+    organization_id: Optional[str] = None,
+    limit: int = Query(200, ge=1, le=1000),
+    tolerance_minor: int = Query(100, ge=0, le=100000),
+):
+    """List per-tx discrepancies that contribute to the unexplained_diff."""
+    db = _get_db(request)
+    items = await recon_mod.list_discrepancies(
+        db,
+        start_iso=start_iso, end_iso=end_iso,
+        organization_id=organization_id,
+        limit=limit, tolerance_minor=tolerance_minor,
+    )
+    return {"items": items, "count": len(items)}
+
+
+@router.get(
+    "/api/superadmin/financial/reconciliation/summary",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_reconciliation_summary(
+    request: Request,
+    start_iso: str = Query(...),
+    end_iso: str = Query(...),
+    organization_id: Optional[str] = None,
+    base_currency: Optional[str] = None,
+):
+    db = _get_db(request)
+    return await recon_mod.compute_reconciliation_summary(
+        db, start_iso=start_iso, end_iso=end_iso,
+        organization_id=organization_id, base_currency=base_currency,
+    )
+
+
+@router.get(
+    "/api/superadmin/financial/reconciliation/export.csv",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_reconciliation_export_csv(
+    request: Request,
+    start_iso: str = Query(...),
+    end_iso: str = Query(...),
+    organization_ids: Optional[str] = Query(None, description="comma separated"),
+):
+    db = _get_db(request)
+    org_list = [s.strip() for s in (organization_ids or "").split(",") if s.strip()] or None
+    content = await recon_mod.export_csv(
+        db, start_iso=start_iso, end_iso=end_iso, organization_ids=org_list,
+    )
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="reconciliation_{start_iso[:10]}_{end_iso[:10]}.csv"',
+        },
+    )
+
+
+@router.get(
+    "/api/superadmin/financial/reconciliation/export.xlsx",
+    dependencies=[Depends(_require_superadmin)],
+)
+async def sa_reconciliation_export_xlsx(
+    request: Request,
+    start_iso: str = Query(...),
+    end_iso: str = Query(...),
+    organization_ids: Optional[str] = Query(None),
+):
+    db = _get_db(request)
+    org_list = [s.strip() for s in (organization_ids or "").split(",") if s.strip()] or None
+    content = await recon_mod.export_xlsx(
+        db, start_iso=start_iso, end_iso=end_iso, organization_ids=org_list,
+    )
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="reconciliation_{start_iso[:10]}_{end_iso[:10]}.xlsx"',
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# 3n. PLANN v2 — Fee preview with full gross-up (Stripe + Wise + Platform)
+# ---------------------------------------------------------------------------
+
+from .gross_up_service import preview_both_modes as _v2_preview_both
+
+
+@router.get("/api/public/fee-preview-v2")
+async def public_fee_preview_v2(
+    request: Request,
+    organization_id: str,
+    service_id: Optional[str] = None,
+    service_price_minor: Optional[int] = None,
+):
+    """
+    Preview both fee_preference modes with full gross-up (PLANN v2).
+    Either service_id OR service_price_minor must be provided.
+    """
+    db = _get_db(request)
+    settings = await db.settings.find_one({"organization_id": organization_id})
+    if not settings:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    base_currency = settings.get("base_currency", "TRY")
+    tier = settings.get("payout_tier", "standard")
+    price_minor = service_price_minor
+
+    deposit_rule = None
+    if service_id:
+        service = await db.services.find_one({
+            "id": service_id, "organization_id": organization_id,
+        })
+        if not service:
+            raise HTTPException(status_code=404, detail="Service not found")
+        price_minor = price_minor or service.get("price_minor", 0)
+        if not price_minor and service.get("price"):
+            price_minor = int(round(service["price"] * 100))
+        if service.get("payment_rule") == "deposit":
+            dep_amount = service.get("deposit_amount")
+            if dep_amount is not None:
+                deposit_rule = DepositRule(
+                    payment_rule="deposit", deposit_type="fixed",
+                    deposit_value=int(round(dep_amount * 100)),
+                )
+            else:
+                dep_pct = service.get("deposit_percentage", 30)
+                deposit_rule = DepositRule(
+                    payment_rule="deposit", deposit_type="percentage",
+                    deposit_value=dep_pct * 100,
+                )
+        elif service.get("payment_rule") in ("full_online", "online"):
+            deposit_rule = DepositRule(payment_rule="full_online")
+
+    if not price_minor or price_minor <= 0:
+        raise HTTPException(status_code=400, detail="invalid price")
+
+    try:
+        preview = _v2_preview_both(
+            base_currency=base_currency,
+            service_price_minor=price_minor,
+            tier=tier,
+            deposit_rule=deposit_rule,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    preview["currency_symbol"] = CURRENCY_SYMBOLS.get(base_currency, "₺")
+    preview["tier"] = tier
+    preview["fee_preference"] = settings.get("fee_preference", "seller_pays")
+    return preview

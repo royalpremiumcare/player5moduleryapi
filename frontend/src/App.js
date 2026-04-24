@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import "@/App.css";
 import api from "./api/api"; 
@@ -12,6 +12,7 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 
 import Dashboard from "@/components/Dashboard";
 import CalendarView from "@/components/Calendar";
+import SessionsHub from "@/components/SessionsHub";
 import AppointmentForm from "@/components/AppointmentForm";
 import AppointmentFormWizard from "@/components/AppointmentFormWizard";
 import ServiceManagement from "@/components/ServiceManagement";
@@ -24,6 +25,7 @@ import SettingsOnlineBooking from "@/components/SettingsOnlineBooking";
 import Finance from "@/components/Finance";
 import MerchantWallet from "@/components/MerchantWallet";
 import MerchantPaymentSettings from "@/components/MerchantPaymentSettings";
+import MerchantRefundRequests from "@/components/MerchantRefundRequests";
 import Subscribe from "@/components/Subscribe";
 import Customers from "@/components/Customers";
 import ImportData from "@/components/ImportData";
@@ -32,9 +34,10 @@ import AuditLogs from "@/components/AuditLogs";
 import HelpCenter from "@/components/HelpCenter";
 import SuperAdmin from "@/components/SuperAdmin";
 import MarketingPanel from "@/components/MarketingPanel";
+import { computeHasActiveSessions } from "@/lib/sessionPackageNav";
 import SetupWizard from "@/components/SetupWizard";
 import ChatWidget from "@/components/ChatWidget";
-import { Calendar, Briefcase, DollarSign, SettingsIcon, Users, Upload, LogOut, Moon, Sun, UserCog, FileText, Home, Plus, CreditCard, User, HelpCircle, Package, Bell } from "lucide-react";
+import { Briefcase, DollarSign, SettingsIcon, Users, Upload, LogOut, Moon, Sun, UserCog, FileText, Home, Plus, CreditCard, User, HelpCircle, Package, Bell, Layers, Calendar } from "lucide-react";
 import { useTheme } from "./context/ThemeContext";
 import { useTranslation } from "react-i18next";
 import {
@@ -74,6 +77,17 @@ function App() {
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+
+  const hasActiveSessions = useMemo(
+    () => computeHasActiveSessions(appointments),
+    [appointments]
+  );
+
+  useEffect(() => {
+    if (!hasActiveSessions && currentView === "sessions") {
+      setCurrentView("dashboard");
+    }
+  }, [hasActiveSessions, currentView]);
   
   // Notification states
   const [notifications, setNotifications] = useState([]);
@@ -1107,7 +1121,7 @@ function App() {
         </header>
       )}
 
-      <main className={(currentView === "dashboard" || currentView === "settings" || currentView === "settings-subscription" || currentView === "settings-profile" || currentView === "settings-location" || currentView === "settings-online-booking" || currentView === "subscribe" || currentView === "staff" || currentView === "services" || currentView === "help-center") && !showForm ? "" : "container mx-auto px-4 py-6"}>
+      <main className={(currentView === "dashboard" || currentView === "sessions" || currentView === "settings" || currentView === "settings-subscription" || currentView === "settings-profile" || currentView === "settings-location" || currentView === "settings-online-booking" || currentView === "subscribe" || currentView === "staff" || currentView === "services" || currentView === "help-center") && !showForm ? "" : "container mx-auto px-4 py-6"}>
         {/* Ödeme Başarı Banner'ı */}
         {showPaymentSuccess && (
           <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-6 shadow-lg sticky top-0 z-50 animate-in slide-in-from-top">
@@ -1176,6 +1190,16 @@ function App() {
               setCurrentView("dashboard");
             }}
             onNewAppointment={handleNewAppointment}
+          />
+        )}
+        {currentView === "sessions" && (
+          <SessionsHub
+            appointments={appointments}
+            userRole={userRole}
+            onRefresh={async () => {
+              await loadAppointments();
+              if (userRole === "admin") await loadStats();
+            }}
           />
         )}
         {currentView === "customers" && (
@@ -1279,6 +1303,9 @@ function App() {
         {currentView === "merchant-wallet" && userRole === 'admin' && (
           <MerchantWallet onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
         )}
+        {currentView === "merchant-refund-requests" && userRole === 'admin' && (
+          <MerchantRefundRequests onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
+        )}
         {currentView === "merchant-payment-settings" && userRole === 'admin' && (
           <MerchantPaymentSettings onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
         )}
@@ -1300,8 +1327,8 @@ function App() {
         )}
       </main>
 
-      {/* Alt Navigasyon Barı (Dashboard ve Calendar görünümlerinde) */}
-      {(currentView === "dashboard" || currentView === "calendar") && !showForm && (
+      {/* Alt Navigasyon: Dashboard | Seanslar | + | Müşteriler | Ayarlar — Takvim Dashboard’dan */}
+      {(currentView === "dashboard" || currentView === "sessions" || currentView === "calendar") && !showForm && (
         <div 
           ref={bottomNavRef}
           className="bg-white border-t border-gray-200 shadow-lg bottom-nav-fixed" 
@@ -1329,25 +1356,45 @@ function App() {
                 setCurrentView("dashboard");
                 setShowForm(false);
               }}
-              className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors text-blue-600"
+              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+                currentView === "dashboard"
+                  ? "text-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
             >
               <Home className="w-5 h-5" />
               <span className="text-xs font-medium">{t('nav.dashboard', 'Dashboard')}</span>
             </button>
 
-            {/* Takvim */}
-            <button
-              onClick={() => {
-                setCurrentView("calendar");
-                setShowForm(false);
-              }}
-              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
-                currentView === "calendar" ? "text-blue-600" : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              <Calendar className="w-5 h-5" />
-              <span className="text-xs font-medium">{t('nav.calendar', 'Calendar')}</span>
-            </button>
+            {hasActiveSessions ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentView("sessions");
+                  setShowForm(false);
+                }}
+                className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+                  currentView === "sessions" ? "text-blue-600" : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <Layers className="w-5 h-5" />
+                <span className="text-xs font-medium">{t('nav.sessions', 'Sessions')}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentView("calendar");
+                  setShowForm(false);
+                }}
+                className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+                  currentView === "calendar" ? "text-blue-600" : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <Calendar className="w-5 h-5" />
+                <span className="text-xs font-medium">{t('nav.calendar', 'Calendar')}</span>
+              </button>
+            )}
 
             {/* Yeni Randevu Ekle (Ana Renk - Mavi) */}
             <button
@@ -1385,7 +1432,7 @@ function App() {
       )}
 
       {/* AI Chatbot Widget - Sadece giriş yapmış kullanıcılara göster */}
-      {token && currentUser && currentView === "dashboard" && !showForm && !showOnboarding && (
+      {token && currentUser && (currentView === "dashboard" || currentView === "sessions" || currentView === "calendar") && !showForm && !showOnboarding && (
         <ChatWidget
           user={{
             username: currentUser.username,

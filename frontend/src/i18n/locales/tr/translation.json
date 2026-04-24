@@ -40,6 +40,17 @@
     "finish": "Bitir",
     "skip": "Turu Geç"
   },
+  "errors": {
+    "mvp": {
+      "idempotency_key_mismatch": "Bu idempotency anahtarı farklı bir istek gövdesiyle zaten kullanıldı. Yeni bir anahtar kullanın veya aynı isteği tekrarlayın.",
+      "idempotency_in_progress": "Bu anahtarla bir istek hâlâ işleniyor. Lütfen kısa süre bekleyip tekrar deneyin.",
+      "slot_conflict": "Bu saat uygun değil veya bu slot için başka bir işlem sürüyor. Başka bir saat seçin veya kısa süre sonra tekrar deneyin.",
+      "validation_failed": "İşlem tamamlanamadı. Bilgileri kontrol edip tekrar deneyin.",
+      "permission_denied": "Bu işlem için yetkiniz yok.",
+      "stripe_insufficient_balance": "Ödeme sağlayıcı limiti nedeniyle iade tamamlanamadı. Daha sonra tekrar deneyin veya destek ile iletişime geçin.",
+      "stripe_refund_succeeded_db_failed": "İade işlendi ancak kayıtlarımız henüz güncellenemedi. Mutabakat kuyruğuna alındı. Sorun sürerse destek ile iletişime geçin."
+    }
+  },
   "brand": {
     "name": "PLANN",
     "tagline": "Randevu Yönetim Sistemi"
@@ -56,6 +67,7 @@
     "customers": "Müşteriler",
     "appointments": "Randevular",
     "calendar": "Takvim",
+    "sessions": "Seanslar",
     "services": "Hizmetler",
     "staff": "Personel",
     "reports": "Raporlar",
@@ -335,6 +347,7 @@
   },
   "dashboard": {
     "title": "Panel",
+    "openCalendar": "Takvim",
     "quickView": "Hızlı Bakış",
     "todaysAppointments": "Bugünün Randevuları",
     "todayStats": {
@@ -435,6 +448,64 @@
       "paymentSuccess": "🎉 Ödeme başarılı! Planınız güncellendi."
     }
   },
+  "sessions": {
+    "title": "Seanslar",
+    "subtitle": "Çok seanslı paketler ve ilerleme",
+    "empty": "Henüz çok seanslı paket yok.",
+    "progress": "{{total}} seanstan {{completed}} tanesi tamamlandı",
+    "openCalendar": "Takvim",
+    "selectGroup": "Paketi seç",
+    "selectSession": "Seans seç",
+    "clearSelection": "Temizle",
+    "cancelSelected": "Seçilenleri iptal et ({{count}})",
+    "confirmCancelTitle": "Randevular iptal edilsin mi?",
+    "confirmCancelDescription": "{{count}} seçili seans iptal edilecek. Bu işlemde ödeme iadesi yapılmaz.",
+    "confirmCancelAction": "İptal et",
+    "cancelSuccess": "Seçilen randevular iptal edildi",
+    "cancelError": "İptal işlemi başarısız",
+    "cancelWithRefund": "İptal + iade ({{count}})",
+    "confirmRefundTitle": "İptal ve iade?",
+    "confirmRefundDescription": "Bu pakette seçilen {{count}} seans için Stripe üzerinden orantılı iade alınacak, ardından randevular iptal edilecek.",
+    "confirmRefundAction": "İadeyi onayla",
+    "refundSuccess": "İade işlendi ve randevular iptal edildi",
+    "refundError": "İade veya iptal başarısız",
+    "quickPlan": "Kalan seansları planla",
+    "tabPending": "Bekleyenler",
+    "tabCompleted": "Tamamlananlar",
+    "searchPlaceholder": "Müşteri veya hizmet ara…",
+    "noSearchResults": "Bu sekme veya arama için sonuç yok."
+  },
+  "sessionPlanner": {
+    "title": "Kalan seansları planla",
+    "wizardStepBadge": "4 / 4. adım",
+    "staffPerSession": "Personel",
+    "staffSameAsPackage": "Paket varsayılanı ile aynı",
+    "sheetTitle": "Kalan seansları planla",
+    "completionLine": "{{total}} seanstan {{planned}} tanesi planlandı",
+    "summaryTotal": "Toplam",
+    "summaryPlanned": "Planlanan",
+    "summaryRemaining": "Kalan",
+    "howItWorksShort": "Satırları gözden geçirin; gerekirse müsaitlik kontrol edin, tümü uygun olunca kaydedin.",
+    "sessionRow": "{{num}}. seans",
+    "editingCount": "{{count}} seans düzenleniyor",
+    "saveSessions": "{{count}} seansı kaydet",
+    "howItWorksTitle": "Nasıl çalışır?",
+    "howItWorksBody": "Tarihler otomatik oluşturulur (haftalık). Çakışma varsa uyarı ve alternatif saatler gösterilir. Tüm seanslar uygun olana kadar ana eylem kapalı kalır.",
+    "checkAvailability": "Müsaitlik kontrol et",
+    "checking": "Kontrol ediliyor…",
+    "createAll": "Tüm seansları kaydet ({{count}})",
+    "creating": "Oluşturuluyor…",
+    "sessionsPlanned": "{{count}} seans planlandı",
+    "availabilityFailed": "Müsaitlik kontrolü başarısız",
+    "validationFailed": "Lütfen tarih ve saatleri kontrol edin.",
+    "conflictTitle": "Bu saat uygun değil — başka saat seçin veya öneriyi kullanın.",
+    "alternatives": "Alternatifler:",
+    "staffReassigned": "(orijinal personel dolu)",
+    "suggestedStaffLine": "Önerilen personel: {{name}}",
+    "workingHoursWarn": "Çalışma saatleri: {{start}} – {{end}}",
+    "waveLoading": "Uygun saatler aranıyor…",
+    "unplannedHint": "Otomatik slot bulunamadı — tarih ve saati elle seçin."
+  },
   "customers": {
     "title": "Müşteriler",
     "backToHome": "Anasayfaya Dön",
@@ -509,6 +580,9 @@
       "noPermission": "Bu hizmete randevu alma yetkiniz yok",
       "updated": "Randevu güncellendi",
       "created": "Randevu oluşturuldu",
+      "packageBulkScheduled": "Kalan {{count}} seans otomatik planlandı.",
+      "packageBulkScheduleFailed": "İlk seans kaydedildi. Kalan seansları Seanslar veya takvimden planlayın.",
+      "packageBulkIncompleteToSheet": "İlk seans kaydedildi. Aşağıda kalan saatleri tamamlayın veya düzeltin — önerilen satırlar korunur.",
       "operationFailed": "İşlem başarısız",
       "settingsLoadError": "Ayarlar yüklenirken bir hata oluştu.",
       "customerType": "Müşteri Türü:",
@@ -544,7 +618,11 @@
       "durationUnit": "dk",
       "update": "Güncelle",
       "save": "Kaydet",
+      "editSessionHint": "Bu pakette {{total}} seanstan {{current}}. seansı düzenliyorsunuz.",
       "wizard": {
+        "autoPlan": "Otomatik planla",
+        "manualPlan": "Kendim planlayacağım",
+        "packageHintShort": "İlk randevu kaydedildikten sonra kalan seansları nasıl eklemek istediğinizi seçin.",
         "step": "Adım",
         "step1": "Hizmet ve Personel",
         "step2": "Müşteri Bilgileri",
@@ -1099,7 +1177,15 @@
     "server": "Sunucu hatası. Lütfen daha sonra tekrar deneyin.",
     "unauthorized": "Bu işlemi gerçekleştirme yetkiniz yok.",
     "notFound": "İstenen öğe bulunamadı.",
-    "sessionExpired": "Oturumunuz sona erdi. Lütfen tekrar giriş yapın."
+    "sessionExpired": "Oturumunuz sona erdi. Lütfen tekrar giriş yapın.",
+    "mvp": {
+      "slot_conflict": "Bu saat başka bir randevu ile çakışıyor veya uygun değil.",
+      "validation_failed": "İstek doğrulanamadı.",
+      "idempotency_key_mismatch": "Bu işlem anahtarı farklı veriyle zaten kullanıldı.",
+      "idempotency_in_progress": "Aynı istek hâlen işleniyor. Kısa süre sonra tekrar deneyin.",
+      "stripe_insufficient_balance": "İade tamamlanamadı (ödeme sağlayıcı bakiyesi).",
+      "permission_denied": "Bu işlem için yetkiniz yok."
+    }
   },
   "time": {
     "minutes": "dakika",
@@ -1331,5 +1417,40 @@
     "processing": "İşleniyor...",
     "confirm": "Onayla",
     "selectOption": "Lütfen bir seçenek belirleyin"
+  },
+  "auditLogs": {
+    "title": "Denetim günlükleri",
+    "filtersHeading": "Filtreler",
+    "actionType": "İşlem tipi",
+    "resourceType": "Kaynak tipi",
+    "userIdPlaceholder": "Kullanıcı ID",
+    "startDate": "Başlangıç",
+    "endDate": "Bitiş",
+    "filter": "Filtrele",
+    "loading": "Yükleniyor...",
+    "empty": "Kayıt bulunamadı",
+    "loadError": "Denetim günlükleri yüklenemedi",
+    "actionCreated": "Oluşturuldu",
+    "actionUpdated": "Güncellendi",
+    "actionDeleted": "Silindi",
+    "resourceAppointment": "Randevu",
+    "resourceAppointmentBulk": "Seans paketi (toplu)",
+    "resourceSettings": "Ayarlar",
+    "resourceCustomer": "Müşteri",
+    "resourceService": "Hizmet",
+    "resourceStaff": "Personel",
+    "filterAll": "Tümü",
+    "filterCreate": "Oluşturma",
+    "filterUpdate": "Güncelleme",
+    "filterDelete": "Silme",
+    "summaryCreateGeneric": "Yeni kayıt oluşturuldu",
+    "summaryDelete": "Kayıt silindi",
+    "summaryUpdateFields": "Değişen alanlar: {{fields}}",
+    "summaryUpdateGeneric": "Güncelleme yapıldı",
+    "summaryChangedGeneric": "Değişiklik yapıldı",
+    "summaryBulkSession": "Seans paketi: {{count}} randevu oluşturuldu (grup: {{groupId}})",
+    "summaryCancelNoRefund": "Toplu iptal: {{count}} randevu, iade yok",
+    "summaryCancelRefund": "Toplu iptal ve iade: {{count}} randevu, Stripe iade {{stripeId}}",
+    "ipLabel": "IP: {{ip}}"
   }
 }

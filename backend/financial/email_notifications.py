@@ -108,7 +108,7 @@ def send_payout_success_email(
     payout_rail: str,
 ) -> bool:
     amount_display = format_display(amount_minor, base_currency)
-    rail_label = "BACS" if payout_rail == "bacs" else "Wise Transfer"
+    rail_label = "BACS" if payout_rail == "bacs" else "Banka Transferi"
 
     subject = f"Ödemeniz gönderildi — {amount_display}"
     body = f"""\
@@ -119,7 +119,7 @@ def send_payout_success_email(
     üzerinden banka hesabınıza gönderildi.
 </p>
 <p style="background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 4px; color: #166534; font-size: 14px;">
-    İşlem genellikle 1-2 iş günü içinde hesabınıza yansır.
+    İşlem aynı gün içinde hesabınıza yansır.
 </p>
 <p style="text-align: center; margin-top: 30px; margin-bottom: 10px;">
     <a href="{DASHBOARD_URL}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold; display: inline-block;">

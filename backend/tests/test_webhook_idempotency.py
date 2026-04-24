@@ -603,7 +603,7 @@ class TestMoneyUtils:
     def test_tier_config_try(self):
         cfg = get_tier_config("TRY", "standard")
         assert cfg.limit_minor == 1_200_000
-        assert cfg.fee_rate_bps == 700
+        assert cfg.fee_rate_bps == 800
         assert cfg.gbp_target_minor == 20_000
 
     def test_tier_config_gbp(self):

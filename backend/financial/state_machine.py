@@ -30,21 +30,28 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 TRANSITIONS: Dict[str, set] = {
-    "pending":       {"authorized", "captured", "canceled", "async_failed"},
-    "authorized":    {"captured", "canceled"},
-    "captured":      {"settled", "refunded"},
-    "async_failed":  set(),  # terminal
-    "settled":       {"available"},
-    "available":     {"reserved", "frozen", "refunded"},
-    "reserved":      {"paid_out", "failed"},
-    "paid_out":      set(),  # terminal
-    "frozen":        {"disputed"},
-    "disputed":      {"resolved_won", "resolved_lost"},
-    "resolved_won":  set(),  # terminal — funds returned to available via wallet op
-    "resolved_lost": set(),  # terminal — permanent loss
-    "refunded":      set(),  # terminal
-    "canceled":      set(),  # terminal
-    "failed":        set(),  # terminal — reserved → available rollback handled separately
+    "pending":            {"authorized", "captured", "canceled", "async_failed"},
+    "authorized":         {"captured", "canceled"},
+    "captured":           {"settled", "refunded"},
+    "async_failed":       set(),  # terminal
+    "settled":            {"available"},
+    # `available` can go into batch pipeline (new) or legacy `reserved` (alias)
+    "available":          {"reserved", "reserved_for_batch", "frozen", "refunded"},
+    # Legacy state — kept for backward compatibility. Treated as `reserved_for_batch`.
+    "reserved":           {"paid_out", "failed", "queued_for_wise"},
+    # New batch pipeline states (PLANN v2)
+    "reserved_for_batch": {"queued_for_wise", "failed", "available"},  # available = expiry rollback
+    "queued_for_wise":    {"wise_fund_pending", "failed"},
+    "wise_fund_pending":  {"paid_out", "wise_fund_failed"},
+    "wise_fund_failed":   {"queued_for_wise", "failed"},  # retry or give up
+    "paid_out":           set(),  # terminal
+    "frozen":             {"disputed"},
+    "disputed":           {"resolved_won", "resolved_lost"},
+    "resolved_won":       set(),  # terminal — funds returned to available via wallet op
+    "resolved_lost":      set(),  # terminal — permanent loss
+    "refunded":           set(),  # terminal
+    "canceled":           set(),  # terminal
+    "failed":             set(),  # terminal — rollback handled separately
 }
 
 # States that are terminal (no further transitions)
@@ -53,8 +60,19 @@ TERMINAL_STATES = {state for state, targets in TRANSITIONS.items() if not target
 # States that affect wallet balances
 WALLET_CREDIT_STATES = {"captured", "settled", "available", "resolved_won"}
 WALLET_DEBIT_STATES = {"refunded", "resolved_lost", "paid_out"}
-WALLET_HOLD_STATES = {"reserved", "frozen"}
+WALLET_HOLD_STATES = {"reserved", "reserved_for_batch", "queued_for_wise", "wise_fund_pending", "frozen"}
 WALLET_RELEASE_STATES = {"failed"}  # reserved → available rollback
+
+# Alias map for legacy state names during rename migration
+STATE_ALIASES = {
+    # Old name → new canonical name (not auto-substituted; used for dual-read)
+    "reserved": "reserved_for_batch",
+}
+
+
+def canonical_state(state: str) -> str:
+    """Return the canonical state name if legacy, else the input."""
+    return STATE_ALIASES.get(state, state)
 
 
 # ---------------------------------------------------------------------------
@@ -114,11 +132,22 @@ def get_wallet_updates(
         updates["available_balance_minor"] = amount_display_minor
 
     # --- Payout lifecycle ---
-    elif old_state == "available" and new_state == "reserved":
+    elif old_state == "available" and new_state in ("reserved", "reserved_for_batch"):
         updates["available_balance_minor"] = -amount_display_minor
         updates["reserved_balance_minor"] = amount_display_minor
 
-    elif old_state == "reserved" and new_state == "paid_out":
+    # Intra-pipeline transitions (reserved_for_batch → queued_for_wise → wise_fund_pending):
+    # Balance stays in reserved_balance_minor — no $inc needed.
+    elif (old_state, new_state) in (
+        ("reserved", "queued_for_wise"),
+        ("reserved_for_batch", "queued_for_wise"),
+        ("queued_for_wise", "wise_fund_pending"),
+        ("wise_fund_pending", "wise_fund_failed"),
+        ("wise_fund_failed", "queued_for_wise"),
+    ):
+        pass  # money stays reserved
+
+    elif old_state in ("reserved", "wise_fund_pending") and new_state == "paid_out":
         updates["reserved_balance_minor"] = -amount_display_minor
         updates["total_paid_out_minor"] = amount_display_minor
         if base_currency == "TRY" and amount_settled_gbp_minor > 0:
@@ -126,8 +155,16 @@ def get_wallet_updates(
         elif base_currency == "GBP":
             updates["pool_balance_gbp_minor"] = -amount_display_minor
 
-    elif old_state == "reserved" and new_state == "failed":
-        # Rollback: reserved → available
+    elif old_state in (
+        "reserved", "reserved_for_batch", "queued_for_wise",
+        "wise_fund_pending", "wise_fund_failed",
+    ) and new_state == "failed":
+        # Rollback: any in-flight payout state → available
+        updates["reserved_balance_minor"] = -amount_display_minor
+        updates["available_balance_minor"] = amount_display_minor
+
+    elif old_state == "reserved_for_batch" and new_state == "available":
+        # Reserve expiry rollback (7-day cron)
         updates["reserved_balance_minor"] = -amount_display_minor
         updates["available_balance_minor"] = amount_display_minor
 

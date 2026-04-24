@@ -352,11 +352,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                         : <DropdownMenuItem onClick={() => handleStatusChange(apt.id, t('dashboard.status.cancelled'))} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> {t('common.edit')}</DropdownMenuItem>
-                    {apt.session_group_id && apt.session_number && apt.session_total && apt.session_number < apt.session_total && !isCancelled && (
-                      <DropdownMenuItem onClick={() => { setSessionPlannerAppointment(apt); setShowSessionPlanner(true); }} className="text-blue-600">
-                        <CalendarDays className="w-4 h-4 mr-2"/> {i18n.language === 'tr' ? 'Kalan Seansları Planla' : 'Plan Remaining Sessions'}
-                      </DropdownMenuItem>
-                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> {t('common.delete')}</DropdownMenuItem>
                   </DropdownMenuContent>
@@ -411,6 +406,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             <p className="text-base md:text-lg text-gray-600 font-medium mt-1.5 leading-relaxed">
               {format(new Date(), "d MMMM EEEE", { locale: dateLocale })}
             </p>
+            <button
+              type="button"
+              onClick={() => onNavigate("calendar")}
+              className="mt-4 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-zinc-900 text-white font-bold text-sm shadow-lg hover:bg-black active:scale-[0.98] transition-all w-full sm:w-auto"
+            >
+              <Calendar className="w-4 h-4 shrink-0" aria-hidden />
+              {t("dashboard.openCalendar")}
+            </button>
           </div>
 
           {/* Sağ Taraf: PERSONEL MOLA ALANI (sadece staff için) */}

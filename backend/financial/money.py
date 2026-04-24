@@ -82,9 +82,10 @@ _GBP_TIERS = {
 # TRY market tiers — limits are dynamic (Currency Shield updates them)
 # Commission formula: %X + fixed 15₺ per transaction
 #
-# Geçici ödeme testi: hızlı çekim eşiğini düşürmek için 30_000 (₺300) bırakın.
-# Test bitince: None yapın ve fast satırındaki varsayılanı 600_000 (₺6.000) yapın.
-TRY_FAST_LIMIT_OVERRIDE_MINOR: Optional[int] = 30_000
+# fast tier eşiği sabitlenir: ₺6.000 (Currency Shield dinamik hesaplamasının üstüne
+# yazılır — iş kararı: operator-facing eşik kur dalgalanmasından etkilenmesin).
+# None yaparsanız kur bazlı dinamik hesaplama devreye girer.
+TRY_FAST_LIMIT_OVERRIDE_MINOR: Optional[int] = 600_000
 
 _TRY_TIERS = {
     "fast": TierConfig(

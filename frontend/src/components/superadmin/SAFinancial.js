@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   Wallet, CheckCircle, AlertCircle, Eye, Lock, Unlock,
   RefreshCw, ChevronLeft, ChevronRight, Search, TrendingUp,
-  DollarSign, Users, Shield, Trash2
+  DollarSign, Users, Shield, Trash2, Clock
 } from "lucide-react";
 
 const formatMoney = (minor, currency = "GBP") => {
@@ -120,38 +120,81 @@ export default function SAFinancial() {
 
       {/* Overview Cards */}
       {overview && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
-              <DollarSign className="h-3.5 w-3.5" /> Toplam Havuz (GBP)
+        <>
+          {/* Sıra 1: Kullanılabilir havuz + kur */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
+                <DollarSign className="h-3.5 w-3.5" /> Kullanılabilir (GBP)
+              </div>
+              <p className="text-lg font-bold text-gray-900">{overview.total_pool_gbp_display}</p>
             </div>
-            <p className="text-lg font-bold text-gray-900">{overview.total_pool_gbp_display}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
-              <DollarSign className="h-3.5 w-3.5" /> Toplam Havuz (TRY)
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
+                <DollarSign className="h-3.5 w-3.5" /> Kullanılabilir (TRY)
+              </div>
+              <p className="text-lg font-bold text-gray-900">{overview.total_pool_try_display}</p>
             </div>
-            <p className="text-lg font-bold text-gray-900">{overview.total_pool_try_display}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
-              <Users className="h-3.5 w-3.5" /> GBP İşletmeler
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
+                <Users className="h-3.5 w-3.5" /> GBP İşletmeler
+              </div>
+              <p className="text-lg font-bold text-gray-900">{overview.gbp_merchant_count}</p>
             </div>
-            <p className="text-lg font-bold text-gray-900">{overview.gbp_merchant_count}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
-              <Users className="h-3.5 w-3.5" /> TRY İşletmeler
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
+                <Users className="h-3.5 w-3.5" /> TRY İşletmeler
+              </div>
+              <p className="text-lg font-bold text-gray-900">{overview.try_merchant_count}</p>
             </div>
-            <p className="text-lg font-bold text-gray-900">{overview.try_merchant_count}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
-              <TrendingUp className="h-3.5 w-3.5" /> GBP/TRY Kur
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
+                <TrendingUp className="h-3.5 w-3.5" /> GBP/TRY Kur
+              </div>
+              <p className="text-lg font-bold text-gray-900">{overview.current_rate_display || overview.current_gbp_try_rate_display || "N/A"}</p>
             </div>
-            <p className="text-lg font-bold text-gray-900">{overview.current_rate_display || overview.current_gbp_try_rate_display || "N/A"}</p>
           </div>
-        </div>
+
+          {/* Sıra 2: Bekleyen / Toplam Kazanç / İade — sarı-yeşil-kırmızı */}
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+            <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
+              <div className="flex items-center gap-2 text-amber-700 text-xs mb-1">
+                <Clock className="h-3.5 w-3.5" /> Bekleyen (TRY)
+              </div>
+              <p className="text-lg font-bold text-amber-900">{overview.try_pending_total_display || "0,00 ₺"}</p>
+            </div>
+            <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
+              <div className="flex items-center gap-2 text-amber-700 text-xs mb-1">
+                <Clock className="h-3.5 w-3.5" /> Bekleyen (GBP)
+              </div>
+              <p className="text-lg font-bold text-amber-900">{overview.gbp_pending_total_display || "£0.00"}</p>
+            </div>
+            <div className="bg-emerald-50 rounded-xl border border-emerald-200 p-4">
+              <div className="flex items-center gap-2 text-emerald-700 text-xs mb-1">
+                <TrendingUp className="h-3.5 w-3.5" /> Toplam Kazanç (TRY)
+              </div>
+              <p className="text-lg font-bold text-emerald-900">{overview.try_earned_total_display || "0,00 ₺"}</p>
+            </div>
+            <div className="bg-emerald-50 rounded-xl border border-emerald-200 p-4">
+              <div className="flex items-center gap-2 text-emerald-700 text-xs mb-1">
+                <TrendingUp className="h-3.5 w-3.5" /> Toplam Kazanç (GBP)
+              </div>
+              <p className="text-lg font-bold text-emerald-900">{overview.gbp_earned_total_display || "£0.00"}</p>
+            </div>
+            <div className="bg-rose-50 rounded-xl border border-rose-200 p-4">
+              <div className="flex items-center gap-2 text-rose-700 text-xs mb-1">
+                <AlertCircle className="h-3.5 w-3.5" /> Toplam İade (TRY)
+              </div>
+              <p className="text-lg font-bold text-rose-900">{overview.try_refunded_total_display || "0,00 ₺"}</p>
+            </div>
+            <div className="bg-rose-50 rounded-xl border border-rose-200 p-4">
+              <div className="flex items-center gap-2 text-rose-700 text-xs mb-1">
+                <AlertCircle className="h-3.5 w-3.5" /> Toplam İade (GBP)
+              </div>
+              <p className="text-lg font-bold text-rose-900">{overview.gbp_refunded_total_display || "£0.00"}</p>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Tabs */}

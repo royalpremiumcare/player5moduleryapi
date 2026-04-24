@@ -194,7 +194,13 @@ async def create_quote(
             headers=_headers(),
             timeout=15,
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            body_preview = (resp.text or "")[:2000]
+            logger.error(
+                "Wise quote create %s: body=%s payload=%s",
+                resp.status_code, body_preview, payload,
+            )
+            raise RuntimeError(f"wise_quote_{resp.status_code}: {body_preview}")
         data = resp.json()
 
         rate = Decimal(str(data.get("rate", 0)))
@@ -287,10 +293,21 @@ async def create_single_transfer(
             headers=_headers(idempotency_key=customer_transaction_id),
             timeout=15,
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            # Capture full Wise error body so DLQ / logs have actionable detail.
+            body_preview = (resp.text or "")[:2000]
+            logger.error(
+                "Wise transfer create %s: status=%s body=%s payload=%s",
+                resp.status_code, resp.reason, body_preview, payload,
+            )
+            raise RuntimeError(
+                f"wise_transfer_create_{resp.status_code}: {body_preview or resp.reason}"
+            )
         data = resp.json()
         logger.info("Single transfer created: id=%s status=%s", data.get("id"), data.get("status"))
         return data
+    except RuntimeError:
+        raise
     except Exception as e:
         logger.error("Failed to create single transfer: %s", e)
         raise
@@ -426,6 +443,325 @@ async def fund_batch_group(batch_group_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error("Failed to fund batch group: %s", e)
         raise
+
+
+# ---------------------------------------------------------------------------
+# PLANN v2 — Wednesday Batch Preparation
+# ---------------------------------------------------------------------------
+
+async def prepare_batch_group(db, batch: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Prepare a Wise transfer for a Wednesday batch payout.
+
+    IMPORTANT: Does NOT fund — only creates a quote + draft transfer.
+    SuperAdmin will fund manually via the Wise dashboard on Wednesday.
+
+    Batch is per-organization (one merchant wallet). We create ONE Wise transfer
+    for the aggregate total_amount_minor to the merchant's registered recipient.
+
+    Args:
+        db: MongoDB instance (for settings lookup)
+        batch: payout_batches document (contains organization_id, base_currency,
+               total_amount_minor, item_transaction_ids, id)
+
+    Returns:
+        {
+            "wise_quote_id": str,
+            "wise_transfer_id": str,
+            "wise_batch_group_id": str or None,  # if batch API used
+            "total_amount_minor": int,
+            "target_currency": str,
+            "recipient_id": str,
+        }
+
+    Raises:
+        RuntimeError: on Wise API failure or missing config.
+    """
+    organization_id = batch.get("organization_id")
+    base_currency = (batch.get("base_currency") or "TRY").upper()
+    total_amount_minor = int(batch.get("total_amount_minor") or 0)
+    batch_id = batch.get("id") or str(uuid.uuid4())
+
+    if total_amount_minor <= 0:
+        raise RuntimeError(f"batch has no amount: batch_id={batch_id}")
+
+    settings = await db.settings.find_one({"organization_id": organization_id})
+    if not settings:
+        raise RuntimeError(f"settings not found for org={organization_id}")
+
+    recipient_id = settings.get("wise_recipient_id")
+    if not recipient_id:
+        raise RuntimeError(
+            f"wise_recipient_id missing for org={organization_id}; "
+            "merchant must complete KYC + bank setup first."
+        )
+
+    # Source is always GBP (PLANN pool). Target depends on market.
+    source_currency = "GBP"
+    target_currency = base_currency  # TRY for TR merchants, GBP for UK
+
+    # For GBP merchants, source == target (no conversion)
+    # For TRY merchants, Wise cross-border GBP → TRY
+    if base_currency == "GBP":
+        # 1:1, source_amount == total_amount
+        source_amount_minor = total_amount_minor
+        target_amount_minor = 0  # use sourceAmount
+    else:
+        # TRY: we want merchant to receive exactly total_amount_minor in TRY
+        source_amount_minor = 0
+        target_amount_minor = total_amount_minor
+
+    logger.info(
+        "wise prepare_batch_group: batch=%s org=%s amount=%d %s → %s recipient=%s",
+        batch_id, organization_id, total_amount_minor, source_currency,
+        target_currency, recipient_id,
+    )
+
+    # Step 1: Create + persist quote
+    try:
+        quote_result = await create_quote(
+            db,
+            organization_id=organization_id,
+            source_currency=source_currency,
+            target_currency=target_currency,
+            source_amount_minor=source_amount_minor,
+            target_amount_minor=target_amount_minor,
+            payout_batch_id=batch_id,
+        )
+    except requests.HTTPError as e:
+        body = getattr(e.response, "text", "")[:500] if getattr(e, "response", None) else ""
+        raise RuntimeError(f"wise quote failed: {e} body={body}")
+    except Exception as e:
+        raise RuntimeError(f"wise quote failed: {e}")
+
+    wise_quote_id = quote_result["quote_doc"].get("wise_quote_id") or quote_result["wise_quote_data"].get("id")
+    if not wise_quote_id:
+        raise RuntimeError(f"wise quote returned no id: {quote_result}")
+
+    # Step 2: Create transfer (NOT funded — awaits manual admin fund in Wise panel)
+    # Wise requires customerTransactionId to be a valid UUID (no prefix allowed).
+    # batch_id is already a UUID; use it directly.
+    customer_tx_id = str(batch_id)
+    reference = (settings.get("company_name") or "PLANN")[:18]  # Wise reference max ~20 chars
+
+    wise_batch_group_id: Optional[str] = None
+    transfer_data: Dict[str, Any] = {}
+
+    # Use batch-group flow for production, single transfer for sandbox
+    use_batch_group = os.getenv("WISE_USE_BATCH_GROUPS", "false").lower() == "true"
+
+    try:
+        if use_batch_group:
+            bg = await create_batch_group(source_currency=source_currency)
+            wise_batch_group_id = bg["id"]
+            transfer_data = await add_transfer_to_batch(
+                batch_group_id=wise_batch_group_id,
+                quote_id=wise_quote_id,
+                recipient_id=str(recipient_id),
+                customer_transaction_id=customer_tx_id,
+                reference=reference,
+            )
+            # Complete the batch group so admin can fund it from the Wise panel
+            try:
+                latest = await get_batch_group(wise_batch_group_id)
+                await complete_batch_group(
+                    wise_batch_group_id,
+                    version=latest.get("version", bg.get("version", 0)),
+                )
+            except Exception as ce:
+                logger.warning("batch group complete failed (non-fatal): %s", ce)
+        else:
+            transfer_data = await create_single_transfer(
+                quote_id=wise_quote_id,
+                recipient_id=str(recipient_id),
+                customer_transaction_id=customer_tx_id,
+                reference=reference,
+            )
+    except requests.HTTPError as e:
+        body = getattr(e.response, "text", "")[:500] if getattr(e, "response", None) else ""
+        raise RuntimeError(f"wise transfer create failed: {e} body={body}")
+    except Exception as e:
+        raise RuntimeError(f"wise transfer create failed: {e}")
+
+    wise_transfer_id = str(transfer_data.get("id") or "")
+    if not wise_transfer_id:
+        raise RuntimeError(f"wise transfer create returned no id: {transfer_data}")
+
+    logger.info(
+        "wise prepare_batch_group success: batch=%s quote=%s transfer=%s batch_group=%s",
+        batch_id, wise_quote_id, wise_transfer_id, wise_batch_group_id,
+    )
+
+    return {
+        "wise_quote_id": wise_quote_id,
+        "wise_transfer_id": wise_transfer_id,
+        "wise_batch_group_id": wise_batch_group_id,
+        "total_amount_minor": total_amount_minor,
+        "target_currency": target_currency,
+        "recipient_id": str(recipient_id),
+        "transfer_status": transfer_data.get("status"),
+    }
+
+
+async def prepare_unified_batch_group(
+    db, batches: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Prepare MULTIPLE PLANN payout_batches as a SINGLE Wise batch group.
+
+    Every PLANN batch becomes one transfer inside the same Wise batch group,
+    so the Wise panel shows a single "N GBP Transfer batch" entry admin can fund
+    in one shot (instead of per-merchant single transfers).
+
+    Returns:
+        {
+            "wise_batch_group_id": str,
+            "total_source_gbp_minor": int,       # approx — sum via quotes
+            "per_batch": {
+                plann_batch_id: {
+                    "wise_quote_id": str,
+                    "wise_transfer_id": str,
+                    "target_currency": str,
+                    "recipient_id": str,
+                    "total_amount_minor": int,
+                    "transfer_status": str,
+                },
+                ...
+            },
+        }
+
+    Raises:
+        RuntimeError: if ANY batch fails during prep. Caller is responsible for
+        rolling back tx/batch states. wise_batch_group_id (if created) is included
+        in the error for manual cleanup from Wise panel.
+    """
+    if not batches:
+        raise RuntimeError("no batches to prepare")
+
+    # Source currency is always GBP (PLANN pool) — single batch group covers all.
+    source_currency = "GBP"
+
+    # Step 1: create the shared Wise batch group
+    bg = await create_batch_group(source_currency=source_currency)
+    wise_batch_group_id = bg["id"]
+    logger.info(
+        "unified batch group created: wise_group=%s plann_batch_count=%d",
+        wise_batch_group_id, len(batches),
+    )
+
+    per_batch: Dict[str, Dict[str, Any]] = {}
+
+    # Step 2: for each PLANN batch, create quote + add transfer to the group
+    for b in batches:
+        organization_id = b.get("organization_id")
+        base_currency = (b.get("base_currency") or "TRY").upper()
+        total_amount_minor = int(b.get("total_amount_minor") or 0)
+        batch_id = b.get("id")
+
+        if total_amount_minor <= 0:
+            raise RuntimeError(
+                f"unified: batch {batch_id} has zero amount; aborting (wise_group={wise_batch_group_id})"
+            )
+
+        settings = await db.settings.find_one({"organization_id": organization_id})
+        if not settings:
+            raise RuntimeError(
+                f"unified: settings not found for org={organization_id} (wise_group={wise_batch_group_id})"
+            )
+
+        recipient_id = settings.get("wise_recipient_id")
+        if not recipient_id:
+            raise RuntimeError(
+                f"unified: wise_recipient_id missing for org={organization_id} "
+                f"(wise_group={wise_batch_group_id})"
+            )
+
+        target_currency = base_currency
+        if base_currency == "GBP":
+            source_amount_minor = total_amount_minor
+            target_amount_minor = 0
+        else:
+            source_amount_minor = 0
+            target_amount_minor = total_amount_minor
+
+        try:
+            quote_result = await create_quote(
+                db,
+                organization_id=organization_id,
+                source_currency=source_currency,
+                target_currency=target_currency,
+                source_amount_minor=source_amount_minor,
+                target_amount_minor=target_amount_minor,
+                payout_batch_id=batch_id,
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"unified: quote failed for batch {batch_id}: {e} (wise_group={wise_batch_group_id})"
+            )
+
+        wise_quote_id = (
+            quote_result["quote_doc"].get("wise_quote_id")
+            or quote_result["wise_quote_data"].get("id")
+        )
+        if not wise_quote_id:
+            raise RuntimeError(
+                f"unified: quote returned no id for batch {batch_id} (wise_group={wise_batch_group_id})"
+            )
+
+        customer_tx_id = str(batch_id)
+        reference = (settings.get("company_name") or "PLANN")[:18]
+
+        try:
+            transfer_data = await add_transfer_to_batch(
+                batch_group_id=wise_batch_group_id,
+                quote_id=wise_quote_id,
+                recipient_id=str(recipient_id),
+                customer_transaction_id=customer_tx_id,
+                reference=reference,
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"unified: add_transfer failed for batch {batch_id}: {e} "
+                f"(wise_group={wise_batch_group_id})"
+            )
+
+        wise_transfer_id = str(transfer_data.get("id") or "")
+        if not wise_transfer_id:
+            raise RuntimeError(
+                f"unified: transfer returned no id for batch {batch_id} "
+                f"(wise_group={wise_batch_group_id})"
+            )
+
+        per_batch[batch_id] = {
+            "wise_quote_id": wise_quote_id,
+            "wise_transfer_id": wise_transfer_id,
+            "target_currency": target_currency,
+            "recipient_id": str(recipient_id),
+            "total_amount_minor": total_amount_minor,
+            "transfer_status": transfer_data.get("status"),
+        }
+        logger.info(
+            "unified: batch %s added to group %s (transfer=%s)",
+            batch_id, wise_batch_group_id, wise_transfer_id,
+        )
+
+    # Step 3: complete the batch group (Wise panel: ready-to-fund)
+    try:
+        latest = await get_batch_group(wise_batch_group_id)
+        await complete_batch_group(
+            wise_batch_group_id,
+            version=latest.get("version", bg.get("version", 0)),
+        )
+        logger.info("unified batch group completed: %s", wise_batch_group_id)
+    except Exception as ce:
+        logger.warning(
+            "unified: batch group complete failed (non-fatal): wise_group=%s err=%s",
+            wise_batch_group_id, ce,
+        )
+
+    return {
+        "wise_batch_group_id": wise_batch_group_id,
+        "per_batch": per_batch,
+    }
 
 
 # ---------------------------------------------------------------------------

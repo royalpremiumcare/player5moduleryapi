@@ -5,6 +5,9 @@
 __pycache__/
 *.pyc
 
+# Local pytest venv (optional)
+backend/.testvenv/
+
 # Capacitor native platforms (Not ignored anymore to sync custom changes)
 # frontend/android/
 # frontend/ios/

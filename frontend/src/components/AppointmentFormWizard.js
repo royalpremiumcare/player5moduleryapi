@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { format, addDays, isSameDay } from "date-fns";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
+import { format, addDays, isSameDay, startOfDay, differenceInCalendarDays } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import { Calendar as CalendarIcon, Clock, ArrowLeft, User, Search, X, Check, UserPlus, ChevronLeft, Loader2, Users, Import } from "lucide-react";
@@ -15,6 +15,7 @@ import { Virtuoso } from 'react-virtuoso';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Contacts } from '@capacitor-community/contacts';
 import { Haptics, NotificationType } from '@capacitor/haptics'; // TİTREŞİM EKLENDİ
+
 const ContactPicker = registerPlugin('ContactPickerPlugin');
 // --------------------------------------
 
@@ -25,20 +26,43 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { buildWizardRemainingPackageRows, buildBulkSessionPayload, fetchWavePlanSessions } from "../lib/sessionScheduling";
+import { formatApiError } from "@/lib/apiError";
+import SessionPlannerSheet from "./SessionPlannerSheet";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const publicApi = axios.create({
   baseURL: `${BACKEND_URL}/api`,
 });
 
+/** API `yyyy-MM-dd` veya ISO string → yerel takvim günü (UTC kayması yüzünden yanlış gün / boş slot önlenir) */
+function parseLocalAppointmentDate(value) {
+  if (!value) return new Date();
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const s = String(value);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) {
+    const y = Number(m[1]);
+    const mo = Number(m[2]) - 1;
+    const d = Number(m[3]);
+    return new Date(y, mo, d);
+  }
+  return new Date(value);
+}
+
 const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   const { userRole, canViewAll } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
   const dateScrollerRef = useRef(null);
+  const stepRef = useRef(1);
   
   // State Yönetimi
   const [step, setStep] = useState(1);
+  stepRef.current = step;
+  const [sheetAppointment, setSheetAppointment] = useState(null);
+  /** Otomatik/manuel aynı plan satırları — sheet ön doldurma (null = Hub / varsayılan üret) */
+  const [wizardSheetRows, setWizardSheetRows] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [allStaff, setAllStaff] = useState([]);
   const [settings, setSettings] = useState(null);
@@ -51,12 +75,13 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     appointment_date: new Date(),
     appointment_time: "",
     staff_member_id: "",
-    notes: ""
+    notes: "",
   });
 
   // Data States
   const [availableSlots, setAvailableSlots] = useState([]);
   const [busySlots, setBusySlots] = useState([]);
+  const [availabilityNonce, setAvailabilityNonce] = useState(0);
   const [loading, setLoading] = useState(false);
   
   // Filtrelemeler
@@ -95,20 +120,26 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         customer_name: appointment.customer_name,
         phone: appointment.phone,
         service_id: appointment.service_id,
-        appointment_date: new Date(appointment.appointment_date),
+        appointment_date: parseLocalAppointmentDate(appointment.appointment_date),
         appointment_time: appointment.appointment_time,
         staff_member_id: appointment.staff_member_id || "",
-        notes: appointment.notes || ""
+        notes: appointment.notes || "",
       });
       setStep(3);
     }
   }, [appointment]);
 
   useEffect(() => {
-    if (formData.service_id && formData.appointment_date && step === 3) {
-      loadAvailableSlots();
-    }
-  }, [formData.service_id, formData.appointment_date, formData.staff_member_id, step]);
+    if (step !== 2) return;
+    const id = requestAnimationFrame(() => {
+      try {
+        customerListRef.current?.scrollToIndex(0);
+      } catch (e) {
+        /* Virtuoso */
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [step]);
 
   useEffect(() => {
     if (userRole === 'staff' && !canViewAll && currentUser && services.length > 0) {
@@ -140,6 +171,61 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     const id = setTimeout(() => setDebouncedCustomerSearchTerm(customerSearchTerm), 150);
     return () => clearTimeout(id);
   }, [customerSearchTerm]);
+
+  const selectedService = useMemo(
+    () => services.find((s) => s.id === formData.service_id),
+    [services, formData.service_id]
+  );
+  const isNewMultiPackage =
+    !appointment && selectedService?.session_count && selectedService.session_count > 1;
+  const wizardTotalSteps = isNewMultiPackage ? 4 : 3;
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+
+      if (showContactSelectionDialog || showNotSupportedDialog) return;
+      if (stepRef.current === 4) return;
+
+      const target = e.target;
+      if (!target || !(target instanceof Element)) return;
+
+      if (target.closest('[data-wizard-keyboard-disabled="true"]')) return;
+      if (target.closest('[role="dialog"]')) return;
+      if (target.closest('[role="menu"]')) return;
+      if (target.closest('[role="listbox"]')) return;
+
+      const tag = target.tagName?.toLowerCase();
+      const blockWizardArrows =
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        tag === "button" ||
+        tag === "option" ||
+        tag === "a" ||
+        target.isContentEditable;
+
+      if (blockWizardArrows) return;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setStep((s) => Math.max(1, s - 1));
+        return;
+      }
+
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setStep((s) => {
+          if (s >= wizardTotalSteps) return s;
+          if (s === 3) return s;
+          return s + 1;
+        });
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [wizardTotalSteps, showContactSelectionDialog, showNotSupportedDialog]);
 
   const filteredCustomers = useMemo(() => {
     const raw = customers || [];
@@ -201,7 +287,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     try { const res = await api.get("/settings"); setSettings(res.data); } catch (e) { console.error(e); }
   };
 
-  const loadAvailableSlots = async () => {
+  const loadAvailableSlots = useCallback(async () => {
     if (!formData.service_id || !formData.appointment_date || !settings) return;
     try {
       const dateStr = format(formData.appointment_date, "yyyy-MM-dd");
@@ -224,7 +310,21 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       console.error(e);
       setAvailableSlots([]);
     }
-  };
+  }, [
+    formData.service_id,
+    formData.appointment_date,
+    formData.staff_member_id,
+    settings,
+    userRole,
+    canViewAll,
+    appointment?.id,
+  ]);
+
+  useEffect(() => {
+    if (formData.service_id && formData.appointment_date && step === 3 && settings) {
+      loadAvailableSlots();
+    }
+  }, [loadAvailableSlots, step, availabilityNonce]);
 
   // --- HANDLERS ---
 
@@ -365,57 +465,275 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   };
   // ------------------------------
 
-  const handleSubmit = async () => {
+  const buildAppointmentPayload = () => {
+    const payload = {
+      ...formData,
+      appointment_date: format(formData.appointment_date, "yyyy-MM-dd"),
+    };
+    if (userRole === "staff" && !canViewAll && currentUser && !payload.staff_member_id) {
+      payload.staff_member_id = currentUser.username;
+    }
+    if (!payload.staff_member_id) delete payload.staff_member_id;
+    return payload;
+  };
+
+  const attachNewPackageFields = (payload, svc) => {
+    if (svc?.session_count && svc.session_count > 1) {
+      payload.session_group_id = crypto.randomUUID();
+      payload.session_number = 1;
+      payload.session_total = svc.session_count;
+      payload.payment_status = "package_included";
+      payload.skip_confirmation_whatsapp = true;
+    }
+  };
+
+  /** Otomatik ve manuel aynı üretici — drift önleme */
+  const getPackagePlanRows = useCallback(() => {
+    if (!selectedService?.session_count || selectedService.session_count <= 1) {
+      return { rows: [], complete: true, expectedRemaining: 0 };
+    }
+    const firstDateStr = format(formData.appointment_date, "yyyy-MM-dd");
+    return buildWizardRemainingPackageRows({
+      firstDateStr,
+      firstTime: formData.appointment_time,
+      sessionTotal: selectedService.session_count,
+      settings,
+      serviceDurationMinutes: selectedService.duration ?? 30,
+      intervalMinutes: settings?.appointment_interval || 30,
+    });
+  }, [formData.appointment_date, formData.appointment_time, selectedService, settings]);
+
+  /** Formda personel yoksa (otomatik atama) ilk POST yanıtındaki staff kullanılır. */
+  const resolvePackageBulkStaffId = (formStaff, apt) => {
+    const f = (formStaff ?? "").toString().trim();
+    if (f) return f;
+    const sid = apt?.staff_member_id;
+    if (sid == null || sid === "") return "";
+    return String(sid).trim();
+  };
+
+  const mapPlanRowsToSheetSessions = (rows, formStaff, apt) => {
+    const def = resolvePackageBulkStaffId(formStaff, apt);
+    return rows.map((r) => ({
+      date: r.date,
+      time: r.time,
+      staff_member_id: (r.staff_member_id && String(r.staff_member_id).trim()) || def,
+      available: null,
+      alternatives: [],
+    }));
+  };
+
+  const postRemainingPackageBulk = async (sessionGroupId, sessionTotal, rows, apt) => {
+    if (!rows?.length) return;
+    const idempotencyKey =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const staffId = resolvePackageBulkStaffId(formData.staff_member_id, apt);
+    const bulkBody = buildBulkSessionPayload({
+      customer_name: formData.customer_name,
+      phone: formData.phone,
+      service_id: formData.service_id,
+      staff_member_id: staffId || undefined,
+      notes: formData.notes || "",
+      session_group_id: sessionGroupId,
+      starting_session_number: 2,
+      session_total: sessionTotal,
+      sessions: rows,
+    });
+    await api.post("/appointments/bulk-session", bulkBody, {
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
+  };
+
+  const handleAutomaticPackage = async () => {
     if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
-      // Hata titreşimi
-      try { await Haptics.notification({ type: NotificationType.Error }); } catch (e) {}
-      toast.error(t('appointments.form.fillRequiredFields'));
+      try {
+        await Haptics.notification({ type: NotificationType.Error });
+      } catch (e) {}
+      toast.error(t("appointments.form.fillRequiredFields"));
       return;
     }
-    
+    const pkg = getPackagePlanRows();
     setLoading(true);
-    
     try {
-      const payload = { ...formData, appointment_date: format(formData.appointment_date, "yyyy-MM-dd") };
-      if (userRole === 'staff' && !canViewAll && currentUser && !payload.staff_member_id) payload.staff_member_id = currentUser.username;
-      if (!payload.staff_member_id) delete payload.staff_member_id;
+      const payload = buildAppointmentPayload();
+      attachNewPackageFields(payload, selectedService);
+      const res = await api.post("/appointments", payload);
+      const apt = res.data;
+      toast.success(t("appointments.form.created"));
+      await loadCustomers();
+      setAvailabilityNonce((n) => n + 1);
 
-      // Seans paketi: ilk randevuya session alanlarını ekle
-      if (!appointment) {
-        const selectedService = services.find(s => s.id === formData.service_id);
-        if (selectedService?.session_count && selectedService.session_count > 1) {
-          payload.session_group_id = crypto.randomUUID();
-          payload.session_number = 1;
-          payload.session_total = selectedService.session_count;
-          payload.payment_status = 'package_included';
+      let bulkRows = pkg.rows;
+      try {
+        const wave = await fetchWavePlanSessions(api, {
+          service_id: formData.service_id,
+          first_session_date: format(formData.appointment_date, "yyyy-MM-dd"),
+          first_session_time: formData.appointment_time,
+          remaining_count: (selectedService.session_count || 1) - 1,
+          staff_member_id: formData.staff_member_id || undefined,
+        });
+        const need = (selectedService.session_count || 1) - 1;
+        const planned = (wave.sessions || []).filter((s) => s.date && s.time && !s.unplanned);
+        if (planned.length === need && need > 0) {
+          bulkRows = planned.map((s) => ({
+            date: s.date,
+            time: s.time,
+            staff_member_id: s.staff_member_id || undefined,
+          }));
         }
+      } catch (waveErr) {
+        console.warn("wave-plan fallback", waveErr);
+      }
+
+      if (!pkg.complete || !bulkRows.length) {
+        toast.warning(t("appointments.form.packageBulkIncompleteToSheet"));
+        setSheetAppointment(apt);
+        setWizardSheetRows(null);
+        setStep(4);
+        try {
+          await Haptics.notification({ type: NotificationType.Warning });
+        } catch (e) {}
+        return;
+      }
+
+      try {
+        await postRemainingPackageBulk(payload.session_group_id, selectedService.session_count, bulkRows, apt);
+        toast.success(t("appointments.form.packageBulkScheduled", { count: bulkRows.length }));
+        setWizardSheetRows(null);
+        try {
+          await Haptics.notification({ type: NotificationType.Success });
+        } catch (e) {}
+        await new Promise((r) => setTimeout(r, 500));
+        onSave();
+      } catch (bulkErr) {
+        console.error(bulkErr);
+        const detailMsg = formatApiError(bulkErr, t, "");
+        toast.warning(
+          detailMsg
+            ? `${t("appointments.form.packageBulkScheduleFailed")}: ${detailMsg}`
+            : t("appointments.form.packageBulkScheduleFailed")
+        );
+        setSheetAppointment(apt);
+        setWizardSheetRows(mapPlanRowsToSheetSessions(bulkRows, formData.staff_member_id, apt));
+        setStep(4);
+      }
+    } catch (error) {
+      try {
+        await Haptics.notification({ type: NotificationType.Error });
+      } catch (e) {}
+      toast.error(formatApiError(error, t, t("appointments.form.operationFailed")));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManualPackage = async () => {
+    if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
+      try {
+        await Haptics.notification({ type: NotificationType.Error });
+      } catch (e) {}
+      toast.error(t("appointments.form.fillRequiredFields"));
+      return;
+    }
+    const pkg = getPackagePlanRows();
+    setLoading(true);
+    try {
+      const payload = buildAppointmentPayload();
+      attachNewPackageFields(payload, selectedService);
+      const res = await api.post("/appointments", payload);
+      toast.success(t("appointments.form.created"));
+      await loadCustomers();
+      setAvailabilityNonce((n) => n + 1);
+      const apt = res.data;
+      if (apt && !apt.service_name && selectedService) {
+        apt.service_name = selectedService.name;
+      }
+      let rowsForSheet = pkg.rows;
+      try {
+        const wave = await fetchWavePlanSessions(api, {
+          service_id: formData.service_id,
+          first_session_date: format(formData.appointment_date, "yyyy-MM-dd"),
+          first_session_time: formData.appointment_time,
+          remaining_count: (selectedService.session_count || 1) - 1,
+          staff_member_id: formData.staff_member_id || undefined,
+        });
+        const need = (selectedService.session_count || 1) - 1;
+        const planned = (wave.sessions || []).filter((s) => s.date && s.time && !s.unplanned);
+        if (planned.length === need && need > 0) {
+          rowsForSheet = planned.map((s) => ({
+            date: s.date,
+            time: s.time,
+            staff_member_id: s.staff_member_id || undefined,
+          }));
+        }
+      } catch (e) {
+        console.warn("wave-plan fallback (manual)", e);
+      }
+      setSheetAppointment(apt);
+      setWizardSheetRows(mapPlanRowsToSheetSessions(rowsForSheet, formData.staff_member_id, apt));
+      setStep(4);
+      try {
+        await Haptics.notification({ type: NotificationType.Success });
+      } catch (e) {}
+    } catch (error) {
+      try {
+        await Haptics.notification({ type: NotificationType.Error });
+      } catch (e) {}
+      toast.error(formatApiError(error, t, t("appointments.form.operationFailed")));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (isNewMultiPackage) return;
+
+    if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
+      try {
+        await Haptics.notification({ type: NotificationType.Error });
+      } catch (e) {}
+      toast.error(t("appointments.form.fillRequiredFields"));
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const payload = buildAppointmentPayload();
+
+      if (!appointment) {
+        const svc = services.find((s) => s.id === formData.service_id);
+        attachNewPackageFields(payload, svc);
       }
 
       if (appointment) {
         await api.put(`/appointments/${appointment.id}`, payload);
-        toast.success(t('appointments.form.updated'));
+        toast.success(t("appointments.form.updated"));
       } else {
         await api.post("/appointments", payload);
-        toast.success(t('appointments.form.created'));
+        toast.success(t("appointments.form.created"));
         await loadCustomers();
       }
 
-      // --- BAŞARILI İŞLEM TİTREŞİMİ (BURASI YENİ) ---
+      setAvailabilityNonce((n) => n + 1);
+      await loadAvailableSlots();
+
       try {
         await Haptics.notification({ type: NotificationType.Success });
       } catch (e) {
         console.log("Haptic error", e);
       }
-      // ----------------------------------------------
 
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500));
       onSave();
     } catch (error) {
-      // --- HATA TİTREŞİMİ ---
-      try { await Haptics.notification({ type: NotificationType.Error }); } catch (e) {}
-      // ---------------------
-      
-      toast.error(error.response?.data?.detail || t('appointments.form.operationFailed'));
+      try {
+        await Haptics.notification({ type: NotificationType.Error });
+      } catch (e) {}
+
+      toast.error(formatApiError(error, t, t("appointments.form.operationFailed")));
     } finally {
       setLoading(false);
     }
@@ -423,7 +741,32 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   // --- MEMOIZED COMPUTATIONS (renderStep dışında) ---
 
-  const days = useMemo(() => Array.from({ length: 60 }, (_, i) => addDays(new Date(), i)), []);
+  const days = useMemo(() => {
+    const today = startOfDay(new Date());
+    const selected = formData.appointment_date
+      ? startOfDay(formData.appointment_date)
+      : today;
+    const windowStart = today <= selected ? today : selected;
+    const daysFromStartToSelected = Math.max(0, differenceInCalendarDays(selected, windowStart));
+    const count = Math.max(60, daysFromStartToSelected + 14);
+    return Array.from({ length: count }, (_, i) => addDays(windowStart, i));
+  }, [formData.appointment_date]);
+
+  useLayoutEffect(() => {
+    if (step !== 3) return;
+    const scroller = dateScrollerRef.current;
+    if (!scroller) return;
+    const selected = formData.appointment_date
+      ? startOfDay(formData.appointment_date)
+      : null;
+    if (!selected) return;
+    const idx = days.findIndex((d) => isSameDay(d, selected));
+    if (idx < 0) return;
+    const btn = scroller.children[idx];
+    if (btn && typeof btn.scrollIntoView === "function") {
+      btn.scrollIntoView({ inline: "center", block: "nearest", behavior: "auto" });
+    }
+  }, [step, days, formData.appointment_date, appointment?.id]);
 
   const allSlots = useMemo(
     () => [...new Set([...availableSlots, ...busySlots])].sort(),
@@ -433,16 +776,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   const scrollDatesBy = useCallback((delta) => {
     const el = dateScrollerRef.current;
     if (!el) return;
-    el.scrollBy({ left: delta, behavior: 'smooth' });
-  }, []);
-
-  const handleDateScrollerWheel = useCallback((e) => {
-    const el = dateScrollerRef.current;
-    if (!el) return;
-    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-      e.preventDefault();
-      el.scrollLeft += e.deltaY;
-    }
+    el.scrollLeft += delta;
   }, []);
 
   // --- RENDER STEPS ---
@@ -639,18 +973,16 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
           const selectedSvc = services.find(s => s.id === formData.service_id);
           if (selectedSvc?.session_count && selectedSvc.session_count > 1) {
             return (
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-2.5">
-                <CalendarIcon className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div className="text-xs text-blue-800">
+              <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl flex items-start gap-2.5">
+                <CalendarIcon className="w-4 h-4 text-zinc-700 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-zinc-900">
                   <p className="font-bold">
                     {i18n.language === 'tr' 
                       ? `Bu hizmet ${selectedSvc.session_count} seanslık bir pakettir.`
                       : `This service is a ${selectedSvc.session_count}-session package.`}
                   </p>
-                  <p className="mt-0.5">
-                    {i18n.language === 'tr'
-                      ? 'Şu an ilk seans için tarih ve saat seçiyorsunuz. Kalan seansları daha sonra planlayabilirsiniz.'
-                      : 'You are selecting date and time for the first session. You can plan remaining sessions later.'}
+                  <p className="mt-1 text-zinc-600">
+                    {t('appointments.form.wizard.packageHintShort')}
                   </p>
                 </div>
               </div>
@@ -693,16 +1025,18 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
           </div>
         )}
 
+        {/* YATAY TAKVİM + SAAT — ok tuşları tarih/saat ile wizard adımı çakışmasın */}
+        <div data-wizard-keyboard-disabled="true" className="space-y-8">
         {/* YATAY TAKVİM */}
         <div>
            <div className="flex justify-between items-center mb-4">
              <h3 className="font-bold text-zinc-900 uppercase tracking-wider text-sm">{format(formData.appointment_date, "MMMM yyyy", { locale: dateLocale })}</h3>
            </div>
-           <div className="relative overflow-hidden py-2">
+           <div className="relative overflow-hidden py-2 isolate">
              <button
                type="button"
                onClick={() => scrollDatesBy(-320)}
-               className="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white transition-colors"
+               className="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 z-20 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white transition-colors"
                aria-label="Scroll dates left"
              >
                <ChevronLeft className="w-5 h-5 text-zinc-700" />
@@ -710,7 +1044,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
              <button
                type="button"
                onClick={() => scrollDatesBy(320)}
-               className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white transition-colors"
+               className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 z-20 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white transition-colors"
                aria-label="Scroll dates right"
              >
                <ChevronLeft className="w-5 h-5 text-zinc-700 rotate-180" />
@@ -718,15 +1052,14 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
              <div
                ref={dateScrollerRef}
-               onWheel={handleDateScrollerWheel}
-               className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide px-2 md:px-12"
+               className="relative z-10 flex gap-3 overflow-x-auto pb-4 scrollbar-hide px-2 md:px-12"
              >
-             {days.map((date, i) => {
+             {days.map((date) => {
                const isSelected = isSameDay(date, formData.appointment_date);
                return (
                  <button 
                   type="button"
-                  key={i}
+                  key={format(date, "yyyy-MM-dd")}
                   onClick={() => setFormData(prev => ({ ...prev, appointment_date: date, appointment_time: "" }))}
                   className={`flex flex-col items-center justify-center min-w-[72px] h-[84px] rounded-2xl border transition-[background-color,border-color,box-shadow,color] duration-200 shrink-0 shadow-sm
                     ${isSelected 
@@ -781,6 +1114,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             </div>
           )}
         </div>
+        </div>
 
         {/* NOTLAR */}
         <div>
@@ -796,6 +1130,20 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       </div>
     );
   };
+
+  if (step === 4 && sheetAppointment) {
+    return (
+      <SessionPlannerSheet
+        appointment={sheetAppointment}
+        initialSessionRows={wizardSheetRows}
+        onComplete={() => {
+          setWizardSheetRows(null);
+          onSave();
+        }}
+        showWizardStepBadge
+      />
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-white md:bg-black/35 md:backdrop-blur-[1px] md:flex md:items-center md:justify-center p-0 md:p-4 animate-in fade-in duration-200">
@@ -821,7 +1169,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                 {step === 3 && t('appointments.form.appointmentDate')}
               </h1>
               <p className="text-xs text-zinc-500 font-bold tracking-wider mt-0.5 uppercase">
-                 {t('common.step')} {step}/3
+                 {t("common.step")} {step}/{wizardTotalSteps}
               </p>
             </div>
           </div>
@@ -832,7 +1180,10 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
         {/* PROGRESS BAR */}
         <div className="h-1 w-full bg-zinc-100/50 shrink-0">
-          <div className="h-full bg-zinc-900 transition-all duration-500 ease-out shadow-sm" style={{ width: `${(step / 3) * 100}%` }} />
+          <div
+            className="h-full bg-zinc-900 transition-all duration-500 ease-out shadow-sm"
+            style={{ width: `${(step / wizardTotalSteps) * 100}%` }}
+          />
         </div>
 
         {/* CONTENT */}
@@ -853,17 +1204,49 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                      : `${Math.round(filteredServices.find(s => s.id === formData.service_id)?.price || 0)}${currencySymbol}`}
                 </span>
              </div>
-             <Button 
-               onClick={handleSubmit}
-               disabled={loading || !formData.appointment_time}
-               className="w-full bg-zinc-900 text-white font-bold text-base h-14 rounded-2xl shadow-xl hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-             >
-               {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : (
-                 <span className="flex items-center gap-2">
-                    <Check className="w-5 h-5" strokeWidth={2.5} /> {appointment ? t('appointments.form.update') : t('appointments.form.save')}
-                 </span>
-               )}
-             </Button>
+             {isNewMultiPackage ? (
+               <div className="flex flex-col gap-3">
+                 <Button
+                   type="button"
+                   onClick={handleAutomaticPackage}
+                   disabled={loading || !formData.appointment_time}
+                   className="w-full bg-zinc-900 text-white font-bold text-base h-14 rounded-2xl shadow-xl hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                 >
+                   {loading ? (
+                     <Loader2 className="w-6 h-6 animate-spin" />
+                   ) : (
+                     <span className="flex items-center justify-center gap-2">
+                       <Check className="w-5 h-5" strokeWidth={2.5} /> {t('appointments.form.wizard.autoPlan')}
+                     </span>
+                   )}
+                 </Button>
+                 <Button
+                   type="button"
+                   variant="outline"
+                   onClick={handleManualPackage}
+                   disabled={loading || !formData.appointment_time}
+                   className="w-full h-14 rounded-2xl border-zinc-200 font-bold text-zinc-900 bg-white hover:bg-zinc-50 disabled:opacity-50"
+                 >
+                   {loading ? (
+                     <Loader2 className="w-6 h-6 animate-spin" />
+                   ) : (
+                     t('appointments.form.wizard.manualPlan')
+                   )}
+                 </Button>
+               </div>
+             ) : (
+               <Button 
+                 onClick={handleSubmit}
+                 disabled={loading || !formData.appointment_time}
+                 className="w-full bg-zinc-900 text-white font-bold text-base h-14 rounded-2xl shadow-xl hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : (
+                   <span className="flex items-center gap-2">
+                      <Check className="w-5 h-5" strokeWidth={2.5} /> {appointment ? t('appointments.form.update') : t('appointments.form.save')}
+                   </span>
+                 )}
+               </Button>
+             )}
           </div>
         )}
       </div>

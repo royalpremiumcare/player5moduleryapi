@@ -53,6 +53,32 @@ TEMPLATES: Dict[str, Dict[str, Dict[str, str]]] = {
             "lang_code":        "en",
         },
     },
+    # PLANN v2: Online full payment confirmation (amount paid)
+    "CONFIRMATION_FULL_PAID": {
+        "TR": {
+            "with_location":    "randevu_onay_konumlu_online_odemeli",
+            "without_location": "randevu_onay_metin_online_odemeli",
+            "lang_code":        "tr",
+        },
+        "EN": {
+            "with_location":    "randevu_onay_konumlu_eng_online_odemeli",
+            "without_location": "randevu_onay_metin_eng_online_odemeli",
+            "lang_code":        "en",
+        },
+    },
+    # PLANN v2: Deposit confirmation (amount paid + amount due on site)
+    "CONFIRMATION_DEPOSIT": {
+        "TR": {
+            "with_location":    "randevu_onay_konumlu_kapora",
+            "without_location": "randevu_onay_metin_kapora",
+            "lang_code":        "tr",
+        },
+        "EN": {
+            "with_location":    "randevu_onay_konumlu_eng_kapora",
+            "without_location": "randevu_onay_metin_eng_kapora",
+            "lang_code":        "en",
+        },
+    },
     "REMINDER": {
         "TR": {
             "with_location":    "randevu_hatirlatma_konumlu",
@@ -316,6 +342,8 @@ def send_whatsapp_template(
     business_address: Optional[str] = None,
     session_count: Optional[int] = None,
     session_dates_text: Optional[str] = None,
+    amount_paid_display: Optional[str] = None,
+    on_site_amount_display: Optional[str] = None,
 ) -> str:
     """
     Müşteri diline ve işletme koordinatına göre doğru Meta WA şablonunu seçip gönderir.
@@ -356,6 +384,9 @@ def send_whatsapp_template(
             template_name = template_info["without_location"]
             header = _build_text_header(company_name)
 
+        amount_paid = _normalise_template_var(amount_paid_display, fallback="-")
+        on_site_amount = _normalise_template_var(on_site_amount_display, fallback="-")
+
         if template_type_upper == "SESSION_PACKAGE":
             body = _build_body([
                 customer_name,
@@ -364,6 +395,38 @@ def send_whatsapp_template(
                 session_dates_text or "",
                 support_phone,
             ])
+        elif template_type_upper == "CONFIRMATION_FULL_PAID":
+            # Body: customer, company, date, time, service, amount_paid, support, [address]
+            if has_location:
+                body = _build_body([
+                    customer_name, company_name,
+                    formatted_date, appointment_time, service_name,
+                    amount_paid, support_phone,
+                ])
+            else:
+                location_fallback = "Konum girilmedi" if language == "TR" else "Location not provided"
+                location_text = _normalise_template_var(business_address, fallback=location_fallback)
+                body = _build_body([
+                    customer_name, company_name,
+                    formatted_date, appointment_time, service_name,
+                    amount_paid, support_phone, location_text,
+                ])
+        elif template_type_upper == "CONFIRMATION_DEPOSIT":
+            # Body: customer, company, date, time, service, deposit_paid, on_site_amount, support, [address]
+            if has_location:
+                body = _build_body([
+                    customer_name, company_name,
+                    formatted_date, appointment_time, service_name,
+                    amount_paid, on_site_amount, support_phone,
+                ])
+            else:
+                location_fallback = "Konum girilmedi" if language == "TR" else "Location not provided"
+                location_text = _normalise_template_var(business_address, fallback=location_fallback)
+                body = _build_body([
+                    customer_name, company_name,
+                    formatted_date, appointment_time, service_name,
+                    amount_paid, on_site_amount, support_phone, location_text,
+                ])
         elif has_location:
             body = _build_body([
                 customer_name, company_name,

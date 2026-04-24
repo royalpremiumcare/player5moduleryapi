@@ -1,11 +1,17 @@
-import { useState, useEffect, useCallback } from "react";
-import { CalendarDays, Clock, AlertTriangle, CheckCircle2, Info, Loader2, X, Pencil } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { CalendarDays, Clock, AlertTriangle, CheckCircle2, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +20,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  buildRemainingSlotsFromAppointment,
+  buildBulkSessionPayload,
+  validateSessionSchedule,
+  normalizeWorkingHours,
+  normalizeAppointmentDateStr,
+  fetchWavePlanSessions,
+} from "../lib/sessionScheduling";
+import { formatApiError } from "@/lib/apiError";
+import { useAuth } from "../context/AuthContext";
+import PlannerTimeSlotGrid from "./PlannerTimeSlotGrid";
 
 const SessionPlannerDialog = ({ 
   open, 
@@ -22,14 +39,16 @@ const SessionPlannerDialog = ({
   onSuccess 
 }) => {
   const { t, i18n } = useTranslation();
-  const isTR = i18n.language === 'tr';
+  const { userRole, canViewAll } = useAuth();
 
   const [sessions, setSessions] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [waveLoading, setWaveLoading] = useState(false);
+  const [slotRefreshToken, setSlotRefreshToken] = useState(0);
   const [checking, setChecking] = useState(false);
   const [creating, setCreating] = useState(false);
   const [allAvailable, setAllAvailable] = useState(false);
-  const [workingHours, setWorkingHours] = useState(null);
+  const [plannerSettings, setPlannerSettings] = useState(null);
+  const [allStaff, setAllStaff] = useState([]);
 
   const remainingCount = appointment 
     ? (appointment.session_total || 0) - (appointment.session_number || 0) 
@@ -37,85 +56,114 @@ const SessionPlannerDialog = ({
 
   useEffect(() => {
     if (open) {
-      api.get("/settings").then(res => setWorkingHours(res.data?.working_hours || null)).catch(() => {});
+      api
+        .get("/settings")
+        .then((res) => setPlannerSettings(res.data || null))
+        .catch(() => {});
+      api
+        .get("/users")
+        .then((res) => setAllStaff(res.data || []))
+        .catch(() => {});
     }
   }, [open]);
 
+  const qualifiedStaff = useMemo(() => {
+    if (!appointment?.service_id || !plannerSettings) return [];
+    let q = (allStaff || []).filter((s) =>
+      (s.permitted_service_ids || []).includes(appointment.service_id)
+    );
+    if (!plannerSettings.admin_provides_service) {
+      q = q.filter((s) => s.role !== "admin");
+    }
+    return q;
+  }, [appointment?.service_id, plannerSettings, allStaff]);
+
+  const showStaffPicker =
+    (userRole === "admin" || userRole === "superadmin" || canViewAll) &&
+    qualifiedStaff.length > 0;
+
+  const loadDefaultSessions = useCallback(async () => {
+    if (!appointment || remainingCount <= 0) return;
+    setWaveLoading(true);
+    const fallback = buildRemainingSlotsFromAppointment(appointment, remainingCount, plannerSettings, {
+      intervalMinutes: plannerSettings?.appointment_interval || 30,
+      serviceDurationMinutes: appointment.service_duration ?? undefined,
+    });
+    const mapRow = (s, i) => ({
+      date: s.date || fallback[i]?.date || "",
+      time: s.time || fallback[i]?.time || "",
+      staff_member_id: s.staff_member_id
+        ? String(s.staff_member_id)
+        : (appointment.staff_member_id && String(appointment.staff_member_id)) || "",
+      unplanned: !!s.unplanned,
+      available: null,
+      alternatives: [],
+      editing: false,
+    });
+    try {
+      const data = await fetchWavePlanSessions(api, {
+        service_id: appointment.service_id,
+        first_session_date: normalizeAppointmentDateStr(appointment.appointment_date),
+        first_session_time: appointment.appointment_time || "10:00",
+        remaining_count: remainingCount,
+        staff_member_id: appointment.staff_member_id || undefined,
+      });
+      const rows = (data.sessions || []).map((s, i) => mapRow(s, i));
+      setSessions(
+        rows.length
+          ? rows
+          : fallback.map((s, i) => mapRow({ date: s.date, time: s.time }, i))
+      );
+    } catch (e) {
+      console.error(e);
+      setSessions(fallback.map((s, i) => mapRow(s, i)));
+    } finally {
+      setWaveLoading(false);
+      setAllAvailable(false);
+    }
+  }, [appointment, remainingCount, plannerSettings]);
+
   useEffect(() => {
     if (open && appointment && remainingCount > 0) {
-      generateDefaultSessions();
+      loadDefaultSessions();
     }
-  }, [open, appointment, workingHours]);
+  }, [open, appointment, remainingCount, plannerSettings, loadDefaultSessions]);
 
-  const DAY_MAP = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-
-  const isWorkingDay = (date) => {
-    if (!workingHours) return true;
-    const dayName = DAY_MAP[date.getDay()];
-    const dayConfig = workingHours[dayName];
-    return dayConfig && dayConfig.enabled;
-  };
-
-  const getWorkingTimeRange = (date) => {
-    if (!workingHours) return null;
-    const dayName = DAY_MAP[date.getDay()];
-    const dayConfig = workingHours[dayName];
-    if (!dayConfig || !dayConfig.enabled) return null;
-    return { start: dayConfig.start || "09:00", end: dayConfig.end || "18:00" };
-  };
-
-  const clampTimeToWorkingHours = (time, date) => {
-    const range = getWorkingTimeRange(date);
-    if (!range) return time;
-    if (time < range.start) return range.start;
-    if (time >= range.end) return range.start;
-    return time;
-  };
-
-  const generateDefaultSessions = () => {
-    if (!appointment) return;
-    const baseDate = new Date(appointment.appointment_date);
-    const baseTime = appointment.appointment_time || "10:00";
-    const newSessions = [];
-
-    let dayOffset = 7;
-    let generated = 0;
-    let maxAttempts = remainingCount * 14; // safety limit
-
-    while (generated < remainingCount && maxAttempts > 0) {
-      maxAttempts--;
-      const sessionDate = new Date(baseDate);
-      sessionDate.setDate(sessionDate.getDate() + dayOffset);
-
-      if (isWorkingDay(sessionDate)) {
-        const dateStr = sessionDate.toISOString().split('T')[0];
-        const adjustedTime = clampTimeToWorkingHours(baseTime, sessionDate);
-        newSessions.push({
-          date: dateStr,
-          time: adjustedTime,
-          available: null,
-          alternatives: [],
-          editing: false
-        });
-        generated++;
-        dayOffset += 7; // next week same day
-      } else {
-        dayOffset++; // skip to next day
-      }
-    }
-    setSessions(newSessions);
-    setAllAvailable(false);
-  };
+  const getWorkingTimeRange = useCallback(
+    (date) => {
+      const wh = normalizeWorkingHours(plannerSettings) || plannerSettings?.working_hours || plannerSettings?.business_hours;
+      if (!wh) return null;
+      const DAY_MAP = [
+        "sunday",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+      ];
+      const dayName = DAY_MAP[date.getDay()];
+      const dayConfig = wh[dayName];
+      if (!dayConfig || !dayConfig.enabled) return null;
+      return { start: dayConfig.start || "09:00", end: dayConfig.end || "18:00" };
+    },
+    [plannerSettings]
+  );
 
   const checkAvailability = useCallback(async () => {
     if (!appointment || sessions.length === 0) return;
     setChecking(true);
     try {
       const slots = sessions.map(s => `${s.date}T${s.time}`);
+      const staff_ids = sessions.map((s) => {
+        const v = (s.staff_member_id || "").trim();
+        return v || null;
+      });
       const response = await api.post("/availability/bulk-check", {
         service_id: appointment.service_id,
         staff_id: appointment.staff_member_id,
-        slots
+        slots,
+        staff_ids,
       });
       const results = response.data;
       const updated = sessions.map((s, idx) => ({
@@ -129,11 +177,11 @@ const SessionPlannerDialog = ({
       setSessions(updated);
       setAllAvailable(updated.every(s => s.available === true));
     } catch (error) {
-      toast.error(isTR ? "Müsaitlik kontrolü başarısız" : "Availability check failed");
+      toast.error(t("sessionPlanner.availabilityFailed"));
     } finally {
       setChecking(false);
     }
-  }, [appointment, sessions]);
+  }, [appointment, sessions, t]);
 
   useEffect(() => {
     if (open && sessions.length > 0 && sessions[0].available === null) {
@@ -165,7 +213,22 @@ const SessionPlannerDialog = ({
     setCreating(true);
     try {
       const startingNumber = (appointment.session_number || 1) + 1;
-      await api.post("/appointments/bulk-session", {
+      const idempotencyKey =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const rawSessions = sessions.map((s) => {
+        const row = { date: s.date, time: s.time };
+        const st = (s.staff_member_id || "").trim();
+        if (st) row.staff_member_id = st;
+        return row;
+      });
+      const v = validateSessionSchedule(rawSessions);
+      if (!v.ok) {
+        toast.error(t("sessionPlanner.validationFailed"));
+        return;
+      }
+      const payload = buildBulkSessionPayload({
         customer_name: appointment.customer_name,
         phone: appointment.phone,
         service_id: appointment.service_id,
@@ -174,17 +237,17 @@ const SessionPlannerDialog = ({
         session_group_id: appointment.session_group_id,
         starting_session_number: startingNumber,
         session_total: appointment.session_total,
-        sessions: sessions.map(s => ({ date: s.date, time: s.time }))
+        sessions: rawSessions,
       });
-      toast.success(isTR 
-        ? `${sessions.length} seans başarıyla planlandı` 
-        : `${sessions.length} sessions planned successfully`
-      );
+      await api.post("/appointments/bulk-session", payload, {
+        headers: { "Idempotency-Key": idempotencyKey },
+      });
+      toast.success(t("sessionPlanner.sessionsPlanned", { count: sessions.length }));
+      setSlotRefreshToken((x) => x + 1);
       onOpenChange(false);
       onSuccess && onSuccess();
     } catch (error) {
-      const detail = error.response?.data?.detail || (isTR ? "Seanslar oluşturulamadı" : "Failed to create sessions");
-      toast.error(detail);
+      toast.error(formatApiError(error, t, t("appointments.form.operationFailed")));
     } finally {
       setCreating(false);
     }
@@ -194,10 +257,10 @@ const SessionPlannerDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl sm:max-w-[600px] max-h-[80vh] overflow-y-auto overflow-x-hidden" style={{ paddingBottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 5rem))' }}>
+      <DialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl sm:max-w-3xl max-h-[85vh] overflow-y-auto overflow-x-hidden" style={{ paddingBottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 5rem))' }}>
         <DialogHeader>
           <DialogTitle className="text-xl font-black text-zinc-900">
-            {isTR ? 'Kalan Seansları Planla' : 'Plan Remaining Sessions'}
+            {t("sessionPlanner.title")}
           </DialogTitle>
           <DialogDescription className="text-zinc-600 font-medium">
             {appointment?.customer_name} — {appointment?.service_name}
@@ -209,23 +272,29 @@ const SessionPlannerDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Bilgi Kutusu */}
-        <div className="p-4 backdrop-blur-md bg-zinc-900/5 border border-zinc-200/60 rounded-xl flex items-start gap-3">
-          <Info className="w-5 h-5 text-zinc-700 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-zinc-700">
-            <p className="font-bold mb-1">
-              {isTR ? 'Nasıl Çalışır?' : 'How It Works?'}
+        <div className="flex flex-col lg:flex-row gap-4 mt-2">
+          <aside className="lg:w-[min(100%,280px)] shrink-0 rounded-xl border border-zinc-200 bg-zinc-50/90 p-4">
+            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wide mb-2">
+              {t("session.package")}
             </p>
-            <p className="leading-relaxed">
-              {isTR 
-                ? 'Tarihler otomatik oluşturuldu (haftalık). Çakışma varsa sarı uyarı ve alternatif saatler gösterilir. Tüm seanslar müsait olana kadar "Hepsini Oluştur" butonu aktif olmaz.'
-                : 'Dates are auto-generated (weekly). Conflicts show yellow warnings with alternative times. "Create All" button stays disabled until all sessions are available.'}
-            </p>
-          </div>
-        </div>
+            <p className="font-bold text-zinc-900">{appointment?.customer_name}</p>
+            <p className="text-sm text-zinc-600 mt-1">{appointment?.service_name}</p>
+            <div className="mt-4 p-3 backdrop-blur-md bg-white/80 border border-zinc-200/60 rounded-lg flex items-start gap-2">
+              <Info className="w-4 h-4 text-zinc-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-zinc-700">
+                <p className="font-bold mb-1">{t("sessionPlanner.howItWorksTitle")}</p>
+                <p className="leading-relaxed">{t("sessionPlanner.howItWorksBody")}</p>
+              </div>
+            </div>
+          </aside>
 
-        {/* Seans Listesi */}
-        <div className="space-y-3 mt-2">
+          <div className="flex-1 min-w-0 space-y-3">
+          {waveLoading && (
+            <p className="text-xs text-zinc-500 flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              {t("sessionPlanner.waveLoading")}
+            </p>
+          )}
           {sessions.map((session, idx) => (
             <div 
               key={idx} 
@@ -262,13 +331,50 @@ const SessionPlannerDialog = ({
                   className="h-8 text-sm backdrop-blur-md bg-white/60 border-white/40 rounded-lg font-medium flex-1"
                 />
                 <Clock className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                <Input
-                  type="time"
-                  value={session.time}
-                  onChange={(e) => updateSession(idx, 'time', e.target.value)}
-                  className="h-8 text-sm backdrop-blur-md bg-white/60 border-white/40 rounded-lg font-medium w-[5.5rem]"
-                />
+                <div className="flex-1 min-w-0">
+                  <PlannerTimeSlotGrid
+                    serviceId={appointment.service_id}
+                    dateStr={session.date}
+                    staffId={(session.staff_member_id || "").trim() || appointment.staff_member_id}
+                    excludeAppointmentId={appointment.id}
+                    value={session.time}
+                    onChange={(t) => updateSession(idx, "time", t)}
+                    reloadToken={slotRefreshToken}
+                    disabled={waveLoading}
+                  />
+                </div>
               </div>
+              {session.unplanned && (
+                <p className="text-[10px] text-amber-700 mt-1 font-medium">
+                  {t("sessionPlanner.unplannedHint")}
+                </p>
+              )}
+
+              {showStaffPicker && (
+                <div className="mt-2 w-full min-w-0">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide block mb-1">
+                    {t("sessionPlanner.staffPerSession")}
+                  </label>
+                  <Select
+                    value={(session.staff_member_id || "").trim() || "__default__"}
+                    onValueChange={(v) =>
+                      updateSession(idx, "staff_member_id", v === "__default__" ? "" : v)
+                    }
+                  >
+                    <SelectTrigger className="h-9 w-full rounded-lg border-zinc-200 text-sm bg-white/80">
+                      <SelectValue placeholder={t("appointments.form.selectStaff")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default__">{t("sessionPlanner.staffSameAsPackage")}</SelectItem>
+                      {qualifiedStaff.map((u) => (
+                        <SelectItem key={u.username} value={u.username}>
+                          {u.full_name || u.username}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {/* Başka personele atandı bilgisi */}
               {session.suggested_staff_name && session.available === true && (
@@ -277,7 +383,7 @@ const SessionPlannerDialog = ({
                     → {session.suggested_staff_name}
                   </span>
                   <span className="text-[10px] text-zinc-400">
-                    {isTR ? '(orijinal personel dolu)' : '(original staff busy)'}
+                    {t("sessionPlanner.staffReassigned")}
                   </span>
                 </div>
               )}
@@ -289,7 +395,11 @@ const SessionPlannerDialog = ({
                   return (
                     <div className="mt-1.5 flex items-center gap-1.5 pl-1">
                       <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-semibold">
-                        ⚠ {isTR ? `Çalışma saatleri: ${range.start} - ${range.end}` : `Working hours: ${range.start} - ${range.end}`}
+                        ⚠{" "}
+                        {t("sessionPlanner.workingHoursWarn", {
+                          start: range.start,
+                          end: range.end,
+                        })}
                       </span>
                     </div>
                   );
@@ -301,11 +411,11 @@ const SessionPlannerDialog = ({
               {session.available === false && (
                 <div className="mt-2 pl-8">
                   <p className="text-xs font-bold text-amber-700 mb-1">
-                    {isTR ? 'Bu saatte çakışma var!' : 'Conflict at this time!'}
+                    {t("sessionPlanner.conflictTitle")}
                   </p>
                   {session.alternatives.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
-                      <span className="text-xs text-zinc-500">{isTR ? 'Alternatifler:' : 'Alternatives:'}</span>
+                      <span className="text-xs text-zinc-500">{t("sessionPlanner.alternatives")}</span>
                       {session.alternatives.map((alt, aIdx) => (
                         <button
                           key={aIdx}
@@ -322,6 +432,7 @@ const SessionPlannerDialog = ({
               )}
             </div>
           ))}
+          </div>
         </div>
 
         <DialogFooter className="border-t border-white/30 pt-4 flex-col sm:flex-row gap-2">
@@ -333,9 +444,11 @@ const SessionPlannerDialog = ({
             className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold"
           >
             {checking ? (
-              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {isTR ? 'Kontrol ediliyor...' : 'Checking...'}</>
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t("sessionPlanner.checking")}
+              </>
             ) : (
-              isTR ? 'Müsaitlik Kontrol Et' : 'Check Availability'
+              t("sessionPlanner.checkAvailability")
             )}
           </Button>
           <Button
@@ -345,9 +458,11 @@ const SessionPlannerDialog = ({
             className="bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg disabled:opacity-50"
           >
             {creating ? (
-              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {isTR ? 'Oluşturuluyor...' : 'Creating...'}</>
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t("sessionPlanner.creating")}
+              </>
             ) : (
-              isTR ? `Hepsini Oluştur (${sessions.length})` : `Create All (${sessions.length})`
+              t("sessionPlanner.createAll", { count: sessions.length })
             )}
           </Button>
         </DialogFooter>
