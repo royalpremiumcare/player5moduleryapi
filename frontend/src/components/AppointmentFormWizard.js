@@ -1009,9 +1009,19 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   };
 
   // ADIM 3: TARİH VE SAAT
+  // CLS fix: Adım 2 → 3 geçişinde transform tabanlı `slide-in-from-right`
+  // animasyonu devam ederken `qualifiedStaff`, `selectedService` ve `allSlots`
+  // async olarak güncelleniyor; bu da staff chip'leri / amber bilgi kartı /
+  // slot grid'inin yükseklik hesaplamasını yeniden tetikleyerek görünür bir
+  // titremeye neden oluyordu. Çözüm:
+  //  1) Animasyonu `fade-in`'e çevirdik (sadece opacity, transform yok).
+  //  2) Step 3 dış wrapper'ına stabil bir `min-h` verdik — içerik yüklenirken
+  //     kapsayıcı yüksekliği değişmez.
+  //  3) Staff picker + amber notice bloklarını tek, sabit `min-h`'lı bir
+  //     container'a aldık; ikisi arası geçiş layout shift yaratmaz.
   const renderStep3 = () => {
     return (
-      <div className="space-y-8 animate-in slide-in-from-right duration-300 pb-24">
+      <div className="space-y-8 animate-in fade-in duration-200 pb-24 min-h-[760px]">
         
         {/* Seans Paketi Bilgilendirmesi */}
         {(() => {
@@ -1036,59 +1046,61 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
           return null;
         })()}
 
-        {/* Personel Seçimi */}
-        {(userRole === 'admin' || canViewAll) && qualifiedStaff.length > 0 && (
-          <div>
-             <label className="block text-sm font-bold text-zinc-700 mb-3 uppercase tracking-wider">{t('appointments.form.selectStaff')}</label>
-             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                <button
-                   type="button"
-                   onClick={() => setFormData(prev => ({ ...prev, staff_member_id: "" }))}
-                   className={`px-4 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-colors shadow-sm backdrop-blur-md
-                     ${!formData.staff_member_id 
-                       ? 'bg-zinc-900 text-white border-zinc-900 shadow-lg' 
-                       : 'bg-white/40 text-zinc-600 border-white/30 hover:bg-white/60'}
-                   `}
-                >
-                   {t('appointments.form.autoAssign')}
-                </button>
-                {qualifiedStaff.map(staff => (
-                   <button
-                     key={staff.username}
-                     type="button"
-                     onClick={() => setFormData(prev => ({ ...prev, staff_member_id: staff.username }))}
-                     className={`px-4 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-colors flex items-center gap-2 shadow-sm backdrop-blur-md
-                       ${formData.staff_member_id === staff.username 
-                         ? 'bg-zinc-900 text-white border-zinc-900 shadow-lg' 
-                         : 'bg-white/40 text-zinc-600 border-white/30 hover:bg-white/60'}
-                     `}
-                   >
-                     {staff.full_name || staff.username}
-                   </button>
-                ))}
-             </div>
-          </div>
-        )}
-
-        {/* Personel yok bilgisi — admin/superadmin için, seçili hizmete atanmış
-            kalifiye personel bulunamadığında. Backend bu durumda randevuyu
-            `unassigned` olarak kaydeder; kullanıcıyı bu davranıştan açıkça
-            haberdar ediyoruz ki adım 4'te "hiçbir şey olmuyor" hissi yaşanmasın. */}
-        {(userRole === 'admin' || canViewAll) && qualifiedStaff.length === 0 && selectedService && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-            <div className="text-xs text-amber-800 leading-relaxed">
-              <p className="font-bold mb-0.5">
-                {i18n.language === 'tr'
-                  ? 'Bu hizmet için atanmış personel yok'
-                  : 'No staff assigned to this service'}
-              </p>
-              <p>
-                {i18n.language === 'tr'
-                  ? 'Randevu personelsiz kaydedilecek. İsterseniz Personel sayfasından bu hizmeti verebilecek bir personel tanımlayabilirsiniz.'
-                  : 'The appointment will be saved without staff. You can assign a staff member to this service from the Staff page if needed.'}
-              </p>
-            </div>
+        {/* Personel seçimi bölgesi — sabit min-h ile; staff picker ve amber
+            bilgi kartı arasındaki async geçişin CLS yaratmaması için tek
+            kapsayıcıya alındı. Boş (seçili servis yok) durumda da yüksekliği
+            korur, böylece adım 2 → 3 geçişinde titreme oluşmaz. */}
+        {(userRole === 'admin' || canViewAll) && (
+          <div className="min-h-[96px]">
+            {qualifiedStaff.length > 0 ? (
+              <div>
+                <label className="block text-sm font-bold text-zinc-700 mb-3 uppercase tracking-wider">{t('appointments.form.selectStaff')}</label>
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, staff_member_id: "" }))}
+                    className={`px-4 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-colors shadow-sm backdrop-blur-md
+                      ${!formData.staff_member_id
+                        ? 'bg-zinc-900 text-white border-zinc-900 shadow-lg'
+                        : 'bg-white/40 text-zinc-600 border-white/30 hover:bg-white/60'}
+                    `}
+                  >
+                    {t('appointments.form.autoAssign')}
+                  </button>
+                  {qualifiedStaff.map(staff => (
+                    <button
+                      key={staff.username}
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, staff_member_id: staff.username }))}
+                      className={`px-4 py-2.5 rounded-xl border text-sm font-bold whitespace-nowrap transition-colors flex items-center gap-2 shadow-sm backdrop-blur-md
+                        ${formData.staff_member_id === staff.username
+                          ? 'bg-zinc-900 text-white border-zinc-900 shadow-lg'
+                          : 'bg-white/40 text-zinc-600 border-white/30 hover:bg-white/60'}
+                      `}
+                    >
+                      {staff.full_name || staff.username}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : selectedService ? (
+              // Hizmet seçili ama kalifiye personel yok — admin için unassigned bilgisi
+              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <div className="text-xs text-amber-800 leading-relaxed">
+                  <p className="font-bold mb-0.5">
+                    {i18n.language === 'tr'
+                      ? 'Bu hizmet için atanmış personel yok'
+                      : 'No staff assigned to this service'}
+                  </p>
+                  <p>
+                    {i18n.language === 'tr'
+                      ? 'Randevu personelsiz kaydedilecek. İsterseniz Personel sayfasından bu hizmeti verebilecek bir personel tanımlayabilirsiniz.'
+                      : 'The appointment will be saved without staff. You can assign a staff member to this service from the Staff page if needed.'}
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
 

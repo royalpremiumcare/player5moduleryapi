@@ -26,6 +26,75 @@ import TourGuide from "../components/TourGuide";
 // --- SEANS PLANLAYICI ---
 import SessionPlannerDialog from "./SessionPlannerDialog";
 
+// --- SCROLL-SAFE DROPDOWN ---
+// Mobilde kullanıcı parmağıyla listeyi kaydırırken 3-nokta butonuna
+// yanlışlıkla değdiğinde Radix DropdownMenu'nun varsayılan
+// `onPointerDown -> open` davranışı scroll'u keser ve menüyü açardı.
+// Bu wrapper:
+//   1) Trigger'ın `onPointerDown`'ında preventDefault ederek Radix'in
+//      pointerdown-tabanlı açılış handler'ını iptal eder (Radix, child'ın
+//      event.defaultPrevented durumunda kendi handler'ını atlar).
+//   2) Open state'ini controlled yönetir.
+//   3) Pointer hareketi 8px eşiğini aşarsa kullanıcının niyetini "scroll"
+//      olarak kabul eder; sonraki `click` event'i menüyü açmaz.
+// Child olarak Radix'e forward edilecek tek bir <button>/<Button> elemanı
+// beklenir; ScrollSafeDropdown event handler'larını cloneElement ile inject
+// eder.
+function ScrollSafeDropdown({ trigger, children, align = "end", contentClassName = "w-48" }) {
+  const [open, setOpen] = useState(false);
+  const startRef = useRef(null);
+  const movedRef = useRef(false);
+
+  const handlePointerDown = (e) => {
+    startRef.current = { x: e.clientX, y: e.clientY };
+    movedRef.current = false;
+    // Radix'in pointerdown-açılış handler'ı bu satır sayesinde devre dışı kalır.
+    e.preventDefault();
+    trigger.props.onPointerDown?.(e);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!startRef.current) return;
+    const dx = Math.abs(e.clientX - startRef.current.x);
+    const dy = Math.abs(e.clientY - startRef.current.y);
+    if (dx > 8 || dy > 8) movedRef.current = true;
+  };
+
+  const handlePointerEnd = (e) => {
+    startRef.current = null;
+    trigger.props.onPointerUp?.(e);
+  };
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    if (movedRef.current) {
+      // Parmak kaymış; scroll niyetiyle açılmamalı.
+      movedRef.current = false;
+      return;
+    }
+    trigger.props.onClick?.(e);
+    setOpen((v) => !v);
+  };
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        {React.cloneElement(trigger, {
+          onPointerDown: handlePointerDown,
+          onPointerMove: handlePointerMove,
+          onPointerUp: handlePointerEnd,
+          onPointerCancel: handlePointerEnd,
+          onPointerLeave: handlePointerEnd,
+          onClick: handleClick,
+        })}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={align} className={contentClassName}>
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 // --- WHATSAPP ICON ---
 const WhatsAppIcon = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -359,19 +428,22 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                     <span className="text-xs font-bold">{getStaffName(apt.staff_member_id)}</span>
                   </div>
                 )}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild><button onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95"><MoreVertical className="w-5 h-5" /></button></DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    {!isCancelled && !isCompleted && (
-                      ['paid', 'deposit_paid'].includes(apt.payment_status)
-                        ? <DropdownMenuItem onClick={() => setCancelRefundDialog(apt)} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
-                        : <DropdownMenuItem onClick={() => handleStatusChange(apt.id, t('dashboard.status.cancelled'))} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> {t('common.edit')}</DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> {t('common.delete')}</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <ScrollSafeDropdown
+                  trigger={
+                    <button type="button" className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95">
+                      <MoreVertical className="w-5 h-5" />
+                    </button>
+                  }
+                >
+                  {!isCancelled && !isCompleted && (
+                    ['paid', 'deposit_paid'].includes(apt.payment_status)
+                      ? <DropdownMenuItem onClick={() => setCancelRefundDialog(apt)} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
+                      : <DropdownMenuItem onClick={() => handleStatusChange(apt.id, t('dashboard.status.cancelled'))} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> {t('common.edit')}</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> {t('common.delete')}</DropdownMenuItem>
+                </ScrollSafeDropdown>
               </div>
             </div>
           </div>
@@ -618,20 +690,21 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                             </div>
                           </div>
                         </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()} className="transition-all hover:scale-105 active:scale-95"><MoreVertical className="w-4 h-4 text-gray-400" /></Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}>
-                              <Edit className="w-4 h-4 mr-2" /> {t('common.edit')}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDeleteDialog(apt); }} className="text-red-600">
-                              <Trash2 className="w-4 h-4 mr-2" /> {t('common.delete')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <ScrollSafeDropdown
+                          trigger={
+                            <Button variant="ghost" size="sm" type="button" className="transition-all hover:scale-105 active:scale-95">
+                              <MoreVertical className="w-4 h-4 text-gray-400" />
+                            </Button>
+                          }
+                        >
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}>
+                            <Edit className="w-4 h-4 mr-2" /> {t('common.edit')}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDeleteDialog(apt); }} className="text-red-600">
+                            <Trash2 className="w-4 h-4 mr-2" /> {t('common.delete')}
+                          </DropdownMenuItem>
+                        </ScrollSafeDropdown>
                       </div>
 
                       {isExpanded && hasNote && (
