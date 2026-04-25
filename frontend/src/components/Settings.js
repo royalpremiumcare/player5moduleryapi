@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
+import { CONTACT_PHONE_DISPLAY, TEL_URL, WHATSAPP_URL } from "../constants/contact";
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 
@@ -251,14 +252,14 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
             <SettingItem
               icon={Phone}
               title={t('settings.callUs', 'Bizi Arayın')}
-              subtitle="+90 540 595 3250"
-              onClick={() => window.open('tel:+905405953250')}
+              subtitle={CONTACT_PHONE_DISPLAY}
+              onClick={() => window.open(TEL_URL)}
             />
             <SettingItem
               icon={MessageCircle}
               title="WhatsApp"
               subtitle={t('settings.whatsappSupportSubtitle', 'Mesaj gönderin, hızlıca yanıtlayalım')}
-              onClick={() => window.open('https://wa.me/905405953250', '_blank', 'noopener,noreferrer')}
+              onClick={() => window.open(WHATSAPP_URL, '_blank', 'noopener,noreferrer')}
             />
             <SettingItem
               icon={Mail}

@@ -1196,6 +1196,11 @@ function App() {
           <SessionsHub
             appointments={appointments}
             userRole={userRole}
+            onEditAppointment={(apt) => {
+              setSelectedAppointment(apt);
+              setShowForm(true);
+              setCurrentView("dashboard");
+            }}
             onRefresh={async () => {
               await loadAppointments();
               if (userRole === "admin") await loadStats();

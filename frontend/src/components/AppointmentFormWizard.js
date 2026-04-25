@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } fr
 import { format, addDays, isSameDay, startOfDay, differenceInCalendarDays } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
-import { Calendar as CalendarIcon, Clock, ArrowLeft, User, Search, X, Check, UserPlus, ChevronLeft, Loader2, Users, Import } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, ArrowLeft, User, Search, X, Check, UserPlus, ChevronLeft, Loader2, Users, Import, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { buildWizardRemainingPackageRows, buildBulkSessionPayload, fetchWavePlanSessions } from "../lib/sessionScheduling";
 import { formatApiError } from "@/lib/apiError";
-import SessionPlannerSheet from "./SessionPlannerSheet";
+import SessionPlannerDialog from "./planner/SessionPlannerDialog";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const publicApi = axios.create({
@@ -56,6 +56,13 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
   const dateScrollerRef = useRef(null);
   const stepRef = useRef(1);
+  /**
+   * Ref to the scrollable <div> that hosts renderStep1/2/3 content.
+   * We attach a useEffect below that resets its scrollTop whenever `step`
+   * changes, so each wizard step starts at the top (fixes the "scroll stays
+   * at previous position when navigating between steps" UX bug).
+   */
+  const contentScrollRef = useRef(null);
   
   // State Yönetimi
   const [step, setStep] = useState(1);
@@ -773,10 +780,44 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     [availableSlots, busySlots]
   );
 
+  /**
+   * Scrolls the horizontal date strip by `delta` px.
+   *
+   * Why not `scrollBy({ behavior:'smooth' })`?
+   *   iOS Safari ignores successive smooth-scroll calls while a previous
+   *   smooth animation is in flight → after 1-2 taps the arrow appears
+   *   unresponsive. We instead compute an explicit, clamped target and
+   *   call `scrollTo(target)` so every tap reliably moves the scroller.
+   */
+  // Step-change effect: reset content scroll to top whenever we navigate
+  // between wizard steps. rAF defers until after the new DOM is committed.
+  useEffect(() => {
+    const el = contentScrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      if (typeof el.scrollTo === "function") {
+        el.scrollTo({ top: 0, behavior: "auto" });
+      } else {
+        el.scrollTop = 0;
+      }
+    });
+    if (typeof window !== "undefined" && window.scrollTo) {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  }, [step]);
+
   const scrollDatesBy = useCallback((delta) => {
     const el = dateScrollerRef.current;
     if (!el) return;
-    el.scrollLeft += delta;
+    const max = Math.max(0, el.scrollWidth - el.clientWidth);
+    const target = Math.min(max, Math.max(0, el.scrollLeft + delta));
+    // If already at edge, nothing to do — avoids fake "unresponsive" feel.
+    if (Math.abs(target - el.scrollLeft) < 1) return;
+    if (typeof el.scrollTo === "function") {
+      el.scrollTo({ left: target, behavior: "smooth" });
+    } else {
+      el.scrollLeft = target;
+    }
   }, []);
 
   // --- RENDER STEPS ---
@@ -1025,8 +1066,39 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
           </div>
         )}
 
-        {/* YATAY TAKVİM + SAAT — ok tuşları tarih/saat ile wizard adımı çakışmasın */}
-        <div data-wizard-keyboard-disabled="true" className="space-y-8">
+        {/* Personel yok bilgisi — admin/superadmin için, seçili hizmete atanmış
+            kalifiye personel bulunamadığında. Backend bu durumda randevuyu
+            `unassigned` olarak kaydeder; kullanıcıyı bu davranıştan açıkça
+            haberdar ediyoruz ki adım 4'te "hiçbir şey olmuyor" hissi yaşanmasın. */}
+        {(userRole === 'admin' || canViewAll) && qualifiedStaff.length === 0 && selectedService && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+            <div className="text-xs text-amber-800 leading-relaxed">
+              <p className="font-bold mb-0.5">
+                {i18n.language === 'tr'
+                  ? 'Bu hizmet için atanmış personel yok'
+                  : 'No staff assigned to this service'}
+              </p>
+              <p>
+                {i18n.language === 'tr'
+                  ? 'Randevu personelsiz kaydedilecek. İsterseniz Personel sayfasından bu hizmeti verebilecek bir personel tanımlayabilirsiniz.'
+                  : 'The appointment will be saved without staff. You can assign a staff member to this service from the Staff page if needed.'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/*
+          YATAY TAKVİM + SAAT
+          CLS fix: the whole block is wrapped in a container with a stable
+          min-height so async slot-loading doesn't cause a layout shift
+          (the "jitter" seen when switching to step 3). Desktop also gets
+          a two-column grid so the date strip and time grid share space.
+        */}
+        <div
+          data-wizard-keyboard-disabled="true"
+          className="space-y-8 min-h-[520px]"
+        >
         {/* YATAY TAKVİM */}
         <div>
            <div className="flex justify-between items-center mb-4">
@@ -1035,19 +1107,29 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
            <div className="relative overflow-hidden py-2 isolate">
              <button
                type="button"
-               onClick={() => scrollDatesBy(-320)}
-               className="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 z-20 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white transition-colors"
+               onMouseDown={(e) => e.preventDefault()}
+               onClick={(e) => {
+                 e.preventDefault();
+                 e.stopPropagation();
+                 scrollDatesBy(-320);
+               }}
+               className="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 z-20 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white active:scale-95 transition-transform"
                aria-label="Scroll dates left"
              >
-               <ChevronLeft className="w-5 h-5 text-zinc-700" />
+               <ChevronLeft className="w-5 h-5 text-zinc-700 pointer-events-none" />
              </button>
              <button
                type="button"
-               onClick={() => scrollDatesBy(320)}
-               className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 z-20 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white transition-colors"
+               onMouseDown={(e) => e.preventDefault()}
+               onClick={(e) => {
+                 e.preventDefault();
+                 e.stopPropagation();
+                 scrollDatesBy(320);
+               }}
+               className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 z-20 h-9 w-9 items-center justify-center rounded-full backdrop-blur-md bg-white/80 border border-white/30 shadow-lg hover:bg-white active:scale-95 transition-transform"
                aria-label="Scroll dates right"
              >
-               <ChevronLeft className="w-5 h-5 text-zinc-700 rotate-180" />
+               <ChevronLeft className="w-5 h-5 text-zinc-700 rotate-180 pointer-events-none" />
              </button>
 
              <div
@@ -1078,16 +1160,16 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
            </div>
         </div>
 
-        {/* SAAT GRID */}
-        <div>
+        {/* SAAT GRID — stable min-height prevents CLS while slots fetch */}
+        <div className="min-h-[320px]">
           <h3 className="font-bold text-zinc-900 mb-4 uppercase tracking-wider text-sm">{t('appointments.form.appointmentTime')}</h3>
           {allSlots.length === 0 ? (
-             <div className="text-center p-8 border-2 border-dashed border-zinc-200 rounded-2xl backdrop-blur-sm bg-white/30">
+             <div className="text-center p-8 border-2 border-dashed border-zinc-200 rounded-2xl backdrop-blur-sm bg-white/30 min-h-[240px] flex flex-col items-center justify-center">
                 <Clock className="w-10 h-10 mx-auto mb-3 text-zinc-300"/>
                 <p className="text-sm text-zinc-500 font-medium">{t('appointments.form.noAvailableSlots')}</p>
              </div>
           ) : (
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
               {allSlots.map((time) => {
                 const isAvailable = availableSlots.includes(time);
                 const isBusy = busySlots.includes(time);
@@ -1133,21 +1215,28 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   if (step === 4 && sheetAppointment) {
     return (
-      <SessionPlannerSheet
+      <SessionPlannerDialog
+        open={true}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSheetAppointment(null);
+            setWizardSheetRows(null);
+            onSave();
+          }
+        }}
         appointment={sheetAppointment}
-        initialSessionRows={wizardSheetRows}
-        onComplete={() => {
+        onSuccess={() => {
+          setSheetAppointment(null);
           setWizardSheetRows(null);
           onSave();
         }}
-        showWizardStepBadge
       />
     );
   }
 
   return (
     <div className="fixed inset-0 z-50 bg-white md:bg-black/35 md:backdrop-blur-[1px] md:flex md:items-center md:justify-center p-0 md:p-4 animate-in fade-in duration-200">
-      <div className="w-full h-full md:h-auto md:max-h-[90vh] md:max-w-[500px] bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 md:from-gray-50/40 md:via-white md:to-white md:rounded-[32px] md:shadow-2xl flex flex-col overflow-hidden relative">
+      <div className="w-full h-full md:h-auto md:max-h-[92vh] md:max-w-3xl lg:max-w-5xl bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 md:from-gray-50/40 md:via-white md:to-white md:rounded-[32px] md:shadow-2xl flex flex-col overflow-hidden relative">
         
         {/* HEADER */}
         <div className="px-6 pt-12 pb-4 md:pt-6 border-b border-white/20 flex items-center justify-between backdrop-blur-2xl bg-white/70 sticky top-0 z-20 shrink-0 shadow-sm">
@@ -1187,10 +1276,15 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         </div>
 
         {/* CONTENT */}
-        <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
-          {step === 1 && renderStep1()}
-          {step === 2 && renderStep2()}
-          {step === 3 && renderStep3()}
+        <div
+          ref={contentScrollRef}
+          className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 scrollbar-hide"
+        >
+          <div className="mx-auto w-full max-w-2xl lg:max-w-4xl">
+            {step === 1 && renderStep1()}
+            {step === 2 && renderStep2()}
+            {step === 3 && renderStep3()}
+          </div>
         </div>
 
         {/* FOOTER ACTION */}

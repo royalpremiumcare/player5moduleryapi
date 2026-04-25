@@ -391,7 +391,13 @@ async def _route_event(
 # ---------------------------------------------------------------------------
 
 async def _send_post_payment_notifications(db, apt: Dict[str, Any], org_id: str):
-    """Send notifications after payment is confirmed for a pending_payment appointment."""
+    """Send notifications after payment is confirmed for a pending_payment appointment.
+
+    PLANN v2 dispatch:
+      payment_rule == "online"/"full_online" → CONFIRMATION_FULL_PAID  (with amount_paid)
+      payment_rule == "deposit"              → CONFIRMATION_DEPOSIT    (with amount_paid + on_site_amount)
+      else                                    → CONFIRMATION            (klasik)
+    """
     try:
         settings = await db.settings.find_one({"organization_id": org_id})
         if not settings:
@@ -411,17 +417,70 @@ async def _send_post_payment_notifications(db, apt: Dict[str, Any], org_id: str)
         service_name = apt.get("service_name", "")
         staff_id = apt.get("staff_member_id")
 
+        # ---- PLANN v2: payment_rule branching ----
+        # 1) Service'ten payment_rule oku (apt'de payment_rule alanı yok)
+        service_doc = await db.services.find_one(
+            {"id": apt.get("service_id"), "organization_id": org_id}
+        ) if apt.get("service_id") else None
+        payment_rule = (service_doc or {}).get("payment_rule") or "on_site"
+
+        # 2) Merchant transaction'tan ödenen tutar + para birimi
+        tx = await db.merchant_transactions.find_one(
+            {"appointment_id": apt.get("id"), "organization_id": org_id, "type": "payment"},
+            sort=[("created_at", -1)],
+        )
+        currency = ((tx or {}).get("base_currency")
+                    or settings.get("currency") or "TRY").upper()
+        symbol = "₺" if currency == "TRY" else "£" if currency == "GBP" else f"{currency} "
+
+        def _fmt_money(minor: int) -> str:
+            try:
+                whole = int(minor) / 100.0
+                # 25 → "25", 25.5 → "25.50"
+                if whole == int(whole):
+                    return f"{symbol}{int(whole)}"
+                return f"{symbol}{whole:.2f}"
+            except Exception:
+                return f"{symbol}-"
+
+        customer_price_minor = int((tx or {}).get("customer_price_minor") or 0)
+        amount_paid_display = _fmt_money(customer_price_minor) if customer_price_minor else None
+
+        # 3) Branch
+        wa_kwargs: Dict[str, Any] = {}
+        if payment_rule in ("online", "full_online"):
+            template_type = "CONFIRMATION_FULL_PAID"
+            wa_kwargs["amount_paid_display"] = amount_paid_display or "-"
+        elif payment_rule == "deposit":
+            # On-site = full service price - deposit paid
+            full_price_minor = int((tx or {}).get("service_price_minor") or 0)
+            if not full_price_minor and service_doc:
+                full_price_minor = int(round(float(service_doc.get("price") or 0) * 100))
+            on_site_minor = max(0, full_price_minor - customer_price_minor)
+            template_type = "CONFIRMATION_DEPOSIT"
+            wa_kwargs["amount_paid_display"] = amount_paid_display or "-"
+            wa_kwargs["on_site_amount_display"] = _fmt_money(on_site_minor)
+        else:
+            template_type = "CONFIRMATION"
+
         # WhatsApp
         try:
             from whatsapp_service import send_whatsapp_template
             await asyncio.to_thread(
                 send_whatsapp_template,
-                customer_phone, "CONFIRMATION", customer_name, company_name,
+                customer_phone, template_type, customer_name, company_name,
                 apt_date, apt_time, service_name,
                 support_phone or "Destek Hattı",
                 business_lat=lat, business_lng=lng, business_address=address,
+                **wa_kwargs,
             )
-            logger.info("Post-payment WhatsApp sent to %s", customer_phone)
+            logger.info(
+                "Post-payment WhatsApp sent: template=%s payment_rule=%s amount=%s on_site=%s to=%s",
+                template_type, payment_rule,
+                wa_kwargs.get("amount_paid_display"),
+                wa_kwargs.get("on_site_amount_display"),
+                customer_phone,
+            )
         except Exception as e:
             logger.warning("Post-payment WhatsApp failed: %s", e)
 

@@ -3674,6 +3674,72 @@ async def reset_password(request: Request, reset_request: ResetPasswordRequest, 
         )
 
 # === APPOINTMENTS ROUTES ===
+@api_router.delete("/appointments/groups/{session_group_id}")
+async def delete_session_group(
+    request: Request,
+    session_group_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Bir seans paketinin (session_group_id) tamamını ve bağlı transaction'larını siler.
+
+    PLANN v2 — kullanıcı onayıyla, tamamlananlar dahil tüm grup randevuları
+    hard-delete edilir. Operasyon geri alınamaz; audit_log tutulur ve
+    WebSocket ile bağlı tüm panellerde anlık yansıtılır.
+    """
+    if current_user.role not in ("admin", "superadmin"):
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok.")
+
+    db = await get_db_from_request(request)
+    org_id = current_user.organization_id
+    base_query = {"session_group_id": session_group_id, "organization_id": org_id}
+
+    apts = await db.appointments.find(base_query, {"_id": 0}).to_list(None)
+    if not apts:
+        raise HTTPException(status_code=404, detail="Seans paketi bulunamadı.")
+
+    apt_ids = [a["id"] for a in apts]
+
+    # 1) Randevuları sil
+    del_result = await db.appointments.delete_many(base_query)
+
+    # 2) Bağlı transaction'ları sil (legacy "transactions" koleksiyonu)
+    try:
+        await db.transactions.delete_many({
+            "appointment_id": {"$in": apt_ids},
+            "organization_id": org_id,
+        })
+    except Exception as exc:
+        logger.warning(f"transactions cleanup failed for group={session_group_id}: {exc}")
+
+    # 3) Audit log
+    try:
+        await create_audit_log(
+            db=db,
+            organization_id=org_id,
+            user_id=current_user.username,
+            user_full_name=current_user.full_name or current_user.username,
+            action="DELETE",
+            resource_type="SESSION_GROUP",
+            resource_id=session_group_id,
+            old_value={"deleted_count": del_result.deleted_count, "appointment_ids": apt_ids},
+            ip_address=request.client.host if request.client else None,
+        )
+    except Exception as exc:
+        logger.warning(f"audit log failed for session_group_delete={session_group_id}: {exc}")
+
+    # 4) WebSocket — her appointment için ayrı event (frontend zaten dinliyor)
+    try:
+        for apt_id in apt_ids:
+            await emit_to_organization(org_id, "appointment_deleted", {"appointment_id": apt_id})
+    except Exception as exc:
+        logger.warning(f"emit failed for session_group_delete={session_group_id}: {exc}")
+
+    logger.info(
+        f"Session group deleted: group={session_group_id} count={del_result.deleted_count} by={current_user.username}"
+    )
+    return {"deleted": del_result.deleted_count, "session_group_id": session_group_id}
+
+
 @api_router.delete("/appointments/{appointment_id}")
 async def delete_appointment(request: Request, appointment_id: str, current_user: UserInDB = Depends(get_current_user)):
     db = await get_db_from_request(request); query = {"id": appointment_id, "organization_id": current_user.organization_id}
@@ -11332,9 +11398,17 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     # Normalize phone: strip +, leading 0, country code → last 10 digits
     _raw_phone = re.sub(r'\D', '', appointment.phone or "")
     _phone_suffix = _raw_phone[-10:] if len(_raw_phone) >= 10 else _raw_phone
+    # Separator-tolerant suffix match: stored phone may include spaces, dashes,
+    # plus signs or parentheses (e.g. "+90 555 123 45 67"). Build a regex that
+    # allows non-digit chars between each of the last-10 digits so the suffix
+    # still matches regardless of formatting.
+    if _phone_suffix:
+        _flex_regex = r"\D*" + r"\D*".join(re.escape(d) for d in _phone_suffix) + r"$"
+    else:
+        _flex_regex = "^$"
     existing_customer = await db.customers.find_one({
         "organization_id": organization_id,
-        "phone": {"$regex": f"{re.escape(_phone_suffix)}$"},
+        "phone": {"$regex": _flex_regex},
     })
 
     # ═══════════════════════════════════════════════════════════
@@ -11365,11 +11439,11 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             known_count = await redis_client.incr(known_key)
             if known_count == 1:
                 await redis_client.expire(known_key, 86400)  # 24 saat
-            if known_count <= 3:
+            if known_count <= 10:
                 skip_verification = True
-                logging.info(f"✅ Tanıdık müşteri bypass: {appointment.phone} ({known_count}/3 bugün)")
+                logging.info(f"✅ Tanıdık müşteri bypass: {appointment.phone} ({known_count}/10 bugün)")
             else:
-                logging.info(f"⚠️ Tanıdık müşteri günlük limit ({known_count}/3), WhatsApp zorunlu")
+                logging.info(f"⚠️ Tanıdık müşteri günlük limit ({known_count}/10), WhatsApp zorunlu")
         else:
             skip_verification = True  # Redis yoksa bypass ver
 

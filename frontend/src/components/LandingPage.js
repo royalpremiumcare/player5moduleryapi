@@ -21,6 +21,7 @@ import axios from "axios";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : window.location.origin;
 
 import { Capacitor } from '@capacitor/core';
+import { WHATSAPP_URL } from "../constants/contact";
 
 // Public endpoint için axios instance (token gerektirmez)
 const publicApi = axios.create({
@@ -30,7 +31,7 @@ const publicApi = axios.create({
 const LandingPage = () => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
-  const whatsappUrl = "https://wa.me/905405953250";
+  const whatsappUrl = WHATSAPP_URL;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);

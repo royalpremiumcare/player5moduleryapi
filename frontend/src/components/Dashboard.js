@@ -289,6 +289,22 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const greeting = getTimeBasedGreeting();
   const currencySymbol = ((settings?.support_phone || '').replace(/\s/g, '').startsWith('+44') || (settings?.support_phone || '').replace(/\s/g, '').startsWith('44')) ? '£' : '₺';
 
+  // Aktif (henüz tamamlanmamış) çoklu seans paketi var mı?
+  // Varsa header'da küçük "Takvim" FAB'i göster — yoksa hiç gösterme.
+  const hasActiveSessions = useMemo(() => {
+    if (!Array.isArray(appointments)) return false;
+    const todayIso = today;
+    return appointments.some((a) => {
+      const total = Number(a?.session_total ?? 0);
+      if (total <= 1) return false;
+      const date = a?.appointment_date || a?.date;
+      if (!date || date < todayIso) return false;
+      const status = String(a?.status || '').toLowerCase();
+      const terminal = ['tamamlandı', 'tamamlandi', 'completed', 'iptal', 'iptal edildi', 'cancelled', 'canceled'];
+      return !terminal.includes(status);
+    });
+  }, [appointments, today]);
+
   const renderAppointmentCard = (apt) => {
     const isCancelled = apt.status === "İptal" || apt.status === "İptal Edildi" || apt.status === "Cancelled" || apt.status === t('dashboard.status.cancelled');
     const isCompleted = apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed');
@@ -381,21 +397,40 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       {/* 1. HEADER — Karşılama (scroll ile kayar) */}
       <div className="px-5 pt-8 pb-4 bg-white relative">
 
-        {/* AI Asistan Badge — sağ üst köşe */}
-        {onOpenChat && (
-          <button
-            onClick={onOpenChat}
-            className="absolute top-4 right-4 flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl bg-white/80 backdrop-blur-xl border border-gray-200/70 shadow-md shadow-black/8 hover:shadow-lg hover:bg-white active:scale-95 transition-all duration-200 group z-20"
-          >
-            <div className="w-6 h-6 md:w-9 md:h-9 rounded-lg md:rounded-xl bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shrink-0">
-              <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-white group-hover:rotate-12 transition-transform duration-200" />
-            </div>
-            <div className="text-left hidden sm:block">
-              <p className="text-[11px] md:text-sm font-bold text-gray-800 leading-none">AI Asistan</p>
-              <p className="text-[9px] md:text-[11px] text-gray-400 leading-none mt-0.5">PLANN</p>
-            </div>
-          </button>
-        )}
+        {/* Sağ üst köşe — Takvim FAB (aktif seans varsa) + AI Asistan */}
+        <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
+          {hasActiveSessions && (
+            <button
+              type="button"
+              onClick={() => onNavigate("calendar")}
+              aria-label={t('dashboard.openCalendar')}
+              className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl bg-white/80 backdrop-blur-xl border border-gray-200/70 shadow-md shadow-black/8 hover:shadow-lg hover:bg-white active:scale-95 transition-all duration-200 group"
+            >
+              <div className="w-6 h-6 md:w-9 md:h-9 rounded-lg md:rounded-xl bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shrink-0">
+                <Calendar className="w-3 h-3 md:w-4 md:h-4 text-white" />
+              </div>
+              <div className="text-left hidden sm:block">
+                <p className="text-[11px] md:text-sm font-bold text-gray-800 leading-none">
+                  {t('dashboard.openCalendar')}
+                </p>
+              </div>
+            </button>
+          )}
+          {onOpenChat && (
+            <button
+              onClick={onOpenChat}
+              className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl bg-white/80 backdrop-blur-xl border border-gray-200/70 shadow-md shadow-black/8 hover:shadow-lg hover:bg-white active:scale-95 transition-all duration-200 group"
+            >
+              <div className="w-6 h-6 md:w-9 md:h-9 rounded-lg md:rounded-xl bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shrink-0">
+                <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-white group-hover:rotate-12 transition-transform duration-200" />
+              </div>
+              <div className="text-left hidden sm:block">
+                <p className="text-[11px] md:text-sm font-bold text-gray-800 leading-none">AI Asistan</p>
+                <p className="text-[9px] md:text-[11px] text-gray-400 leading-none mt-0.5">PLANN</p>
+              </div>
+            </button>
+          )}
+        </div>
 
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           {/* Sol Taraf: Karşılama */}
@@ -406,14 +441,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             <p className="text-base md:text-lg text-gray-600 font-medium mt-1.5 leading-relaxed">
               {format(new Date(), "d MMMM EEEE", { locale: dateLocale })}
             </p>
-            <button
-              type="button"
-              onClick={() => onNavigate("calendar")}
-              className="mt-4 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-zinc-900 text-white font-bold text-sm shadow-lg hover:bg-black active:scale-[0.98] transition-all w-full sm:w-auto"
-            >
-              <Calendar className="w-4 h-4 shrink-0" aria-hidden />
-              {t("dashboard.openCalendar")}
-            </button>
           </div>
 
           {/* Sağ Taraf: PERSONEL MOLA ALANI (sadece staff için) */}

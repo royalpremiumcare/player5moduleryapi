@@ -1,0 +1,27 @@
+"""
+Migration Template — copy to YYYYMMDD_<name>.py
+
+Every migration must:
+  - Export REVERSIBLE (bool) and DESCRIPTION (str).
+  - Implement async up(db): forward migration.
+  - Implement async down(db): rollback (reverse the up operation).
+
+Runner picks modules by name pattern YYYYMMDD_*.py in alpha order.
+"""
+
+REVERSIBLE = True
+DESCRIPTION = "Describe what this migration does (short)"
+
+
+async def up(db):
+    """Forward migration. Must be idempotent where possible."""
+    # Example: add an index
+    # await db.my_collection.create_index("my_field")
+    pass
+
+
+async def down(db):
+    """Rollback. Must undo everything up() did."""
+    # Example: drop the index
+    # await db.my_collection.drop_index("my_field_1")
+    pass

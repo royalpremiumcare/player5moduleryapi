@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Users, UserPlus, Edit, CheckSquare, Trash2, ArrowLeft, Calendar, ShieldCheck, User } from "lucide-react";
+import { Users, UserPlus, Edit, CheckSquare, Trash2, ArrowLeft, Calendar, ShieldCheck, User, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
@@ -26,6 +26,14 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
   const [staff, setStaff] = useState([]);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
+  /**
+   * Accordion state — holds the username of the currently-expanded staff
+   * card (or null). Single-expansion keeps the page compact and reduces
+   * cognitive load when a business has many staff members.
+   */
+  const [expandedStaffUsername, setExpandedStaffUsername] = useState(null);
+  const toggleStaffExpansion = (username) =>
+    setExpandedStaffUsername((cur) => (cur === username ? null : username));
 
   useEffect(() => { window.scrollTo(0, 0); }, []);
   const [editingStaff, setEditingStaff] = useState(null);
@@ -754,34 +762,68 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
               
               const canEdit = isTargetAdmin ? (isCurrentUserFounder || isSelf) : true;
               const canDelete = !isSelf && !isFounder && (isTargetAdmin ? isCurrentUserFounder : true);
+              const isExpanded = expandedStaffUsername === staffMember.username;
             
               return (
-                <div key={staffMember.username} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-[box-shadow,background-color] duration-200">
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-md ${
+                <div key={staffMember.username} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl shadow-lg hover:shadow-xl transition-[box-shadow,background-color] duration-200 overflow-hidden">
+                  <div className="space-y-0">
+                    {/*
+                      Accessible accordion trigger.
+                      - role="button" + aria-expanded + aria-controls → screen readers announce state
+                      - Space/Enter toggles (native button behaviour)
+                      - Avatar + name always visible; chevron rotates on expand
+                    */}
+                    <button
+                      type="button"
+                      onClick={() => toggleStaffExpansion(staffMember.username)}
+                      aria-expanded={isExpanded}
+                      aria-controls={`staff-body-${staffMember.username}`}
+                      className="w-full text-left p-6 flex items-center justify-between gap-3 hover:bg-white/30 active:bg-white/40 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-2 rounded-2xl"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-md flex-shrink-0 ${
                           staffMember.role === 'admin' 
                             ? 'bg-gradient-to-br from-amber-500 to-orange-600' 
                             : 'bg-gradient-to-br from-blue-500 to-indigo-600'
                         }`}>
                           {staffMember.full_name?.charAt(0) || staffMember.username?.charAt(0) || "?"}
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-black text-zinc-900">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-base font-black text-zinc-900 truncate">
                               {staffMember.full_name || staffMember.username}
                             </h3>
                             {staffMember.role === 'admin' && (
-                              <span className="px-2.5 py-0.5 text-xs font-bold bg-amber-100 text-amber-800 rounded-full shadow-sm">
+                              <span className="px-2.5 py-0.5 text-xs font-bold bg-amber-100 text-amber-800 rounded-full shadow-sm flex-shrink-0">
                                 {t('staff.management.owner')}
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-zinc-600 font-medium">{staffMember.username}</p>
+                          <p className="text-sm text-zinc-600 font-medium truncate">
+                            {assignedServices.length > 0
+                              ? `${staffMember.username} · ${assignedServices.length} ${t('staff.management.serviceCountSuffix', 'hizmet')}`
+                              : staffMember.username}
+                          </p>
                         </div>
                       </div>
-                    </div>
+                      <ChevronDown
+                        className={`w-5 h-5 text-zinc-500 flex-shrink-0 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+
+                    {/*
+                      Collapsible body. We use the `grid-rows-[0fr]↔[1fr]`
+                      technique to animate the height smoothly without knowing
+                      the content height ahead of time — a modern, CLS-free
+                      alternative to JS-driven height animations.
+                    */}
+                    <div
+                      id={`staff-body-${staffMember.username}`}
+                      className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+                      aria-hidden={!isExpanded}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="px-6 pb-6 pt-2 space-y-4 border-t border-white/30">
 
                     <div>
                       <p className="text-sm font-bold text-zinc-900 mb-2 uppercase tracking-wider">{t('staff.management.assignedServices')}</p>
@@ -1271,6 +1313,9 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       )}
+                    </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

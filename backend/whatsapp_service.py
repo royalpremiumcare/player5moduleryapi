@@ -54,6 +54,7 @@ TEMPLATES: Dict[str, Dict[str, Dict[str, str]]] = {
         },
     },
     # PLANN v2: Online full payment confirmation (amount paid)
+    # Yalnızca public booking + payment_rule="online"/"full_online" akışında kullanılır
     "CONFIRMATION_FULL_PAID": {
         "TR": {
             "with_location":    "randevu_onay_konumlu_online_odemeli",
@@ -61,21 +62,23 @@ TEMPLATES: Dict[str, Dict[str, Dict[str, str]]] = {
             "lang_code":        "tr",
         },
         "EN": {
-            "with_location":    "randevu_onay_konumlu_eng_online_odemeli",
-            "without_location": "randevu_onay_metin_eng_online_odemeli",
+            "with_location":    "randevu_onay_konumlu_online_odemeli_eng",
+            "without_location": "randevu_onay_metin_online_odemeli_eng",
             "lang_code":        "en",
         },
     },
     # PLANN v2: Deposit confirmation (amount paid + amount due on site)
+    # Yalnızca public booking + payment_rule="deposit" akışında kullanılır
     "CONFIRMATION_DEPOSIT": {
         "TR": {
-            "with_location":    "randevu_onay_konumlu_kapora",
-            "without_location": "randevu_onay_metin_kapora",
+            "with_location":    "randevu_onay_konumlu_kapora_odemeli",
+            "without_location": "randevu_onay_metin_kapora_odemeli",
             "lang_code":        "tr",
         },
         "EN": {
-            "with_location":    "randevu_onay_konumlu_eng_kapora",
-            "without_location": "randevu_onay_metin_eng_kapora",
+            # Not: Meta'da onaylı konumlu şablonun adı 'r' olmadan başlıyor.
+            "with_location":    "andevu_onay_konumlu_kapora_odemeli_eng",
+            "without_location": "randevu_onay_metin_kapora_odemeli_eng",
             "lang_code":        "en",
         },
     },
@@ -106,6 +109,18 @@ TEMPLATES: Dict[str, Dict[str, Dict[str, str]]] = {
 }
 
 VALID_TEMPLATE_TYPES = set(TEMPLATES.keys())
+
+# PLANN v2: Bazı yeni şablonlar Meta'da header bileşeni OLMADAN onaylandı
+# (gövde-yalnız tasarım). Bu set'teki template adları için header gönderimi
+# atlanır — aksi halde Meta "Template does not contain title component" 400'ü
+# döner. Yeni böyle bir şablon eklendikçe bu set'e eklenecek.
+TEMPLATES_WITHOUT_HEADER: set = set()
+# Not: PLANN v2 şablonların hepsinde artık header bileşeni var
+# (konumlu => location header, metin => text header = işletme adı).
+# `randevu_onay_metin_kapora_odemeli_eng` Meta'da onay bekliyor; onay
+# gelince zaten header'lı olduğu için burada herhangi bir değişiklik
+# gerekmez. Eğer Meta tekrar bir şablon için header'ı reddederse,
+# adı bu set'e eklenmeli.
 
 # ============================================================================
 # DİL TESPİTİ
@@ -388,6 +403,7 @@ def send_whatsapp_template(
         on_site_amount = _normalise_template_var(on_site_amount_display, fallback="-")
 
         if template_type_upper == "SESSION_PACKAGE":
+            # {{1}} müşteri, {{2}} hizmet, {{3}} toplam seans, {{4}} seans listesi, {{5}} iletişim
             body = _build_body([
                 customer_name,
                 service_name,
@@ -396,28 +412,71 @@ def send_whatsapp_template(
                 support_phone,
             ])
         elif template_type_upper == "CONFIRMATION_FULL_PAID":
-            # Body: customer, company, date, time, service, amount_paid, support, [address]
+            # PLANN v2 — Online tam ödeme onayı (Meta'da onaylı güncel şablonlara göre)
+            #   Konumlu (8 param): {{1}} müşteri, {{2}} işletme, {{3}} tarih, {{4}} saat,
+            #                       {{5}} hizmet, {{6}} iletişim, {{7}} tutar, {{8}} tutar
+            #   Metin   (7 param): {{1}} müşteri, {{2}} tutar, {{3}} tarih, {{4}} saat,
+            #                       {{5}} hizmet, {{6}} tutar, {{7}} iletişim
             if has_location:
                 body = _build_body([
                     customer_name, company_name,
+                    formatted_date, appointment_time,
+                    service_name, support_phone,
+                    amount_paid, amount_paid,
+                ])
+            else:
+                body = _build_body([
+                    customer_name, amount_paid,
                     formatted_date, appointment_time, service_name,
                     amount_paid, support_phone,
                 ])
+        elif template_type_upper == "CONFIRMATION_DEPOSIT":
+            # PLANN v2 — Kapora ödemeli onay (Meta'da onaylı güncel şablonlara göre)
+            #   Konumlu (9 param): {{1}} müşteri, {{2}} işletme, {{3}} tarih, {{4}} saat,
+            #                       {{5}} hizmet, {{6}} iletişim, {{7}} kapora, {{8}} kapora,
+            #                       {{9}} işletmede ödenecek
+            #   Metin   (8 param): {{1}} müşteri, {{2}} kapora, {{3}} tarih, {{4}} saat,
+            #                       {{5}} hizmet, {{6}} kapora, {{7}} işletmede ödenecek,
+            #                       {{8}} iletişim
+            if has_location:
+                body = _build_body([
+                    customer_name, company_name,
+                    formatted_date, appointment_time,
+                    service_name, support_phone,
+                    amount_paid, amount_paid, on_site_amount,
+                ])
             else:
-                location_fallback = "Konum girilmedi" if language == "TR" else "Location not provided"
-                location_text = _normalise_template_var(business_address, fallback=location_fallback)
+                body = _build_body([
+                    customer_name, amount_paid,
+                    formatted_date, appointment_time, service_name,
+                    amount_paid, on_site_amount, support_phone,
+                ])
+        elif template_type_upper == "CONFIRMATION":
+            if has_location:
+                # randevu_onay_konumlu_v2 (TR/EN) — değişmedi, 6 param
+                # {{1}} müşteri, {{2}} işletme, {{3}} tarih, {{4}} saat, {{5}} hizmet, {{6}} iletişim
                 body = _build_body([
                     customer_name, company_name,
                     formatted_date, appointment_time, service_name,
-                    amount_paid, support_phone, location_text,
+                    support_phone,
                 ])
-        elif template_type_upper == "CONFIRMATION_DEPOSIT":
-            # Body: customer, company, date, time, service, deposit_paid, on_site_amount, support, [address]
+            else:
+                # randevu_onay_metin (TR) / randevu_onay_metin_eng_v2 (EN) — YENİ 5-param içerik
+                # {{1}} müşteri, {{2}} tarih, {{3}} saat, {{4}} hizmet, {{5}} iletişim
+                body = _build_body([
+                    customer_name,
+                    formatted_date, appointment_time, service_name,
+                    support_phone,
+                ])
+        else:
+            # REMINDER — değişmedi
+            # Konumlu (6): {{1}} müşteri, {{2}} işletme, {{3}} tarih, {{4}} saat, {{5}} hizmet, {{6}} iletişim
+            # Metin   (7): + {{7}} adres
             if has_location:
                 body = _build_body([
                     customer_name, company_name,
                     formatted_date, appointment_time, service_name,
-                    amount_paid, on_site_amount, support_phone,
+                    support_phone,
                 ])
             else:
                 location_fallback = "Konum girilmedi" if language == "TR" else "Location not provided"
@@ -425,28 +484,17 @@ def send_whatsapp_template(
                 body = _build_body([
                     customer_name, company_name,
                     formatted_date, appointment_time, service_name,
-                    amount_paid, on_site_amount, support_phone, location_text,
+                    support_phone, location_text,
                 ])
-        elif has_location:
-            body = _build_body([
-                customer_name, company_name,
-                formatted_date, appointment_time, service_name,
-                support_phone,
-            ])
-        else:
-            location_fallback = "Konum girilmedi" if language == "TR" else "Location not provided"
-            location_text = _normalise_template_var(business_address, fallback=location_fallback)
-            body = _build_body([
-                customer_name, company_name,
-                formatted_date, appointment_time, service_name,
-                support_phone, location_text,
-            ])
 
-        components = [header, body]
+        if template_name in TEMPLATES_WITHOUT_HEADER:
+            components = [body]
+        else:
+            components = [header, body]
 
         logger.info(
             f"WhatsApp gönderimi → type={template_type_upper} lang={language} "
-            f"template={template_name} "
+            f"template={template_name} header={'no' if template_name in TEMPLATES_WITHOUT_HEADER else 'yes'} "
             f"senaryo={'A (konumlu)' if has_location else 'B (metin)'} to={to_number}"
         )
 

@@ -655,10 +655,17 @@ const PublicBookingPage = () => {
       toast.error(errorMessage);
     } finally {
       setSubmitting(false);
-      // Reset widget so it auto-solves again for next attempt
+      // Reset widget so it auto-solves again for next attempt.
+      // Wrapped in try/catch: after setSuccess(true) the widget may already be
+      // unmounted, in which case turnstile.reset throws "Nothing to reset found".
       setTurnstileToken(null);
-      if (turnstileWidgetId.current && window.turnstile) {
-        window.turnstile.reset(turnstileWidgetId.current);
+      try {
+        if (turnstileWidgetId.current && window.turnstile) {
+          window.turnstile.reset(turnstileWidgetId.current);
+        }
+      } catch (_) {
+        // Widget already removed (success screen / unmount) — safe to ignore.
+        turnstileWidgetId.current = null;
       }
     }
   };
