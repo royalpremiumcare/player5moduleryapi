@@ -247,6 +247,12 @@ export function buildBulkSessionPayload({
   starting_session_number,
   session_total,
   sessions,
+  // Admin "yeni paket" akışı (AppointmentFormWizard): 1. seans önce
+  // POST /appointments ile yaratılır; ardından bu çağrı ile 2..N eklenir.
+  // Tek WhatsApp mesajında 1. seansın da listelenmesi için bu bayrak true
+  // gönderilir. Kalanları sonradan planla akışlarında (SessionPlanner*)
+  // müşteri 1. seansı zaten biliyor olduğundan false bırakılır.
+  notify_include_existing_sessions,
 }) {
   return {
     customer_name: (customer_name || '').trim(),
@@ -257,6 +263,7 @@ export function buildBulkSessionPayload({
     session_group_id: session_group_id || undefined,
     starting_session_number: Number(starting_session_number) || 1,
     session_total: session_total != null ? Number(session_total) : undefined,
+    notify_include_existing_sessions: Boolean(notify_include_existing_sessions),
     sessions: (sessions || []).map((s) => {
       const row = {
         date: (s.date || '').trim(),

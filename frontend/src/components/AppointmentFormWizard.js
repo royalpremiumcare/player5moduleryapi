@@ -547,6 +547,10 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       starting_session_number: 2,
       session_total: sessionTotal,
       sessions: rows,
+      // Admin yeni paket akışı: 1. seans zaten bu wizardda oluşturuldu (POST
+      // /appointments). SESSION_PACKAGE WhatsApp mesajında 1. seansın da yer
+      // alması için backend'e bunu bildiriyoruz.
+      notify_include_existing_sessions: true,
     });
     await api.post("/appointments/bulk-session", bulkBody, {
       headers: { "Idempotency-Key": idempotencyKey },

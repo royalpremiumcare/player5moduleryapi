@@ -28,6 +28,13 @@ class BulkSessionCreate(BaseModel):
     starting_session_number: int = 1
     session_total: Optional[int] = None
     sessions: List[SessionSlot]
+    # Admin "yeni paket randevusu" akışında (AppointmentFormWizard) 1. seans
+    # önce POST /appointments ile yaratılıyor, ardından kalanlar bu endpoint'e
+    # POST ediliyor. Bu bayrak açıkken SESSION_PACKAGE WhatsApp mesajında
+    # gruptaki tüm seanslar (1..N) listelenir. Kalanları sonradan planlayan
+    # akışlarda (SessionPlannerDialog/Sheet) False bırakılır; müşteri 1. seansı
+    # zaten biliyor olduğu için sadece yeni planlananlar listelenir.
+    notify_include_existing_sessions: bool = False
 
 
 def canonical_bulk_session_hash(bulk: BulkSessionCreate) -> str:
@@ -41,6 +48,7 @@ def canonical_bulk_session_hash(bulk: BulkSessionCreate) -> str:
     d["session_group_id"] = d.get("session_group_id") or None
     d["starting_session_number"] = int(d.get("starting_session_number") or 1)
     d["session_total"] = d.get("session_total")
+    d["notify_include_existing_sessions"] = bool(d.get("notify_include_existing_sessions"))
     raw_sess = d.get("sessions") or []
     norm = []
     for s in raw_sess:

@@ -5027,9 +5027,27 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
 
                 first_apt = created_appointments[0]
                 new_appt_ids = [a["id"] for a in created_appointments]
-                all_sessions = await db.appointments.find(
-                    {"session_group_id": group_id, "organization_id": current_user.organization_id, "id": {"$in": new_appt_ids}}
-                ).sort("session_number", 1).to_list(100)
+                # Admin "yeni paket" akışı (AppointmentFormWizard): 1. seans
+                # bu bulk'tan hemen önce POST /appointments ile yaratılmıştır,
+                # bu yüzden müşteriye gönderilen tek WhatsApp mesajında 1. seans
+                # da yer almalı. Bu durumda gruptaki tüm seansları çekiyoruz.
+                # Kalanları sonradan planlayan akışlarda (SessionPlanner) flag
+                # False kalır ve yalnızca yeni planlananlar listelenir; çünkü
+                # müşteri 1. seansı önceki mesajdan zaten biliyor.
+                base_query = {
+                    "session_group_id": group_id,
+                    "organization_id": current_user.organization_id,
+                    "status": {"$nin": ["İptal Edildi"]},
+                }
+                if not getattr(bulk, "notify_include_existing_sessions", False):
+                    base_query["id"] = {"$in": new_appt_ids}
+                all_sessions = await db.appointments.find(base_query).sort("session_number", 1).to_list(100)
+
+                # Template'e gönderilecek "kapak" tarih/saati: mesajda listelenen
+                # en erken seans (session_number bakımından). Admin yeni paket
+                # akışında gerçek 1. seansı kullanırız; kalanları planla akışında
+                # listedeki ilk yeni seansı kullanırız.
+                header_apt = all_sessions[0] if all_sessions else first_apt
 
                 session_total = first_apt.get("session_total", len(created_appointments))
 
@@ -5058,7 +5076,8 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                         send_whatsapp_template,
                         first_apt["phone"], "SESSION_PACKAGE",
                         first_apt["customer_name"], wa_company,
-                        first_apt["appointment_date"], first_apt["appointment_time"],
+                        header_apt.get("appointment_date", first_apt["appointment_date"]),
+                        header_apt.get("appointment_time", first_apt["appointment_time"]),
                         first_apt["service_name"], wa_support or "Destek Hattı",
                         business_lat=wa_lat, business_lng=wa_lng, business_address=wa_address,
                         session_count=session_total, session_dates_text=session_dates_text,
