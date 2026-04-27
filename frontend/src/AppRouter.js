@@ -13,6 +13,7 @@ import PrivacyPolicy from "./components/PrivacyPolicy";
 import TermsOfService from "./components/TermsOfService";
 import RefundPolicy from "./components/RefundPolicy";
 import SsoPage from "./components/SsoPage";
+import SalesPlaybookPage from "./components/SalesPlaybookPage";
 import App from "./App";
 import { ProgrammaticSeoPage } from "./AppRoutes";
 
@@ -114,6 +115,9 @@ const AppRouter = () => {
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
       <Route path="/refund" element={<RefundPolicy />} />
+
+      {/* Pazarlama Ekibi Satış Playbook — herkese açık */}
+      <Route path="/pazarlama" element={<SalesPlaybookPage />} />
 
       <Route path="/cozumler/:slug" element={<ProgrammaticSeoPage category="vertical" forcedLocaleKey="tr" />} />
       <Route path="/ozellikler/:slug" element={<ProgrammaticSeoPage category="feature" forcedLocaleKey="tr" />} />

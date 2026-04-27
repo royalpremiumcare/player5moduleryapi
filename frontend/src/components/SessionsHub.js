@@ -537,8 +537,13 @@ const SessionsHub = ({ appointments, onRefresh, userRole, onEditAppointment }) =
       )}
 
       {canBulkCancel && selectedCount > 0 && (
-        <div className="fixed bottom-20 left-0 right-0 z-[900] px-4 safe-area-pb">
-          <div className="max-w-lg mx-auto flex flex-col sm:flex-row gap-2">
+        <div
+          className="fixed left-0 right-0 z-[1100] px-4"
+          style={{
+            bottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem + 0.5rem)",
+          }}
+        >
+          <div className="max-w-lg mx-auto flex flex-col sm:flex-row gap-2 rounded-2xl bg-white/95 backdrop-blur border border-zinc-200 shadow-xl p-2">
             <Button
               type="button"
               variant="outline"

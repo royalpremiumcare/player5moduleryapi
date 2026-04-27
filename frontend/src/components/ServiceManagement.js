@@ -269,8 +269,10 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       } else {
         await api.post("/services", payload);
         toast.success(t('services.management.serviceAdded'));
-        setLastAddedServiceName(formData.name);
-        setShowAssignReminder(true);
+        // Yeni hizmet artık backend'de tüm aktif admin+staff'a otomatik atanıyor.
+        // Personel Yönetimi hatırlatma dialog'una artık gerek yok; gerekirse aşağıdaki satırları aç.
+        // setLastAddedServiceName(formData.name);
+        // setShowAssignReminder(true);
       }
       
       setShowDialog(false);
@@ -638,6 +640,11 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
         </DialogContent>
       </Dialog>
 
+      {/*
+        Hizmet ekledikten sonra 'önce personele atayın' hatırlatması.
+        Backend artık yeni hizmeti tüm aktif admin+staff'a otomatik atadığı için dialog kullanılmıyor.
+        Geri açmak istersen bu bloğu yorum dışına çıkar ve yukarıdaki setLastAddedServiceName/setShowAssignReminder çağrılarını da aç.
+
       <Dialog open={showAssignReminder} onOpenChange={setShowAssignReminder}>
         <DialogContent className="backdrop-blur-2xl bg-white/75 border border-white/40 rounded-3xl shadow-2xl">
           <DialogHeader>
@@ -646,7 +653,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
             </DialogTitle>
             <DialogDescription className="text-zinc-700 font-semibold">
               {i18n.language === 'en'
-                ? `After adding${lastAddedServiceName ? ` “${lastAddedServiceName}”` : ''}, don’t forget to assign it to your staff from Staff Management.`
+                ? `After adding${lastAddedServiceName ? ` “${lastAddedServiceName}”` : ''}, don't forget to assign it to your staff from Staff Management.`
                 : `Hizmeti${lastAddedServiceName ? ` “${lastAddedServiceName}”` : ''} ekledikten sonra, lütfen Personel Yönetimi sayfasından personelinize tanımlamayı unutmayın.`}
             </DialogDescription>
           </DialogHeader>
@@ -672,6 +679,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      */}
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>

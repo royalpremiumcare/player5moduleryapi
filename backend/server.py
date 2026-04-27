@@ -6309,12 +6309,17 @@ async def create_service(request: Request, service: ServiceCreate, current_user:
     doc = service_obj.model_dump(); doc['created_at'] = doc['created_at'].isoformat()
     await db.services.insert_one(doc)
     try:
+        # Yeni hizmet eklenince org'daki tüm admin+staff'a otomatik atanır.
+        # Admin sonradan istediğini Personel Yönetimi'nden kaldırabilir.
         await db.users.update_many(
-            {"organization_id": current_user.organization_id, "role": "admin"},
-            {"$addToSet": {"permitted_service_ids": service_obj.id}}
+            {
+                "organization_id": current_user.organization_id,
+                "role": {"$in": ["admin", "staff"]},
+            },
+            {"$addToSet": {"permitted_service_ids": service_obj.id}},
         )
     except Exception as e:
-        logging.error(f"Failed to auto-assign service to admins: {e}")
+        logging.error(f"Failed to auto-assign service to staff: {e}")
     return service_obj
 
 @api_router.get("/services", response_model=List[Service])
@@ -8856,12 +8861,11 @@ async def add_staff(request: Request, staff_data: StaffCreate, current_user: Use
             else:
                 full_name = email_local.capitalize()
         
-        # Admin için tüm hizmetleri al
-        all_service_ids = []
-        if invited_role == "admin":
-            services = await db.services.find({"organization_id": current_user.organization_id}).to_list(None)
-            all_service_ids = [s.get("id") for s in services if s.get("id")]
-        
+        # Yeni eklenen kullanıcıya (admin veya staff) org'daki tüm aktif hizmetleri otomatik ata.
+        # Admin sonradan Personel Yönetimi'nden istemediğini kaldırabilir.
+        services = await db.services.find({"organization_id": current_user.organization_id}).to_list(None)
+        all_service_ids = [s.get("id") for s in services if s.get("id")]
+
         new_user = UserInDB(
             username=staff_data.username,
             full_name=full_name,
@@ -8869,7 +8873,7 @@ async def add_staff(request: Request, staff_data: StaffCreate, current_user: Use
             organization_id=current_user.organization_id,
             role=invited_role,  # staff veya admin rolü
             slug=None,  # Admin/Personellerin slug'ı yok
-            permitted_service_ids=all_service_ids if invited_role == "admin" else [],  # Admin tüm hizmetlere erişebilir
+            permitted_service_ids=all_service_ids,  # Hem admin hem staff tüm hizmetleri otomatik alır
             payment_type=staff_data.payment_type or "salary" if invited_role == "staff" else None,
             payment_amount=payment_amount if invited_role == "staff" else None,
             status="pending",  # Bekliyor durumu

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Phone, PhoneCall, LogOut, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Pause, Star, Building2, Briefcase } from "lucide-react";
-import SalesGuide from "./SalesGuide";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/api";
@@ -245,8 +244,6 @@ export default function MarketingPanel() {
                 </div>
               ))}
             </div>
-
-            <SalesGuide />
 
             {/* YENİ: Filtreler (Kampanya ve Sektör yan yana) */}
             <div className="flex flex-col sm:flex-row gap-3">
