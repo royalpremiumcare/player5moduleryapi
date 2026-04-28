@@ -26,7 +26,7 @@ import ManualScreen from "./ManualScreen";
 import { usePlanSuggestion, usePlannerSettings, useOptimisticPlan } from "./hooks";
 import { allGreen } from "./utils";
 
-const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess }) => {
+const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess, notifyIncludeExistingSessions = false }) => {
   const { t, i18n } = useTranslation();
   const isTr = i18n.language === "tr";
   const { userRole, canViewAll } = useAuth();
@@ -112,6 +112,7 @@ const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess }) =>
       onSuccess && onSuccess();
     },
     t,
+    notifyIncludeExistingSessions,
   });
 
   const isEmpty = !appointment || remainingCount <= 0;

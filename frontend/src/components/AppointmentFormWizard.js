@@ -1246,6 +1246,13 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
           setWizardSheetRows(null);
           onSave();
         }}
+        // Manuel paket akışı: 1. seans bu wizardda yaratıldı
+        // (handleManualPackage → POST /appointments). Müşteriye gidecek tek
+        // SESSION_PACKAGE WhatsApp mesajında 1. seansın da yer alması için
+        // backend'e bayrağı geçiriyoruz. (Otomatik akış, dialog'a hiç
+        // girmeden bulk POST yaptığı için kendi içinde aynı bayrağı zaten
+        // gönderiyor.)
+        notifyIncludeExistingSessions={true}
       />
     );
   }

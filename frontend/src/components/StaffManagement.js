@@ -478,6 +478,13 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                 </DialogHeader>
                 <div className="flex-1 overflow-y-auto overflow-x-hidden py-4 px-1">
                   <div className="space-y-4">
+                    {/* Section: Hesap Bilgileri */}
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                        {i18n.language === 'tr' ? 'Hesap Bilgileri' : 'Account Info'}
+                      </h3>
+                      <div className="flex-1 h-px bg-zinc-200/70" />
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="full_name" className="text-sm font-bold text-zinc-700">{t('staff.fields.name')} *</Label>
@@ -505,7 +512,14 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                       {t('staff.management.inviteEmailNote')}
                     </p>
               
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-white/30">
+                    {/* Section: Yetki & Çalışma */}
+                    <div className="flex items-center gap-3 pt-2">
+                      <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                        {i18n.language === 'tr' ? 'Yetki & Çalışma' : 'Role & Work Model'}
+                      </h3>
+                      <div className="flex-1 h-px bg-zinc-200/70" />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-3">
                         <Label className="text-sm font-bold text-zinc-700 mb-2 block">{t('staff.management.userRole')}</Label>
                         <div className="backdrop-blur-md bg-zinc-100/60 p-1 rounded-xl flex border border-white/30 shadow-sm">
@@ -516,8 +530,8 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                             }}
                             className={`flex-1 py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${
                               newStaff.role === "staff"
-                                ? "bg-white text-blue-600 shadow-md"
-                                : "text-zinc-600 hover:text-zinc-900"
+                                ? "bg-white text-zinc-900 shadow-md"
+                                : "text-zinc-500 hover:text-zinc-900"
                             }`}
                           >
                             <User className="w-4 h-4 inline mr-1" /> {t('staff.management.staffRole')}
@@ -529,8 +543,8 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                             }}
                             className={`flex-1 py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${
                               newStaff.role === "admin"
-                                ? "bg-white text-purple-600 shadow-md"
-                                : "text-zinc-600 hover:text-zinc-900"
+                                ? "bg-white text-zinc-900 shadow-md"
+                                : "text-zinc-500 hover:text-zinc-900"
                             }`}
                           >
                             <ShieldCheck className="w-4 h-4 inline mr-1" /> {t('staff.management.adminRole')}
@@ -554,8 +568,8 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                               }}
                               className={`flex-1 py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${
                                 newStaff.payment_type === "salary"
-                                  ? "bg-white text-blue-600 shadow-md"
-                                  : "text-zinc-600 hover:text-zinc-900"
+                                  ? "bg-white text-zinc-900 shadow-md"
+                                  : "text-zinc-500 hover:text-zinc-900"
                               }`}
                             >
                               {t('staff.management.fixedSalary')}
@@ -567,8 +581,8 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                               }}
                               className={`flex-1 py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${
                                 newStaff.payment_type === "commission"
-                                  ? "bg-white text-blue-600 shadow-md"
-                                  : "text-zinc-600 hover:text-zinc-900"
+                                  ? "bg-white text-zinc-900 shadow-md"
+                                  : "text-zinc-500 hover:text-zinc-900"
                               }`}
                             >
                               {t('staff.management.commission')}
@@ -579,7 +593,14 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                     </div>
                 
                     {newStaff.role === "staff" && (
-                      <div className="pt-4 border-t border-white/30">
+                      <div>
+                        {/* Section: Ödeme */}
+                        <div className="flex items-center gap-3 pt-2 pb-3">
+                          <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                            {i18n.language === 'tr' ? 'Ödeme' : 'Payment'}
+                          </h3>
+                          <div className="flex-1 h-px bg-zinc-200/70" />
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {newStaff.payment_type === "salary" && (
                             <div className="space-y-2">
@@ -654,7 +675,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                   <Button
                     onClick={handleAddStaff}
                     disabled={saving}
-                    className={`flex-1 h-12 rounded-xl font-bold shadow-lg ${newStaff.role === "admin" ? "bg-purple-600 hover:bg-purple-700" : "bg-zinc-900 hover:bg-black"}`}
+                    className="flex-1 h-12 rounded-xl font-bold shadow-lg bg-zinc-900 hover:bg-black"
                   >
                     {saving ? t('staff.management.adding') : (newStaff.role === "admin" ? t('staff.management.addAdmin') : t('staff.management.addStaff'))}
                   </Button>

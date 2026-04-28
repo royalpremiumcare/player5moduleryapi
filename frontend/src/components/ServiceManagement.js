@@ -452,6 +452,13 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1 px-1 -mx-1">
+            {/* Section: Temel Bilgiler */}
+            <div className="flex items-center gap-3">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                {i18n.language === 'tr' ? 'Temel Bilgiler' : 'Basic Info'}
+              </h3>
+              <div className="flex-1 h-px bg-zinc-200/70" />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="service-name" className="text-sm font-bold text-zinc-700">{t('services.fields.name')}</Label>
               <Input
@@ -508,6 +515,13 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 : <p className="text-xs text-zinc-500 font-medium">{t('services.management.durationNote')}</p>
               }
             </div>
+            {/* Section: Paket Tipi */}
+            <div className="flex items-center gap-3 pt-2">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                {i18n.language === 'tr' ? 'Paket Tipi' : 'Package Type'}
+              </h3>
+              <div className="flex-1 h-px bg-zinc-200/70" />
+            </div>
             <div className="flex items-center justify-between p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 shadow-sm">
               <div className="flex-1">
                 <Label htmlFor="session-toggle" className="text-sm font-bold text-zinc-900 cursor-pointer">
@@ -545,7 +559,13 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               </div>
             )}
 
-            {/* Ödeme Kuralı */}
+            {/* Section: Ödeme */}
+            <div className="flex items-center gap-3 pt-2">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                {i18n.language === 'tr' ? 'Ödeme' : 'Payment'}
+              </h3>
+              <div className="flex-1 h-px bg-zinc-200/70" />
+            </div>
             <div className="space-y-2">
               <Label className="text-sm font-bold text-zinc-700">
                 {i18n.language === 'tr' ? 'Ödeme Kuralı' : 'Payment Rule'}

@@ -232,8 +232,16 @@ export function useStaffAvailability({ serviceId, date, time, staff, excludeAppo
 /**
  * Commits the planned sessions via the bulk-session endpoint with optimistic
  * UI feedback and idempotent retries.
+ *
+ * `notifyIncludeExistingSessions` — Yeni paket akışında (AppointmentFormWizard
+ * "Manuel Planla") 1. seans bu dialogtan önce POST /appointments ile yaratılır.
+ * Müşteriye gidecek tek SESSION_PACKAGE WhatsApp mesajında 1. seansın da
+ * listelenmesi için backend'e bayrak gönderilir. "Kalanları sonradan planla"
+ * akışlarında (Dashboard / Calendar / SessionsHub / Customers) müşteri 1.
+ * seansı zaten önceki mesajdan biliyor olduğu için bayrak false bırakılır ve
+ * yalnızca yeni planlananlar listelenir.
  */
-export function useOptimisticPlan({ appointment, sessions, onDone, t }) {
+export function useOptimisticPlan({ appointment, sessions, onDone, t, notifyIncludeExistingSessions = false }) {
   const [creating, setCreating] = useState(false);
 
   const submit = useCallback(async () => {
@@ -266,6 +274,7 @@ export function useOptimisticPlan({ appointment, sessions, onDone, t }) {
         starting_session_number: startingNumber,
         session_total: appointment.session_total,
         sessions: rawSessions,
+        notify_include_existing_sessions: notifyIncludeExistingSessions,
       });
       await api.post("/appointments/bulk-session", payload, {
         headers: { "Idempotency-Key": idempotencyKey },
@@ -285,7 +294,7 @@ export function useOptimisticPlan({ appointment, sessions, onDone, t }) {
     } finally {
       setCreating(false);
     }
-  }, [appointment, sessions, onDone, t]);
+  }, [appointment, sessions, onDone, t, notifyIncludeExistingSessions]);
 
   return { creating, submit };
 }

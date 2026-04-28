@@ -4695,13 +4695,19 @@ async def _assert_staff_can_provide_service(
     staff_username: str,
     org_settings: Optional[dict] = None,
 ) -> str:
-    """Açık personel ataması için: kullanıcı var mı, hizmete yetkili mi."""
+    """Açık personel ataması için: kullanıcı var mı, hizmete yetkili mi.
+
+    Not: Admin için `admin_provides_service=False` ayarı, admin'in
+    `permitted_service_ids` listesinde bu hizmete AÇIKÇA izin verilmişse
+    göz ardı edilir. Bu, `/availability`, `/sessions/wave-plan` ve
+    `/public/appointments` fallback mantıklarıyla tutarlı olması için
+    zorunludur — aksi halde aynı org'ta bir endpoint admin'e fallback
+    yaparken başka endpoint "Yönetici bu hizmeti veremez" hatası
+    dönerek tek admin'li org'ların paket planlamasını bozar.
+    """
     staff_username = (staff_username or "").strip()
     if not staff_username:
         raise HTTPException(status_code=400, detail="Geçersiz personel")
-    admin_provides = True
-    if org_settings is not None:
-        admin_provides = org_settings.get("admin_provides_service", True)
     user = await db.users.find_one(
         {"username": staff_username, "organization_id": organization_id},
         {"_id": 0, "role": 1, "permitted_service_ids": 1},
@@ -4711,8 +4717,8 @@ async def _assert_staff_can_provide_service(
     permitted = user.get("permitted_service_ids") or []
     if service_id not in permitted:
         raise HTTPException(status_code=400, detail="Seçilen personel bu hizmeti veremez")
-    if user.get("role") == "admin" and not admin_provides:
-        raise HTTPException(status_code=400, detail="Yönetici bu hizmeti veremez")
+    # Admin permitted_service_ids'inde hizmete açıkça izin verdiğinde,
+    # admin_provides_service ayarı permissive olarak override edilir.
     return staff_username
 
 
@@ -5173,11 +5179,19 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
 async def bulk_check_availability(request: Request, check: BulkCheckRequest, current_user: UserInDB = Depends(get_current_user)):
     """Birden fazla tarih/saat slotunun müsaitliğini kontrol eder ve alternatif önerir."""
     db = await get_db_from_request(request)
+    logging.info(
+        f"🔍 bulk-check payload: service_id={check.service_id}, staff_id={check.staff_id}, "
+        f"slots={check.slots}, staff_ids={check.staff_ids}"
+    )
     service = await db.services.find_one({"id": check.service_id, "organization_id": current_user.organization_id}, {"_id": 0})
     if not service:
+        logging.warning(f"❌ bulk-check: service not found {check.service_id}")
         raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
     service_duration = service.get('duration', 30)
     if check.staff_ids is not None and len(check.staff_ids) != len(check.slots):
+        logging.warning(
+            f"❌ bulk-check: staff_ids/slots length mismatch slots={len(check.slots)} staff_ids={len(check.staff_ids)}"
+        )
         raise HTTPException(status_code=400, detail="staff_ids uzunluğu slots ile aynı olmalıdır")
     org_settings = await db.settings.find_one(
         {"organization_id": current_user.organization_id},
@@ -5191,13 +5205,19 @@ async def bulk_check_availability(request: Request, check: BulkCheckRequest, cur
         elif check.staff_ids is not None and i < len(check.staff_ids):
             ov = check.staff_ids[i]
             if ov is not None and str(ov).strip():
-                staff_id = await _assert_staff_can_provide_service(
-                    db,
-                    current_user.organization_id,
-                    check.service_id,
-                    str(ov).strip(),
-                    org_settings,
-                )
+                try:
+                    staff_id = await _assert_staff_can_provide_service(
+                        db,
+                        current_user.organization_id,
+                        check.service_id,
+                        str(ov).strip(),
+                        org_settings,
+                    )
+                except HTTPException as exc:
+                    logging.warning(
+                        f"❌ bulk-check assert failed for staff='{ov}' service={check.service_id}: {exc.detail}"
+                    )
+                    raise
         try:
             parts = slot_str.split('T')
             date = parts[0]
@@ -5255,11 +5275,27 @@ async def wave_plan_package_sessions(
 
     staff_members = await db.users.find(
         staff_query,
-        {"_id": 0, "username": 1, "full_name": 1, "days_off": 1, "role": 1, "permitted_service_ids": 1},
+        {"_id": 0, "username": 1, "full_name": 1, "days_off": 1, "role": 1, "permitted_service_ids": 1, "breaks": 1},
     ).to_list(200)
 
-    if not staff_members and current_user.role == "admin":
-        staff_members = []
+    # Fallback: hizmet için yetkili staff yoksa AMA admin bu hizmeti verebiliyorsa
+    # admin'i kullan. Bu, "/availability" ve "/public/appointments" akışlarındaki
+    # davranışla tutarlıdır — tek admin'li org'larda public'ten gelen seans
+    # paketlerinin "Kalan seansları planla" akışında "uygun slot bulunamadı"
+    # dönmemesi için kritiktir. admin_provides_service=False olsa bile, randevu
+    # zaten admin'e atanmış (public booking aynı fallback'i kullanıyor) ya da
+    # staff_member_id=None olarak kayıtlı; her iki durumda da planlama
+    # admin üzerinden yürütülmelidir.
+    if not staff_members:
+        admin_user = await db.users.find_one(
+            {"organization_id": current_user.organization_id, "role": "admin"},
+            {"_id": 0, "username": 1, "full_name": 1, "days_off": 1, "role": 1, "permitted_service_ids": 1, "breaks": 1},
+        )
+        if admin_user and body.service_id in (admin_user.get("permitted_service_ids") or []):
+            staff_members = [admin_user]
+            logging.info(
+                f"⚠️ Wave-plan: No staff found for service {body.service_id}, falling back to admin {admin_user['username']}"
+            )
 
     sessions, unplanned = await plan_wave_remaining_sessions(
         db,
@@ -10534,7 +10570,7 @@ async def get_availability(request: Request, organization_id: str, service_id: s
             # Admin'in bu hizmeti verebilip veremediğini kontrol et (eğer seçilen staff_id admin ise)
             admin_user = await db.users.find_one(
                 {"organization_id": organization_id, "role": "admin", "username": staff_id},
-                {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1}
+                {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
             )
             if admin_user and service_id in (admin_user.get('permitted_service_ids') or []):
                 # Admin bu hizmeti verebiliyorsa, admin'i personel listesine ekle
@@ -10579,20 +10615,21 @@ async def get_availability(request: Request, organization_id: str, service_id: s
             # Admin'in bu hizmeti verebilip veremediğini kontrol et
             admin_user = await db.users.find_one(
                 {"organization_id": organization_id, "role": "admin"},
-                {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1}
+                {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
             )
             if admin_user:
                 admin_permitted_services = admin_user.get('permitted_service_ids') or []
                 logging.info(f"⚠️ Availability: Admin found: {admin_user['username']}, permitted_service_ids: {admin_permitted_services}, checking service_id: {service_id}")
                 if service_id in admin_permitted_services:
                     # Admin bu hizmeti verebiliyorsa, admin'i personel listesine ekle
-                    # Admin'in tüm gerekli alanlarını ekle
+                    # Admin'in tüm gerekli alanlarını ekle (breaks dahil — slot meşgul listesine doğru eklenmesi için)
                     admin_staff_member = {
                         "id": admin_user.get('id', admin_user.get('username')),
                         "username": admin_user['username'],
                         "role": "admin",
                         "days_off": admin_user.get('days_off', []),
-                        "permitted_service_ids": admin_permitted_services
+                        "permitted_service_ids": admin_permitted_services,
+                        "breaks": admin_user.get('breaks', []),
                     }
                     staff_members = [admin_staff_member]
                     logging.info(f"✅ Availability: Admin can provide service. Using admin: {admin_user['username']}, staff_member: {admin_staff_member}")
@@ -10952,6 +10989,19 @@ async def get_internal_availability(
             {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
         ).to_list(1000)
 
+        # Fallback: admin_provides_service=False filtre admin'i elediğinde,
+        # AMA seçilen staff_id gerçekten admin ve admin permitted_service_ids'inde
+        # bu hizmete açıkça izin vermişse, kullan. Bu, public /availability,
+        # /sessions/wave-plan ve /availability/bulk-check ile tutarlıdır.
+        if not staff_members:
+            admin_user = await db.users.find_one(
+                {"organization_id": organization_id, "role": "admin", "username": staff_id},
+                {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
+            )
+            if admin_user and service_id in (admin_user.get('permitted_service_ids') or []):
+                staff_members = [admin_user]
+                logging.info(f"⚠️ Internal /availability: admin_provides_service=False ama admin {staff_id} permitted'da, fallback aktif")
+
         if not staff_members:
             return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Seçilen personel bu hizmeti veremiyor"}
 
@@ -10977,6 +11027,17 @@ async def get_internal_availability(
             staff_query,
             {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
         ).to_list(1000)
+
+        # Fallback: hizmet için yetkili staff yoksa AMA admin permitted'da varsa, admin'i kullan
+        # (public /availability ile tutarlı)
+        if not staff_members:
+            admin_user = await db.users.find_one(
+                {"organization_id": organization_id, "role": "admin"},
+                {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
+            )
+            if admin_user and service_id in (admin_user.get('permitted_service_ids') or []):
+                staff_members = [admin_user]
+                logging.info(f"⚠️ Internal /availability (no staff_id): falling back to admin {admin_user['username']}")
 
         if not staff_members:
             # Admin panelinde hiç uygun personel yoksa (ve staff_id seçilmemişse),
