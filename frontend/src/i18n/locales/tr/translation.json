@@ -158,10 +158,13 @@
     },
     "pricing": {
       "title": "Fiyatlandırma",
+      "eyebrow": "Planlar",
+      "subtitle": "İhtiyacına göre büyüyen, şeffaf bir fiyatlandırma. Tüm planlarda 7 gün ücretsiz deneme — kredi kartı gerekmez.",
       "monthly": "Aylık",
       "yearly": "Yıllık",
       "twoMonthsFree": "2 Ay Ücretsiz",
       "newUserDiscount": "Yeni üye işyerlerine özel ilk ay indirimi!",
+      "yearlyGift": "Yıllık planlarda 2 ay bizden hediye",
       "mostPopular": "En Popüler",
       "tryFree": "Ücretsiz Dene",
       "perMonth": "/ay",
@@ -177,6 +180,11 @@
       "trialDaysRemaining": "Kalan {{days}} gün",
       "trustBadge": "7 gün ücretsiz deneme",
       "noCreditCard": "Kredi kartı gerekmez",
+      "cancelAnytime": "İstediğin an iptal",
+      "securePayment": "Güvenli ödeme",
+      "includes": "Pakette neler var",
+      "firstMonth": "İlk ay",
+      "savedYearly": "2 ay ücretsiz",
       "savings": "Tasarruf",
       "plans": {
         "standart": {

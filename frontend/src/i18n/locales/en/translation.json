@@ -157,13 +157,16 @@
       }
     },
     "pricing": {
-      "title": "Pricing",
+      "title": "Simple, transparent pricing",
+      "eyebrow": "Plans",
+      "subtitle": "Pricing that scales with you. All plans start with a 7-day free trial — no credit card required.",
       "monthly": "Monthly",
       "yearly": "Yearly",
       "twoMonthsFree": "2 Months Free",
       "newUserDiscount": "Special offer: discounted first month for new businesses!",
+      "yearlyGift": "2 months on us with annual billing",
       "mostPopular": "Most Popular",
-      "tryFree": "Try Free",
+      "tryFree": "Start free trial",
       "perMonth": "/month",
       "perYear": "/year",
       "monthlyBilling": "monthly billing",
@@ -177,6 +180,11 @@
       "trialDaysRemaining": "{{days}} days remaining",
       "trustBadge": "7-day free trial",
       "noCreditCard": "No credit card required",
+      "cancelAnytime": "Cancel anytime",
+      "securePayment": "Secure payment",
+      "includes": "What's included",
+      "firstMonth": "First month",
+      "savedYearly": "2 months free",
       "savings": "Off",
       "plans": {
         "standart": {

@@ -796,226 +796,240 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section id="pricing" className="py-20 bg-[#fafafa] scroll-mt-24">
+      {/* Pricing Section — Minimal, tipografi odaklı premium tasarım */}
+      <section id="pricing" className="pt-6 md:pt-8 pb-14 md:pb-16 bg-[#fafafa] scroll-mt-24">
         <div className="container mx-auto px-4">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">{t('landing.pricing.title')}</h2>
-            
-            {/* Aylık / Yıllık Toggle */}
-            <div className="flex items-center justify-center gap-3 mb-6">
-              <span className={`text-lg font-medium ${billingCycle === 'monthly' ? 'text-gray-900' : 'text-gray-400'}`}>
-                {t('landing.pricing.monthly')}
-              </span>
-              <button
-                onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'yearly' : 'monthly')}
-                className={`relative w-14 h-7 rounded-full transition-colors duration-300 flex-shrink-0 ${billingCycle === 'yearly' ? 'bg-green-500' : 'bg-gray-300'}`}
-              >
-                <span 
-                  className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ${billingCycle === 'yearly' ? 'translate-x-7' : 'translate-x-0'}`}
-                />
-              </button>
-              <div className="flex items-center gap-2">
-                <span className={`text-lg font-medium ${billingCycle === 'yearly' ? 'text-gray-900' : 'text-gray-400'}`}>
+          {/* Header */}
+          <div className="text-center max-w-2xl mx-auto mb-12 md:mb-14">
+            <span className="inline-block text-base md:text-lg font-semibold uppercase tracking-[0.22em] text-gray-500 mb-4">
+              {t('landing.pricing.eyebrow')}
+            </span>
+            <h2 className="text-4xl md:text-5xl lg:text-[3.5rem] font-bold tracking-tight text-gray-900 leading-[1.05] mb-5">
+              {t('landing.pricing.title')}
+            </h2>
+            <p className="text-base md:text-lg text-gray-500 leading-relaxed">
+              {t('landing.pricing.subtitle')}
+            </p>
+
+            {/* Billing Toggle — Segmented pill + alt mesaj */}
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+              <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white border border-gray-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle('monthly')}
+                  aria-pressed={billingCycle === 'monthly'}
+                  className={`px-5 py-2 text-sm font-semibold rounded-full transition-all duration-200 ${
+                    billingCycle === 'monthly'
+                      ? 'bg-gray-900 text-white shadow-[0_2px_8px_rgba(17,24,39,0.18)]'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  {t('landing.pricing.monthly')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle('yearly')}
+                  aria-pressed={billingCycle === 'yearly'}
+                  className={`px-5 py-2 text-sm font-semibold rounded-full transition-all duration-200 ${
+                    billingCycle === 'yearly'
+                      ? 'bg-gray-900 text-white shadow-[0_2px_8px_rgba(17,24,39,0.18)]'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
                   {t('landing.pricing.yearly')}
-                </span>
-                {billingCycle === 'yearly' && (
-                  <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap">
-                    {t('landing.pricing.twoMonthsFree')}
-                  </span>
-                )}
+                </button>
               </div>
+
+              <span className="inline-flex items-center gap-2 text-sm text-gray-600">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                {billingCycle === 'yearly'
+                  ? t('landing.pricing.yearlyGift')
+                  : t('landing.pricing.newUserDiscount')}
+              </span>
             </div>
-            
-            {/* Yeni Üye İndirimi Banner - Sadece Aylık için */}
-            {billingCycle === 'monthly' && (
-              <div className="inline-block mb-6 px-6 py-2 bg-gray-900 text-white text-sm font-medium rounded">
-                {t('landing.pricing.newUserDiscount')}
-              </div>
-            )}
           </div>
 
+          {/* Cards */}
           {loadingPlans ? (
             <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
-              <p className="mt-4 text-gray-600">{t('common.loading')}</p>
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-gray-900 mx-auto"></div>
+              <p className="mt-4 text-sm text-gray-500">{t('common.loading')}</p>
             </div>
           ) : plans.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-600">{t('landing.pricing.noPlans') || 'Plans are loading...'}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 max-w-6xl mx-auto">
-              {plans.map((plan, index) => {
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6 max-w-6xl mx-auto items-stretch">
+              {plans.map((plan) => {
                 const isPopular = plan.id === 'tier_4_business';
                 const isYearly = billingCycle === 'yearly';
-                
+
                 const roundedMonthly = Math.round(plan.price_monthly);
                 const yearlyPrice = plan.price_yearly || (roundedMonthly * 10);
                 const monthlyEquivalent = Math.round(yearlyPrice / 12);
                 const planKey = plan.name.toLowerCase();
-                
-                // İndirimli fiyat hesaplama: Önce sabit değerleri kontrol et, sonra backend, son olarak %25 indirim
+
                 let discountedPrice, originalPrice;
                 if (plan.price_monthly_discounted && plan.price_monthly_original) {
                   discountedPrice = Math.round(plan.price_monthly_discounted);
                   originalPrice = Math.round(plan.price_monthly_original);
                 } else if (tlFirstMonthPricing[planKey]) {
-                  // Sabit ilk ay indirimli fiyatları kullan
                   discountedPrice = tlFirstMonthPricing[planKey];
                   originalPrice = roundedMonthly;
                 } else {
-                  // Backend'den gelmiyorsa frontend'de hesapla: %25 indirim
                   originalPrice = roundedMonthly;
-                  discountedPrice = Math.round(roundedMonthly * 0.75); // %25 indirim
+                  discountedPrice = Math.round(roundedMonthly * 0.75);
                 }
-                
-                // Aylık faturalamada her zaman indirim var (ilk ay için)
+
                 const hasDiscount = !isYearly;
                 const displayPrice = isYearly ? monthlyEquivalent : discountedPrice;
-                
+
+                const priceInfo = formatPrice(plan, isYearly, hasDiscount);
+                const originalPriceInfo = getOriginalPrice(plan, isYearly);
+                const showStrike = hasDiscount || isYearly;
+
                 return (
-                  <div 
-                    key={plan.id} 
-                    className={`relative group ${isPopular ? 'md:-mt-4 md:mb-4' : ''}`}
+                  <div
+                    key={plan.id}
+                    className={`relative flex flex-col rounded-[24px] p-8 lg:p-10 transition-all duration-300 ease-out ${
+                      isPopular
+                        ? 'bg-gray-900 text-white ring-1 ring-gray-900 shadow-[0_24px_60px_-18px_rgba(17,24,39,0.4)]'
+                        : 'bg-white text-gray-900 ring-1 ring-gray-200/80 hover:ring-gray-300 hover:-translate-y-1 hover:shadow-[0_18px_40px_-12px_rgba(17,24,39,0.12)]'
+                    }`}
                   >
-                    {/* Gradient Border Effect */}
-                    <div className={`absolute -inset-0.5 rounded-2xl opacity-75 blur-sm transition-all duration-500 group-hover:opacity-100 group-hover:blur-md ${
-                      isPopular 
-                        ? 'bg-gradient-to-r from-amber-400 via-orange-500 to-red-500' 
-                        : 'bg-gradient-to-r from-blue-500 to-indigo-600'
-                    }`}></div>
-                    
-                    <div className={`relative rounded-2xl p-6 md:p-8 flex flex-col h-full transition-all duration-300 ${
-                      isPopular 
-                        ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white' 
-                        : 'bg-white'
-                    }`}>
-                      
-                      {/* Popular Badge */}
-                      {isPopular && (
-                        <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                          <div className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-orange-500 text-gray-900 px-4 py-1.5 rounded-full text-sm font-bold shadow-lg">
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M10 2l2.5 5.5L18 8.5l-4 4.5 1 6-5-3-5 3 1-6-4-4.5 5.5-1z"/>
-                            </svg>
-                            {t('landing.pricing.mostPopular')}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Plan Name */}
-                      <div className="mb-4">
-                        <h3 className={`text-2xl font-bold ${isPopular ? 'text-white' : 'text-gray-900'}`}>
-                          {t(`landing.pricing.plans.${plan.name.toLowerCase()}.name`, plan.name)}
-                        </h3>
-                        <p className={`text-sm mt-1 ${isPopular ? 'text-gray-300' : 'text-gray-500'}`}>
-                          {t(`landing.pricing.plans.${plan.name.toLowerCase()}.description`, plan.target_audience_tr)}
-                        </p>
+                    {isPopular && (
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                        <span className="inline-flex items-center gap-1.5 bg-white text-gray-900 text-[10px] font-bold uppercase tracking-[0.14em] px-3 py-1.5 rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.08)] ring-1 ring-gray-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          {t('landing.pricing.mostPopular')}
+                        </span>
                       </div>
-                      
-                      {/* Price Section */}
-                      <div className="mb-6">
-                        {(() => {
-                          const priceInfo = formatPrice(plan, isYearly, hasDiscount);
-                          const originalPriceInfo = getOriginalPrice(plan, isYearly);
-                          const showStrike = hasDiscount || isYearly;
-                          return (
-                            <>
-                              <div className="flex items-end gap-2">
-                                <span className={`text-5xl font-extrabold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
-                                  {priceInfo.currency}{priceInfo.price.toLocaleString(priceInfo.locale)}
-                                </span>
-                                {showStrike && (
-                                  <span className={`text-lg line-through mb-1 ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
-                                    {originalPriceInfo.currency}{originalPriceInfo.price.toLocaleString(originalPriceInfo.locale)}
-                                  </span>
-                                )}
-                              </div>
-                              <p className={`text-sm mt-1 ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
-                                {isYearly ? t('landing.pricing.yearlyBilling') : t('landing.pricing.monthlyBilling')}
-                              </p>
-                            </>
-                          );
-                        })()}
+                    )}
+
+                    {/* Plan name + description */}
+                    <div>
+                      <h3 className={`text-2xl font-bold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                        {t(`landing.pricing.plans.${plan.name.toLowerCase()}.name`, plan.name)}
+                      </h3>
+                      <p className={`text-[15px] mt-2 leading-relaxed ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {t(`landing.pricing.plans.${plan.name.toLowerCase()}.description`, plan.target_audience_tr)}
+                      </p>
+                    </div>
+
+                    {/* Price */}
+                    <div className="mt-8 mb-7">
+                      <div className="flex items-baseline">
+                        <span className={`text-2xl font-medium ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
+                          {priceInfo.currency}
+                        </span>
+                        <span className={`text-[3.5rem] lg:text-[4rem] font-bold tracking-[-0.04em] tabular-nums leading-none ml-0.5 ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                          {priceInfo.price.toLocaleString(priceInfo.locale)}
+                        </span>
+                        <span className={`text-sm ml-2 ${isPopular ? 'text-gray-500' : 'text-gray-500'}`}>
+                          {isYearly ? t('landing.pricing.perYear') : t('landing.pricing.perMonth')}
+                        </span>
                       </div>
-                      
-                      {/* Divider */}
-                      <div className={`h-px mb-6 ${isPopular ? 'bg-gray-700' : 'bg-gray-200'}`}></div>
-                      
-                      {/* Features */}
-                      <div className="flex-grow space-y-3 mb-6">
-                        {/* Randevu Limiti - Vurgulu */}
-                        <div className={`flex items-center gap-3 p-3 rounded-xl backdrop-blur-sm ${
-                          isPopular
-                            ? 'bg-white/10 border border-white/20 shadow-inner'
-                            : 'bg-white/60 border border-slate-200/70 shadow-sm'
-                        }`}>
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md ${
+                      {showStrike ? (
+                        <div className="mt-3 flex items-center gap-2 text-sm">
+                          <span className={`line-through ${isPopular ? 'text-gray-600' : 'text-gray-400'}`}>
+                            {originalPriceInfo.currency}{originalPriceInfo.price.toLocaleString(originalPriceInfo.locale)}
+                          </span>
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
                             isPopular
-                              ? 'bg-white/20 text-white backdrop-blur-sm'
-                              : 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white'
+                              ? 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20'
+                              : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
                           }`}>
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </div>
-                          <div>
-                            <div className={`text-lg font-bold ${isPopular ? 'text-white' : 'text-gray-900'}`}>
-                              {['kurumsal', 'corporate'].includes(plan.name.toLowerCase())
-                                ? t('landing.pricing.features.unlimitedAppointments')
-                                : t('landing.pricing.features.appointments', { count: plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') })}
-                            </div>
-                            <div className={`text-xs ${isPopular ? 'text-blue-200' : 'text-gray-400'}`}>
-                              {t('landing.pricing.monthlyLimit')}
-                            </div>
-                          </div>
+                            {isYearly ? t('landing.pricing.savedYearly') : t('landing.pricing.firstMonth')}
+                          </span>
                         </div>
-                        
-                        {/* Diğer Özellikler */}
-                        {plan.features
-                          .filter(feature => {
-                            const quotaStr = plan.quota_monthly_appointments.toLocaleString('tr-TR');
-                            return !(feature.includes(quotaStr) && feature.toLowerCase().includes('randevu'));
-                          })
-                          .map((feature, i) => (
-                            <div key={i} className="flex items-center gap-3">
-                              <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                isPopular ? 'bg-green-400' : 'bg-green-500'
-                              }`}>
-                                <Check className="w-3 h-3 text-white" />
-                              </div>
-                              <span className={`text-sm ${isPopular ? 'text-gray-200' : 'text-gray-700'}`}>{translateFeature(feature)}</span>
-                            </div>
-                          ))}
+                      ) : (
+                        <p className={`mt-2 text-sm ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {isYearly ? t('landing.pricing.yearlyBilling') : t('landing.pricing.monthlyBilling')}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* CTA */}
+                    <button
+                      type="button"
+                      onClick={() => navigate("/register")}
+                      className={`w-full py-4 rounded-2xl font-semibold text-base transition-all duration-200 active:scale-[0.99] ${
+                        isPopular
+                          ? 'bg-white text-gray-900 hover:bg-gray-100 shadow-[0_4px_14px_rgba(255,255,255,0.12)]'
+                          : 'bg-gray-900 text-white hover:bg-gray-800 shadow-[0_4px_14px_rgba(17,24,39,0.15)]'
+                      }`}
+                    >
+                      {t('landing.pricing.tryFree')}
+                    </button>
+                    <p className={`mt-3 text-center text-xs ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
+                      {t('landing.pricing.noCreditCard')}
+                    </p>
+
+                    {/* Divider */}
+                    <div className={`mt-8 mb-6 h-px ${isPopular ? 'bg-white/[0.08]' : 'bg-gray-100'}`}></div>
+
+                    {/* "What's included" label */}
+                    <p className={`text-xs font-semibold uppercase tracking-[0.16em] mb-4 ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
+                      {t('landing.pricing.includes')}
+                    </p>
+
+                    {/* Quota highlight */}
+                    <div className={`mb-5 p-4 rounded-2xl ${
+                      isPopular ? 'bg-white/[0.04] ring-1 ring-white/10' : 'bg-gray-50 ring-1 ring-gray-100'
+                    }`}>
+                      <div className={`text-xl font-bold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                        {['kurumsal', 'corporate'].includes(plan.name.toLowerCase())
+                          ? t('landing.pricing.features.unlimitedAppointments')
+                          : t('landing.pricing.features.appointments', { count: plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB') })}
                       </div>
-                      
-                      {/* CTA Button */}
-                      <button 
-                        onClick={() => navigate("/register")}
-                        className={`w-full py-4 rounded-xl font-bold text-base transition-all duration-300 transform hover:scale-[1.02] hover:shadow-xl ${
-                          isPopular 
-                            ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-gray-900 hover:from-amber-300 hover:to-orange-400' 
-                            : 'bg-gradient-to-r from-gray-800 to-gray-900 text-white hover:from-gray-700 hover:to-gray-800'
-                        }`}
-                      >
-                        {t('landing.pricing.tryFree')}
-                      </button>
-                      
-                      {/* Trust Badge */}
-                      <div className={`flex flex-col items-center justify-center gap-1 mt-4`}>
-                        <div className={`flex items-center gap-2 text-xs ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                          {t('landing.pricing.trustBadge')}
-                        </div>
-                        <p className={`text-xs ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>{t('landing.pricing.noCreditCard')}</p>
+                      <div className={`text-xs mt-1 ${isPopular ? 'text-gray-500' : 'text-gray-500'}`}>
+                        {t('landing.pricing.monthlyLimit')}
                       </div>
                     </div>
+
+                    {/* Features list */}
+                    <ul className="space-y-3 flex-1">
+                      {plan.features
+                        .filter(feature => {
+                          const quotaStr = plan.quota_monthly_appointments.toLocaleString('tr-TR');
+                          return !(feature.includes(quotaStr) && feature.toLowerCase().includes('randevu'));
+                        })
+                        .map((feature, i) => (
+                          <li key={i} className="flex items-start gap-3 text-[15px] leading-relaxed">
+                            <Check
+                              className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                                isPopular ? 'text-emerald-400' : 'text-emerald-600'
+                              }`}
+                              strokeWidth={2.5}
+                            />
+                            <span className={isPopular ? 'text-gray-300' : 'text-gray-600'}>
+                              {translateFeature(feature)}
+                            </span>
+                          </li>
+                        ))}
+                    </ul>
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Bottom trust bar */}
+          {!loadingPlans && plans.length > 0 && (
+            <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-x-10 gap-y-3 text-xs text-gray-500">
+              <div className="inline-flex items-center gap-2">
+                <Shield className="w-4 h-4 text-gray-500" />
+                {t('landing.pricing.trustBadge')}
+              </div>
+              <div className="inline-flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-gray-500" />
+                {t('landing.pricing.securePayment')}
+              </div>
+              <div className="inline-flex items-center gap-2">
+                <Clock className="w-4 h-4 text-gray-500" />
+                {t('landing.pricing.cancelAnytime')}
+              </div>
             </div>
           )}
         </div>
