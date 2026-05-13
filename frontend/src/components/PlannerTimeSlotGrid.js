@@ -98,13 +98,16 @@ const PlannerTimeSlotGrid = ({
             onClick={() => !isBusy && onChange(time)}
             title={isBusy ? time : undefined}
             className={cn(
-              "min-w-[3.25rem] px-2 py-1.5 rounded-lg text-xs font-bold border transition-colors",
+              "min-w-[3.25rem] px-2 py-1.5 rounded-lg text-xs font-bold border transition-colors relative overflow-hidden",
               isSelected && !isBusy && "bg-zinc-900 text-white border-zinc-900 shadow-sm",
               !isSelected && !isBusy &&
                 "bg-white border-zinc-200 text-zinc-800 hover:bg-zinc-50 hover:border-zinc-300",
-              isBusy && "bg-zinc-100 border-zinc-200 text-zinc-400 cursor-not-allowed line-through decoration-zinc-400",
+              isBusy && "bg-zinc-100 border-zinc-200 text-zinc-300 cursor-not-allowed line-through decoration-2 decoration-zinc-400 opacity-70",
               disabled && "opacity-50 pointer-events-none"
             )}
+            style={isBusy ? {
+              backgroundImage: 'repeating-linear-gradient(45deg, transparent 0, transparent 6px, rgba(161,161,170,0.18) 6px, rgba(161,161,170,0.18) 7px)',
+            } : undefined}
           >
             {time}
           </button>

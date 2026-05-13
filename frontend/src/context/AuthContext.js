@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
-import api from '../api/api'; 
+import api from '../api/api';
+import posthog from '../lib/posthog';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : '';
 
@@ -23,6 +24,17 @@ export const AuthProvider = ({ children }) => {
       try {
         const payload = JSON.parse(atob(storedToken.split('.')[1]));
         setCanViewAll(payload.can_view_all_appointments || false);
+        // PostHog identify — JWT'den user_id claim'ini al (backend bunu signup/login'de ekledi)
+        if (payload.user_id) {
+          posthog.identifyUser({
+            user_id: payload.user_id,
+            username: payload.sub,
+            full_name: payload.full_name,
+            organization_id: payload.org_id,
+            role: payload.role || storedRole,
+            sector: payload.sector,
+          });
+        }
       } catch (e) {}
     }
   }, []);
@@ -55,6 +67,18 @@ export const AuthProvider = ({ children }) => {
       setToken(access_token);
       setUserRole(role);
       setCanViewAll(tokenPayload.can_view_all_appointments || false);
+
+      // PostHog identify — login sonrası anonim distinct_id'yi user_id ile birleştir
+      if (tokenPayload.user_id) {
+        posthog.identifyUser({
+          user_id: tokenPayload.user_id,
+          username: tokenPayload.sub,
+          full_name: tokenPayload.full_name,
+          organization_id: tokenPayload.org_id,
+          role,
+          sector: tokenPayload.sector,
+        });
+      }
       
       // rememberMe durumuna göre localStorage veya sessionStorage kullan
       if (rememberMe) {
@@ -104,29 +128,76 @@ export const AuthProvider = ({ children }) => {
     }
   };
   
+  // İki aşamalı kayıt: önce WhatsApp OTP (`register-initiate`) gönderir,
+  // kullanıcı kodu girince `register-verify` ile hesap oluşur ve token döner.
+  // Public booking ile aynı pattern.
   const register = async (username, password, full_name, organization_name, support_phone, sector) => {
     try {
-      console.log('🔵 AuthContext: Register isteği başlıyor...', { username, full_name, organization_name, support_phone, sector });
-      
-      const response = await api.post('/register', { 
-        username, 
-        password, 
-        full_name, 
+      const response = await api.post('/register-initiate', {
+        username,
+        password,
+        full_name,
         organization_name,
         support_phone,
-        sector
+        sector,
       });
-      
-      console.log('✅ AuthContext: Register başarılı', response.data);
-
-      if (response.status === 200) {
-        return { success: true };
-      }
+      // 200 = OTP gönderildi, hesap henüz oluşturulmadı
+      return {
+        success: true,
+        verificationRequired: true,
+        expiresIn: response.data?.expires_in ?? 900,
+        phoneMasked: response.data?.phone_masked || '',
+      };
     } catch (error) {
-      console.error('❌ Kayıt hatası (AuthContext):', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
-      const errorMessage = error.response?.data?.detail || 'Kayıt sırasında bir hata oluştu. Kullanıcı adı mevcut olabilir.';
+      console.error('❌ Register-initiate hatası:', error);
+      const errorMessage = error.response?.data?.detail || 'Kayıt başlatılamadı. Lütfen bilgileri kontrol edip tekrar deneyin.';
+      return { success: false, error: errorMessage };
+    }
+  };
+
+  const registerVerify = async (phone, code, sector = null) => {
+    try {
+      const response = await api.post('/register-verify', { phone, code });
+      const { access_token } = response.data || {};
+      if (!access_token) {
+        return { success: false, error: 'Doğrulama yanıtı geçersiz.' };
+      }
+
+      // Token'ı decode et
+      const tokenPayload = JSON.parse(atob(access_token.split('.')[1]));
+      const role = tokenPayload.role || 'admin';
+
+      // PostHog: signup_completed (alias anonim → stable user_id)
+      try {
+        if (tokenPayload.user_id) {
+          posthog.aliasAnonymous(tokenPayload.user_id);
+          posthog.identifyUser({
+            user_id: tokenPayload.user_id,
+            username: tokenPayload.sub,
+            full_name: tokenPayload.full_name,
+            organization_id: tokenPayload.org_id,
+            role,
+            sector,
+          });
+        }
+        posthog.track('signup_completed', { sector: sector || null });
+      } catch (e) {
+        console.warn('PostHog signup tracking failed:', e);
+      }
+
+      // Auto-login: token'ı kaydet, state'i güncelle
+      setToken(access_token);
+      setUserRole(role);
+      setCanViewAll(tokenPayload.can_view_all_appointments || false);
+      // Yeni kayıt sonrası remember-me default true (kullanıcı login sayfasını görmesin)
+      localStorage.setItem('authToken', access_token);
+      localStorage.setItem('userRole', role);
+      setIsAuthenticated(true);
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Register-verify hatası:', error);
+      const errorMessage = error.response?.data?.detail || 'Doğrulama kodu hatalı veya süresi dolmuş.';
       return { success: false, error: errorMessage };
     }
   };
@@ -152,6 +223,9 @@ export const AuthProvider = ({ children }) => {
       console.warn('Push unsubscribe error (ignored):', error);
     }
     
+    // PostHog reset — sonraki kullanıcının funnel'ı temiz başlasın
+    try { posthog.reset(); } catch (_) {}
+
     // State'leri temizle
     setToken(null);
     setUserRole(null);
@@ -173,7 +247,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated, userRole, canViewAll, login, register, logout }}>
+    <AuthContext.Provider value={{ token, isAuthenticated, userRole, canViewAll, login, register, registerVerify, logout }}>
       {children}
     </AuthContext.Provider>
   );

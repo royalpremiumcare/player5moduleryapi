@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } fr
 import { format, addDays, isSameDay, startOfDay, differenceInCalendarDays } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
-import { Calendar as CalendarIcon, Clock, ArrowLeft, User, Search, X, Check, UserPlus, ChevronLeft, Loader2, Users, Import, AlertTriangle } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, ArrowLeft, User, Search, X, Check, UserPlus, ChevronLeft, Loader2, Users, Import, AlertTriangle, Info } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
@@ -316,6 +316,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     } catch (e) {
       console.error(e);
       setAvailableSlots([]);
+      setBusySlots([]);
     }
   }, [
     formData.service_id,
@@ -1084,19 +1085,18 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                 </div>
               </div>
             ) : selectedService ? (
-              // Hizmet seçili ama kalifiye personel yok — admin için unassigned bilgisi
-              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                <div className="text-xs text-amber-800 leading-relaxed">
-                  <p className="font-bold mb-0.5">
-                    {i18n.language === 'tr'
-                      ? 'Bu hizmet için atanmış personel yok'
-                      : 'No staff assigned to this service'}
+              // Hizmet seçili ama kalifiye personel yok — admin için unassigned bilgisi.
+              // Sarı uyarı yerine zinc tonu + Info ikonu (uyarı değil bilgi).
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 flex items-start gap-2">
+                <Info className="w-4 h-4 text-zinc-500 mt-0.5 shrink-0" />
+                <div className="text-xs text-zinc-700 leading-relaxed">
+                  <p className="font-bold text-zinc-900 mb-0.5">
+                    {i18n.language === 'tr' ? 'Personelsiz randevu' : 'Unassigned appointment'}
                   </p>
-                  <p>
+                  <p className="text-zinc-500">
                     {i18n.language === 'tr'
-                      ? 'Randevu personelsiz kaydedilecek. İsterseniz Personel sayfasından bu hizmeti verebilecek bir personel tanımlayabilirsiniz.'
-                      : 'The appointment will be saved without staff. You can assign a staff member to this service from the Staff page if needed.'}
+                      ? 'Personel sayfasından bu hizmete personel atayabilirsin.'
+                      : 'You can assign a staff member for this service later.'}
                   </p>
                 </div>
               </div>
@@ -1197,13 +1197,16 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                     type="button"
                     onClick={() => isAvailable && setFormData(prev => ({ ...prev, appointment_time: time }))}
                     disabled={isBusy}
-                    className={`py-3 rounded-xl text-sm font-bold transition-[background-color,border-color,box-shadow,transform,color] duration-200 border shadow-sm relative
-                      ${isSelected 
-                        ? 'bg-blue-600 border-blue-600 text-white shadow-lg scale-105' 
-                        : isBusy 
-                          ? 'bg-zinc-200/80 border-zinc-300/80 text-zinc-400 cursor-not-allowed line-through'
-                          : 'backdrop-blur-xl bg-white/40 border-white/30 text-zinc-700 hover:bg-white/60 hover:border-white/40 hover:shadow-md'}
+                    className={`py-3 rounded-xl text-sm font-bold transition-[background-color,border-color,box-shadow,transform,color] duration-200 border shadow-sm relative overflow-hidden
+                      ${isSelected
+                        ? 'bg-blue-600 border-blue-600 text-white shadow-lg scale-105'
+                        : isBusy
+                          ? 'bg-zinc-100 border-zinc-200 text-zinc-300 cursor-not-allowed line-through decoration-2 decoration-zinc-400 opacity-70 pointer-events-none'
+                          : 'backdrop-blur-xl bg-white border-zinc-200 text-zinc-800 hover:bg-zinc-50 hover:border-zinc-300 hover:shadow-md'}
                     `}
+                    style={isBusy ? {
+                      backgroundImage: 'repeating-linear-gradient(45deg, transparent 0, transparent 6px, rgba(161,161,170,0.15) 6px, rgba(161,161,170,0.15) 7px)',
+                    } : undefined}
                   >
                     {time}
                   </button>
@@ -1312,7 +1315,10 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
         {/* FOOTER ACTION */}
         {step === 3 && (
-          <div className="p-6 backdrop-blur-2xl bg-white/80 border-t border-white/20 z-20 shrink-0 shadow-lg">
+          <div
+            className="px-6 pt-6 backdrop-blur-2xl bg-white/80 border-t border-white/20 z-20 shrink-0 shadow-lg"
+            style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
+          >
              <div className="flex justify-between items-center mb-4 text-sm">
                 <span className="text-zinc-500 font-bold uppercase tracking-wider">{t('common.total')}</span>
                 <span className="text-2xl font-black text-zinc-900">

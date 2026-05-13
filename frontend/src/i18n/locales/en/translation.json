@@ -1254,6 +1254,31 @@
     "subscriptionInfo": "Subscription and billing are managed on our website. When you continue, you’ll be redirected to the subscription page automatically.",
     "goToWebsite": "Go to Website"
   },
+  "aha": {
+    "spotlight": {
+      "badge": "First step",
+      "title": "Let's create your first appointment",
+      "tooltip": "Tap the highlighted + button. A confirmation will land on your phone in seconds — the same one your customers will receive.",
+      "loading": "Your message is on its way — just a moment…",
+      "tapTarget": "Create your first appointment"
+    },
+    "celebration": {
+      "deliveredBadge": "Message delivered",
+      "title": "It just arrived on your phone 🎉",
+      "body": "Your customers will hear from you exactly this fast. Let's take a 60-second walkthrough — the rest is even easier.",
+      "cta": "Start the tour",
+      "autoHint": "Continuing on its own in a moment"
+    },
+    "error": {
+      "title": "Couldn't deliver right now",
+      "body": "Looks like a brief WhatsApp hiccup. Try again in a few seconds; if it persists, switching to the classic tour is a quick way forward.",
+      "retry": "Try again",
+      "retrying": "Trying again…",
+      "skip": "Skip to classic tour",
+      "skipping": "Switching to classic tour…",
+      "nudge": "The issue persists; switching to the classic tour is a fast way out."
+    }
+  },
   "tour": {
     "welcome": "Welcome to PLANN{{name}}! Would you like a quick tour to discover features that will help your business?",
     "greeting": "This is your control panel. You can see today's date and your personalised notifications here.",

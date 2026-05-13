@@ -232,6 +232,9 @@ const PublicBookingPage = () => {
   const socketRef = useRef(null);
   const pollIntervalRef = useRef(null);
   const turnstileWidgetId = useRef(null);
+  // WebSocket handler'ı re-attach etmeden, mevcut loadAvailableSlots fonksiyonunu
+  // her render'da güncel tutar. Stale closure'ı önler.
+  const loadSlotsRef = useRef(null);
   const turnstileContainerRef = useRef(null);
   const turnstileResolveRef = useRef(null);
 
@@ -341,13 +344,20 @@ const PublicBookingPage = () => {
     loadBusinessData();
   }, [slug]);
 
+  // Slot yüklemesi: ana veri dependency'leri (service/date/staff) değiştiğinde
+  // ya da kullanıcı ilk kez 3. adıma (tarih/saat seçimi) ulaştığında tetiklenir.
+  // `currentStep >= 3` boolean olarak dependency'de — adım 3→4, 4→5 geçişlerinde
+  // boolean değişmediği için useEffect tekrar fire etmez (gereksiz network kapatıldı).
+  const stepReady = currentStep >= 3;
   useEffect(() => {
-    if (selectedService && selectedDate && business && currentStep >= 3) {
+    if (stepReady && selectedService && selectedDate && business) {
       loadAvailableSlots();
     }
-  }, [selectedService, selectedDate, selectedStaff, business, currentStep]);
+  }, [selectedService, selectedDate, selectedStaff, business, stepReady]);
 
-  // WebSocket
+  // WebSocket — başka müşteri randevu alınca slot grid'i tazele.
+  // Yoğun saatlerde flood olmasın diye 500ms debounce.
+  const slotsRefreshTimerRef = useRef(null);
   useEffect(() => {
     if (!business || !slug) return;
 
@@ -373,14 +383,21 @@ const PublicBookingPage = () => {
         });
       });
 
-      socket.on('appointment_created', (data) => {
-        if (selectedService && selectedDate && business) {
-          loadAvailableSlots();
-        }
+      socket.on('appointment_created', () => {
+        // Sadece tarih/saat ekranındayken (step 3-4) slot tazele.
+        // useRef ile mevcut değerleri yakalıyoruz: stale closure kapanır.
+        if (slotsRefreshTimerRef.current) clearTimeout(slotsRefreshTimerRef.current);
+        slotsRefreshTimerRef.current = setTimeout(() => {
+          if (loadSlotsRef.current) loadSlotsRef.current();
+        }, 500);
       });
     }
 
     return () => {
+      if (slotsRefreshTimerRef.current) {
+        clearTimeout(slotsRefreshTimerRef.current);
+        slotsRefreshTimerRef.current = null;
+      }
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
@@ -458,6 +475,10 @@ const PublicBookingPage = () => {
       setSlotsLoading(false);
     }
   };
+
+  // WebSocket handler, ilk mount'ta attach edilen closure'ı kullanıyor; stale
+  // referansa karşı her render'da güncel fonksiyonu ref'e koyuyoruz.
+  loadSlotsRef.current = loadAvailableSlots;
 
   const getQualifiedStaff = () => {
     if (!selectedService) return [];

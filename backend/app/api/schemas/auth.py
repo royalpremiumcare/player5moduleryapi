@@ -47,3 +47,6 @@ class UserResponse(BaseModel):
     role: str
     slug: Optional[str] = None
     onboarding_completed: bool = False
+    # Stable identity + Aha activation flow
+    user_id: Optional[str] = None
+    activation_state: Optional[str] = None

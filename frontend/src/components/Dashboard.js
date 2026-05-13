@@ -22,6 +22,7 @@ import {
 // --- TUR REHBERİ IMPORT ---
 import TourGuide from "../components/TourGuide"; 
 // --------------------------
+import SwipeableAppointmentCard from "./SwipeableAppointmentCard";
 
 // --- SEANS PLANLAYICI ---
 import SessionPlannerDialog from "./SessionPlannerDialog";
@@ -102,7 +103,7 @@ const WhatsAppIcon = ({ className }) => (
   </svg>
 );
 
-const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate, onOpenChat }) => {
+const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate, onOpenChat, activationState, ahaOverlayActive = false, forceStartTour, onForceStartTourConsumed }) => {
   const { token, canViewAll } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
@@ -117,6 +118,9 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const socketRef = useRef(null);
   const [expandedNoteId, setExpandedNoteId] = useState(null);
   const [upcomingVisibleCount, setUpcomingVisibleCount] = useState(10);
+  // Swipe: aynı anda yalnızca bir kart açık tutulur (lift edilmiş state)
+  const [openSwipeCardId, setOpenSwipeCardId] = useState(null);
+  const [openSwipeCardSide, setOpenSwipeCardSide] = useState(null);
   // Session Planner States
   const [showSessionPlanner, setShowSessionPlanner] = useState(false);
   const [sessionPlannerAppointment, setSessionPlannerAppointment] = useState(null);
@@ -219,12 +223,41 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       loadPersonnelStats();
     }
     
-    // --- TUR KONTROLÜ (LOCAL STORAGE) ---
-    if (dashboardTourStorageKey && !localStorage.getItem(dashboardTourStorageKey)) {
+    // --- TUR KONTROLÜ (LOCAL STORAGE + AHA STATE GATING) ---
+    // Aha akışı admin için DEFINITIVE terminal state'e ulaştığında turu açabiliriz.
+    // 'pending_aha_appointment' veya 'aha_wa_failed' iken App.js Aha overlay'ini gösterir,
+    // tur ekrana çıkmaz (overlay zaten ekranı yönetir).
+    // Önemli: activationState undefined (currentUser henüz yüklenmedi) iken
+    // turu başlatmıyoruz — aksi halde Aha spotlight ile tur AYNI ANDA açılabilir.
+    const ahaTerminalForTour =
+      activationState === 'aha_completed' ||
+      activationState === 'aha_skipped' ||
+      activationState === 'skip_aha_no_phone' ||
+      activationState === 'not_applicable';
+
+    // Staff turu görmemeli (sadece admin için) + Aha state definitive terminal olmalı
+    const tourEligible = userRole === 'admin' && ahaTerminalForTour;
+
+    // ahaOverlayActive: Aha spotlight/celebration/error overlay ekrandayken
+    // turu başlatmıyoruz — yoksa welcome dialog Aha celebration üstüne biner.
+    if (ahaOverlayActive) return;
+
+    // forceStartTour=true → localStorage flag'ine bakmadan turu zorla başlat (Aha akışı sonrası)
+    if (forceStartTour && tourEligible) {
+      setTimeout(() => setRunTour(true), 400);
+      if (onForceStartTourConsumed) onForceStartTourConsumed();
+      return;
+    }
+
+    if (
+      tourEligible &&
+      dashboardTourStorageKey &&
+      !localStorage.getItem(dashboardTourStorageKey)
+    ) {
       // Sayfa tam yüklensin diye azıcık beklet
       setTimeout(() => setRunTour(true), 1000);
     }
-  }, [userRole, loadPersonnelStats, dashboardTourStorageKey]);
+  }, [userRole, loadPersonnelStats, dashboardTourStorageKey, activationState, forceStartTour, onForceStartTourConsumed, ahaOverlayActive]);
 
   useEffect(() => { if (settings !== null) loadStaffMembers(); }, [settings, userRole]);
   useEffect(() => { if (userRole === 'staff' && !canViewAll) loadPersonnelStats(); }, [appointments.length, userRole, canViewAll, loadPersonnelStats]);
@@ -348,7 +381,28 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     return true;
   }).filter(apt => staffFilter === "all" || apt.staff_member_id === staffFilter).sort((a, b) => (a.appointment_date || a.date).localeCompare(b.appointment_date || b.date));
 
-  const getStaffName = (id) => { const staff = staffMembers.find(s => s.username === id); return staff?.full_name || staff?.username; };
+  // getStaffName mantığı:
+  //  - id staffMembers içinde eşleşirse → full_name veya username göster (rozet)
+  //  - id eşleşmezse → null dön → rozet GİZLENİR.
+  //
+  // Bu davranış, üç senaryoyu doğru yönetir:
+  //   1. admin_provides_service=false + personel yok: loadStaffMembers admin'i
+  //      listeye EKLEMEZ; admin'e atanmış public booking için find başarısız →
+  //      rozet gizli (admin "sadece işletme sahibi", personel değil). Sorun 1.
+  //   2. admin_provides_service=true + personel yok: admin LİSTEYE EKLENİR;
+  //      admin'e atanmış randevuda find başarılı → rozet "Admin Adı" görünür
+  //      (admin personel gibi davranıyor; kullanıcı bunu istiyor).
+  //   3. Gerçek personeli olan org: normal akış.
+  //
+  // Trade-off: staffMembers async yüklenirken (settings çekilip useEffect tetiklenene
+  // kadar ~100-300ms) ilk render'da rozet görünmez, sonra yüklenince belirir.
+  // Bu, admin email'in karta sızması riskinden (önceki raw id fallback) daha güvenli.
+  const getStaffName = (id) => {
+    if (!id) return null;
+    const staff = staffMembers.find(s => s.username === id);
+    if (staff) return staff.full_name || staff.username;
+    return null;
+  };
 
   const displayCount = (userRole === 'admin' || canViewAll) ? stats?.today_appointments || 0 : todayAppointments.length;
   const displayRevenue = (userRole === 'admin' || canViewAll)
@@ -379,10 +433,34 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     const isCompleted = apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed');
     const hasNote = apt.notes && apt.notes.trim().length > 0;
     const isExpanded = expandedNoteId === apt.id;
-    return (
+
+    const swipeIsOpen = openSwipeCardId === apt.id ? openSwipeCardSide : null;
+    const handleSwipeOpenChange = (next) => {
+      if (next === null) {
+        if (openSwipeCardId === apt.id) {
+          setOpenSwipeCardId(null);
+          setOpenSwipeCardSide(null);
+        }
+      } else {
+        setOpenSwipeCardId(apt.id);
+        setOpenSwipeCardSide(next);
+      }
+    };
+
+    const handleSwipeEdit = () => onEditAppointment(apt);
+    const handleSwipeCancel = () => {
+      if (['paid', 'deposit_paid'].includes(apt.payment_status)) {
+        setCancelRefundDialog(apt);
+      } else {
+        handleStatusChange(apt.id, t('dashboard.status.cancelled'));
+      }
+    };
+    const handleSwipeDelete = () => setDeleteDialog(apt);
+    const handleCardTap = () => { if (hasNote) toggleNote(apt.id); };
+
+    const cardInner = (
       <div
         key={apt.id}
-        onClick={() => hasNote && toggleNote(apt.id)}
         className={`bg-white rounded-xl p-4 border border-gray-200 border-l-4 shadow-sm hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 ${isCancelled ? 'opacity-60' : ''} ${hasNote ? 'cursor-pointer' : ''} ${apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'border-l-amber-400' : apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed') ? 'border-l-green-500' : isCancelled ? 'border-l-red-500' : 'border-l-gray-300'}`}
       >
         <div className="flex gap-4">
@@ -458,6 +536,21 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         )}
       </div>
     );
+
+    return (
+      <SwipeableAppointmentCard
+        key={apt.id}
+        disabled={isCancelled || isCompleted}
+        isOpen={swipeIsOpen}
+        onOpenChange={handleSwipeOpenChange}
+        onEdit={handleSwipeEdit}
+        onCancel={handleSwipeCancel}
+        onDelete={handleSwipeDelete}
+        onTap={handleCardTap}
+      >
+        {cardInner}
+      </SwipeableAppointmentCard>
+    );
   };
 
   return (
@@ -505,9 +598,12 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         </div>
 
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-          {/* Sol Taraf: Karşılama */}
-          <div className="tour-greeting"> {/* CLASS EKLENDI */}
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+          {/* Sol Taraf: Karşılama
+              pr-32 sm:pr-0 → Mobilde sağ üstteki absolute butonların (Takvim FAB
+              + AI Asistan) altına binmeyi engelle. flex-wrap → uzun isim + emoji
+              tek satıra sığmazsa alt satıra düşsün. */}
+          <div className="tour-greeting pr-28 sm:pr-0">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex flex-wrap items-center gap-x-2 gap-y-1">
               {greeting.text}, <span className="text-gray-700">{currentUserName}</span> <span className="text-2xl">{greeting.emoji}</span>
             </h1>
             <p className="text-base md:text-lg text-gray-600 font-medium mt-1.5 leading-relaxed">
@@ -670,11 +766,31 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 (() => {
                   const hasNote = apt.notes && apt.notes.trim().length > 0;
                   const isExpanded = expandedNoteId === apt.id;
-                  return (
+                  const isCancelledU = apt.status === "İptal" || apt.status === "İptal Edildi" || apt.status === "Cancelled" || apt.status === t('dashboard.status.cancelled');
+                  const isCompletedU = apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed');
+                  const swipeIsOpenU = openSwipeCardId === apt.id ? openSwipeCardSide : null;
+                  const handleSwipeOpenChangeU = (next) => {
+                    if (next === null) {
+                      if (openSwipeCardId === apt.id) {
+                        setOpenSwipeCardId(null);
+                        setOpenSwipeCardSide(null);
+                      }
+                    } else {
+                      setOpenSwipeCardId(apt.id);
+                      setOpenSwipeCardSide(next);
+                    }
+                  };
+                  const handleSwipeCancelU = () => {
+                    if (['paid', 'deposit_paid'].includes(apt.payment_status)) {
+                      setCancelRefundDialog(apt);
+                    } else {
+                      handleStatusChange(apt.id, t('dashboard.status.cancelled'));
+                    }
+                  };
+                  const upcomingInner = (
                     <div
                       key={apt.id}
-                      onClick={() => hasNote && toggleNote(apt.id)}
-                      className={`p-4 hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 md:bg-white md:rounded-xl md:border md:border-gray-200 md:shadow-sm ${hasNote ? 'cursor-pointer' : ''}`}
+                      className={`p-4 bg-white hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 md:rounded-xl md:border md:border-gray-200 md:shadow-sm ${hasNote ? 'cursor-pointer' : ''}`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
@@ -690,21 +806,29 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                             </div>
                           </div>
                         </div>
-                        <ScrollSafeDropdown
-                          trigger={
-                            <Button variant="ghost" size="sm" type="button" className="transition-all hover:scale-105 active:scale-95">
-                              <MoreVertical className="w-4 h-4 text-gray-400" />
-                            </Button>
-                          }
-                        >
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}>
-                            <Edit className="w-4 h-4 mr-2" /> {t('common.edit')}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDeleteDialog(apt); }} className="text-red-600">
-                            <Trash2 className="w-4 h-4 mr-2" /> {t('common.delete')}
-                          </DropdownMenuItem>
-                        </ScrollSafeDropdown>
+                        <div className="flex items-center gap-2">
+                          {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
+                            <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded text-gray-600 border border-gray-100 shadow-sm">
+                              <User className="w-3 h-3" />
+                              <span className="text-xs font-bold">{getStaffName(apt.staff_member_id)}</span>
+                            </div>
+                          )}
+                          <ScrollSafeDropdown
+                            trigger={
+                              <Button variant="ghost" size="sm" type="button" className="transition-all hover:scale-105 active:scale-95">
+                                <MoreVertical className="w-4 h-4 text-gray-400" />
+                              </Button>
+                            }
+                          >
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}>
+                              <Edit className="w-4 h-4 mr-2" /> {t('common.edit')}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDeleteDialog(apt); }} className="text-red-600">
+                              <Trash2 className="w-4 h-4 mr-2" /> {t('common.delete')}
+                            </DropdownMenuItem>
+                          </ScrollSafeDropdown>
+                        </div>
                       </div>
 
                       {isExpanded && hasNote && (
@@ -716,6 +840,20 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                         </div>
                       )}
                     </div>
+                  );
+                  return (
+                    <SwipeableAppointmentCard
+                      key={apt.id}
+                      disabled={isCancelledU || isCompletedU}
+                      isOpen={swipeIsOpenU}
+                      onOpenChange={handleSwipeOpenChangeU}
+                      onEdit={() => onEditAppointment(apt)}
+                      onCancel={handleSwipeCancelU}
+                      onDelete={() => setDeleteDialog(apt)}
+                      onTap={() => { if (hasNote) toggleNote(apt.id); }}
+                    >
+                      {upcomingInner}
+                    </SwipeableAppointmentCard>
                   );
                 })()
               ))}

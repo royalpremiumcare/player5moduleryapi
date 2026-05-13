@@ -37,6 +37,10 @@ import MarketingPanel from "@/components/MarketingPanel";
 import { computeHasActiveSessions } from "@/lib/sessionPackageNav";
 import SetupWizard from "@/components/SetupWizard";
 import ChatWidget from "@/components/ChatWidget";
+import AhaSpotlight from "@/components/AhaSpotlight";
+import AhaCelebration from "@/components/AhaCelebration";
+import AhaErrorScreen from "@/components/AhaErrorScreen";
+import posthog from "@/lib/posthog";
 import { Briefcase, DollarSign, SettingsIcon, Users, Upload, LogOut, Moon, Sun, UserCog, FileText, Home, Plus, CreditCard, User, HelpCircle, Package, Bell, Layers, Calendar } from "lucide-react";
 import { useTheme } from "./context/ThemeContext";
 import { useTranslation } from "react-i18next";
@@ -77,6 +81,13 @@ function App() {
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+
+  // ===== AHA ACTIVATION STATE =====
+  // 'idle' | 'spotlight' | 'triggering' | 'celebration' | 'error' | 'skipped'
+  const [ahaUiState, setAhaUiState] = useState('idle');
+  const [ahaRetryCount, setAhaRetryCount] = useState(0);
+  const [ahaLastError, setAhaLastError] = useState(null);
+  const [forceStartTour, setForceStartTour] = useState(false);
 
   const hasActiveSessions = useMemo(
     () => computeHasActiveSessions(appointments),
@@ -322,10 +333,10 @@ function App() {
     if (userRole === 'admin') {
       try {
         const response = await api.get("/users");
-        const authToken = token || localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-        if (authToken) {
-          const payload = JSON.parse(atob(authToken.split('.')[1]));
-          const username = payload.sub;
+        if (response.status === 200) {
+          // Mevcut kullanıcının username'ini token'dan al
+          const tokenPayload = JSON.parse(atob(token.split('.')[1]));
+          const username = tokenPayload.sub;
           const user = response.data?.find(u => u.username === username);
           
           if (user) {
@@ -333,6 +344,17 @@ function App() {
             // Admin ve onboarding tamamlanmamışsa sihirbazı göster
             if (user.role === 'admin' && !user.onboarding_completed) {
               if (ENABLE_SETUP_WIZARD) setShowOnboarding(true);
+            }
+            // Aha activation state machine — yalnızca admin
+            if (user.role === 'admin') {
+              const aState = user.activation_state;
+              if (aState === 'pending_aha_appointment') {
+                setAhaUiState('spotlight');
+              } else if (aState === 'aha_wa_failed') {
+                setAhaUiState('error');
+                setAhaLastError(user.aha_wa_last_error || null);
+              }
+              // aha_completed / aha_skipped / skip_aha_no_phone / not_applicable → idle
             }
           }
         }
@@ -948,13 +970,136 @@ function App() {
     }
     setShowForm(false);
     setSelectedAppointment(null);
+
+    // Funnel: first_real_appointment_created — Aha sonrası ilk gerçek randevu
+    // Tek seferlik trigger; her admin için localStorage flag'i ile dedupe edilir.
+    try {
+      if (userRole === 'admin' && currentUser?.user_id) {
+        const flagKey = `aha_first_real_apt_tracked:${currentUser.user_id}`;
+        if (!localStorage.getItem(flagKey)) {
+          posthog.track('first_real_appointment_created');
+          localStorage.setItem(flagKey, '1');
+        }
+      }
+    } catch (_) {}
     console.log("✅ Appointments refreshed, form closed");
   };
   const handleEditAppointment = (appointment) => {
     setSelectedAppointment(appointment);
     setShowForm(true);
   };
+
+  // ===== AHA ACTIVATION HANDLERS =====
+  const triggerAha = useCallback(async () => {
+    if (ahaUiState === 'triggering') return;
+    const isRetry = ahaRetryCount > 0;
+    setAhaUiState('triggering');
+    setAhaLastError(null);
+    // Event: ilk tetikleme button_clicked, sonrakiler retry_clicked
+    posthog.track(isRetry ? 'aha_retry_clicked' : 'aha_button_clicked', {
+      attempt_no: ahaRetryCount + 1,
+    });
+    try {
+      const response = await api.post('/onboarding/aha-test-appointment', {});
+      const data = response?.data || {};
+      if (data.activation_state === 'aha_completed') {
+        setCurrentUser((prev) => prev ? { ...prev, activation_state: 'aha_completed' } : prev);
+        setAhaUiState('celebration');
+        posthog.track('aha_appointment_created', {
+          wa_status: 'sent',
+          service_id: data.appointment?.service_id,
+        });
+      } else if (data.activation_state === 'aha_wa_failed') {
+        setCurrentUser((prev) => prev ? { ...prev, activation_state: 'aha_wa_failed' } : prev);
+        setAhaLastError(data.wa_error || 'wa_delivery_failed');
+        setAhaRetryCount((c) => c + 1);
+        setAhaUiState('error');
+        posthog.track('aha_appointment_created', {
+          wa_status: 'failed',
+          service_id: data.appointment?.service_id,
+        });
+        posthog.track('aha_wa_failed', {
+          error: (data.wa_error || 'unknown').slice(0, 200),
+          attempt_no: ahaRetryCount + 1,
+        });
+      } else {
+        // Beklenmeyen yanıt → güvenli fallback
+        setAhaLastError(`unexpected_state:${data.activation_state || 'unknown'}`);
+        setAhaUiState('error');
+      }
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      if (detail === 'support_phone_missing') {
+        // Backend skip_aha_no_phone state'ine aldı; klasik tura geç
+        setCurrentUser((prev) => prev ? { ...prev, activation_state: 'skip_aha_no_phone' } : prev);
+        setAhaUiState('skipped');
+        setForceStartTour(true);
+        posthog.track('aha_skipped', { reason: 'no_phone' });
+        return;
+      }
+      const code = err?.response?.status || 'network';
+      const errMsg = `http_${code}: ${detail || err?.message || 'unknown'}`;
+      setAhaLastError(errMsg);
+      setAhaRetryCount((c) => c + 1);
+      setAhaUiState('error');
+      posthog.track('aha_wa_failed', {
+        error: errMsg.slice(0, 200),
+        attempt_no: ahaRetryCount + 1,
+      });
+    }
+  }, [ahaUiState, ahaRetryCount]);
+
+  const handleAhaSkip = useCallback(async (reason = 'user_choice') => {
+    try {
+      await api.post('/onboarding/aha-skip', { reason });
+    } catch (err) {
+      // Skip best-effort: backend ulaşılamasa bile client tarafı continue etsin
+      console.warn('Aha skip endpoint failed; continuing client-side:', err);
+    }
+    setCurrentUser((prev) => prev ? { ...prev, activation_state: 'aha_skipped' } : prev);
+    setAhaUiState('skipped');
+    setForceStartTour(true);
+    posthog.track('aha_skipped', { reason });
+  }, []);
+
+  const handleAhaSpotlightFallback = useCallback(() => {
+    // DOM hedefi 500ms içinde bulunamadı — state değişmez, sadece klasik tura geç
+    setAhaUiState('idle');
+    setForceStartTour(true);
+    posthog.track('aha_target_missing', { route: window.location.pathname });
+  }, []);
+
+  const handleAhaSpotlightShown = useCallback(() => {
+    posthog.track('aha_spotlight_shown', {
+      support_phone_present: Boolean(currentUser?.activation_state === 'pending_aha_appointment'),
+    });
+  }, [currentUser]);
+
+  const handleAhaCelebrationContinue = useCallback(() => {
+    setAhaUiState('idle');
+    setForceStartTour(true);
+  }, []);
+
+  const handleAhaCelebrationDismiss = useCallback(({ autoAdvanced } = {}) => {
+    posthog.track('aha_celebration_dismissed', { auto_advanced: !!autoAdvanced });
+  }, []);
+
+  const handleAhaErrorDismiss = useCallback(() => {
+    // X ile kapatma: state değişmez, sadece UI gizlenir; sonraki login'de tekrar çıkar
+    setAhaUiState('idle');
+    posthog.track('aha_modal_dismissed_without_choice');
+  }, []);
+
   const handleNewAppointment = () => {
+    // Aha modunda klasik form yerine endpoint'i tetikle
+    if (
+      userRole === 'admin' &&
+      currentUser?.activation_state === 'pending_aha_appointment' &&
+      ahaUiState !== 'triggering'
+    ) {
+      triggerAha();
+      return;
+    }
     setSelectedAppointment(null);
     setShowForm(true);
   };
@@ -1154,6 +1299,10 @@ function App() {
             appointments={appointments}
             stats={stats}
             userRole={userRole}
+            activationState={currentUser?.activation_state}
+            ahaOverlayActive={ahaUiState !== 'idle'}
+            forceStartTour={forceStartTour}
+            onForceStartTourConsumed={() => setForceStartTour(false)}
             onEditAppointment={handleEditAppointment}
             onNewAppointment={handleNewAppointment}
             onNavigate={(view) => {
@@ -1401,10 +1550,13 @@ function App() {
               </button>
             )}
 
-            {/* Yeni Randevu Ekle (Ana Renk - Mavi) */}
+            {/* Yeni Randevu Ekle — premium minimal zinc-900.
+                .tour-new-appointment yuvarlak kalsın diye outline'ı nokta nokta
+                değil tam yuvarlak halo veriyoruz; tour highlight'ın kare
+                kutusunu görünmez yapmak için ::before halo bizim verdiğimiz. */}
             <button
               onClick={handleNewAppointment}
-              className="flex items-center justify-center w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors -mt-4 tour-new-appointment"
+              className="aha-fab-plus relative flex items-center justify-center w-14 h-14 bg-zinc-900 text-white rounded-full shadow-lg hover:bg-zinc-800 active:scale-95 transition -mt-4 tour-new-appointment"
             >
               <Plus className="w-6 h-6" />
             </button>
@@ -1447,6 +1599,40 @@ function App() {
           externalOpen={chatOpen}
           onExternalClose={() => setChatOpen(false)}
         />
+      )}
+
+      {/* ===== AHA ACTIVATION OVERLAY'LERİ ===== */}
+      {/* Yalnızca admin + dashboard view + form kapalı + setup wizard kapalı iken */}
+      {token && userRole === 'admin' && currentUser && currentView === 'dashboard' && !showForm && !showOnboarding && (
+        <>
+          {/* Spotlight: pending_aha_appointment iken */}
+          {(ahaUiState === 'spotlight' || ahaUiState === 'triggering') && (
+            <AhaSpotlight
+              loading={ahaUiState === 'triggering'}
+              onTrigger={triggerAha}
+              onFallback={handleAhaSpotlightFallback}
+              onShown={handleAhaSpotlightShown}
+            />
+          )}
+          {/* Celebration: aha_completed sonrası */}
+          {ahaUiState === 'celebration' && (
+            <AhaCelebration
+              onContinue={handleAhaCelebrationContinue}
+              onDismiss={handleAhaCelebrationDismiss}
+            />
+          )}
+          {/* Error: aha_wa_failed iken */}
+          {ahaUiState === 'error' && (
+            <AhaErrorScreen
+              onRetry={triggerAha}
+              onSkip={() => handleAhaSkip('wa_failed')}
+              onDismiss={handleAhaErrorDismiss}
+              retryCount={ahaRetryCount}
+              retrying={ahaUiState === 'triggering'}
+              lastError={ahaLastError}
+            />
+          )}
+        </>
       )}
       
       {/* Toaster bileşenini safe-area kadar aşağı itiyoruz */}

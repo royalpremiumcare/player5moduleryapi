@@ -9,6 +9,11 @@ import './i18n'; // i18n configuration
 import AppRouter from './AppRouter';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import posthog from './lib/posthog';
+
+// === POSTHOG ANALYTICS ===
+// REACT_APP_POSTHOG_KEY yoksa otomatik olarak no-op'a düşer; ledger POST'ları yine çalışır.
+posthog.init().catch((err) => console.warn('PostHog init failed:', err));
 
 // === SENTRY ERROR TRACKING ===
 Sentry.init({

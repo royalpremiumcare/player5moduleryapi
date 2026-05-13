@@ -33,6 +33,46 @@ class UserInDB(BaseModel):
     staff_member_id: Optional[str] = None
     created_at: Optional[str] = None
     can_view_all_appointments: bool = False
+    # Aha activation flow + stable identity (lazy-backfilled)
+    user_id: Optional[str] = None
+    activation_state: Optional[str] = None
+    aha_skipped_reason: Optional[str] = None
+    aha_skipped_at: Optional[str] = None
+    aha_wa_message_id: Optional[str] = None
+    aha_wa_last_error: Optional[str] = None
+    aha_appointment_id: Optional[str] = None
+    first_appointment_at: Optional[str] = None
+
+
+async def _ensure_user_identity_fields(db: AsyncIOMotorDatabase, user_doc: dict) -> dict:
+    """
+    Lazy backfill: ilk okuma anında eksik `user_id` (UUID) ve `activation_state`
+    alanlarını doldurur. Mevcut admin'ler `aha_skipped` (legacy) olarak işaretlenir
+    ki sürpriz Aha overlay'i çıkmasın.
+    """
+    import uuid as _uuid
+    updates = {}
+    if not user_doc.get("user_id"):
+        updates["user_id"] = str(_uuid.uuid4())
+    if not user_doc.get("activation_state"):
+        role = user_doc.get("role") or "staff"
+        if role != "admin":
+            updates["activation_state"] = "not_applicable"
+        elif bool(user_doc.get("onboarding_completed")):
+            updates["activation_state"] = "aha_skipped"
+            updates["aha_skipped_reason"] = "legacy_backfill"
+        else:
+            updates["activation_state"] = "pending_aha_appointment"
+    if updates:
+        try:
+            await db.users.update_one(
+                {"username": user_doc.get("username")},
+                {"$set": updates},
+            )
+            user_doc.update(updates)
+        except Exception as e:
+            logger.warning(f"Identity backfill failed for {user_doc.get('username')}: {e}")
+    return user_doc
 
 
 async def get_current_user(
@@ -63,7 +103,10 @@ async def get_current_user(
         
         if user_doc is None:
             raise credentials_exception
-        
+
+        # Lazy backfill stable user_id + activation_state for legacy users
+        user_doc = await _ensure_user_identity_fields(db, user_doc)
+
         return UserInDB(**user_doc)
     
     except Exception as e:

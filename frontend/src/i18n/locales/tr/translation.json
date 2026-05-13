@@ -1256,6 +1256,31 @@
     "subscriptionInfo": "Abonelik ve faturalandırma işlemleri web sitemiz üzerinden yönetilir. Devam ettiğinizde abonelik sayfasına otomatik olarak yönlendirilirsiniz.",
     "goToWebsite": "Web Sitesine Git"
   },
+  "aha": {
+    "spotlight": {
+      "badge": "İlk adım",
+      "title": "İlk randevunu birlikte oluşturalım",
+      "tooltip": "Vurgulanan + butonuna dokun. Telefonuna saniyeler içinde bir doğrulama mesajı düşecek — müşterilerinin alacağı onayın aynısı.",
+      "loading": "Mesajın hazırlanıyor — birkaç saniye…",
+      "tapTarget": "İlk randevunu oluştur"
+    },
+    "celebration": {
+      "deliveredBadge": "Mesaj iletildi",
+      "title": "Mesaj telefonunda 🎉",
+      "body": "Müşterilerin tam bu hızda haber alacak. Şimdi seni 60 saniyelik kısa bir gezintiye çıkaralım — gerisi çok daha kolay.",
+      "cta": "Hadi turu başlatalım",
+      "autoHint": "Birazdan kendiliğinden devam edecek"
+    },
+    "error": {
+      "title": "Mesaj şu an iletilemedi",
+      "body": "WhatsApp tarafında geçici bir aksaklık olmuş gibi. Birkaç saniye içinde yeniden dene; sorun devam ederse klasik tura kayabilirsin.",
+      "retry": "Yeniden dene",
+      "retrying": "Yeniden deneniyor…",
+      "skip": "Klasik tura geç",
+      "skipping": "Klasik tura geçiliyor…",
+      "nudge": "Sorun devam ediyor; klasik tura geçmek hızlı bir çıkış yolu."
+    }
+  },
   "tour": {
     "welcome": "PLANN'a Hoş Geldiniz{{name}}! İşinizi kolaylaştıracak özellikleri keşfetmek için kısa bir tura ne dersiniz?",
     "greeting": "Burası sizin kontrol paneliniz. Tarihi ve size özel bildirimleri burada görebilirsiniz.",

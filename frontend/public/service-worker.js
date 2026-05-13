@@ -1,5 +1,5 @@
 // PLANN PWA Service Worker
-const CACHE_NAME = 'plann-cache-v6';
+const CACHE_NAME = 'plann-cache-v19';
 const OFFLINE_URL = '/offline.html';
 
 // Önbelleğe alınacak statik kaynaklar

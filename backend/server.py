@@ -1,5 +1,8 @@
 from voice_ai_service import get_voice_ai_service
 from whatsapp_service import send_whatsapp_template, detect_language_from_phone
+from funnel_registry import is_frontend_owned, is_valid_event
+from funnel_service import ensure_funnel_indexes, record_funnel_event, track_webhook_event
+from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -941,6 +944,12 @@ async def lifespan(app: FastAPI):
             await app.db.contact_requests.create_index([("created_at", -1)])
             await app.db.contact_requests.create_index([("status", 1)])
 
+            # Funnel events ledger (activation + dropoff + subscription funnel)
+            try:
+                await ensure_funnel_indexes(app.db)
+            except Exception as idx_funnel:
+                logging.debug(f"funnel_events index creation skipped: {idx_funnel}")
+
             await app.db.operation_audit_logs.create_index(
                 [("organization_id", 1), ("created_at", -1)]
             )
@@ -1693,6 +1702,40 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else: expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire}); encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+async def _ensure_user_identity_fields(db, user: dict) -> dict:
+    """
+    Lazy backfill: mevcut kullanıcılarda eksik olan stable `user_id` ve `activation_state`
+    alanlarını ilk okuma anında doldurur. Migration script gerekmez.
+
+    `user_id` (UUID): PostHog distinct_id'nin sabit kaynağı; username değişse bile kalır.
+    `activation_state`: Aha onboarding state machine.
+    """
+    updates = {}
+    if not user.get("user_id"):
+        updates["user_id"] = str(uuid.uuid4())
+    if not user.get("activation_state"):
+        role = user.get("role") or "admin"
+        onboarding_done = bool(user.get("onboarding_completed"))
+        if role != "admin":
+            updates["activation_state"] = "not_applicable"
+        elif onboarding_done:
+            # Mevcut admin zaten klasik turu görmüş — sürpriz overlay olmasın
+            updates["activation_state"] = "aha_skipped"
+            updates["aha_skipped_reason"] = "legacy_backfill"
+        else:
+            updates["activation_state"] = "pending_aha_appointment"
+    if updates:
+        try:
+            await db.users.update_one(
+                {"username": user.get("username")},
+                {"$set": updates},
+            )
+            user.update(updates)
+        except Exception as e:
+            logging.warning(f"Identity backfill failed for {user.get('username')}: {e}")
+    return user
+
+
 async def get_user_from_db(request: Request, username: str, db=None):
     if db is None:
         await ensure_db_connection(request); db = getattr(request.app, 'db', None)
@@ -1701,7 +1744,9 @@ async def get_user_from_db(request: Request, username: str, db=None):
     # Önce tam eşleşme dene
     user = await db.users.find_one({"username": username}, {"_id": 0})
     if user:
-        try: return UserInDB(**user)
+        try:
+            user = await _ensure_user_identity_fields(db, user)
+            return UserInDB(**user)
         except Exception as e: logging.warning(f"Kullanıcı veritabanında, ancak UserInDB modeline uymuyor: {e}"); return None
     
     # Tam eşleşme yoksa, case-insensitive arama yap (email için)
@@ -1709,7 +1754,9 @@ async def get_user_from_db(request: Request, username: str, db=None):
         import re
         user = await db.users.find_one({"username": {"$regex": f"^{re.escape(username)}$", "$options": "i"}}, {"_id": 0})
         if user:
-            try: return UserInDB(**user)
+            try:
+                user = await _ensure_user_identity_fields(db, user)
+                return UserInDB(**user)
             except Exception as e: logging.warning(f"Kullanıcı veritabanında (case-insensitive), ancak UserInDB modeline uymuyor: {e}"); return None
     
     return None
@@ -2033,7 +2080,7 @@ async def create_audit_log(
 # === VERİ MODELLERİ (Aynı kaldı) ===
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    id: Optional[str] = None; username: str; full_name: Optional[str] = None; language: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=list); onboarding_completed: bool = False; breaks: List[dict] = Field(default_factory=list); can_view_all_appointments: bool = False
+    id: Optional[str] = None; user_id: Optional[str] = None; username: str; full_name: Optional[str] = None; language: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=list); onboarding_completed: bool = False; activation_state: Optional[str] = None; aha_skipped_reason: Optional[str] = None; aha_skipped_at: Optional[str] = None; aha_wa_message_id: Optional[str] = None; aha_wa_last_error: Optional[str] = None; aha_appointment_id: Optional[str] = None; first_appointment_at: Optional[str] = None; breaks: List[dict] = Field(default_factory=list); can_view_all_appointments: bool = False
 class UserInDB(User): hashed_password: Optional[str] = None
 class UserCreate(BaseModel): username: str; password: str; full_name: Optional[str] = None; organization_name: Optional[str] = None; support_phone: Optional[str] = None; sector: Optional[str] = None
 class Token(BaseModel): access_token: str; token_type: str
@@ -2386,37 +2433,82 @@ class AuditLog(BaseModel):
     ip_address: Optional[str] = None
 
 # === GÜVENLİK API ENDPOINT'LERİ ===
-@api_router.post("/register", response_model=User)
-@rate_limit(LIMITS['register']) 
-async def register_user(request: Request, user_in: UserCreate, db = Depends(get_db)):
+
+async def _validate_register_input(request: Request, user_in: UserCreate, db) -> tuple[str, str]:
+    """Kayıt validasyonları — email/telefon/slug uniqueness + dil çıkarımı.
+
+    Hem `/register` (eski, doğrudan hesap açma) hem `/register-initiate`
+    (WhatsApp OTP akışı) tarafından paylaşılır. Validation hatası HTTPException
+    fırlatır; başarılıysa `(slug, lang)` döner.
+
+    Telefon uniqueness'i kritik güvenlik kontrolüdür: aynı support_phone ile
+    iki işletme açılırsa, kötü niyetli bir kullanıcı başka bir işletmenin
+    numarasıyla org açıp Aha akışı / public booking üzerinden o numaraya
+    WhatsApp mesajı tetikleyebilir.
+    """
     existing_user = await get_user_from_db(request, user_in.username, db=db)
-    if existing_user: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This username is already registered.")
-    
-    # Yeni organization ID oluştur
-    new_org_id = str(uuid.uuid4())
-    hashed_password = get_password_hash(user_in.password)
-    
-    # Slug oluştur (organization_name'den)
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This username is already registered.")
+
+    support_phone = (user_in.support_phone or "").strip()
+    if support_phone:
+        normalized = re.sub(r'\D', '', support_phone)
+        if normalized and len(normalized) >= 10:
+            # Public booking ile aynı flex-regex deseni: depolanan numara
+            # boşluk/tire/parantez/+ içerebilir, son 10 hane karşılaştırılır.
+            suffix = normalized[-10:]
+            flex_regex = r"\D*" + r"\D*".join(re.escape(d) for d in suffix) + r"$"
+            existing_phone_org = await db.settings.find_one(
+                {"support_phone": {"$regex": flex_regex}},
+                {"_id": 0, "organization_id": 1},
+            )
+            if existing_phone_org:
+                logging.warning(
+                    f"🛡️ Register blocked: phone {support_phone} already used by org {existing_phone_org.get('organization_id')}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Bu telefon numarası başka bir işletme tarafından kullanılıyor. Lütfen farklı bir numara girin.",
+                )
+
     base_slug = slugify(user_in.organization_name or user_in.username)
     if not base_slug:
         raise HTTPException(status_code=400, detail="İşletme adı geçerli karakter içermelidir.")
-    
     existing_slug = await db.users.find_one({"slug": base_slug})
     if existing_slug:
         raise HTTPException(
             status_code=400,
             detail="Bu işletme adı zaten kullanılıyor veya mevcut bir işletmeyle çok benzer. Lütfen farklı bir işletme adı seçin."
         )
-    unique_slug = base_slug
-    
-    # User kaydını oluştur
+
     accept_language = request.headers.get('Accept-Language', '')
     request_lang = get_request_language(request) if accept_language else None
     lang = request_lang or get_email_language(user_in.username)
     if lang not in ['tr', 'en']:
         lang = 'tr'
+
+    return base_slug, lang
+
+
+@api_router.post("/register", response_model=User)
+@rate_limit(LIMITS['register']) 
+async def register_user(request: Request, user_in: UserCreate, db = Depends(get_db)):
+    base_slug, lang = await _validate_register_input(request, user_in, db)
+    unique_slug = base_slug
+
+    # Yeni organization ID oluştur
+    new_org_id = str(uuid.uuid4())
+    hashed_password = get_password_hash(user_in.password)
+    # Stable user_id (UUID) — PostHog distinct_id'nin sabit kaynağı.
+    # Username değişse bile funnel parçalanmaz.
+    new_user_id = str(uuid.uuid4())
+
+    # support_phone yoksa Aha akışı atlanır; klasik tour başlar.
+    support_phone_value = (user_in.support_phone or "").strip()
+    initial_activation_state = "pending_aha_appointment" if support_phone_value else "skip_aha_no_phone"
+
     user_db_data = user_in.model_dump(exclude={"organization_name", "support_phone"})
-    user_db = UserInDB(**user_db_data, hashed_password=hashed_password, organization_id=new_org_id, role="admin", slug=unique_slug, permitted_service_ids=[], onboarding_completed=False, language=lang)
+    user_db = UserInDB(**user_db_data, user_id=new_user_id, hashed_password=hashed_password, organization_id=new_org_id, role="admin", slug=unique_slug, permitted_service_ids=[], onboarding_completed=False, activation_state=initial_activation_state, language=lang)
     user_doc = user_db.model_dump()
     user_doc["created_at"] = datetime.now(timezone.utc).isoformat()
     await db.users.insert_one(user_doc)
@@ -2506,7 +2598,26 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
             {"username": user_in.username},
             {"$set": {"permitted_service_ids": service_ids}}
         )
-    
+
+    # Aha akışı için owner-customer seed:
+    # support_phone varsa, /onboarding/aha-test-appointment endpoint'i bu profili
+    # bularak ilk randevuyu owner'ın kendi numarasına gönderir.
+    if support_phone_value:
+        try:
+            owner_customer_doc = {
+                "id": str(uuid.uuid4()),
+                "organization_id": new_org_id,
+                "name": user_in.full_name or user_in.username,
+                "phone": support_phone_value,
+                "source": "owner_self_seed",
+                "is_owner_profile": True,
+                "owner_user_id": new_user_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.customers.insert_one(owner_customer_doc)
+        except Exception as e:
+            logging.warning(f"Owner-customer seed başarısız ({user_in.username}): {e}")
+
     # Brevo ile hoş geldin e-postası gönder
     try:
         # Dil belirleme (kayıt sırasında belirlenen dil)
@@ -2619,6 +2730,445 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
     
     return User(**user_db.model_dump())
 
+
+# ============================================================================
+# === REGISTER OTP (WhatsApp doğrulama) ===
+# ============================================================================
+# Yeni hesap kaydında, public booking ile aynı pattern: önce numaraya 6 haneli
+# WhatsApp kodu gönderilir, kullanıcı kodu girince hesap oluşturulur. Mevcut
+# `randevu_dogrulama` template'i tekrar kullanılır (ek Meta approval gerekmez).
+
+class RegisterVerifyRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=6)
+    phone: str = Field(..., min_length=5, max_length=32)
+
+
+def _mask_phone(phone: str) -> str:
+    digits = re.sub(r'\D', '', phone or "")
+    if len(digits) < 4:
+        return "***"
+    return f"***{digits[-4:]}"
+
+
+async def _send_register_whatsapp_code(phone: str, code: str) -> bool:
+    """Public booking ile aynı `randevu_dogrulama` template'i ile kod gönder."""
+    try:
+        from whatsapp_service import format_phone_number, detect_language_from_phone
+        phone_clean = format_phone_number(phone)
+        wa_lang = detect_language_from_phone(phone)
+        wa_template_name = "randevu_dogrulama" if wa_lang == "TR" else "randevu_dogrulama_en"
+        wa_lang_code = "tr" if wa_lang == "TR" else "en"
+
+        wa_api_url = f"https://graph.facebook.com/{os.getenv('META_API_VERSION', 'v21.0')}/{os.getenv('META_PHONE_NUMBER_ID')}/messages"
+        wa_headers = {
+            "Authorization": f"Bearer {os.getenv('META_ACCESS_TOKEN')}",
+            "Content-Type": "application/json",
+        }
+        wa_payload = {
+            "messaging_product": "whatsapp",
+            "to": phone_clean,
+            "type": "template",
+            "template": {
+                "name": wa_template_name,
+                "language": {"code": wa_lang_code},
+                "components": [
+                    {"type": "body", "parameters": [{"type": "text", "text": code}]},
+                    {"type": "button", "sub_type": "url", "index": "0",
+                     "parameters": [{"type": "text", "text": code}]},
+                ],
+            },
+        }
+        wa_resp = await asyncio.to_thread(
+            lambda: requests.post(wa_api_url, json=wa_payload, headers=wa_headers, timeout=10)
+        )
+        if wa_resp.status_code == 200:
+            logging.info(f"📱 Register OTP gönderildi: {phone} → {code}")
+            return True
+        logging.warning(f"⚠️ Register OTP gönderilemedi: {wa_resp.status_code} {wa_resp.text[:200]}")
+        return False
+    except Exception as e:
+        logging.error(f"❌ Register OTP gönderim hatası: {e}")
+        return False
+
+
+@api_router.post("/register-initiate")
+@rate_limit(LIMITS['register'])
+async def register_initiate(request: Request, user_in: UserCreate, db = Depends(get_db)):
+    """Hesap KAYIT için WhatsApp OTP gönder. Hesap henüz oluşturulmaz."""
+    redis_client = getattr(request.app.state, 'redis_client', None)
+    if not redis_client:
+        raise HTTPException(status_code=503, detail="Doğrulama servisi şu an kullanılamıyor. Lütfen birkaç dakika sonra deneyin.")
+
+    # Aynı uniqueness/format validations
+    await _validate_register_input(request, user_in, db)
+
+    support_phone = (user_in.support_phone or "").strip()
+    if not support_phone:
+        raise HTTPException(status_code=400, detail="Doğrulama için telefon numarası gerekli.")
+    digits = re.sub(r'\D', '', support_phone)
+    if len(digits) < 10:
+        raise HTTPException(status_code=400, detail="Geçerli bir telefon numarası girin.")
+
+    # Flood koruması: aynı telefondan saatte en fazla 3 kod isteği
+    wa_key = f"plann:rate:reg_wa:{support_phone}"
+    wa_count = await redis_client.incr(wa_key)
+    if wa_count == 1:
+        await redis_client.expire(wa_key, 3600)
+    if wa_count > 3:
+        raise HTTPException(status_code=429, detail="Çok fazla doğrulama kodu istediniz. Lütfen 1 saat sonra tekrar deneyin.")
+
+    # 6 haneli kod üret + redis'e payload yaz (TTL 15dk)
+    code = str(secrets.randbelow(900000) + 100000)
+    code_key = f"plann:reg:pending:{code}"
+    phone_map_key = f"plann:reg:pending:phone:{support_phone}"
+    ttl = 900
+
+    # Aynı telefon için eski pending varsa eziyoruz (upsert)
+    old_code = await redis_client.get(phone_map_key)
+    if old_code:
+        old_str = old_code.decode() if isinstance(old_code, bytes) else old_code
+        await redis_client.delete(f"plann:reg:pending:{old_str}")
+
+    payload = user_in.model_dump()
+    await redis_client.setex(code_key, ttl, json.dumps(payload, ensure_ascii=False))
+    await redis_client.setex(phone_map_key, ttl, code)
+
+    # WhatsApp gönder
+    sent = await _send_register_whatsapp_code(support_phone, code)
+    if not sent:
+        # Redis temizle ki kullanıcı tekrar deneyebilsin (flood counter da düşsün)
+        await redis_client.delete(code_key)
+        await redis_client.delete(phone_map_key)
+        await redis_client.decr(wa_key)
+        raise HTTPException(status_code=502, detail="Doğrulama mesajı gönderilemedi. Lütfen tekrar deneyin veya birkaç dakika sonra tekrar girin.")
+
+    return {
+        "verification_required": True,
+        "expires_in": ttl,
+        "phone_masked": _mask_phone(support_phone),
+    }
+
+
+@api_router.post("/register-verify", response_model=Token)
+@rate_limit("20/hour")
+async def register_verify(request: Request, body: RegisterVerifyRequest, db = Depends(get_db)):
+    """Kayıt OTP'sini doğrula, hesabı oluştur, JWT token dön (otomatik login)."""
+    redis_client = getattr(request.app.state, 'redis_client', None)
+    if not redis_client:
+        raise HTTPException(status_code=503, detail="Doğrulama servisi şu an kullanılamıyor.")
+
+    code = (body.code or "").strip()
+    phone = (body.phone or "").strip()
+    if not re.fullmatch(r"\d{6}", code):
+        raise HTTPException(status_code=400, detail="Kod 6 haneli olmalıdır.")
+    if not phone:
+        raise HTTPException(status_code=400, detail="Telefon numarası gerekli.")
+
+    code_key = f"plann:reg:pending:{code}"
+    payload_raw = await redis_client.get(code_key)
+    if not payload_raw:
+        raise HTTPException(status_code=400, detail="Doğrulama kodu geçersiz veya süresi dolmuş.")
+
+    payload_str = payload_raw.decode() if isinstance(payload_raw, bytes) else payload_raw
+    try:
+        payload = json.loads(payload_str)
+    except json.JSONDecodeError:
+        await redis_client.delete(code_key)
+        raise HTTPException(status_code=500, detail="Doğrulama verisi okunamadı. Lütfen tekrar başlatın.")
+
+    saved_phone = (payload.get("support_phone") or "").strip()
+    if saved_phone != phone:
+        raise HTTPException(status_code=400, detail="Telefon numarası eşleşmiyor.")
+
+    # Redis'i ŞİMDİ temizle — race'e karşı (aynı kodla iki çağrı gelirse ikincisi 400 alır)
+    await redis_client.delete(code_key)
+    await redis_client.delete(f"plann:reg:pending:phone:{saved_phone}")
+
+    # UserCreate'e dönüştür ve hesabı oluştur (mevcut register_user akışı)
+    try:
+        user_in = UserCreate(**payload)
+    except Exception as e:
+        logging.error(f"Register-verify payload parse error: {e}")
+        raise HTTPException(status_code=500, detail="Kayıt verisi okunamadı. Lütfen tekrar başlatın.")
+
+    # register_user, /register endpoint fonksiyonu — içeriden çağırırken
+    # validations tekrar çalışır (race koruması için iyi).
+    user_response = await register_user(request, user_in, db)
+
+    # JWT üret — login_for_access_token ile aynı payload yapısı
+    access_token = create_access_token(data={
+        "sub": user_in.username,
+        "org_id": user_response.organization_id,
+        "role": user_response.role,
+        "onboarding_completed": getattr(user_response, "onboarding_completed", False),
+        "full_name": getattr(user_response, "full_name", "") or "",
+    })
+    return Token(access_token=access_token, token_type="bearer")
+
+
+# ============================================================================
+# === AHA ACTIVATION + FUNNEL EVENTS ===
+# ============================================================================
+
+class AhaSkipRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, max_length=64)
+
+class FunnelEventIn(BaseModel):
+    event_name: str = Field(..., max_length=64)
+    insert_id: str = Field(..., min_length=6, max_length=64)
+    properties: Optional[dict] = None
+
+
+@api_router.post("/onboarding/aha-test-appointment")
+@rate_limit(LIMITS.get('aha_activation', "5/hour"))
+async def aha_test_appointment(
+    request: Request,
+    current_user: UserInDB = Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """
+    Aha moment endpoint'i:
+    1. Owner'ın kendi numarasına gerçek WhatsApp CONFIRMATION mesajı + appointment kaydı oluşturur.
+    2. WA başarısız olursa 1 kez sessiz retry dener; hala fail ise state=`aha_wa_failed`.
+    3. İdempotent: state=`aha_completed` ise aynı randevuyu/msg_id'yi döndürür.
+    4. State=`aha_wa_failed` ise: randevuyu silmeden sadece WA'yı yeniden dener.
+    5. Quota'ya yansımaz.
+
+    Yalnızca admin role'u çağırabilir; staff 403 alır.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can trigger the Aha test appointment.")
+
+    state = current_user.activation_state or "pending_aha_appointment"
+
+    # Terminal state: idempotent success
+    if state == "aha_completed":
+        existing_apt_id = current_user.aha_appointment_id
+        existing_apt = None
+        if existing_apt_id:
+            existing_apt = await db.appointments.find_one(
+                {"id": existing_apt_id, "organization_id": current_user.organization_id},
+                {"_id": 0},
+            )
+        return {
+            "ok": True,
+            "idempotent": True,
+            "activation_state": "aha_completed",
+            "appointment": existing_apt,
+            "wa_message_id": current_user.aha_wa_message_id,
+        }
+
+    if state == "aha_skipped":
+        raise HTTPException(status_code=409, detail="Aha activation was skipped. Cannot re-trigger.")
+
+    if state == "not_applicable":
+        raise HTTPException(status_code=403, detail="This account is not eligible for Aha activation.")
+
+    # Settings ve support phone kontrolü
+    settings_doc = await db.settings.find_one({"organization_id": current_user.organization_id})
+    if not settings_doc:
+        raise HTTPException(status_code=400, detail="Settings not configured for this organization.")
+
+    support_phone = (settings_doc.get("support_phone") or "").strip()
+    if not support_phone or support_phone == "05000000000":
+        # Owner kayıtta telefon vermedi → skip state'e al, frontend klasik tura yönlendirir
+        await db.users.update_one(
+            {"username": current_user.username},
+            {"$set": {
+                "activation_state": "skip_aha_no_phone",
+                "aha_skipped_reason": "no_support_phone",
+                "aha_skipped_at": datetime.now(timezone.utc).isoformat(),
+            }}
+        )
+        raise HTTPException(status_code=400, detail="support_phone_missing")
+
+    company_name = settings_doc.get("company_name", "İşletmeniz")
+    location = settings_doc.get("location") or {}
+    coords = location.get("coordinates") or {}
+    biz_lat = coords.get("lat") if isinstance(coords, dict) else None
+    biz_lng = coords.get("lng") if isinstance(coords, dict) else None
+    biz_address = location.get("address") if isinstance(location, dict) else None
+
+    # İlk hizmeti seç (owner'ın kendine atadığı; register_user default service'leri ekledi)
+    service = await db.services.find_one(
+        {"organization_id": current_user.organization_id},
+        {"_id": 0},
+        sort=[("order", 1), ("created_at", 1)],
+    )
+    if not service:
+        raise HTTPException(status_code=400, detail="No service available for the demo appointment.")
+
+    # State=aha_wa_failed iken mevcut randevu varsa onu reuse et, sadece WA tekrar dene
+    existing_apt = None
+    if state == "aha_wa_failed" and current_user.aha_appointment_id:
+        existing_apt = await db.appointments.find_one(
+            {"id": current_user.aha_appointment_id, "organization_id": current_user.organization_id},
+            {"_id": 0},
+        )
+
+    if existing_apt:
+        apt_doc = existing_apt
+        apt_id = apt_doc["id"]
+    else:
+        apt_date, apt_time = pick_aha_slot(settings_doc)
+        apt_id = str(uuid.uuid4())
+        apt_doc = {
+            "id": apt_id,
+            "organization_id": current_user.organization_id,
+            "customer_name": current_user.full_name or current_user.username,
+            "phone": support_phone,
+            "service_id": service.get("id"),
+            "service_name": service.get("name", "Demo"),
+            "service_price": float(service.get("price") or 0),
+            "appointment_date": apt_date,
+            "appointment_time": apt_time,
+            "status": "Bekliyor",
+            "staff_member_id": None,
+            "notes": "",
+            "source": "aha_activation",
+            "is_demo": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "reminder_sent": False,
+        }
+        await db.appointments.insert_one(dict(apt_doc))
+        # Not: check_quota_and_increment burada ÇAĞRILMAZ — demo randevusu quota'ya yansımaz.
+
+    # WhatsApp gönderimi (retry'li)
+    wa_ok, wa_msg_id, wa_err = await send_aha_whatsapp_with_retry(
+        send_callable=send_whatsapp_template,
+        to_number=support_phone,
+        customer_name=apt_doc["customer_name"],
+        company_name=company_name,
+        appointment_date=apt_doc["appointment_date"],
+        appointment_time=apt_doc["appointment_time"],
+        service_name=apt_doc.get("service_name", "Demo"),
+        support_phone=support_phone,
+        business_lat=biz_lat,
+        business_lng=biz_lng,
+        business_address=biz_address,
+    )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # WebSocket emit: Aha randevusu da Dashboard'a anlık düşsün.
+    # `existing_apt` reuse durumunda sadece WA tekrar deniyoruz; yeni doc yok,
+    # zaten Dashboard daha önce göstermiş olabilir. Yine de re-emit zararsız
+    # (frontend duplicate id'yi dedupe eder).
+    try:
+        apt_clean = {k: v for k, v in apt_doc.items() if k != "_id"}
+        await emit_to_organization(
+            current_user.organization_id,
+            "appointment_created",
+            {"appointment": apt_clean},
+        )
+    except Exception as emit_err:
+        logging.warning(f"Aha appointment_created emit failed: {emit_err}")
+
+    if wa_ok:
+        await db.users.update_one(
+            {"username": current_user.username},
+            {"$set": {
+                "activation_state": "aha_completed",
+                "aha_wa_message_id": wa_msg_id or "",
+                "aha_wa_last_error": None,
+                "aha_appointment_id": apt_id,
+                "first_appointment_at": now_iso,
+            }}
+        )
+        return {
+            "ok": True,
+            "idempotent": False,
+            "activation_state": "aha_completed",
+            "appointment": apt_doc,
+            "wa_message_id": wa_msg_id,
+        }
+
+    # WA başarısız — randevu kaydı duruyor, state=aha_wa_failed
+    await db.users.update_one(
+        {"username": current_user.username},
+        {"$set": {
+            "activation_state": "aha_wa_failed",
+            "aha_wa_last_error": (wa_err or "unknown")[:240],
+            "aha_appointment_id": apt_id,
+        }}
+    )
+    return {
+        "ok": False,
+        "idempotent": False,
+        "activation_state": "aha_wa_failed",
+        "wa_status": "failed",
+        "wa_error": wa_err,
+        "appointment": apt_doc,
+    }
+
+
+@api_router.post("/onboarding/aha-skip")
+async def aha_skip(
+    body: AhaSkipRequest,
+    current_user: UserInDB = Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """
+    Owner Aha'yı atlıyor → terminal state `aha_skipped`. İdempotent.
+    Tekrar tetiklenmez; frontend klasik 7-step tour'a geçer.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can skip Aha activation.")
+
+    state = current_user.activation_state or "pending_aha_appointment"
+
+    # Zaten terminal → no-op idempotent
+    if state in ("aha_completed", "aha_skipped"):
+        return {"ok": True, "idempotent": True, "activation_state": state}
+
+    if state == "not_applicable":
+        raise HTTPException(status_code=403, detail="This account is not eligible for Aha activation.")
+
+    reason = (body.reason or "user_skipped")[:64]
+    await db.users.update_one(
+        {"username": current_user.username},
+        {"$set": {
+            "activation_state": "aha_skipped",
+            "aha_skipped_reason": reason,
+            "aha_skipped_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    return {"ok": True, "idempotent": False, "activation_state": "aha_skipped"}
+
+
+@api_router.post("/funnel/event", status_code=204)
+async def funnel_event_sink(
+    payload: FunnelEventIn,
+    current_user: UserInDB = Depends(get_current_user),
+    db = Depends(get_db),
+):
+    """
+    Frontend-owned funnel event'lerini MongoDB ledger'a yazar.
+    PostHog'a yazım tarayıcıda yapılır; burası ground-truth dedupe sink'idir.
+    `insert_id` unique index'i E11000 → idempotent no-op.
+    """
+    if not is_valid_event(payload.event_name):
+        raise HTTPException(status_code=400, detail="Unknown funnel event name.")
+
+    if not is_frontend_owned(payload.event_name):
+        raise HTTPException(status_code=400, detail="Event is not frontend-owned; cannot be recorded here.")
+
+    distinct_id = current_user.user_id or current_user.username
+    await record_funnel_event(
+        db,
+        event_name=payload.event_name,
+        insert_id=payload.insert_id,
+        distinct_id=distinct_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.user_id,
+        source="frontend",
+        properties=payload.properties or {},
+    )
+    return Response(status_code=204)
+
+
+# ============================================================================
+
 @api_router.post("/token", response_model=Token)
 @rate_limit(LIMITS['login']) 
 async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db = Depends(get_db)):
@@ -2636,9 +3186,11 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
         access_token_expires = timedelta(minutes=expire_minutes)
         token_data = {
             "sub": user.username, 
+            "user_id": user.user_id,
             "org_id": user.organization_id, 
             "role": user.role, 
             "onboarding_completed": user.onboarding_completed,
+            "activation_state": user.activation_state,
             "full_name": user.full_name or None,
             "can_view_all_appointments": user.can_view_all_appointments
         }
@@ -2722,9 +3274,11 @@ async def exchange_sso_code(request: Request, body: SsoExchangeRequest, db = Dep
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         token_data = {
             "sub": user.username,
+            "user_id": user.user_id,
             "org_id": user.organization_id,
             "role": user.role,
             "onboarding_completed": user.onboarding_completed,
+            "activation_state": user.activation_state,
             "full_name": user.full_name or None,
             "can_view_all_appointments": user.can_view_all_appointments
         }
@@ -4607,12 +5161,23 @@ def _minutes_to_time(minutes: int) -> str:
 
 async def _check_slot_conflict(db, organization_id: str, staff_id: str, date: str, time: str, service_duration: int) -> bool:
     """Belirtilen slotun çakışma durumunu kontrol eder. True = çakışma var.
-    staff_id boş/None ise: o gün tüm personellerin randevuları arasında zaman çakışması aranır (işletme takvimi)."""
+    staff_id boş/None ise: o gün tüm personellerin randevuları arasında zaman çakışması aranır (işletme takvimi).
+
+    staff_id verildiğinde: o staff'a ait randevular VE staff atanmamış (boş/None)
+    randevular birlikte kontrol edilir. Auto-assign veya silinmiş personele ait
+    randevular "kim verirse versin slot dolu" prensibiyle çakışma sayılır;
+    böylece personelsiz seans paketleri çift booking'e karşı korunur.
+    """
     new_start_min = _time_to_minutes(time)
     new_end_min = new_start_min + service_duration
     query = {"organization_id": organization_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled", "Ödeme Bekleniyor"]}}
     if staff_id:
-        query["staff_member_id"] = staff_id
+        query["$or"] = [
+            {"staff_member_id": staff_id},
+            {"staff_member_id": None},
+            {"staff_member_id": ""},
+            {"staff_member_id": {"$exists": False}},
+        ]
     existing = await db.appointments.find(
         query,
         {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1}
@@ -4626,10 +5191,25 @@ async def _check_slot_conflict(db, organization_id: str, staff_id: str, date: st
     return False
 
 async def _find_alternative_slots(db, organization_id: str, staff_id: str, date: str, preferred_time: str, service_duration: int, max_alternatives: int = 3) -> list[str]:
-    """Çakışan slot için aynı günden en yakın müsait saatleri bulur."""
+    """Çakışan slot için aynı günden en yakın müsait saatleri bulur.
+
+    `_check_slot_conflict` ile aynı semantiği uygular: seçili staff'a ait
+    randevular VE staff atanmamış (boş/None) randevular birlikte busy sayılır.
+    """
     preferred_min = _time_to_minutes(preferred_time)
+    alt_query = {
+        "organization_id": organization_id,
+        "appointment_date": date,
+        "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]},
+        "$or": [
+            {"staff_member_id": staff_id},
+            {"staff_member_id": None},
+            {"staff_member_id": ""},
+            {"staff_member_id": {"$exists": False}},
+        ],
+    }
     existing = await db.appointments.find(
-        {"organization_id": organization_id, "staff_member_id": staff_id, "appointment_date": date, "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}},
+        alt_query,
         {"_id": 0, "appointment_time": 1, "service_duration": 1}
     ).to_list(200)
     busy_ranges = []
@@ -7699,7 +8279,33 @@ async def handle_stripe_webhook(request: Request):
                 )
             except Exception as e:
                 logger.warning(f"Subscription email (webhook) gönderilemedi: {e}")
-        
+
+            # Funnel: subscription_completed — webhook-owned (backend sole emitter)
+            # Stripe event.id'si ledger insert_id olarak kullanılır → idempotent retry'de dup'lenmez.
+            try:
+                owner_user = await db.users.find_one(
+                    {"organization_id": organization_id, "role": "admin"},
+                    {"_id": 0, "user_id": 1, "username": 1},
+                    sort=[("created_at", 1)],
+                )
+                distinct_id = (owner_user or {}).get("user_id") or (owner_user or {}).get("username") or organization_id
+                await track_webhook_event(
+                    db,
+                    event_name="subscription_completed",
+                    distinct_id=distinct_id,
+                    organization_id=organization_id,
+                    user_id=(owner_user or {}).get("user_id"),
+                    insert_id=f"stripe_{event['id']}",
+                    properties={
+                        "plan_id": plan_id,
+                        "billing_cycle": billing_cycle,
+                        "session_id": session_id,
+                        "stripe_subscription_id": subscription_id,
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"subscription_completed funnel event emit failed: {e}")
+
         # invoice.paid — yenileme dönemleri + Stripe'dan gerçek tahsilat tutarı (subscription_cycle)
         elif event['type'] == 'invoice.paid':
             inv = event['data']['object']
@@ -8926,6 +9532,19 @@ async def add_staff(request: Request, staff_data: StaffCreate, current_user: Use
         # Admin için onboarding tamamlanmış olarak işaretle (organization zaten kurulu)
         if invited_role == "admin":
             user_dict["onboarding_completed"] = True
+
+        # Stable user_id (UUID) — PostHog identity'nin sabit kaynağı
+        user_dict["user_id"] = str(uuid.uuid4())
+
+        # Aha activation_state:
+        # - staff: hiç görmez ("not_applicable")
+        # - davet edilen admin: mevcut org'a katılır, kuruluma gerek yok → "aha_skipped"
+        if invited_role == "admin":
+            user_dict["activation_state"] = "aha_skipped"
+            user_dict["aha_skipped_reason"] = "invited_admin"
+        else:
+            user_dict["activation_state"] = "not_applicable"
+
         # MongoDB'ye ekle
         await db.users.insert_one(user_dict)
         
@@ -10834,9 +11453,11 @@ async def get_availability(request: Request, organization_id: str, service_id: s
             # Belirli bir personel seçildi - sadece onun randevularını kontrol et
             has_conflict = False
             for appt in appointments_with_end_time:
-                if appt['staff_member_id'] != staff_id:
+                appt_staff = appt.get('staff_member_id')
+                # Boş/bilinmeyen staff_member_id → kim verirse versin slot dolu say
+                if appt_staff and appt_staff != staff_id:
                     continue
-                
+
                 appt_start = appt['start_time']
                 appt_end = appt['end_time']
                 
@@ -11210,11 +11831,19 @@ async def get_internal_availability(
     service_duration = service.get('duration', 30)
 
     staff_ids = [staff['username'] for staff in staff_members]
+    # Unassigned randevuları (staff_member_id None/"" /eksik) da dahil et — admin
+    # panelden personelsiz oluşturulan randevular busy_slots'a girmeli. Public
+    # booking endpoint'iyle tutarlı davranış (Sorun 2).
     int_staff_query = {
         "organization_id": organization_id,
         "appointment_date": date,
         "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]},
-        "staff_member_id": {"$in": staff_ids}
+        "$or": [
+            {"staff_member_id": {"$in": staff_ids}},
+            {"staff_member_id": None},
+            {"staff_member_id": ""},
+            {"staff_member_id": {"$exists": False}},
+        ],
     }
     if exclude_appointment_id:
         int_staff_query["id"] = {"$ne": exclude_appointment_id}
@@ -11311,7 +11940,10 @@ async def get_internal_availability(
         if staff_id:
             has_conflict = False
             for appt in appointments_with_end_time:
-                if appt['staff_member_id'] != staff_id:
+                appt_staff = appt.get('staff_member_id')
+                # Boş/bilinmeyen staff_member_id → slot kim verirse versin dolu say
+                # (auto-assign edilmiş ya da silinmiş personele ait randevular için güvenli davranış)
+                if appt_staff and appt_staff != staff_id:
                     continue
                 appt_start_min = time_to_minutes(appt['start_time'])
                 appt_end_min = time_to_minutes(appt['end_time'])
@@ -11328,7 +11960,9 @@ async def get_internal_availability(
             for staff_username in staff_ids:
                 has_conflict = False
                 for appt in appointments_with_end_time:
-                    if appt['staff_member_id'] != staff_username:
+                    appt_staff = appt.get('staff_member_id')
+                    # Boş/bilinmeyen staff'lı randevular her staff için çakışma sayılır
+                    if appt_staff and appt_staff != staff_username:
                         continue
                     appt_start_min = time_to_minutes(appt['start_time'])
                     appt_end_min = time_to_minutes(appt['end_time'])

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import posthog from '../lib/posthog';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -28,8 +29,15 @@ const TourGuide = ({ run, steps, onFinish }) => {
     [t]
   );
 
-  const handleFinish = () => {
+  const handleFinish = (skippedAt = null) => {
     // Tur bittiğinde veya kullanıcı "Geç" dediğinde
+    try {
+      if (skippedAt !== null) {
+        posthog.track('tour_skipped', { step_at_skip: skippedAt });
+      } else {
+        posthog.track('tour_completed');
+      }
+    } catch (_) {}
     if (onFinish) onFinish();
   };
 
@@ -81,6 +89,17 @@ const TourGuide = ({ run, steps, onFinish }) => {
     };
   }, [isOpen, currentStep]);
 
+  // Step view tracking
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      posthog.track('tour_step_viewed', {
+        step: index,
+        step_target: currentStep?.target || null,
+      });
+    } catch (_) {}
+  }, [isOpen, index]);
+
   const goNext = () => {
     const nextIndex = index + 1;
     if (nextIndex >= safeSteps.length) {
@@ -91,7 +110,7 @@ const TourGuide = ({ run, steps, onFinish }) => {
   };
 
   const goBack = () => setIndex((prev) => Math.max(0, prev - 1));
-  const handleSkip = () => handleFinish();
+  const handleSkip = () => handleFinish(index);
 
   if (!isOpen) return null;
 
@@ -144,7 +163,9 @@ const TourGuide = ({ run, steps, onFinish }) => {
             left: Math.max(0, targetRect.left - highlightPadding),
             width: Math.max(0, targetRect.width + highlightPadding * 2),
             height: Math.max(0, targetRect.height + highlightPadding * 2),
-            borderRadius: 16,
+            // Yuvarlak hedefler için (FAB +) tam halka, diğerleri için 16px köşe.
+            borderRadius:
+              currentStep?.target === '.tour-new-appointment' ? 9999 : 16,
             boxShadow: '0 0 0 2px rgba(255,255,255,0.65), 0 10px 40px rgba(0,0,0,0.25)',
             pointerEvents: 'none',
           }}

@@ -7,6 +7,7 @@ import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import posthog from "../lib/posthog";
 
 const Subscribe = ({ onNavigate }) => {
   const { t, i18n } = useTranslation();
@@ -218,7 +219,17 @@ const Subscribe = ({ onNavigate }) => {
       
       // Para birimi algılama (frontend'den gönderilir, backend'de de kontrol edilir)
       const currency = i18n.language === 'en' ? 'gbp' : 'try';
-      
+
+      // Funnel: subscription_checkout_started — checkout URL'sine yönlendirmeden ÖNCE
+      try {
+        posthog.track('subscription_checkout_started', {
+          plan_id: planId,
+          billing_cycle: billingCycle,
+          currency,
+          platform,
+        });
+      } catch (_) {}
+
       const response = await api.post("/payments/create-checkout-session", {
         plan_id: planId,
         billing_cycle: billingCycle,

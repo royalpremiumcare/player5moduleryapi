@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Building2, User, Mail, Lock, ArrowRight, Phone, Globe } from 'lucide-react';
+import { Building2, User, Mail, Lock, ArrowRight, Phone, Globe, MessageCircle, ArrowLeft } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -9,10 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import posthog from '../lib/posthog';
 
 const RegisterPage = () => { 
     const navigate = useNavigate();
-    const { register } = useAuth(); 
+    const { register, registerVerify } = useAuth(); 
     const { t, i18n } = useTranslation();
 
     useEffect(() => { window.scrollTo(0, 0); }, []);
@@ -42,6 +43,58 @@ const RegisterPage = () => {
         sector: ''
     });
     const [loading, setLoading] = useState(false);
+    const [signupStartedTracked, setSignupStartedTracked] = useState(false);
+
+    // OTP / verification state
+    const [step, setStep] = useState('form'); // 'form' | 'otp'
+    const [otpCode, setOtpCode] = useState('');
+    const [phoneMasked, setPhoneMasked] = useState('');
+    const [otpExpiresAt, setOtpExpiresAt] = useState(null);
+    const [resendCooldown, setResendCooldown] = useState(0);
+    const [secondsLeft, setSecondsLeft] = useState(0);
+    const otpInputRef = useRef(null);
+
+    // OTP TTL countdown
+    useEffect(() => {
+        if (!otpExpiresAt) return undefined;
+        const tick = () => {
+            const remaining = Math.max(0, Math.floor((otpExpiresAt - Date.now()) / 1000));
+            setSecondsLeft(remaining);
+        };
+        tick();
+        const id = setInterval(tick, 1000);
+        return () => clearInterval(id);
+    }, [otpExpiresAt]);
+
+    // Resend cooldown countdown
+    useEffect(() => {
+        if (resendCooldown <= 0) return undefined;
+        const id = setInterval(() => {
+            setResendCooldown((s) => Math.max(0, s - 1));
+        }, 1000);
+        return () => clearInterval(id);
+    }, [resendCooldown]);
+
+    // OTP step'e geçince input'a focus
+    useEffect(() => {
+        if (step === 'otp' && otpInputRef.current) {
+            setTimeout(() => otpInputRef.current?.focus(), 100);
+        }
+    }, [step]);
+
+    // Funnel: signup_form_started — kullanıcı ilk kez bir input'a etkileşim ettiğinde
+    const handleFormFocus = () => {
+        if (signupStartedTracked) return;
+        setSignupStartedTracked(true);
+        try { posthog.track('signup_form_started'); } catch (_) {}
+    };
+
+    const formatSecs = (s) => {
+        const m = Math.floor(s / 60);
+        const ss = s % 60;
+        return `${m}:${String(ss).padStart(2, '0')}`;
+    };
+
     const [isAppMode, setIsAppMode] = useState(() => {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('mode') === 'app') {
@@ -71,23 +124,28 @@ const RegisterPage = () => {
         setFormData({ ...formData, support_phone: value });
     };
 
+    // 1. ADIM: Form submit → /register-initiate (WhatsApp OTP gönder)
     const handleRegister = async (e) => {
         e.preventDefault();
         setLoading(true);
 
         try {
             const result = await register(
-                formData.username, 
-                formData.password, 
-                formData.full_name, 
+                formData.username,
+                formData.password,
+                formData.full_name,
                 formData.organization_name,
                 formData.support_phone,
                 formData.sector
             );
 
-            if (result.success) {
-                toast.success(t('auth.register.success'));
-                navigate('/login'); 
+            if (result.success && result.verificationRequired) {
+                setPhoneMasked(result.phoneMasked || '');
+                setOtpExpiresAt(Date.now() + (result.expiresIn || 900) * 1000);
+                setResendCooldown(60); // 60sn flood koruması
+                setOtpCode('');
+                setStep('otp');
+                toast.success(t('auth.register.otpSent', 'Doğrulama kodu WhatsApp\'a gönderildi.'));
             } else {
                 toast.error(result.error || t('auth.register.error'));
             }
@@ -96,6 +154,66 @@ const RegisterPage = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    // 2. ADIM: OTP submit → /register-verify (hesap oluşur, otomatik login)
+    const handleVerify = async (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        if (!/^\d{6}$/.test(otpCode)) {
+            toast.error(t('auth.register.otpInvalid', 'Lütfen 6 haneli kodu girin.'));
+            return;
+        }
+        setLoading(true);
+        try {
+            const result = await registerVerify(formData.support_phone, otpCode, formData.sector);
+            if (result.success) {
+                toast.success(t('auth.register.success'));
+                // Auto-login içinde token kaydedildi → AppRouter dashboard'a yönlendirir
+                navigate('/');
+            } else {
+                toast.error(result.error || t('auth.register.otpError', 'Kod hatalı veya süresi dolmuş.'));
+            }
+        } catch (error) {
+            toast.error(t('auth.register.otpError', 'Doğrulama sırasında hata oluştu.'));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // OTP yeniden gönder
+    const handleResend = async () => {
+        if (resendCooldown > 0 || loading) return;
+        setLoading(true);
+        try {
+            const result = await register(
+                formData.username,
+                formData.password,
+                formData.full_name,
+                formData.organization_name,
+                formData.support_phone,
+                formData.sector
+            );
+            if (result.success && result.verificationRequired) {
+                setOtpExpiresAt(Date.now() + (result.expiresIn || 900) * 1000);
+                setResendCooldown(60);
+                setOtpCode('');
+                toast.success(t('auth.register.otpResent', 'Yeni kod gönderildi.'));
+            } else {
+                toast.error(result.error || t('auth.register.error'));
+            }
+        } catch (error) {
+            toast.error(t('auth.register.error'));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // OTP ekranından forma dön (numarayı düzelt)
+    const handleBackToForm = () => {
+        setStep('form');
+        setOtpCode('');
+        setOtpExpiresAt(null);
+        setSecondsLeft(0);
     };
 
     const sectorOptions = [
@@ -140,7 +258,87 @@ const RegisterPage = () => {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <form onSubmit={handleRegister} className="space-y-5">
+                        {step === 'otp' && (
+                            <div className="space-y-6">
+                                <div className="flex flex-col items-center text-center space-y-3">
+                                    <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center">
+                                        <MessageCircle className="w-8 h-8 text-green-600" />
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-gray-900">
+                                        {t('auth.register.otpTitle', 'Doğrulama kodu gönderildi')}
+                                    </h3>
+                                    <p className="text-sm text-gray-600">
+                                        {t('auth.register.otpDescription', 'WhatsApp\'a gönderilen 6 haneli kodu girin.')}
+                                        {phoneMasked && (
+                                            <span className="block mt-1 font-medium text-gray-900">{phoneMasked}</span>
+                                        )}
+                                    </p>
+                                </div>
+                                <form onSubmit={handleVerify} className="space-y-5">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="otp_code" className="text-sm font-semibold text-gray-700">
+                                            {t('auth.register.otpLabel', 'Doğrulama Kodu')}
+                                        </Label>
+                                        <Input
+                                            ref={otpInputRef}
+                                            id="otp_code"
+                                            name="otp_code"
+                                            type="text"
+                                            inputMode="numeric"
+                                            autoComplete="one-time-code"
+                                            value={otpCode}
+                                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                            placeholder="123456"
+                                            className="text-center tracking-[0.5em] font-mono text-2xl h-14 border-2 focus:border-gray-900"
+                                            maxLength={6}
+                                            required
+                                        />
+                                        {secondsLeft > 0 && (
+                                            <p className="text-xs text-gray-500 text-center">
+                                                {t('auth.register.otpExpires', 'Kodun geçerlilik süresi:')} {formatSecs(secondsLeft)}
+                                            </p>
+                                        )}
+                                        {secondsLeft === 0 && otpExpiresAt && (
+                                            <p className="text-xs text-red-600 text-center">
+                                                {t('auth.register.otpExpired', 'Kod süresi doldu. Lütfen yeni kod isteyin.')}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <Button
+                                        type="submit"
+                                        className="w-full h-12 bg-gray-900 hover:bg-gray-800 text-white font-semibold rounded-full shadow-lg transition-all duration-200"
+                                        disabled={loading || otpCode.length !== 6}
+                                    >
+                                        {loading ? t('auth.register.verifying', 'Doğrulanıyor...') : t('auth.register.verifyButton', 'Doğrula ve Hesabı Oluştur')}
+                                    </Button>
+                                </form>
+                                <div className="flex flex-col gap-1 pt-2 border-t border-gray-100">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        onClick={handleResend}
+                                        disabled={resendCooldown > 0 || loading}
+                                        className="text-sm text-gray-600 hover:text-gray-900"
+                                    >
+                                        {resendCooldown > 0
+                                            ? t('auth.register.resendIn', 'Yeniden gönder ({{s}}sn)', { s: resendCooldown })
+                                            : t('auth.register.resend', 'Kodu yeniden gönder')}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        onClick={handleBackToForm}
+                                        disabled={loading}
+                                        className="text-sm text-gray-600 hover:text-gray-900"
+                                    >
+                                        <ArrowLeft className="w-4 h-4 mr-1" />
+                                        {t('auth.register.changePhone', 'Numarayı düzelt')}
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+                        {step === 'form' && (
+                        <form onSubmit={handleRegister} onFocus={handleFormFocus} className="space-y-5">
                             <div className="space-y-2">
                                 <Label htmlFor="organization_name" className="text-sm font-semibold text-gray-700">
                                     {t('auth.register.businessName')}
@@ -281,7 +479,9 @@ const RegisterPage = () => {
                                 {t('auth.register.guarantee')}
                             </p>
                         </form>
+                        )}
 
+                        {step === 'form' && (
                         <div className="mt-6 pt-6 border-t border-gray-200 text-center">
                             <p className="text-sm text-gray-600 mb-3">{t('auth.register.hasAccount')}</p>
                             <Button
@@ -293,6 +493,7 @@ const RegisterPage = () => {
                                 <ArrowRight className="w-4 h-4 ml-2" />
                             </Button>
                         </div>
+                        )}
                     </CardContent>
                 </Card>
 

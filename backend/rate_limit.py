@@ -104,4 +104,5 @@ LIMITS = {
     'stats': "20/minute",
     'sms': "100/hour",
     'ai_chat': "300/minute",  # AI chatbot — Cloudflare arkasında tüm kullanıcılar aynı IP paylaşıyor
+    'aha_activation': "5/hour",  # Aha test-appointment endpoint — demo randevu + WA mesajı; abuse'a karşı sıkı limit
 }
