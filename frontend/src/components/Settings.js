@@ -2,13 +2,13 @@ import { useState, useEffect } from "react";
 import { 
   Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, 
   ArrowLeft, DollarSign, Bell, BellOff, MapPin, Wrench, ShieldCheck, Globe,
-  Wallet, CreditCard, Phone, MessageCircle, Mail
+  Wallet, CreditCard, Phone, MessageCircle, Mail, Headphones
 } from "lucide-react"; 
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
-import { CONTACT_PHONE_DISPLAY, TEL_URL, WHATSAPP_URL } from "../constants/contact";
+import { WHATSAPP_PHONE_DISPLAY, WHATSAPP_URL, openLiveChat } from "../constants/contact";
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 
@@ -67,6 +67,14 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
   const [notificationStatus, setNotificationStatus] = useState('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [showContact, setShowContact] = useState(false);
+
+  // İletişim alt-sayfası açılırken / kapanırken scroll'u en başa al.
+  // Settings.js içinde currentView değişmediği için App.js global scroll
+  // reset tetiklenmiyor; alt-sayfaya özel manuel sıfırlama gerekiyor.
+  useEffect(() => {
+    const wrapper = document.getElementById("app-wrapper");
+    if (wrapper) wrapper.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [showContact]);
 
   // --- BİLDİRİM MANTIĞI ---
   useEffect(() => {
@@ -250,15 +258,17 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
         <div className="px-5 mt-6 space-y-3">
           <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
             <SettingItem
-              icon={Phone}
-              title={t('settings.callUs', 'Bizi Arayın')}
-              subtitle={CONTACT_PHONE_DISPLAY}
-              onClick={() => window.open(TEL_URL)}
+              icon={Headphones}
+              title={t('settings.liveChat', 'Canlı Destek')}
+              subtitle={t('settings.liveChatSubtitle', 'Anında yazışın, hızlıca yardım alın')}
+              onClick={() => openLiveChat()}
+              // showContact'i kapatma — widget kapatıldığında kullanıcı
+              // İletişim sayfasına geri dönmeli, Ayarlar'a değil.
             />
             <SettingItem
               icon={MessageCircle}
               title="WhatsApp"
-              subtitle={t('settings.whatsappSupportSubtitle', 'Mesaj gönderin, hızlıca yanıtlayalım')}
+              subtitle={WHATSAPP_PHONE_DISPLAY}
               onClick={() => window.open(WHATSAPP_URL, '_blank', 'noopener,noreferrer')}
             />
             <SettingItem

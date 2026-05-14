@@ -451,7 +451,9 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               {t('services.management.dialogDescription')}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1 px-1 -mx-1">
+          {/* `pr-2` scroll bar için sağ tarafta nefes payı bırakır;
+              input köşeleri artık scrollbar'ın altına girmez. */}
+          <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1 pr-2">
             {/* Section: Temel Bilgiler */}
             <div className="flex items-center gap-3">
               <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">

@@ -1,26 +1,23 @@
 /**
  * Plann — Contact Constants
  *
- * Single source of truth for customer-facing phone / WhatsApp / email endpoints.
+ * Single source of truth for customer-facing WhatsApp / email endpoints + live-chat (Chatwoot).
  * Import from this module instead of hard-coding numbers in UI components:
  *
- *   import { CONTACT_PHONE_DISPLAY, WHATSAPP_URL, TEL_URL } from "@/constants/contact";
+ *   import { WHATSAPP_URL, openWhatsApp, openLiveChat } from "@/constants/contact";
  */
 
-/** E.164-compatible phone number (no +, no spaces) — used for wa.me + tel: links. */
-export const CONTACT_PHONE_E164 = "905435113250";
+/** E.164-compatible WhatsApp number (no +, no spaces) — used for wa.me links. */
+export const WHATSAPP_PHONE_E164 = "15559878144";
 
-/** Human-readable phone number for display in UI. */
-export const CONTACT_PHONE_DISPLAY = "+90 543 511 3250";
+/** Human-readable WhatsApp number for display in UI. */
+export const WHATSAPP_PHONE_DISPLAY = "+1 555 987 8144";
 
 /** Support e-mail (kept here so future changes are a single edit). */
 export const CONTACT_EMAIL = "support@plannapp.co";
 
 /** WhatsApp deep-link. Append `?text=...` at call-site if prefilled text is needed. */
-export const WHATSAPP_URL = `https://wa.me/${CONTACT_PHONE_E164}`;
-
-/** `tel:` deep-link (with leading +) — opens native dialer. */
-export const TEL_URL = `tel:+${CONTACT_PHONE_E164}`;
+export const WHATSAPP_URL = `https://wa.me/${WHATSAPP_PHONE_E164}`;
 
 /**
  * Open the WhatsApp chat in a new tab with a pre-filled message.
@@ -32,4 +29,18 @@ export function openWhatsApp(prefilledMessage = "") {
     ? `${WHATSAPP_URL}?text=${encodeURIComponent(prefilledMessage)}`
     : WHATSAPP_URL;
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/**
+ * Open the Chatwoot live-chat widget. Requires the SDK to be loaded
+ * (see `src/lib/chatwoot.js`). Falls back to WhatsApp if the widget is unavailable.
+ */
+export function openLiveChat() {
+  if (typeof window === "undefined") return;
+  if (window.$chatwoot && typeof window.$chatwoot.toggle === "function") {
+    window.$chatwoot.toggle("open");
+    return;
+  }
+  // Fallback — widget hasn't loaded yet (no token configured or network issue)
+  openWhatsApp();
 }

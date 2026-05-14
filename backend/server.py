@@ -976,7 +976,31 @@ async def lifespan(app: FastAPI):
                 )
             except Exception as idx_mt:
                 logging.debug(f"merchant_transactions stripe_refund_id index: {idx_mt}")
-            
+
+            # Marketing leads — havuz/aramalarım listesi için bileşik index'ler.
+            # Önceki sürümde 5000 doc tarama vardı, bu index'ler ile <50ms'ye iner.
+            try:
+                # Havuz listesi: status="pool" + (batch_id) + sort by created_at asc.
+                await app.db.leads.create_index(
+                    [("status", 1), ("batch_id", 1), ("created_at", 1)],
+                    name="leads_pool_batch_created",
+                )
+                # Aramalarım: claimed_by + status filtre + sort by updated_at desc.
+                await app.db.leads.create_index(
+                    [("claimed_by", 1), ("status", 1), ("updated_at", -1)],
+                    name="leads_claimed_status_updated",
+                )
+                # Sektör filtresi (her iki tab'da kullanılıyor).
+                await app.db.leads.create_index(
+                    [("sector", 1)], sparse=True, name="leads_sector_sparse"
+                )
+                # Lookup'lar: lead_id ile claim/status/release.
+                await app.db.leads.create_index(
+                    [("id", 1)], unique=True, sparse=True, name="leads_id_unique"
+                )
+            except Exception as idx_leads:
+                logging.debug(f"leads indexes skipped: {idx_leads}")
+
             logging.info("Step 5 SUCCESS: Database indexes created")
         else:
             logging.warning("Step 5 SKIPPED: Database not available")
@@ -14082,10 +14106,17 @@ async def get_marketing_leads(
     db = Depends(get_db),
     tab: str = "pool",
     batch_id: str = None,
-    sector: str = None
+    sector: str = None,
+    limit: int = 200,
 ):
-    """Havuz leadleri veya benim leadlerim (batch_id ve sector ile filtrelenebilir)"""
-    logging.info(f"[LEADS] user={current_user.username} id={current_user.id} tab={tab} batch_id={batch_id} sector={sector}")
+    """Havuz leadleri veya benim leadlerim (batch_id ve sector ile filtrelenebilir).
+
+    `limit` parametresi varsayılan 200; UI tarafında pazarlamacı tek seferde
+    en fazla 200 lead görür (önceki 5000 limit React render'ını donduruyordu).
+    Daha fazla görmek isterse filtre (kampanya/sektör) uygulamalı.
+    """
+    limit = max(1, min(int(limit or 200), 1000))
+    logging.info(f"[LEADS] user={current_user.username} id={current_user.id} tab={tab} batch_id={batch_id} sector={sector} limit={limit}")
     await _release_expired_claims(db)
     if tab == "mine":
         query = {"claimed_by": current_user.id, "status": {"$in": ["claimed", "interested", "unreachable", "not_interested", "waiting", "registered"]}}
@@ -14093,15 +14124,15 @@ async def get_marketing_leads(
             query["batch_id"] = batch_id
         if sector:
             query["sector"] = sector
-        leads = await db.leads.find(query, {"_id": 0}).sort("updated_at", -1).to_list(5000)
+        leads = await db.leads.find(query, {"_id": 0}).sort("updated_at", -1).to_list(limit)
     else:
         query = {"status": "pool"}
         if batch_id:
             query["batch_id"] = batch_id
         if sector:
             query["sector"] = sector
-        leads = await db.leads.find(query, {"_id": 0}).sort("created_at", 1).to_list(5000)
-    return {"leads": leads, "batch_id": batch_id}
+        leads = await db.leads.find(query, {"_id": 0}).sort("created_at", 1).to_list(limit)
+    return {"leads": leads, "batch_id": batch_id, "limit": limit}
 
 @api_router.post("/marketing/leads/{lead_id}/claim")
 async def claim_lead(

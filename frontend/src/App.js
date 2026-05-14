@@ -41,6 +41,7 @@ import AhaSpotlight from "@/components/AhaSpotlight";
 import AhaCelebration from "@/components/AhaCelebration";
 import AhaErrorScreen from "@/components/AhaErrorScreen";
 import posthog from "@/lib/posthog";
+import { loadChatwoot, setChatwootUser } from "@/lib/chatwoot";
 import { Briefcase, DollarSign, SettingsIcon, Users, Upload, LogOut, Moon, Sun, UserCog, FileText, Home, Plus, CreditCard, User, HelpCircle, Package, Bell, Layers, Calendar } from "lucide-react";
 import { useTheme } from "./context/ThemeContext";
 import { useTranslation } from "react-i18next";
@@ -112,6 +113,68 @@ function App() {
       ? 'PLANN | Yönetim Paneli'
       : 'PLANN | Dashboard';
   }, [i18n.language]);
+
+  // Chatwoot live-chat SDK — load once on web (skipped on native iOS/Android).
+  // Launcher bubble is hidden; opened programmatically via openLiveChat().
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
+    loadChatwoot();
+  }, []);
+
+  // Identify the logged-in user inside Chatwoot so agents see the company
+  // name + admin name instead of an auto-generated handle (e.g. "small-dew").
+  // Runs whenever auth + settings change; the SDK may still be loading,
+  // setChatwootUser buffers and replays on `chatwoot:ready`.
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
+    if (!token || !settings) return;
+    let payload;
+    try {
+      payload = JSON.parse(atob(token.split(".")[1]));
+    } catch (_) {
+      return;
+    }
+    const identifier = payload.user_id || payload.sub;
+    if (!identifier) return;
+
+    const companyName = settings.company_name || "";
+    const adminName = payload.full_name || payload.sub || "";
+    // Display name combines company + admin so the agent sees "Salon X — Ali".
+    const displayName = companyName && adminName
+      ? `${companyName} — ${adminName}`
+      : (companyName || adminName || String(identifier));
+
+    setChatwootUser({
+      identifier: String(identifier),
+      name: displayName,
+      email: payload.sub, // username is the email/login
+      phone_number: settings.support_phone || undefined,
+      company_name: companyName || undefined,
+      custom_attributes: {
+        organization_id: payload.org_id,
+        role: payload.role || userRole,
+        sector: payload.sector || settings.sector,
+        plan: settings.subscription_status || settings.plan || undefined,
+      },
+    });
+  }, [token, settings, userRole]);
+
+  // VIEW DEĞİŞİMİNDE SCROLL'U EN BAŞA AL
+  // Login sonrası body overflow:hidden olduğu için window.scrollTo(0,0)
+  // çalışmıyor — gerçek scroll #app-wrapper üzerinde. Bu yüzden alt sayfaya
+  // navigate ettiğimizde manuel olarak wrapper.scrollTop = 0 ile sıfırlıyoruz.
+  // Aksi takdirde Personel/Hizmet/İletişim/Online Randevu gibi alt sayfalar
+  // bir önceki sayfanın scroll pozisyonundan açılıyordu.
+  useEffect(() => {
+    const wrapper = document.getElementById("app-wrapper");
+    if (wrapper) {
+      wrapper.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    }
+    // Yedek: window scroll'u da sıfırla (login öncesi state için).
+    if (typeof window !== "undefined" && window.scrollTo) {
+      window.scrollTo(0, 0);
+    }
+  }, [currentView]);
 
   // APP SCROLL KİLİDİ YÖNETİMİ
   useEffect(() => {
