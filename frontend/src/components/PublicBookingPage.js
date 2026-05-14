@@ -21,6 +21,14 @@ import BusinessMap from "./BusinessMap";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const API = `${BACKEND_URL}/api`;
 
+// Sonner default'ta `top: 0` ile yerleşiyor; iPhone notch / Dynamic Island
+// toast'ın üstünü kesiyor. `--offset` CSS değişkenini override ederek hem
+// mobilde safe-area kadar aşağı itiyor hem desktop'ta 20px nefes payı
+// bırakıyoruz. Tüm Toaster instance'larında aynı stil kullanılıyor.
+const TOASTER_SAFE_AREA_STYLE = {
+  '--offset': 'max(20px, calc(env(safe-area-inset-top, 0px) + 12px))',
+};
+
 const fmtPrice = (minor) => {
   const major = Math.round(minor / 100);
   return major.toLocaleString('tr-TR');
@@ -784,7 +792,7 @@ const PublicBookingPage = () => {
   if (verificationPending) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        <Toaster position="top-center" richColors theme="light" />
+        <Toaster position="top-center" richColors theme="light" style={TOASTER_SAFE_AREA_STYLE} />
         <div className="w-full max-w-md space-y-5 animate-in fade-in zoom-in duration-300">
           <div className="text-center">
             <div className="w-16 h-16 bg-[#25D366] rounded-full flex items-center justify-center mx-auto mb-4">
@@ -847,7 +855,7 @@ const PublicBookingPage = () => {
   if (paymentStatus === 'success') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        <Toaster position="top-center" richColors theme="light" />
+        <Toaster position="top-center" richColors theme="light" style={TOASTER_SAFE_AREA_STYLE} />
         <div className="text-center max-w-md w-full animate-in fade-in zoom-in duration-300">
           <div className="w-20 h-20 bg-emerald-600 text-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl">
             <Check className="w-10 h-10" />
@@ -886,7 +894,7 @@ const PublicBookingPage = () => {
   if (paymentStatus === 'cancelled') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        <Toaster position="top-center" richColors theme="light" />
+        <Toaster position="top-center" richColors theme="light" style={TOASTER_SAFE_AREA_STYLE} />
         <div className="text-center max-w-md w-full animate-in fade-in zoom-in duration-300">
           <div className="w-20 h-20 bg-amber-500 text-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl">
             <AlertCircle className="w-10 h-10" />
@@ -914,7 +922,7 @@ const PublicBookingPage = () => {
   if (success) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
-        <Toaster position="top-center" richColors theme="light" />
+        <Toaster position="top-center" richColors theme="light" style={TOASTER_SAFE_AREA_STYLE} />
         <div className="text-center max-w-2xl w-full animate-in fade-in zoom-in duration-300">
           <div className="w-20 h-20 bg-zinc-900 text-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl">
             <Check className="w-10 h-10" />
@@ -973,7 +981,7 @@ const PublicBookingPage = () => {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-white font-sans text-zinc-900 selection:bg-zinc-900 selection:text-white">
-      <Toaster position="top-center" richColors theme="light" />
+      <Toaster position="top-center" richColors theme="light" style={TOASTER_SAFE_AREA_STYLE} />
       
       {/* LEFT PANEL */}
       <div className="w-full lg:w-[400px] xl:w-[480px] bg-zinc-950 text-white flex flex-col justify-between py-4 px-5 lg:p-12 lg:min-h-screen lg:fixed lg:left-0 lg:top-0 z-50 shrink-0">
