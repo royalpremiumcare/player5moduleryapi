@@ -228,7 +228,15 @@ const RegisterPage = () => {
 
     return (
         <div className="bg-white animate-slide-down register-page-container">
-            <Toaster position="top-center" richColors />
+            {/* Toast'u safe-area kadar aşağı it — notch/dynamic island'a girip
+                yarım görünmesin. `--offset` sonner'ın içerideki spacing
+                CSS değişkenidir; mobilde `env(safe-area-inset-top)`
+                değerini, desktop'ta minimum 16px nefes payını uygular. */}
+            <Toaster
+              position="top-center"
+              richColors
+              style={{ '--offset': 'max(20px, calc(env(safe-area-inset-top, 0px) + 12px))' }}
+            />
             <div className="flex justify-center items-start md:items-center min-h-screen md:min-h-screen p-4">
             <div className="w-full max-w-md">
                 {/* Logo & Title */}
