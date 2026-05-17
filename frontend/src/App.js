@@ -41,6 +41,7 @@ import AhaSpotlight from "@/components/AhaSpotlight";
 import AhaCelebration from "@/components/AhaCelebration";
 import AhaErrorScreen from "@/components/AhaErrorScreen";
 import posthog from "@/lib/posthog";
+import metaPixel from "@/lib/metaPixel";
 import { loadChatwoot, setChatwootUser } from "@/lib/chatwoot";
 import { Briefcase, DollarSign, SettingsIcon, Users, Upload, LogOut, Moon, Sun, UserCog, FileText, Home, Plus, CreditCard, User, HelpCircle, Package, Bell, Layers, Calendar } from "lucide-react";
 import { useTheme } from "./context/ThemeContext";
@@ -114,10 +115,9 @@ function App() {
       : 'PLANN | Dashboard';
   }, [i18n.language]);
 
-  // Chatwoot live-chat SDK — load once on web (skipped on native iOS/Android).
+  // Chatwoot live-chat SDK — load once (web + native).
   // Launcher bubble is hidden; opened programmatically via openLiveChat().
   useEffect(() => {
-    if (Capacitor.isNativePlatform()) return;
     loadChatwoot();
   }, []);
 
@@ -126,7 +126,6 @@ function App() {
   // Runs whenever auth + settings change; the SDK may still be loading,
   // setChatwootUser buffers and replays on `chatwoot:ready`.
   useEffect(() => {
-    if (Capacitor.isNativePlatform()) return;
     if (!token || !settings) return;
     let payload;
     try {
@@ -1041,6 +1040,24 @@ function App() {
         const flagKey = `aha_first_real_apt_tracked:${currentUser.user_id}`;
         if (!localStorage.getItem(flagKey)) {
           posthog.track('first_real_appointment_created');
+
+          // Meta: Schedule — admin dashboard'undan ilk gerçek randevu oluşturuldu.
+          // Tek seferlik (flag dedupe). Pixel + CAPI tek event_id ile dedupe edilir.
+          try {
+            metaPixel.track('Schedule', {
+              customData: {
+                content_name: currentUser?.business_name || currentUser?.organization_name || 'PLANN',
+                content_category: 'first_real_appointment',
+              },
+              userData: {
+                external_id: currentUser.user_id,
+                contact_email: currentUser.username,
+                contact_phone: settings?.support_phone,
+                contact_name: currentUser.full_name,
+              },
+            });
+          } catch (_) {}
+
           localStorage.setItem(flagKey, '1');
         }
       }
@@ -1532,6 +1549,8 @@ function App() {
               setCurrentView(view);
               setShowForm(false);
             }}
+            currentUser={currentUser}
+            settings={settings}
           />
         )}
         {currentView === "help-center" && (

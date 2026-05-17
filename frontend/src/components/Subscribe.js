@@ -8,8 +8,9 @@ import { Browser } from '@capacitor/browser';
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import posthog from "../lib/posthog";
+import metaPixel from "../lib/metaPixel";
 
-const Subscribe = ({ onNavigate }) => {
+const Subscribe = ({ onNavigate, currentUser, settings }) => {
   const { t, i18n } = useTranslation();
   const webUrl = i18n.language && i18n.language.toLowerCase().startsWith('en')
     ? 'https://plannapp.co.uk'
@@ -230,6 +231,30 @@ const Subscribe = ({ onNavigate }) => {
         });
       } catch (_) {}
 
+      // Meta: InitiateCheckout — fiyat bilgisi tahminî, currency uppercase.
+      const planMeta = plans.find((p) => p.id === planId);
+      const pricingKey = planMeta ? getPlanPricingKey(planMeta.name) : null;
+      const pricingDisplay = pricingKey ? PRICING_DISPLAY[currency]?.[pricingKey] : null;
+      const checkoutValue = pricingDisplay?.discounted ?? pricingDisplay?.original;
+      try {
+        metaPixel.track('InitiateCheckout', {
+          customData: {
+            content_name: planMeta?.name || planId,
+            content_ids: [planId],
+            content_type: 'subscription',
+            value: checkoutValue,
+            currency: currency.toUpperCase(),
+            num_items: 1,
+          },
+          userData: {
+            contact_email: currentUser?.username,
+            contact_phone: settings?.support_phone,
+            contact_name: currentUser?.full_name,
+            external_id: currentUser?.user_id,
+          },
+        });
+      } catch (_) {}
+
       const response = await api.post("/payments/create-checkout-session", {
         plan_id: planId,
         billing_cycle: billingCycle,
@@ -238,6 +263,25 @@ const Subscribe = ({ onNavigate }) => {
       });
       
       if (response.data && response.data.checkout_url) {
+        // Meta: AddPaymentInfo — Stripe Checkout sayfası açılmadan hemen önce.
+        try {
+          metaPixel.track('AddPaymentInfo', {
+            customData: {
+              content_name: planMeta?.name || planId,
+              content_ids: [planId],
+              content_type: 'subscription',
+              value: checkoutValue,
+              currency: currency.toUpperCase(),
+            },
+            userData: {
+              contact_email: currentUser?.username,
+              contact_phone: settings?.support_phone,
+              contact_name: currentUser?.full_name,
+              external_id: currentUser?.user_id,
+            },
+          });
+        } catch (_) {}
+
         // Stripe Checkout sayfasına yönlendir
         const checkoutUrl = response.data.checkout_url;
         

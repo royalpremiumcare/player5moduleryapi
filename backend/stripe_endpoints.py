@@ -185,6 +185,75 @@ async def handle_stripe_webhook_handler(request: Request) -> Response:
                 )
                 
                 logger.info(f"Stripe ödeme başarılı: {session_id} - Plan güncellendi. Organization: {organization_id}, Plan: {plan_id}")
+
+                # === Meta CAPI: Purchase event (server-side) ===
+                # event_id = `stripe-{session_id}` → frontend success page'i de aynı ID
+                # ile Pixel.track('Purchase', ..., { eventID }) çağırırsa Meta dedupe eder.
+                try:
+                    from meta_capi_service import get_meta_capi_service
+
+                    business_name = None
+                    try:
+                        org_settings = await db.settings.find_one({"organization_id": organization_id})
+                        if org_settings:
+                            business_name = org_settings.get("company_name")
+                    except Exception:
+                        pass
+
+                    amount_total = session.get("amount_total")  # minor units
+                    currency = (session.get("currency") or "try").upper()
+                    value = (amount_total / 100.0) if isinstance(amount_total, (int, float)) else payment_log.get("amount")
+
+                    # Kullanıcı bilgilerini zenginleştir (email + phone + isim)
+                    purchase_user_data = {}
+                    if customer_email:
+                        purchase_user_data["em"] = customer_email
+                    support_phone = None
+                    admin_full_name = None
+                    if org_settings:
+                        support_phone = org_settings.get("support_phone")
+                    # Admin kullanıcının ismini al
+                    try:
+                        admin_user = await db.users.find_one(
+                            {"organization_id": organization_id, "role": "admin"},
+                            {"full_name": 1, "username": 1, "_id": 0}
+                        )
+                        if admin_user:
+                            admin_full_name = admin_user.get("full_name")
+                            if not customer_email and admin_user.get("username"):
+                                purchase_user_data["em"] = admin_user["username"]
+                    except Exception:
+                        pass
+                    if support_phone:
+                        purchase_user_data["ph"] = support_phone
+                    if admin_full_name:
+                        from meta_capi_service import split_full_name
+                        name_parts = split_full_name(admin_full_name)
+                        if name_parts.get("fn"):
+                            purchase_user_data["fn"] = name_parts["fn"]
+                        if name_parts.get("ln"):
+                            purchase_user_data["ln"] = name_parts["ln"]
+
+                    capi = get_meta_capi_service()
+                    if capi.enabled:
+                        capi.send_event(
+                            event_name="Purchase",
+                            event_id=f"stripe-{session_id}",
+                            event_source_url=session.get("success_url") or None,
+                            action_source="website",
+                            user_data=purchase_user_data,
+                            custom_data={
+                                "content_name": business_name or plan_id,
+                                "content_ids": [plan_id],
+                                "content_type": "subscription",
+                                "value": value,
+                                "currency": currency,
+                                "order_id": session_id,
+                            },
+                            external_id=organization_id,
+                        )
+                except Exception as capi_err:
+                    logger.warning(f"Meta CAPI Purchase event hatası: {capi_err}")
             else:
                 logger.warning(f"Payment log bulunamadı: {session_id}")
         
