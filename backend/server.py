@@ -8835,6 +8835,29 @@ async def get_personnel_stats(request: Request, current_user: UserInDB = Depends
         "completed_appointments_count": completed_appointments_count
     }
 
+# === CHATWOOT IDENTITY (HMAC) ===
+@api_router.get("/me/chatwoot-identity")
+async def get_chatwoot_identity(current_user: UserInDB = Depends(get_current_user)):
+    """
+    Chatwoot User Identity Validation için identifier_hash döner.
+    Frontend bunu `$chatwoot.setUser(identifier, { identifier_hash })` ile gönderir.
+    Chatwoot panelinde User Identity Validation açıkken HMAC zorunludur; aksi halde
+    setUser çağrısı sessizce reddedilir ve "small-dew" gibi anonymous rumuz oluşur.
+    CHATWOOT_HMAC_TOKEN env tanımlı değilse hash None döner (validation kapalı modu).
+    """
+    import hmac as _hmac
+    import hashlib as _hashlib
+    hmac_token = os.environ.get("CHATWOOT_HMAC_TOKEN", "").strip()
+    identifier = str(current_user.user_id)
+    identifier_hash = None
+    if hmac_token:
+        identifier_hash = _hmac.new(
+            hmac_token.encode("utf-8"),
+            identifier.encode("utf-8"),
+            _hashlib.sha256,
+        ).hexdigest()
+    return {"identifier": identifier, "identifier_hash": identifier_hash}
+
 # === PUSH NOTIFICATION ROUTES ===
 @api_router.get("/push/vapid-key")
 async def get_vapid_public_key():

@@ -125,6 +125,10 @@ function App() {
   // name + admin name instead of an auto-generated handle (e.g. "small-dew").
   // Runs whenever auth + settings change; the SDK may still be loading,
   // setChatwootUser buffers and replays on `chatwoot:ready`.
+  //
+  // Backend'den HMAC identifier_hash fetch ederiz. Chatwoot panelinde
+  // "User Identity Validation" açıksa bu zorunludur; aksi halde setUser çağrısı
+  // sessizce reddedilir ve panelde "small-dew" gibi anonymous handle görünür.
   useEffect(() => {
     if (!token || !settings) return;
     let payload;
@@ -143,19 +147,34 @@ function App() {
       ? `${companyName} — ${adminName}`
       : (companyName || adminName || String(identifier));
 
-    setChatwootUser({
-      identifier: String(identifier),
-      name: displayName,
-      email: payload.sub, // username is the email/login
-      phone_number: settings.support_phone || undefined,
-      company_name: companyName || undefined,
-      custom_attributes: {
-        organization_id: payload.org_id,
-        role: payload.role || userRole,
-        sector: payload.sector || settings.sector,
-        plan: settings.subscription_status || settings.plan || undefined,
-      },
-    });
+    let cancelled = false;
+    (async () => {
+      // Backend'den HMAC hash fetch et (CHATWOOT_HMAC_TOKEN env varsa).
+      let identifierHash;
+      try {
+        const res = await api.get("/me/chatwoot-identity");
+        if (res?.data?.identifier_hash) identifierHash = res.data.identifier_hash;
+      } catch (_) {
+        // Endpoint yoksa veya hata olursa sessizce devam et.
+      }
+      if (cancelled) return;
+
+      setChatwootUser({
+        identifier: String(identifier),
+        name: displayName,
+        email: payload.sub, // username is the email/login
+        phone_number: settings.support_phone || undefined,
+        company_name: companyName || undefined,
+        identifier_hash: identifierHash,
+        custom_attributes: {
+          organization_id: payload.org_id,
+          role: payload.role || userRole,
+          sector: payload.sector || settings.sector,
+          plan: settings.subscription_status || settings.plan || undefined,
+        },
+      });
+    })();
+    return () => { cancelled = true; };
   }, [token, settings, userRole]);
 
   // VIEW DEĞİŞİMİNDE SCROLL'U EN BAŞA AL
