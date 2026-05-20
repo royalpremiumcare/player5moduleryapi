@@ -157,9 +157,9 @@
       }
     },
     "pricing": {
-      "title": "Simple, transparent pricing",
+      "title": "Transparent pricing for businesses of every size.",
       "eyebrow": "Plans",
-      "subtitle": "Pricing that scales with you. All plans start with a 7-day free trial — no credit card required.",
+      "subtitle": "Try all features with no restrictions and no credit card for 7 days — completely free.",
       "monthly": "Monthly",
       "yearly": "Yearly",
       "twoMonthsFree": "2 Months Free",
@@ -217,19 +217,19 @@
         "whatsappReminder": "WhatsApp Reminders",
         "smsReminder": "SMS Reminders",
         "unlimitedStaff": "Unlimited Staff",
-        "unlimitedCustomers": "Unlimited Customers",
+        "unlimitedCustomers": "Unlimited Customer Records",
         "unlimitedServices": "Unlimited Services",
-        "bookingPage": "Online Booking",
+        "bookingPage": "Online Booking Page",
         "instantNotifications": "Instant Notifications",
-        "revenueStats": "Statistics",
-        "aiAssistant": "AI Smart Assistant",
-        "aiAssistantUnlimited": "AI Smart Assistant (Unlimited)",
+        "revenueStats": "Advanced Reporting",
+        "aiAssistant": "AI-Powered Assistant",
+        "aiAssistantUnlimited": "AI-Powered Assistant (Unlimited)",
         "prioritySupport": "Priority Support",
         "customIntegrations": "Custom Integrations",
-        "appointmentReminder": "Appointment Reminders Included",
+        "appointmentReminder": "Automatic Appointment Reminders",
         "unlimitedAppointments": "Unlimited Appointments",
-        "onlinePayment": "Accept Online Payments (Deposit or Full)",
-        "sessionPackages": "Session Package Management"
+        "onlinePayment": "Online Payment & Deposit Infrastructure",
+        "sessionPackages": "Session & Package Management"
       }
     },
     "testimonials": {

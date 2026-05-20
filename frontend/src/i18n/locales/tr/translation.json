@@ -157,9 +157,9 @@
       }
     },
     "pricing": {
-      "title": "Fiyatlandırma",
+      "title": "Her ölçekten işletme için şeffaf fiyatlar.",
       "eyebrow": "Planlar",
-      "subtitle": "İhtiyacına göre büyüyen, şeffaf bir fiyatlandırma. Tüm planlarda 7 gün ücretsiz deneme — kredi kartı gerekmez.",
+      "subtitle": "Tüm özellikleri kısıtlama olmadan, kredi kartı girmeden 7 gün boyunca ücretsiz keşfedin.",
       "monthly": "Aylık",
       "yearly": "Yıllık",
       "twoMonthsFree": "2 Ay Ücretsiz",
@@ -217,19 +217,19 @@
         "whatsappReminder": "WhatsApp Hatırlatma",
         "smsReminder": "SMS Hatırlatma",
         "unlimitedStaff": "Sınırsız Personel",
-        "unlimitedCustomers": "Sınırsız Müşteri",
+        "unlimitedCustomers": "Sınırsız Müşteri Kaydı",
         "unlimitedServices": "Sınırsız Hizmet",
-        "bookingPage": "Online Randevu",
+        "bookingPage": "Online Randevu Sayfası",
         "instantNotifications": "Anlık Bildirimler",
-        "revenueStats": "İstatistikler",
-        "aiAssistant": "Yapay Zeka Akıllı Asistan",
-        "aiAssistantUnlimited": "Yapay Zeka Akıllı Asistan (Limitsiz)",
+        "revenueStats": "Gelişmiş Raporlama",
+        "aiAssistant": "Yapay Zeka Destekli Asistan",
+        "aiAssistantUnlimited": "Yapay Zeka Destekli Asistan (Limitsiz)",
         "prioritySupport": "Öncelikli Destek",
         "customIntegrations": "Özel Entegrasyonlar",
-        "appointmentReminder": "Randevu Hatırlatma Dahil",
+        "appointmentReminder": "Otomatik Randevu Hatırlatmaları",
         "unlimitedAppointments": "Sınırsız Randevu",
-        "onlinePayment": "Online Ödeme Alın (Kapora veya Tam Ödeme)",
-        "sessionPackages": "Seans Paketi Yönetimi"
+        "onlinePayment": "Online Ödeme ve Kapora Altyapısı",
+        "sessionPackages": "Seans ve Paket Yönetimi"
       }
     },
     "testimonials": {

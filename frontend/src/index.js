@@ -10,10 +10,19 @@ import AppRouter from './AppRouter';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import posthog from './lib/posthog';
+import metaPixel from './lib/metaPixel';
 
 // === POSTHOG ANALYTICS ===
 // REACT_APP_POSTHOG_KEY yoksa otomatik olarak no-op'a düşer; ledger POST'ları yine çalışır.
 posthog.init().catch((err) => console.warn('PostHog init failed:', err));
+
+// === META PIXEL + CAPI HİBRİT TAKİP ===
+// REACT_APP_META_PIXEL_ID yoksa Pixel disabled, ama track() çağrıları backend
+// `/api/meta/event` üzerinden CAPI'a yine de gider (server-side fallback).
+// Capacitor (native) içinde Pixel anlamsız → web ortamında init et.
+if (!Capacitor.isNativePlatform()) {
+  metaPixel.init().catch((err) => console.warn('Meta Pixel init failed:', err));
+}
 
 // === SENTRY ERROR TRACKING ===
 Sentry.init({

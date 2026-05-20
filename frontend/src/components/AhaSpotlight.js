@@ -111,6 +111,19 @@ const AhaSpotlight = ({ onTrigger, onFallback, onTargetMissing, onShown, loading
     try { onTriggerRef.current?.(); } catch (_) {}
   }, [loading]);
 
+  // Body scroll kilidini aç/kapa — aha overlay aktifken arka plan kaydırılmasın
+  useEffect(() => {
+    if (searchExhausted || !targetRect) return undefined;
+    const prev = document.body.style.overflow;
+    const prevTouch = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = prev;
+      document.body.style.touchAction = prevTouch;
+    };
+  }, [searchExhausted, targetRect]);
+
   if (searchExhausted || !targetRect) return null;
 
   // Hole boyutları — DAİRE/yuvarlak. Hedef + butonu w-14 h-14 yuvarlak.
@@ -151,7 +164,17 @@ const AhaSpotlight = ({ onTrigger, onFallback, onTargetMissing, onShown, loading
           carve-out'a göre daha temiz: hole şekli tam dairesel olduğu için
           bottom-nav bar gibi alta taşan elementler hole DIŞINDA kalıp
           kararır — buton arkasında beyaz dikdörtgen oluşmaz. */}
-      <div style={{ position: 'fixed', inset: 0, zIndex: z, pointerEvents: 'none' }}>
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: z,
+          pointerEvents: 'auto',
+          touchAction: 'none',
+          overscrollBehavior: 'none',
+        }}
+        onTouchMove={(e) => e.preventDefault()}
+      >
         <div
           style={{
             position: 'absolute',

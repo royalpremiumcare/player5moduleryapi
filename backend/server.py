@@ -3,7 +3,8 @@ from whatsapp_service import send_whatsapp_template, detect_language_from_phone
 from funnel_registry import is_frontend_owned, is_valid_event
 from funnel_service import ensure_funnel_indexes, record_funnel_event, track_webhook_event
 from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query
+from meta_capi_service import get_meta_capi_service, split_full_name
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
@@ -2875,7 +2876,7 @@ async def register_initiate(request: Request, user_in: UserCreate, db = Depends(
 
 @api_router.post("/register-verify", response_model=Token)
 @rate_limit("20/hour")
-async def register_verify(request: Request, body: RegisterVerifyRequest, db = Depends(get_db)):
+async def register_verify(request: Request, body: RegisterVerifyRequest, background_tasks: BackgroundTasks, db = Depends(get_db)):
     """Kayıt OTP'sini doğrula, hesabı oluştur, JWT token dön (otomatik login)."""
     redis_client = getattr(request.app.state, 'redis_client', None)
     if not redis_client:
@@ -2918,6 +2919,31 @@ async def register_verify(request: Request, body: RegisterVerifyRequest, db = De
     # register_user, /register endpoint fonksiyonu — içeriden çağırırken
     # validations tekrar çalışır (race koruması için iyi).
     user_response = await register_user(request, user_in, db)
+
+    # --- Meta CAPI: CompleteRegistration (server-side) ---
+    try:
+        svc = get_meta_capi_service()
+        if svc.enabled:
+            names = split_full_name(user_in.full_name)
+            background_tasks.add_task(
+                svc.send_event,
+                event_name="CompleteRegistration",
+                event_source_url="https://plannapp.co/register",
+                action_source="website",
+                client_ip=request.client.host if request.client else None,
+                client_user_agent=request.headers.get("user-agent"),
+                user_data={
+                    "em": user_in.username,
+                    "ph": user_in.support_phone or saved_phone,
+                    "fn": names["fn"],
+                    "ln": names["ln"],
+                },
+                fbp=request.cookies.get("_fbp"),
+                fbc=request.cookies.get("_fbc"),
+                external_id=user_response.organization_id,
+            )
+    except Exception as exc:
+        logging.warning(f"[register-verify] Meta CAPI CompleteRegistration hatası: {exc}")
 
     # JWT üret — login_for_access_token ile aynı payload yapısı
     access_token = create_access_token(data={
@@ -8021,15 +8047,24 @@ async def confirm_stripe_checkout_session(
             upsert=True
         )
 
-        await db.payment_logs.update_one(
-            {"session_id": session_id},
-            {"$set": {
+        # Gerçek Stripe tahsilat tutarını al (kuruş/cent → TL/GBP)
+        stripe_amount_total = _stripe_obj_get(session, 'amount_total')
+        payment_log_update = {
                 "status": "active",
                 "completed_at": now.isoformat(),
                 "subscription_id": subscription_id,
                 "stripe_customer_id": customer_id,
                 "stripe_subscription_id": subscription_id
-            }},
+        }
+        if stripe_amount_total is not None:
+            try:
+                payment_log_update["amount"] = round(int(stripe_amount_total) / 100.0, 2)
+            except (TypeError, ValueError):
+                pass
+
+        await db.payment_logs.update_one(
+            {"session_id": session_id},
+            {"$set": payment_log_update},
             upsert=True
         )
 
@@ -8278,14 +8313,21 @@ async def handle_stripe_webhook(request: Request):
                 upsert=True
             )
             
-            # 5. Ödeme kaydını 'active' yap
-            await db.payment_logs.update_one(
-                {"session_id": session_id},
-                {"$set": {
+            # 5. Ödeme kaydını 'active' yap + gerçek Stripe tutarını güncelle
+            wh_payment_update = {
                     "status": "active",
                     "completed_at": datetime.now(timezone.utc).isoformat(),
                     "subscription_id": subscription_id
-                }}
+            }
+            wh_amount_total = _stripe_obj_get(session, 'amount_total')
+            if wh_amount_total is not None:
+                try:
+                    wh_payment_update["amount"] = round(int(wh_amount_total) / 100.0, 2)
+                except (TypeError, ValueError):
+                    pass
+            await db.payment_logs.update_one(
+                {"session_id": session_id},
+                {"$set": wh_payment_update}
             )
             
             logger.info(f"✅ STRIPE BAŞARILI: {session_id} - Plan güncellendi. Organization: {organization_id}, Plan: {plan_id}")
@@ -13206,13 +13248,21 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
         appt_counts = await db.appointments.aggregate(appt_pipeline).to_list(len(org_ids))
         appt_map = {a["_id"]: a["count"] for a in appt_counts}
 
+        # Batch: all-time appointment counts
+        appt_total_pipeline = [
+            {"$match": {"organization_id": {"$in": org_ids}}},
+            {"$group": {"_id": "$organization_id", "count": {"$sum": 1}}}
+        ]
+        appt_total_counts = await db.appointments.aggregate(appt_total_pipeline).to_list(len(org_ids))
+        appt_total_map = {a["_id"]: a["count"] for a in appt_total_counts}
+
         # Batch: Stripe ödemeleri (payment_logs — checkout/webhook ile dolan kayıtlar)
         pay_pipeline = [
             {"$match": {"organization_id": {"$in": org_ids}, "status": {"$in": ["active", "completed"]}}},
             {"$group": {"_id": "$organization_id", "total": {"$sum": "$amount"}}},
         ]
         pay_totals = await db.payment_logs.aggregate(pay_pipeline).to_list(len(org_ids))
-        pay_map = {p["_id"]: int(p.get("total") or 0) for p in pay_totals}
+        pay_map = {p["_id"]: round(p.get("total") or 0, 2) for p in pay_totals}
 
         # Batch: customer counts
         cust_pipeline = [
@@ -13251,6 +13301,7 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
             
             isletme_adi = setting.get('company_name', 'İsimsiz İşletme')
             telefon_numarasi = setting.get('support_phone', 'Telefon Yok')
+            is_internal = setting.get('is_internal', False)
             
             admin_user = admin_map.get(org_id)
             admin_full_name = admin_user.get('full_name', '-') if admin_user else '-'
@@ -13319,8 +13370,10 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
                 "days_left": days_left,
                 "toplam_odeme": toplam_odeme,
                 "bu_ayki_randevu_sayisi": appt_map.get(org_id, 0),
+                "toplam_randevu_sayisi": appt_total_map.get(org_id, 0),
                 "toplam_musteri_sayisi": cust_map.get(org_id, 0),
                 "toplam_personel_sayisi": staff_map.get(org_id, 0),
+                "is_internal": is_internal,
             })
         
         return {"organizations": organizations_list}
@@ -13539,6 +13592,28 @@ async def delete_organization(
         logging.error(f"Error in delete_organization: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"İşletme silinirken hata: {str(e)}")
 
+@api_router.patch("/superadmin/organizations/{org_id}/internal")
+async def toggle_internal_org(
+    org_id: str,
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """İşletmeyi iç/test olarak işaretle veya kaldır — finansal metriklerden hariç tutar"""
+    try:
+        body = await request.json()
+        is_internal = bool(body.get("is_internal", False))
+        await db.settings.update_one(
+            {"organization_id": org_id},
+            {"$set": {"is_internal": is_internal}},
+        )
+        label = "iç/test" if is_internal else "normal"
+        logger.info(f"SuperAdmin org {org_id} → {label} olarak işaretledi")
+        return {"message": f"İşletme {label} olarak güncellendi", "is_internal": is_internal}
+    except Exception as e:
+        logging.error(f"Error in toggle_internal_org: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"İşaretleme hatası: {str(e)}")
+
 @api_router.delete("/superadmin/organizations/{org_id}/staff/{user_id}")
 async def delete_staff_member(
     org_id: str,
@@ -13726,34 +13801,88 @@ async def get_financial_stats(request: Request, current_user: UserInDB = Depends
         first_day = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         thirty_days_ago = now - timedelta(days=30)
 
+        # İç/test işletmeleri belirle (finansal metriklerden hariç)
+        internal_settings = await db.settings.find(
+            {"is_internal": True}, {"_id": 0, "organization_id": 1}
+        ).to_list(10000)
+        internal_org_ids = {s["organization_id"] for s in internal_settings if s.get("organization_id")}
+
         # Tüm org plan kayıtları
         all_plans = await db.organization_plans.find({}, {"_id": 0}).to_list(10000)
-        active_plans = [p for p in all_plans if p.get("status") == "active"]
 
-        # MRR hesabı
+        # Her org'un son ödeme tutarını al (MRR hesabı için gerçek tutar)
+        last_payment_pipeline = [
+            {"$match": {"status": {"$in": ["active", "completed"]}}},
+            {"$sort": {"created_at": -1}},
+            {"$group": {
+                "_id": "$organization_id",
+                "amount": {"$first": "$amount"},
+                "billing_cycle": {"$first": "$billing_cycle"},
+            }},
+        ]
+        last_payments = await db.payment_logs.aggregate(last_payment_pipeline).to_list(10000)
+        last_pay_map = {lp["_id"]: lp for lp in last_payments}
+
+        # Aktif işletme: trial OLMAYAN + süresi dolmamış + iç değil
         plan_prices = {p["id"]: p.get("price_monthly", 0) for p in PLANS}
         mrr = 0
-        for p in active_plans:
-            pid = p.get("plan_id", "")
-            cycle = p.get("billing_cycle", "monthly")
-            price = plan_prices.get(pid, 0)
-            if cycle == "yearly":
-                mrr += price  # zaten aylık fiyat
+        active_count = 0
+        churn_count_calc = 0
+
+        for p in all_plans:
+            oid = p.get("organization_id")
+            if oid in internal_org_ids:
+                continue  # iç/test işletme — finansala dahil etme
+            pid = p.get("plan_id", "tier_trial")
+            if pid == "tier_trial":
+                continue  # trial sayılmaz
+            # Son ödeme / yenileme tarihi
+            deadline = None
+            for dk in ("next_billing_date", "next_payment_date", "quota_reset_date"):
+                dv = p.get(dk)
+                if dv:
+                    if isinstance(dv, str):
+                        try:
+                            deadline = datetime.fromisoformat(dv.replace("Z", "+00:00"))
+                        except ValueError:
+                            pass
+                    elif isinstance(dv, datetime):
+                        deadline = dv if dv.tzinfo else dv.replace(tzinfo=timezone.utc)
+                    if deadline:
+                        break
+            if deadline and deadline < now:
+                # Süresi dolmuş — churn'e say (son 30 gün içinde ise)
+                if deadline >= thirty_days_ago:
+                    churn_count_calc += 1
+                continue
+            # Aktif ücretli plan
+            active_count += 1
+            # MRR: gerçek ödeme tutarından hesapla, yoksa liste fiyatı
+            lp = last_pay_map.get(oid)
+            if lp and lp.get("amount"):
+                amt = lp["amount"]
+                cycle = lp.get("billing_cycle") or p.get("billing_cycle", "monthly")
+                mrr += round(amt / 12, 2) if cycle == "yearly" else amt
             else:
-                mrr += price
+                mrr += plan_prices.get(pid, 0)
 
-        # Toplam ciro (tüm zamanlar — payment_history)
-        all_payments = await db.payment_history.find({}, {"_id": 0, "amount": 1}).to_list(100000)
-        total_revenue = sum(p.get("amount", 0) for p in all_payments)
+        # Toplam ciro (tüm zamanlar — payment_logs, iç işletmeler hariç)
+        revenue_match = {"status": {"$in": ["active", "completed"]}}
+        if internal_org_ids:
+            revenue_match["organization_id"] = {"$nin": list(internal_org_ids)}
+        revenue_pipeline = [
+            {"$match": revenue_match},
+            {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+        ]
+        rev_result = await db.payment_logs.aggregate(revenue_pipeline).to_list(1)
+        total_revenue = round(rev_result[0]["total"], 2) if rev_result else 0
 
-        # Aktif işletme sayısı
-        active_count = len(active_plans)
-
-        # Churn: son 30 günde süresi dolmuş / iptal edilmiş
-        churn_count = await db.organization_plans.count_documents({
+        # Churn: hesaplanan + iptal edilmiş kayıtlar (varsa)
+        churn_cancelled = await db.organization_plans.count_documents({
             "status": {"$in": ["expired", "cancelled"]},
             "updated_at": {"$gte": thirty_days_ago.isoformat()}
         })
+        churn_count = churn_count_calc + churn_cancelled
 
         # Bu ay yeni kayıtlar (organization_plans.created_at daha güvenilir)
         new_this_month = await db.organization_plans.count_documents({
@@ -14416,6 +14545,14 @@ try:
     logging.info("✅ Financial Engine router registered")
 except Exception as fin_import_err:
     logging.warning(f"⚠️ Financial Engine router import failed: {fin_import_err}")
+
+# --- Meta Conversions API Router (Pixel + CAPI hybrid tracking) ---
+try:
+    from meta_capi_endpoints import router as meta_capi_router
+    app.include_router(meta_capi_router)
+    logging.info("✅ Meta CAPI router registered")
+except Exception as meta_import_err:
+    logging.warning(f"⚠️ Meta CAPI router import failed: {meta_import_err}")
 
 # === WhatsApp Webhook (Meta Cloud API) ===
 

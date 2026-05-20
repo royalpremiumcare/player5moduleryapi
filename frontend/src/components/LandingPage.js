@@ -22,6 +22,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.en
 
 import { Capacitor } from '@capacitor/core';
 import { WHATSAPP_URL } from "../constants/contact";
+import metaPixel from "../lib/metaPixel";
 
 // Public endpoint için axios instance (token gerektirmez)
 const publicApi = axios.create({
@@ -250,6 +251,12 @@ const LandingPage = () => {
       'Appointment Reminders Included': t('landing.pricing.features.appointmentReminder'),
       'Appointment reminders included': t('landing.pricing.features.appointmentReminder'),
       'Appointment Reminder': t('landing.pricing.features.appointmentReminder'),
+      // Online payment
+      'Online Ödeme Alın (Kapora veya Tam Ödeme)': t('landing.pricing.features.onlinePayment'),
+      'Online Payment & Deposit': t('landing.pricing.features.onlinePayment'),
+      // Session packages
+      'Seans Paketi Yönetimi': t('landing.pricing.features.sessionPackages'),
+      'Session Package Management': t('landing.pricing.features.sessionPackages'),
     };
 
     // Büyük/küçük harf farkı için lowercase fallback
@@ -621,7 +628,18 @@ const LandingPage = () => {
               </Button>
               <Button 
                 variant="outline"
-                onClick={() => window.open(whatsappUrl, '_blank', 'noopener,noreferrer')}
+                onClick={() => {
+                  // Meta: Lead — WhatsApp/Demo butonu tıklaması
+                  try {
+                    metaPixel.track('Lead', {
+                      customData: {
+                        content_name: 'WhatsApp Demo',
+                        content_category: 'demo_request',
+                      },
+                    });
+                  } catch (_) {}
+                  window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+                }}
                 className="bg-transparent border-2 border-gray-900 text-gray-900 hover:bg-gray-100 px-10 py-6 text-lg font-semibold rounded-full"
               >
                 <MessageSquare className="w-5 h-5 mr-2" />
@@ -935,13 +953,15 @@ const LandingPage = () => {
                           <span className={`line-through ${isPopular ? 'text-gray-600' : 'text-gray-400'}`}>
                             {originalPriceInfo.currency}{originalPriceInfo.price.toLocaleString(originalPriceInfo.locale)}
                           </span>
+                          {isYearly && (
                           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
                             isPopular
                               ? 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20'
                               : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
                           }`}>
-                            {isYearly ? t('landing.pricing.savedYearly') : t('landing.pricing.firstMonth')}
+                            {t('landing.pricing.savedYearly')}
                           </span>
+                          )}
                         </div>
                       ) : (
                         <p className={`mt-2 text-sm ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -1169,6 +1189,20 @@ const LandingPage = () => {
                   
                   if (response.data.success) {
                     setContactFormSuccess(true);
+                    // Meta: Lead — iletişim formu başarılı submit
+                    try {
+                      metaPixel.track('Lead', {
+                        customData: {
+                          content_name: 'Contact Form',
+                          content_category: 'demo_request',
+                        },
+                        userData: {
+                          contact_name: contactForm.name,
+                          contact_phone: contactForm.phone,
+                          contact_email: contactForm.email || undefined,
+                        },
+                      });
+                    } catch (_) {}
                     toast.success("Talebiniz alındı!");
                   } else {
                     toast.error("Bir hata oluştu, lütfen tekrar deneyin");

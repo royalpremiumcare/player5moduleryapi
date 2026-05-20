@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, UserX, Package, CreditCard, MessageCircle, Phone, AlertTriangle, CheckCheck, Send, Eye, Trash2, RefreshCw } from "lucide-react";
+import { X, UserX, Package, CreditCard, MessageCircle, Phone, AlertTriangle, CheckCheck, Send, Eye, Trash2, RefreshCw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import api from "../../api/api";
 
@@ -21,11 +21,14 @@ export default function OrgDrawer({ org, plans, onClose, onRefresh }) {
   const [selectedPlan, setSelectedPlan] = useState(org?.plan_id || "");
   const [selectedCycle, setSelectedCycle] = useState(org?.billing_cycle || "monthly");
   const [assigning, setAssigning] = useState(false);
+  const [isInternal, setIsInternal] = useState(org?.is_internal || false);
+  const [togglingInternal, setTogglingInternal] = useState(false);
 
   useEffect(() => {
     if (!org) return;
     setSelectedPlan(org.plan_id || "");
     setSelectedCycle(org.billing_cycle || "monthly");
+    setIsInternal(org.is_internal || false);
     loadStaff();
   }, [org?.organization_id]);
 
@@ -103,6 +106,19 @@ export default function OrgDrawer({ org, plans, onClose, onRefresh }) {
 
   const waLabel = (s) => ({ read:"Okundu", delivered:"İletildi", sent:"Gönderildi", failed:"Başarısız" }[s] || s);
 
+  const toggleInternal = async () => {
+    setTogglingInternal(true);
+    try {
+      await api.patch(`/superadmin/organizations/${org.organization_id}/internal`, {
+        is_internal: !isInternal,
+      });
+      setIsInternal(!isInternal);
+      toast.success(isInternal ? "Normal işletme olarak işaretlendi" : "İç/Test işletme olarak işaretlendi");
+      onRefresh?.();
+    } catch { toast.error("İşaretleme başarısız"); }
+    finally { setTogglingInternal(false); }
+  };
+
   if (!org) return null;
 
   return (
@@ -117,13 +133,18 @@ export default function OrgDrawer({ org, plans, onClose, onRefresh }) {
           <div>
             <h2 className="text-lg font-bold text-gray-900">{org.isletme_adi}</h2>
             <p className="text-sm text-gray-500 mt-0.5">{org.admin_full_name} · {org.admin_email}</p>
-            <div className="flex items-center gap-2 mt-2">
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(org.abonelik_durumu_key || "")}`}>
                 {org.abonelik_durumu}
               </span>
               <span className="text-xs text-gray-400">{org.abonelik_paketi}</span>
               {org.billing_cycle === "yearly" && (
                 <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-medium">Yıllık</span>
+              )}
+              {isInternal && (
+                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full font-medium flex items-center gap-1">
+                  <ShieldAlert className="w-3 h-3" /> İç/Test
+                </span>
               )}
             </div>
           </div>
@@ -173,6 +194,18 @@ export default function OrgDrawer({ org, plans, onClose, onRefresh }) {
                   <a href={`tel:${org.telefon_numarasi}`} className="text-indigo-600 hover:underline">{org.telefon_numarasi}</a>
                 </div>
               </div>
+              <button
+                onClick={toggleInternal}
+                disabled={togglingInternal}
+                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-colors border disabled:opacity-50 ${
+                  isInternal
+                    ? "bg-green-50 text-green-600 hover:bg-green-100 border-green-100"
+                    : "bg-orange-50 text-orange-600 hover:bg-orange-100 border-orange-100"
+                }`}
+              >
+                <ShieldAlert className="w-4 h-4" />
+                {togglingInternal ? "..." : isInternal ? "Normal İşletme Yap" : "İç/Test Olarak İşaretle"}
+              </button>
               <button
                 onClick={deleteOrg}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-50 text-red-600 rounded-xl text-sm font-medium hover:bg-red-100 transition-colors border border-red-100"

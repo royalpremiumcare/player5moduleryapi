@@ -78,6 +78,7 @@ export default function SAOrganizations() {
     { key: "abonelik_paketi",       label: "Paket" },
     { key: "days_left",             label: "Kalan Gün" },
     { key: "bu_ayki_randevu_sayisi",label: "Bu Ay Randevu" },
+    { key: "toplam_randevu_sayisi",  label: "Toplam Randevu" },
     { key: "toplam_odeme",          label: "Toplam Ödeme" },
     { key: "abonelik_durumu",       label: "Durum" },
   ];
@@ -146,7 +147,12 @@ export default function SAOrganizations() {
                   >
                     <td className="px-4 py-3">
                       <div>
-                        <p className="font-medium text-gray-900">{org.isletme_adi}</p>
+                        <p className="font-medium text-gray-900">
+                          {org.isletme_adi}
+                          {org.is_internal && (
+                            <span className="ml-1.5 px-1.5 py-0.5 bg-orange-100 text-orange-600 text-[10px] rounded font-medium align-middle">İÇ</span>
+                          )}
+                        </p>
                         <p className="text-xs text-gray-400">{org.admin_full_name}</p>
                       </div>
                     </td>
@@ -164,6 +170,7 @@ export default function SAOrganizations() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{org.bu_ayki_randevu_sayisi}</td>
+                    <td className="px-4 py-3 text-gray-500">{org.toplam_randevu_sayisi}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">
                       {(org.toplam_odeme || 0).toLocaleString("tr-TR")} ₺
                     </td>

@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import posthog from '../lib/posthog';
+import metaPixel from '../lib/metaPixel';
 
 const RegisterPage = () => { 
     const navigate = useNavigate();
@@ -168,6 +169,23 @@ const RegisterPage = () => {
             const result = await registerVerify(formData.support_phone, otpCode, formData.sector);
             if (result.success) {
                 toast.success(t('auth.register.success'));
+
+                // Meta: CompleteRegistration — OTP doğrulandı, hesap oluştu.
+                try {
+                    metaPixel.track('CompleteRegistration', {
+                        customData: {
+                            content_name: formData.organization_name || 'PLANN',
+                            content_category: 'registration',
+                            status: 'completed',
+                        },
+                        userData: {
+                            contact_email: formData.username,
+                            contact_phone: formData.support_phone,
+                            contact_name: formData.full_name,
+                        },
+                    });
+                } catch (_) {}
+
                 // Auto-login içinde token kaydedildi → AppRouter dashboard'a yönlendirir
                 navigate('/');
             } else {

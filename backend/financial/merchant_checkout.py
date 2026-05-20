@@ -190,6 +190,10 @@ async def create_customer_checkout_session(
         },
         success_url=f"https://plannapp.co/{merchant_slug}?payment=success&session_id={{CHECKOUT_SESSION_ID}}" if merchant_slug else PAYMENT_SUCCESS_URL + "?session_id={CHECKOUT_SESSION_ID}",
         cancel_url=f"https://plannapp.co/{merchant_slug}?payment=cancelled" if merchant_slug else PAYMENT_CANCEL_URL,
+        # Müşterinin checkout sırasında promosyon kodu (Stripe Coupon
+        # Promotion Code) girebilmesine izin ver. Bu session'da `discounts`
+        # parametresi kullanılmadığı için Stripe ile çakışma yok.
+        allow_promotion_codes=True,
     )
 
     # Resolve session_group_id from the appointment for session packages
