@@ -591,6 +591,8 @@
       "packageBulkScheduled": "Kalan {{count}} seans otomatik planlandı.",
       "packageBulkScheduleFailed": "İlk seans kaydedildi. Kalan seansları Seanslar veya takvimden planlayın.",
       "packageBulkIncompleteToSheet": "İlk seans kaydedildi. Aşağıda kalan saatleri tamamlayın veya düzeltin — önerilen satırlar korunur.",
+      "confirmCancelManualPackage": "Kalan seanslar planlanmadı. Paketi iptal etmek istiyor musunuz? İlk seans randevusu da silinecek.",
+      "packageCancelled": "Paket iptal edildi, ilk seans silindi.",
       "operationFailed": "İşlem başarısız",
       "settingsLoadError": "Ayarlar yüklenirken bir hata oluştu.",
       "customerType": "Müşteri Türü:",

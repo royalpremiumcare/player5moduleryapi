@@ -63,7 +63,11 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
    * at previous position when navigating between steps" UX bug).
    */
   const contentScrollRef = useRef(null);
-  
+  // Manuel paket akışında 1. seans wizard tarafından yaratılır, ardından
+  // SessionPlannerDialog kalan seansları planlar. Plan tamamlanmadan dialog
+  // kapatılırsa yetim 1. seansı temizlemek için bu ref'i kullanıyoruz.
+  const manualPlanCompletedRef = useRef(false);
+
   // State Yönetimi
   const [step, setStep] = useState(1);
   stepRef.current = step;
@@ -650,6 +654,8 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       return;
     }
     const pkg = getPackagePlanRows();
+    // Yeni manuel akış başlıyor — yetim temizleme guard'ını sıfırla.
+    manualPlanCompletedRef.current = false;
     setLoading(true);
     try {
       const payload = buildAppointmentPayload();
@@ -1236,8 +1242,25 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     return (
       <SessionPlannerDialog
         open={true}
-        onOpenChange={(o) => {
+        onOpenChange={async (o) => {
           if (!o) {
+            // Manuel planlama yarıda kesildi (kullanıcı X'e bastı veya backdrop'a
+            // tıkladı): 1. seans wizard'da POST /appointments ile zaten yaratılmıştı
+            // ama kalan 2..N seans hiç planlanmadığı için yetim olarak kalıyor.
+            // Kullanıcıya onay sor, onaylarsa 1. seansı sil.
+            if (!manualPlanCompletedRef.current && sheetAppointment?.id) {
+              const confirmed = typeof window !== "undefined"
+                ? window.confirm(t("appointments.form.confirmCancelManualPackage"))
+                : true;
+              if (!confirmed) return; // Dialog açık kalsın, kullanıcı planlamaya devam etsin.
+              try {
+                await api.delete(`/appointments/${sheetAppointment.id}`);
+                toast.success(t("appointments.form.packageCancelled"));
+              } catch (delErr) {
+                console.warn("Orphan first-session delete failed", delErr);
+                toast.error(formatApiError(delErr, t, t("appointments.form.operationFailed")));
+              }
+            }
             setSheetAppointment(null);
             setWizardSheetRows(null);
             onSave();
@@ -1245,6 +1268,9 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         }}
         appointment={sheetAppointment}
         onSuccess={() => {
+          // Plan başarıyla tamamlandı: yetim temizleme guard'ını işaretle ki
+          // dialog kapanırken yanlışlıkla 1. seans silinmesin.
+          manualPlanCompletedRef.current = true;
           setSheetAppointment(null);
           setWizardSheetRows(null);
           onSave();

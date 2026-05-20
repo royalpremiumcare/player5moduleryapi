@@ -589,6 +589,8 @@
       "packageBulkScheduled": "Remaining {{count}} sessions were scheduled automatically.",
       "packageBulkScheduleFailed": "First session saved. Schedule remaining sessions from Sessions or the calendar.",
       "packageBulkIncompleteToSheet": "First session saved. Complete or adjust the remaining times below — suggested slots are kept.",
+      "confirmCancelManualPackage": "Remaining sessions are not scheduled. Cancel the package? The first session appointment will also be deleted.",
+      "packageCancelled": "Package cancelled, first session deleted.",
       "operationFailed": "Operation failed",
       "settingsLoadError": "An error occurred while loading settings.",
       "customerType": "Customer Type:",

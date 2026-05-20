@@ -600,11 +600,15 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           {/* Sol Taraf: Karşılama
               pr-32 sm:pr-0 → Mobilde sağ üstteki absolute butonların (Takvim FAB
-              + AI Asistan) altına binmeyi engelle. flex-wrap → uzun isim + emoji
-              tek satıra sığmazsa alt satıra düşsün. */}
-          <div className="tour-greeting pr-28 sm:pr-0">
+              + AI Asistan) altına binmeyi engelle. Greeting + emoji aynı `whitespace-nowrap`
+              span'inde — uzun selamlama (İyi Geceler) + uzun isim durumunda
+              sadece isim alt satıra düşer, emoji asla. */}
+          <div className="tour-greeting pr-32 sm:pr-0">
             <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex flex-wrap items-center gap-x-2 gap-y-1">
-              {greeting.text}, <span className="text-gray-700">{currentUserName}</span> <span className="text-2xl">{greeting.emoji}</span>
+              <span className="whitespace-nowrap">
+                {greeting.text}<span className="text-2xl ml-1 align-middle">{greeting.emoji}</span>,
+              </span>
+              <span className="text-gray-700">{currentUserName}</span>
             </h1>
             <p className="text-base md:text-lg text-gray-600 font-medium mt-1.5 leading-relaxed">
               {format(new Date(), "d MMMM EEEE", { locale: dateLocale })}
