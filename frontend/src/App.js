@@ -129,6 +129,7 @@ function App() {
   // Backend'den HMAC identifier_hash fetch ederiz. Chatwoot panelinde
   // "User Identity Validation" açıksa bu zorunludur; aksi halde setUser çağrısı
   // sessizce reddedilir ve panelde "small-dew" gibi anonymous handle görünür.
+  // Identify the logged-in user inside Chatwoot
   useEffect(() => {
     if (!token || !settings) return;
     let payload;
@@ -142,27 +143,23 @@ function App() {
 
     const companyName = settings.company_name || "";
     const adminName = payload.full_name || payload.sub || "";
-    // Display name combines company + admin so the agent sees "Salon X — Ali".
     const displayName = companyName && adminName
       ? `${companyName} — ${adminName}`
       : (companyName || adminName || String(identifier));
 
     let cancelled = false;
     (async () => {
-      // Backend'den HMAC hash fetch et (CHATWOOT_HMAC_TOKEN env varsa).
       let identifierHash;
       try {
         const res = await api.get("/me/chatwoot-identity");
         if (res?.data?.identifier_hash) identifierHash = res.data.identifier_hash;
-      } catch (_) {
-        // Endpoint yoksa veya hata olursa sessizce devam et.
-      }
+      } catch (_) {}
+      
       if (cancelled) return;
 
-      setChatwootUser({
-        identifier: String(identifier),
+      const chatwootData = {
         name: displayName,
-        email: payload.sub, // username is the email/login
+        email: payload.sub,
         phone_number: settings.support_phone || undefined,
         company_name: companyName || undefined,
         identifier_hash: identifierHash,
@@ -172,7 +169,21 @@ function App() {
           sector: payload.sector || settings.sector,
           plan: settings.subscription_status || settings.plan || undefined,
         },
-      });
+      };
+
+      const runIdentify = () => {
+        if (window.$chatwoot) {
+          window.$chatwoot.setUser(String(identifier), chatwootData);
+        }
+      };
+
+      // Android Capacitor yükleme gecikmesine karşı koruma
+      if (window.$chatwoot && window.$chatwoot.hasLoaded) {
+        runIdentify();
+      } else {
+        window.addEventListener("chatwoot:ready", runIdentify);
+      }
+      
     })();
     return () => { cancelled = true; };
   }, [token, settings, userRole]);
