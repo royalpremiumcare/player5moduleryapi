@@ -599,18 +599,32 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           {/* Sol Taraf: Karşılama
-              pr-32 sm:pr-0 → Mobilde sağ üstteki absolute butonların (Takvim FAB
-              + AI Asistan) altına binmeyi engelle. Greeting + emoji aynı `whitespace-nowrap`
-              span'inde — uzun selamlama (İyi Geceler) + uzun isim durumunda
-              sadece isim alt satıra düşer, emoji asla. */}
-          <div className="tour-greeting pr-32 sm:pr-0">
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex flex-wrap items-center gap-x-2 gap-y-1">
+              Mobilde sağ üstteki absolute butonların (Takvim FAB + AI Asistan)
+              altına binmeyi dinamik pr ile engelle: 0 buton → pr-0, 1 buton →
+              pr-20, 2 buton → pr-32. clamp() ile h1+tarih akıcı küçülür;
+              büyük Android font ayarlı cihazlarda tek satır boyunda durur. */}
+          <div
+            className={`tour-greeting min-w-0 flex-1 ${
+              (hasActiveSessions ? 1 : 0) + (onOpenChat ? 1 : 0) === 0
+                ? ''
+                : (hasActiveSessions ? 1 : 0) + (onOpenChat ? 1 : 0) === 1
+                ? 'pr-20 sm:pr-0'
+                : 'pr-32 sm:pr-0'
+            }`}
+          >
+            <h1
+              className="font-bold text-gray-900 tracking-tight flex flex-wrap items-center gap-x-2 gap-y-1"
+              style={{ fontSize: 'clamp(0.95rem, 4vw, 1.5rem)' }}
+            >
               <span className="whitespace-nowrap">
-                {greeting.text}<span className="text-2xl ml-1 align-middle">{greeting.emoji}</span>,
+                {greeting.text}<span className="ml-1 align-middle" style={{ fontSize: '1.2em' }}>{greeting.emoji}</span>,
               </span>
               <span className="text-gray-700">{currentUserName}</span>
             </h1>
-            <p className="text-base md:text-lg text-gray-600 font-medium mt-1.5 leading-relaxed">
+            <p
+              className="text-gray-600 font-medium mt-1.5 leading-relaxed"
+              style={{ fontSize: 'clamp(0.875rem, 3.5vw, 1.125rem)' }}
+            >
               {format(new Date(), "d MMMM EEEE", { locale: dateLocale })}
             </p>
           </div>
