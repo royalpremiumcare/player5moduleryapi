@@ -23,6 +23,7 @@ import SessionPlannerDialog from "./SessionPlannerDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import SessionBadge from "@/components/ui/session-badge";
 import {
   Select,
   SelectContent,
@@ -508,11 +509,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                         <span className="text-xs text-gray-500">- {calculateEndTime(apt.appointment_time || apt.time, apt.service_duration)}</span>
                       )}
                       <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-                        {apt.session_number && apt.session_total && (
-                          <span className="inline-flex items-center text-[10px] sm:text-xs font-semibold text-zinc-600 bg-zinc-100 border border-zinc-200/80 px-2 py-0.5 rounded-full whitespace-nowrap tracking-tight">
-                            {apt.session_number}/{apt.session_total}
-                          </span>
-                        )}
+                        <SessionBadge number={apt.session_number} total={apt.session_total} />
                         {isAppointmentActive(apt) ? (
                           <span className="text-[10px] text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1">
                             <span className="relative flex h-1.5 w-1.5">
@@ -627,11 +624,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                       </div>
                     )}
                     <div className="flex items-center gap-1 mt-1 flex-wrap">
-                      {apt.session_number && apt.session_total && (
-                        <span className="inline-flex items-center text-[10px] sm:text-xs font-semibold text-zinc-600 bg-zinc-100 border border-zinc-200/80 px-2 py-0.5 rounded-full whitespace-nowrap tracking-tight">
-                          {apt.session_number}/{apt.session_total}
-                        </span>
-                      )}
+                      <SessionBadge number={apt.session_number} total={apt.session_total} />
                       {isAppointmentActive(apt) && (
                         <span className="text-xs text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1">
                           <span className="relative flex h-1.5 w-1.5">
@@ -805,11 +798,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   </div>
                 )}
               </div>
-              {apt.session_number && apt.session_total && (
-                <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">
-                  {apt.session_number}/{apt.session_total}
-                </span>
-              )}
+              <SessionBadge number={apt.session_number} total={apt.session_total} size="sm" />
               {isAppointmentActive(apt) ? (
                 <Badge className="text-xs flex-shrink-0 text-green-700 bg-green-50 border-green-200 flex items-center gap-1">
                   <span className="relative flex h-2 w-2">
@@ -1043,9 +1032,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                 {selectedAppointment.session_number && selectedAppointment.session_total && (
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">{i18n.language === 'tr' ? 'Seans' : 'Session'}</span>
-                    <span className="text-sm font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                      {selectedAppointment.session_number}/{selectedAppointment.session_total}
-                    </span>
+                    <SessionBadge number={selectedAppointment.session_number} total={selectedAppointment.session_total} />
                   </div>
                 )}
 
@@ -1175,11 +1162,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                           </div>
                         )}
                       </div>
-                      {apt.session_number && apt.session_total && (
-                        <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold flex-shrink-0">
-                          {apt.session_number}/{apt.session_total}
-                        </span>
-                      )}
+                      <SessionBadge number={apt.session_number} total={apt.session_total} size="sm" />
                       {isAppointmentActive(apt) ? (
                         <Badge className="text-xs flex-shrink-0 text-green-700 bg-green-50 border-green-200 flex items-center gap-1">
                           <span className="relative flex h-2 w-2">

@@ -268,7 +268,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
             <SettingItem
               icon={MessageCircle}
               title="WhatsApp"
-              subtitle={WHATSAPP_PHONE_DISPLAY}
+              subtitle={t('settings.whatsappSubtitle', { defaultValue: 'WhatsApp üzerinden hızlı destek' })}
               onClick={() => window.open(WHATSAPP_URL, '_blank', 'noopener,noreferrer')}
             />
             <SettingItem

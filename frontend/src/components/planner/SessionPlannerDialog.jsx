@@ -19,6 +19,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import SessionBadge from "@/components/ui/session-badge";
 import { useAuth } from "../../context/AuthContext";
 
 import SmartScreen from "./SmartScreen";
@@ -194,11 +195,12 @@ const SessionPlannerDialog = ({
           <div className="flex-1 min-w-0 overflow-hidden">
             <DialogTitle className="text-sm sm:text-base font-black text-zinc-900 leading-tight flex items-center gap-1.5 min-w-0">
               <span className="truncate">{t("sessionPlanner.title")}</span>
-              {effectiveAppointment?.session_number != null && effectiveAppointment?.session_total != null && (
-                <span className="flex-shrink-0 inline-flex items-center text-[9px] font-bold text-zinc-600 bg-zinc-100 border border-zinc-200/80 px-1.5 py-0.5 rounded-full whitespace-nowrap tracking-tight">
-                  {effectiveAppointment.session_number}/{effectiveAppointment.session_total}
-                </span>
-              )}
+              <SessionBadge
+                number={effectiveAppointment?.session_number}
+                total={effectiveAppointment?.session_total}
+                size="sm"
+                className="flex-shrink-0"
+              />
             </DialogTitle>
             <DialogDescription className="text-[11px] sm:text-xs text-zinc-500 truncate">
               {[effectiveAppointment?.customer_name, effectiveAppointment?.service_name].filter(Boolean).join(" · ")}

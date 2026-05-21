@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import SessionBadge from "@/components/ui/session-badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -699,10 +700,8 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
                         <span className="text-zinc-400 font-medium ml-1">{apt.appointment_time}</span>
                       </p>
                       <p className="text-sm text-zinc-600 font-medium">{apt.service_name}</p>
-                      {showSessionBadge && apt.session_number && (
-                        <span className="text-xs bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded-full font-bold">
-                          {i18n.language === 'tr' ? 'Seans' : 'Session'} {apt.session_number}/{apt.session_total}
-                        </span>
+                      {showSessionBadge && (
+                        <SessionBadge number={apt.session_number} total={apt.session_total} size="sm" />
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-1">
@@ -848,9 +847,13 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
               {cancelSourceAppointment && (
                 <p className="text-zinc-400 text-sm font-medium mt-1">
                   {cancelSourceAppointment.customer_name} — {cancelSourceAppointment.service_name}
-                  <span className="ml-2 bg-white/20 text-white text-xs px-2 py-0.5 rounded-full font-bold">
-                    {i18n.language === 'tr' ? 'Seans' : 'Session'} {cancelSourceAppointment.session_number}/{cancelSourceAppointment.session_total}
-                  </span>
+                  <SessionBadge
+                    number={cancelSourceAppointment.session_number}
+                    total={cancelSourceAppointment.session_total}
+                    size="sm"
+                    onDark
+                    className="ml-2"
+                  />
                 </p>
               )}
             </div>

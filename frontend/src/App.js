@@ -1624,7 +1624,7 @@ function App() {
               }}
               className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
                 currentView === "dashboard"
-                  ? "text-blue-600"
+                  ? "text-gray-900"
                   : "text-gray-600 hover:text-gray-900"
               }`}
             >
@@ -1640,7 +1640,7 @@ function App() {
                   setShowForm(false);
                 }}
                 className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
-                  currentView === "sessions" ? "text-blue-600" : "text-gray-600 hover:text-gray-900"
+                  currentView === "sessions" ? "text-gray-900" : "text-gray-600 hover:text-gray-900"
                 }`}
               >
                 <Layers className="w-5 h-5" />
@@ -1654,7 +1654,7 @@ function App() {
                   setShowForm(false);
                 }}
                 className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
-                  currentView === "calendar" ? "text-blue-600" : "text-gray-600 hover:text-gray-900"
+                  currentView === "calendar" ? "text-gray-900" : "text-gray-600 hover:text-gray-900"
                 }`}
               >
                 <Calendar className="w-5 h-5" />

@@ -369,12 +369,15 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
                 const planKey = getPlanPricingKey(plan.name);
                 const cell = PRICING_DISPLAY[currency]?.[planKey];
 
-                // Görüntülenecek fiyat ve eski (üzeri çizili) fiyat seçimi
+                // Görüntülenecek fiyat ve eski (üzeri çizili) fiyat seçimi.
+                // Yıllık modda LandingPage ile birebir aynı: TOPLAM yıllık
+                // fiyat gösterilir (Standart 10.900₺, Profesyonel 14.900₺,
+                // Kurumsal 28.500₺ ...). Suffix "/yıl". Eski fiyat = 12 ay ×
+                // original (2 ay tasarrufu net görünür).
                 let displayPrice, originalPrice, showStrike, savingsLabel;
                 if (isYearly) {
-                  const yearlyTotal = getYearlyPrice(currency, planKey);
-                  displayPrice = Math.round(yearlyTotal / 12); // ay başına denk gelen
-                  originalPrice = cell?.original; // aylık (12 ay × original karşılaştırması bonus)
+                  displayPrice = getYearlyPrice(currency, planKey); // 10.900, 14.900, ...
+                  originalPrice = (cell?.original ?? 0) * 12;       // 12 × aylık
                   showStrike = true;
                   savingsLabel = t('settings.subscribePage.twoMonthsFree');
                 } else if (isFirstMonth) {
@@ -439,7 +442,9 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
                           {(displayPrice ?? 0).toLocaleString(localeCode)}
                         </span>
                         <span className={`text-sm ml-2 ${isPopular ? 'text-gray-500' : 'text-gray-500'}`}>
-                          {t('landing.pricing.perMonth', { defaultValue: '/ay' })}
+                          {isYearly
+                            ? t('landing.pricing.perYear', { defaultValue: '/yıl' })
+                            : t('landing.pricing.perMonth', { defaultValue: '/ay' })}
                         </span>
                       </div>
                       {showStrike && originalPrice ? (

@@ -12,6 +12,7 @@ import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import SessionBadge from "@/components/ui/session-badge";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
@@ -487,11 +488,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             </div>
             <div className="flex items-center gap-2 mb-3">
               <p className="text-sm text-gray-600 truncate">{apt.service_name}</p>
-              {apt.session_number && apt.session_total && (
-                <span className="inline-flex items-center text-[10px] sm:text-xs font-semibold text-zinc-600 bg-zinc-100 border border-zinc-200/80 px-2 py-0.5 rounded-full whitespace-nowrap tracking-tight">
-                  {apt.session_number}/{apt.session_total}
-                </span>
-              )}
+              <SessionBadge number={apt.session_number} total={apt.session_total} />
               {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
             </div>
             <div className="flex items-center justify-between mt-auto">
@@ -612,11 +609,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 : 'pr-32 sm:pr-0'
             }`}
           >
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="whitespace-nowrap">
+            {/* Tek satır garantisi: müşteri adı uzunsa truncate (alt satıra
+                düşmek yerine "...") — greeting + emoji + virgül her zaman
+                tam görünür kalır. flex-wrap kaldırıldı. */}
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-x-2 min-w-0">
+              <span className="whitespace-nowrap shrink-0">
                 {greeting.text}<span className="ml-1 align-middle" style={{ fontSize: '1.2em' }}>{greeting.emoji}</span>,
               </span>
-              <span className="text-gray-700">{currentUserName}</span>
+              <span className="text-gray-700 truncate min-w-0">{currentUserName}</span>
             </h1>
             <p className="text-base md:text-lg text-gray-600 font-medium mt-1.5 leading-relaxed">
               {format(new Date(), "d MMMM EEEE", { locale: dateLocale })}
@@ -652,8 +652,11 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         </div>
       </div>
 
-      {/* 1b. İSTATİSTİK KARTLARI — Sticky (scroll'da sabit kalır) */}
-      <div className="sticky z-10 bg-white/90 backdrop-blur-lg border-b border-gray-100 shadow-sm px-5 py-2" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 45px)' }}>
+      {/* 1b. İSTATİSTİK KARTLARI — Sticky (scroll'da sabit kalır).
+          Top: safe-area-inset-top (status bar varsa altında yapışır, yoksa 0).
+          Eski "+ 45px" hatalı bir offset'ti; sticky'nin görsel olarak "kayar"
+          gibi gözükmesinin sebebi buydu. z-30 ile altta kalan içeriği örter. */}
+      <div className="sticky z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm px-5 py-2" style={{ top: 'env(safe-area-inset-top, 0px)' }}>
         <div className="grid grid-cols-2 gap-2.5 tour-stats"> {/* CLASS EKLENDI */}
           {/* Randevu Sayısı */}
           <div className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-all cursor-default">
