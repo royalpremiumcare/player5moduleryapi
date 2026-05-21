@@ -221,6 +221,8 @@ const SessionPlannerDialog = ({
               checking={checking}
               staffLookup={staffLookup}
               remainingCount={remainingCount}
+              startingNumber={startingNumber}
+              isNewPackage={isNewPackage}
               onOpenManual={(idx) => {
                 setManualIndex(idx);
                 setScreen("manual");

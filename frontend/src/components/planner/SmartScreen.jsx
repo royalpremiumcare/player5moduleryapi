@@ -168,8 +168,17 @@ export default function SmartScreen({
   onAutoFix,
   onRecheck,
   isTr,
+  startingNumber: startingNumberProp,
+  isNewPackage = false,
 }) {
-  const startingNumber = (Number(appointment?.session_number) || 0) + 1;
+  // newPackage modunda dialog 1'den başlatır (startingNumberProp=1) ve N seans
+  // (1..N) gösterilir. remainder modunda mevcut session_number'dan başlayarak
+  // kalanlar planlanır; SessionPlannerDialog prop geçmezse eski hesabı kullan
+  // (geriye uyumluluk).
+  const startingNumber =
+    startingNumberProp != null
+      ? startingNumberProp
+      : (Number(appointment?.session_number) || 0) + 1;
   const cCount = conflictCount(sessions);
   const allReady = sessions.length > 0 && sessions.every((s) => s.available === true);
 
@@ -195,7 +204,9 @@ export default function SmartScreen({
           <div className="flex-shrink-0 text-right">
             <div className="text-2xl sm:text-3xl font-black">{remainingCount}</div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">
-              {isTr ? "Kalan seans" : "Remaining"}
+              {isNewPackage
+                ? (isTr ? "Toplam seans" : "Total sessions")
+                : (isTr ? "Kalan seans" : "Remaining")}
             </p>
           </div>
         </div>

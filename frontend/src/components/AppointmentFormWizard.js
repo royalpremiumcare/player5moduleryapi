@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatApiError } from "@/lib/apiError";
 import SessionPlannerDialog from "./planner/SessionPlannerDialog";
+import { fetchWavePlanSessions } from "../lib/sessionScheduling";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const publicApi = axios.create({
@@ -505,30 +506,21 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   };
 
   /**
-   * Plan M2: Tek-yol paket başlatıcı.
-   *
-   * Eski akış (handleAutomaticPackage / handleManualPackage) POST
-   * /appointments ile 1. seansı önceden yaratıyordu → kullanıcı X'e
-   * basarsa yetim seans kalıyordu. Yeni akış:
-   *   1. HİÇBİR API çağrısı yapmaz.
-   *   2. formData snapshot'ı + crypto.randomUUID() ile session_group_id
-   *      üretip packageDraft'a koyar.
-   *   3. setStep(4) ile SessionPlannerDialog'u mode="newPackage" açar.
-   *   4. Dialog "Kaydet" derken atomik POST /bulk-package → 1..N tek
-   *      transaction'da yaratılır (backend Plan 12.2).
-   *   5. Kullanıcı X'e basarsa state temizlenir, DB temiz kalır.
+   * Form-state validate + packageDraft inşa eden yardımcı.
+   * Her iki paket başlatıcısı (auto + manual) ortak girdi doğrulaması
+   * ve draft üretimi için bunu çağırır.
+   * @returns {object|null} draft objesi veya validasyon başarısızsa null
    */
-  const handlePackagePlanStart = useCallback(() => {
+  const buildPackageDraft = useCallback(() => {
     if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
       try {
         Haptics.notification({ type: NotificationType.Error });
       } catch (e) {}
       toast.error(t("appointments.form.fillRequiredFields"));
-      return;
+      return null;
     }
     if (!selectedService?.session_count || selectedService.session_count <= 1) {
-      // Güvenlik: tek seansta packagePlanStart çağrılmamalı.
-      return;
+      return null;
     }
     const sessionTotal = selectedService.session_count;
     const sessionGroupId =
@@ -536,7 +528,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const staffId = (formData.staff_member_id || "").trim() || null;
-    const draft = {
+    return {
       customer_name: formData.customer_name,
       phone: formData.phone,
       service_id: formData.service_id,
@@ -549,12 +541,118 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       session_total: sessionTotal,
       notes: formData.notes || "",
     };
+  }, [formData, selectedService, t]);
+
+  /**
+   * Plan M2: Manuel paket akışı.
+   *
+   * HİÇBİR API çağrısı yapmaz; packageDraft + setStep(4) ile
+   * SessionPlannerDialog'u mode="newPackage" açar. Kullanıcı dialog
+   * içinde "Kaydet" derken atomik POST /bulk-package tek transaction'da
+   * 1..N seansı yaratır. X'e basarsa DB temiz kalır.
+   */
+  const handlePackagePlanManual = useCallback(() => {
+    const draft = buildPackageDraft();
+    if (!draft) return;
     setPackageDraft(draft);
     setStep(4);
     try {
       Haptics.notification({ type: NotificationType.Success });
     } catch (e) {}
-  }, [formData, selectedService, t]);
+  }, [buildPackageDraft]);
+
+  /**
+   * Plan M2: Otomatik paket akışı (eski "Otomatik Planla" davranışı geri).
+   *
+   * wave-plan API'sinden 2..N seansı öner → 1. seans + öneriler birleşip
+   * atomik POST /bulk-package ile tek seferde yaratılır. Dialog HİÇ
+   * AÇILMAZ; başarılıysa direkt onSave() çağrılır.
+   *
+   * wave-plan başarısız (network / öneri yetersiz) ise sessizce manuel
+   * akışa düşer (dialog açılır, kullanıcı planlar). Bu sayede yeni
+   * atomik garanti korunur, eski UX akıcılığı geri gelir.
+   */
+  const handlePackagePlanAuto = useCallback(async () => {
+    const draft = buildPackageDraft();
+    if (!draft) return;
+    setLoading(true);
+    const idempotencyKey =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      const sessionTotal = draft.session_total;
+      const need = Math.max(0, sessionTotal - 1);
+      let waveRows = [];
+      if (need > 0) {
+        try {
+          const wave = await fetchWavePlanSessions(api, {
+            service_id: draft.service_id,
+            first_session_date: draft.first_session_date,
+            first_session_time: draft.first_session_time,
+            remaining_count: need,
+            staff_member_id: draft.staff_member_id || undefined,
+          });
+          const planned = (wave?.sessions || []).filter((s) => s.date && s.time && !s.unplanned);
+          if (planned.length === need) {
+            waveRows = planned.map((s) => ({
+              date: s.date,
+              time: s.time,
+              staff_member_id: s.staff_member_id || undefined,
+            }));
+          }
+        } catch (waveErr) {
+          console.warn("[wizard] wave-plan auto failed, falling back to manual", waveErr);
+        }
+      }
+      // Wave-plan yeterli seans önermediyse manuel akışa düş.
+      if (need > 0 && waveRows.length !== need) {
+        toast.info(t("appointments.form.packageBulkIncompleteToSheet", { defaultValue: "Otomatik öneri yetersiz; planlamayı tamamla." }));
+        setPackageDraft(draft);
+        setStep(4);
+        return;
+      }
+      const firstRow = {
+        date: draft.first_session_date,
+        time: draft.first_session_time,
+      };
+      if (draft.staff_member_id) firstRow.staff_member_id = draft.staff_member_id;
+      const rows = [firstRow, ...waveRows];
+      const payload = {
+        customer_name: draft.customer_name,
+        phone: draft.phone,
+        service_id: draft.service_id,
+        notes: draft.notes || "",
+        session_group_id: draft.session_group_id,
+        session_total: sessionTotal,
+        sessions: rows,
+      };
+      if (draft.staff_member_id) payload.staff_member_id = draft.staff_member_id;
+      await api.post("/appointments/bulk-package", payload, {
+        headers: { "Idempotency-Key": idempotencyKey },
+      });
+      toast.success(t("appointments.form.packageBulkScheduled", { count: sessionTotal }));
+      try {
+        await Haptics.notification({ type: NotificationType.Success });
+      } catch (e) {}
+      await loadCustomers();
+      setAvailabilityNonce((n) => n + 1);
+      await new Promise((r) => setTimeout(r, 400));
+      onSave();
+    } catch (err) {
+      console.error("[wizard] auto bulk-package failed", err);
+      const msg = formatApiError(err, t, t("appointments.form.operationFailed"));
+      toast.error(msg);
+      try {
+        await Haptics.notification({ type: NotificationType.Error });
+      } catch (e) {}
+      // POST hatasında da manuel dialog açıp kullanıcıya planlama şansı ver.
+      setPackageDraft(draft);
+      setStep(4);
+    } finally {
+      setLoading(false);
+    }
+  }, [buildPackageDraft, t, loadCustomers, onSave]);
 
   const handleSubmit = async () => {
     if (isNewMultiPackage) return;
@@ -1189,7 +1287,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                <div className="flex flex-col gap-3">
                  <Button
                    type="button"
-                   onClick={handlePackagePlanStart}
+                   onClick={handlePackagePlanAuto}
                    disabled={loading || !formData.appointment_time}
                    className="w-full bg-zinc-900 text-white font-bold text-base h-14 rounded-2xl shadow-xl hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                  >
@@ -1204,7 +1302,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                  <Button
                    type="button"
                    variant="outline"
-                   onClick={handlePackagePlanStart}
+                   onClick={handlePackagePlanManual}
                    disabled={loading || !formData.appointment_time}
                    className="w-full h-14 rounded-2xl border-zinc-200 font-bold text-zinc-900 bg-white hover:bg-zinc-50 disabled:opacity-50"
                  >

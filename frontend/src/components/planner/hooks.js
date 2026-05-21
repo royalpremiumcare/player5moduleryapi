@@ -171,14 +171,20 @@ export function usePlanSuggestion({
   }, [appointment, remainingCount, plannerSettings, mapRow, mode, packageDraft]);
 
   const check = useCallback(async () => {
-    if (!appointment || sessions.length === 0) return;
+    if (sessions.length === 0) return;
+    // newPackage modunda appointment objesi yok; service_id/staff_id'yi
+    // packageDraft'tan alıyoruz. Aksi halde mevcut appointment'tan.
+    const isNewPackage = mode === "newPackage";
+    const serviceId = isNewPackage ? packageDraft?.service_id : appointment?.service_id;
+    const fallbackStaffId = isNewPackage ? packageDraft?.staff_member_id : appointment?.staff_member_id;
+    if (!serviceId) return;
     setChecking(true);
     try {
       const slots = sessions.map((s) => `${s.date}T${s.time}`);
       const staff_ids = sessions.map((s) => (s.staff_member_id || "").trim() || null);
       const res = await api.post("/availability/bulk-check", {
-        service_id: appointment.service_id,
-        staff_id: appointment.staff_member_id,
+        service_id: serviceId,
+        staff_id: fallbackStaffId,
         slots,
         staff_ids,
       });
@@ -197,7 +203,7 @@ export function usePlanSuggestion({
     } finally {
       setChecking(false);
     }
-  }, [appointment, sessions]);
+  }, [appointment, sessions, mode, packageDraft]);
 
   // Auto-load on open + auto-check after first load.
   // newPackage mode'da appointment olmayabilir; packageDraft varsa load tetiklenir.

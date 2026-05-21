@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Check, Globe, ExternalLink } from "lucide-react";
+import { ArrowLeft, Check, Globe, ExternalLink, Shield, CreditCard } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import api from "../api/api";
 import { Capacitor } from '@capacitor/core';
 import { openExternalUrl } from "../lib/openExternalUrl";
-import { PRICING_DISPLAY, normalizePlanKey } from "../lib/pricing";
+import { PRICING_DISPLAY, normalizePlanKey, getYearlyPrice } from "../lib/pricing";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import posthog from "../lib/posthog";
@@ -270,172 +270,272 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
-      {/* Header */}
-      <div className="px-4 pt-6 pb-4">
+    <div className="min-h-screen bg-[#fafafa] pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
+      {/* Geri butonu — uygulama içi top-bar */}
+      <div className="container mx-auto px-4 pt-6">
         <button
           onClick={() => onNavigate && onNavigate("settings")}
-          className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 transition-colors"
+          className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
           <span className="text-sm font-medium">{t('settings.subscribePage.back')}</span>
         </button>
-        <h1 className="text-2xl font-bold text-gray-900">{t('settings.subscribePage.title')}</h1>
-        <p className="text-sm text-gray-600 mt-1">{t('settings.subscribePage.subtitle')}</p>
-        
-        {/* Aylık / Yıllık Toggle */}
-        <div className="flex items-center justify-center gap-3 mt-6">
-          <span className={`text-base font-medium ${billingCycle === 'monthly' ? 'text-gray-900' : 'text-gray-400'}`}>
-            {t('settings.subscribePage.monthly')}
-          </span>
-          <button
-            onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'yearly' : 'monthly')}
-            className={`relative w-14 h-7 rounded-full transition-colors duration-300 flex-shrink-0 ${billingCycle === 'yearly' ? 'bg-green-500' : 'bg-gray-300'}`}
-          >
-            <span 
-              className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ${billingCycle === 'yearly' ? 'translate-x-7' : 'translate-x-0'}`}
-            />
-          </button>
-          <div className="flex items-center gap-2">
-            <span className={`text-base font-medium ${billingCycle === 'yearly' ? 'text-gray-900' : 'text-gray-400'}`}>
-              {t('settings.subscribePage.yearly')}
-            </span>
-            {billingCycle === 'yearly' && (
-              <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap">
-                {t('settings.subscribePage.twoMonthsFree')}
-              </span>
-            )}
-          </div>
-        </div>
       </div>
 
-      {/* İndirim Banner - Sadece aylık ve ilk ay için göster */}
-      {billingCycle === 'monthly' && currentPlan && currentPlan.is_first_month && (
-        <div className="px-4 pb-4">
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl p-6 shadow-lg">
-            <h2 className="text-xl font-bold mb-2">🎉 {t('settings.subscribePage.firstMonthDiscount')}</h2>
-            <p className="text-sm text-blue-50">
-              {t('settings.subscribePage.firstMonthDiscountDesc')}
+      {/* Section header (LandingPage pricing ile birebir tipografi) */}
+      <section className="pt-6 md:pt-8 pb-14 md:pb-16">
+        <div className="container mx-auto px-4">
+          <div className="text-center max-w-2xl mx-auto mb-12 md:mb-14">
+            <span className="inline-block text-base md:text-lg font-semibold uppercase tracking-[0.22em] text-gray-500 mb-4">
+              {t('settings.subscribePage.title')}
+            </span>
+            <h2 className="text-4xl md:text-5xl lg:text-[3.5rem] font-bold tracking-tight text-gray-900 leading-[1.05] mb-5">
+              {t('landing.pricing.title', { defaultValue: 'Size uygun planı seçin' })}
+            </h2>
+            <p className="text-base md:text-lg text-gray-500 leading-relaxed">
+              {t('settings.subscribePage.subtitle')}
             </p>
-            <p className="text-sm text-blue-50 mt-2">
-              <strong>{t('settings.subscribePage.nextMonths')}</strong>
-            </p>
-          </div>
-        </div>
-      )}
 
-      {/* Paket Kartları */}
-      <div className="px-4 pb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {plans.map((plan) => {
-            const isYearly = billingCycle === 'yearly';
-            const isFirstMonth = !isYearly && currentPlan && currentPlan.is_first_month;
-            
-            // Currency detection - Language bazlı
-            const currency = i18n.language === 'en' ? 'gbp' : 'try';
-            const currencySymbol = currency === 'try' ? '₺' : '£';
-            
-            // Plan pricing key'i al
-            const planPricingKey = getPlanPricingKey(plan.name);
-            const pricing = PRICING_DISPLAY[currency][planPricingKey];
-            
-            // PRICING_DISPLAY'den exact flat numbers kullan
-            const originalPrice = pricing.original;
-            const discountedPrice = pricing.discounted;
-            
-            // Yıllık fiyat hesaplama (original price * 10)
-            const yearlyPrice = originalPrice * 10;
-            const monthlyEquivalent = Math.round(yearlyPrice / 12);
-            
-            const isProcessing = processingPlanId === plan.id;
-            const isCurrentPlan = currentPlan && currentPlan.plan_id === plan.id;
-
-            return (
-              <Card
-                key={plan.id}
-                className="bg-white shadow-md border border-gray-200 rounded-xl p-6 flex flex-col"
-              >
-                {/* Paket Adı */}
-                <h3 className="text-xl font-bold text-gray-900 mb-4">{getPlanName(plan.name)}</h3>
-
-                {/* Fiyat */}
-                <div className="mb-4">
-                  {isYearly ? (
-                    <>
-                      <div className="flex items-baseline gap-2 mb-1">
-                        <span className="text-3xl font-bold text-blue-600">
-                          {yearlyPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
-                        </span>
-                        <span className="text-gray-500 line-through text-lg">
-                          {(originalPrice * 12).toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
-                        </span>
-                      </div>
-                      <p className="text-xs text-green-600 font-semibold">{t('settings.subscribePage.yearlyBadge')}</p>
-                      <p className="text-xs text-gray-500 mt-1">{t('settings.subscribePage.monthlyEquivalent')}{monthlyEquivalent.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}</p>
-                    </>
-                  ) : isFirstMonth ? (
-                    <>
-                      <div className="flex items-baseline gap-2 mb-1">
-                        <span className="text-3xl font-bold text-blue-600">
-                          {discountedPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
-                        </span>
-                        <span className="text-gray-500 line-through text-lg">
-                          {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
-                        </span>
-                      </div>
-                      <p className="text-xs text-green-600 font-semibold">{t('settings.subscribePage.firstMonthBadge')}</p>
-                      <p className="text-xs text-gray-500 mt-1">{t('settings.subscribePage.nextMonthsPrice')} {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol} {i18n.language === 'tr' ? '/ay' : '/month'}</p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-bold text-blue-600">
-                          {originalPrice.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {currencySymbol}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-600 mt-1">{t('settings.subscribePage.perMonth')}</p>
-                    </>
-                  )}
-                </div>
-
-                {/* Ana Özellik (Randevu Limiti) */}
-                <div className="mb-4">
-                  <p className="text-base font-semibold text-gray-900">
-                    {['kurumsal', 'corporate'].includes(plan.name.toLowerCase())
-                      ? (i18n.language === 'tr' ? 'Sınırsız Randevu' : 'Unlimited Appointments')
-                      : `${plan.quota_monthly_appointments.toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} ${t('settings.subscribePage.appointmentsPerMonth')}`}
-                  </p>
-                </div>
-
-                {/* Diğer Özellikler */}
-                <div className="flex-1 mb-6">
-                  <ul className="space-y-2">
-                    {plan.features && plan.features.map((feature, index) => (
-                      <li key={index} className="flex items-start gap-2 text-sm text-gray-600">
-                        <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Aboneliği Başlat Butonu */}
-                <Button
-                  onClick={() => !isCurrentPlan && handleStartSubscription(plan.id)}
-                  disabled={isProcessing || isCurrentPlan}
-                  className={`w-full font-bold h-12 text-base rounded-lg ${
-                    isCurrentPlan 
-                      ? 'bg-gray-300 text-gray-600 cursor-not-allowed' 
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+            {/* Billing toggle — Segmented pill (LandingPage ile aynı) */}
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+              <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white border border-gray-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle('monthly')}
+                  aria-pressed={billingCycle === 'monthly'}
+                  className={`px-5 py-2 text-sm font-semibold rounded-full transition-all duration-200 ${
+                    billingCycle === 'monthly'
+                      ? 'bg-gray-900 text-white shadow-[0_2px_8px_rgba(17,24,39,0.18)]'
+                      : 'text-gray-500 hover:text-gray-900'
                   }`}
                 >
-                  {isCurrentPlan ? t('settings.subscribePage.currentSubscription') : isProcessing ? t('settings.subscribePage.processing') : t('settings.subscribePage.startSubscription')}
-                </Button>
-              </Card>
-            );
-          })}
+                  {t('settings.subscribePage.monthly')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle('yearly')}
+                  aria-pressed={billingCycle === 'yearly'}
+                  className={`px-5 py-2 text-sm font-semibold rounded-full transition-all duration-200 ${
+                    billingCycle === 'yearly'
+                      ? 'bg-gray-900 text-white shadow-[0_2px_8px_rgba(17,24,39,0.18)]'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  {t('settings.subscribePage.yearly')}
+                </button>
+              </div>
+
+              <span className="inline-flex items-center gap-2 text-sm text-gray-600">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                {billingCycle === 'yearly'
+                  ? t('settings.subscribePage.twoMonthsFree')
+                  : (currentPlan?.is_first_month
+                      ? t('settings.subscribePage.firstMonthDiscount')
+                      : t('landing.pricing.newUserDiscount', { defaultValue: 'Yeni kullanıcılara özel indirim' }))}
+              </span>
+            </div>
+          </div>
+
+          {/* Plan kartları */}
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-gray-900 mx-auto"></div>
+              <p className="mt-4 text-sm text-gray-500">{t('common.loading')}</p>
+            </div>
+          ) : plans.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-600">{t('landing.pricing.noPlans', { defaultValue: 'Planlar yükleniyor...' })}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6 max-w-6xl mx-auto items-stretch">
+              {plans.map((plan) => {
+                const isPopular = plan.id === 'tier_4_business';
+                const isYearly = billingCycle === 'yearly';
+                const isFirstMonth = !isYearly && currentPlan && currentPlan.is_first_month;
+
+                const currency = i18n.language === 'en' ? 'gbp' : 'try';
+                const currencySymbol = currency === 'try' ? '₺' : '£';
+                const planKey = getPlanPricingKey(plan.name);
+                const cell = PRICING_DISPLAY[currency]?.[planKey];
+
+                // Görüntülenecek fiyat ve eski (üzeri çizili) fiyat seçimi
+                let displayPrice, originalPrice, showStrike, savingsLabel;
+                if (isYearly) {
+                  const yearlyTotal = getYearlyPrice(currency, planKey);
+                  displayPrice = Math.round(yearlyTotal / 12); // ay başına denk gelen
+                  originalPrice = cell?.original; // aylık (12 ay × original karşılaştırması bonus)
+                  showStrike = true;
+                  savingsLabel = t('settings.subscribePage.twoMonthsFree');
+                } else if (isFirstMonth) {
+                  displayPrice = cell?.discounted;
+                  originalPrice = cell?.original;
+                  showStrike = true;
+                  savingsLabel = t('settings.subscribePage.firstMonthBadge');
+                } else {
+                  displayPrice = cell?.original;
+                  originalPrice = null;
+                  showStrike = false;
+                  savingsLabel = null;
+                }
+
+                const localeCode = i18n.language === 'tr' ? 'tr-TR' : 'en-GB';
+                const isProcessing = processingPlanId === plan.id;
+                const isCurrentPlan = currentPlan && currentPlan.plan_id === plan.id;
+
+                return (
+                  <div
+                    key={plan.id}
+                    className={`relative flex flex-col rounded-[24px] p-8 lg:p-10 transition-all duration-300 ease-out ${
+                      isPopular
+                        ? 'bg-gray-900 text-white ring-1 ring-gray-900 shadow-[0_24px_60px_-18px_rgba(17,24,39,0.4)]'
+                        : 'bg-white text-gray-900 ring-1 ring-gray-200/80 hover:ring-gray-300 hover:-translate-y-1 hover:shadow-[0_18px_40px_-12px_rgba(17,24,39,0.12)]'
+                    } ${isCurrentPlan ? 'ring-2 ring-emerald-500' : ''}`}
+                  >
+                    {isPopular && (
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                        <span className="inline-flex items-center gap-1.5 bg-white text-gray-900 text-[10px] font-bold uppercase tracking-[0.14em] px-3 py-1.5 rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.08)] ring-1 ring-gray-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          {t('landing.pricing.mostPopular', { defaultValue: 'En popüler' })}
+                        </span>
+                      </div>
+                    )}
+
+                    {isCurrentPlan && !isPopular && (
+                      <div className="absolute -top-3 right-4">
+                        <span className="inline-flex items-center gap-1.5 bg-emerald-500 text-white text-[10px] font-bold uppercase tracking-[0.14em] px-3 py-1.5 rounded-full shadow-[0_4px_12px_rgba(16,185,129,0.25)]">
+                          {t('settings.subscribePage.currentSubscription')}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Plan adı + açıklama */}
+                    <div>
+                      <h3 className={`text-2xl font-bold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                        {getPlanName(plan.name)}
+                      </h3>
+                      <p className={`text-[15px] mt-2 leading-relaxed ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {t(`landing.pricing.plans.${plan.name.toLowerCase()}.description`, { defaultValue: plan.target_audience_tr || '' })}
+                      </p>
+                    </div>
+
+                    {/* Fiyat */}
+                    <div className="mt-8 mb-7">
+                      <div className="flex items-baseline">
+                        <span className={`text-2xl font-medium ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
+                          {currencySymbol}
+                        </span>
+                        <span className={`text-[3.5rem] lg:text-[4rem] font-bold tracking-[-0.04em] tabular-nums leading-none ml-0.5 ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                          {(displayPrice ?? 0).toLocaleString(localeCode)}
+                        </span>
+                        <span className={`text-sm ml-2 ${isPopular ? 'text-gray-500' : 'text-gray-500'}`}>
+                          {t('landing.pricing.perMonth', { defaultValue: '/ay' })}
+                        </span>
+                      </div>
+                      {showStrike && originalPrice ? (
+                        <div className="mt-3 flex items-center gap-2 text-sm">
+                          <span className={`line-through ${isPopular ? 'text-gray-600' : 'text-gray-400'}`}>
+                            {currencySymbol}{(isYearly ? originalPrice : originalPrice).toLocaleString(localeCode)}
+                          </span>
+                          {savingsLabel && (
+                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                              isPopular
+                                ? 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20'
+                                : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                            }`}>
+                              {savingsLabel}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <p className={`mt-2 text-sm ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {isYearly
+                            ? t('landing.pricing.yearlyBilling', { defaultValue: 'Yıllık faturalandırma' })
+                            : t('landing.pricing.monthlyBilling', { defaultValue: 'Aylık faturalandırma' })}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* CTA */}
+                    <button
+                      type="button"
+                      onClick={() => !isCurrentPlan && handleStartSubscription(plan.id)}
+                      disabled={isProcessing || isCurrentPlan}
+                      className={`w-full py-4 rounded-2xl font-semibold text-base transition-all duration-200 active:scale-[0.99] disabled:cursor-not-allowed ${
+                        isCurrentPlan
+                          ? 'bg-gray-100 text-gray-400 ring-1 ring-gray-200'
+                          : isPopular
+                            ? 'bg-white text-gray-900 hover:bg-gray-100 shadow-[0_4px_14px_rgba(255,255,255,0.12)] disabled:opacity-60'
+                            : 'bg-gray-900 text-white hover:bg-gray-800 shadow-[0_4px_14px_rgba(17,24,39,0.15)] disabled:opacity-60'
+                      }`}
+                    >
+                      {isCurrentPlan
+                        ? t('settings.subscribePage.currentSubscription')
+                        : isProcessing
+                          ? t('settings.subscribePage.processing')
+                          : t('settings.subscribePage.startSubscription')}
+                    </button>
+
+                    {/* Divider */}
+                    <div className={`mt-8 mb-6 h-px ${isPopular ? 'bg-white/[0.08]' : 'bg-gray-100'}`}></div>
+
+                    {/* "What's included" label */}
+                    <p className={`text-xs font-semibold uppercase tracking-[0.16em] mb-4 ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
+                      {t('landing.pricing.includes', { defaultValue: 'Dahil olanlar' })}
+                    </p>
+
+                    {/* Quota highlight */}
+                    <div className={`mb-5 p-4 rounded-2xl ${
+                      isPopular ? 'bg-white/[0.04] ring-1 ring-white/10' : 'bg-gray-50 ring-1 ring-gray-100'
+                    }`}>
+                      <div className={`text-xl font-bold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                        {['kurumsal', 'corporate'].includes(plan.name.toLowerCase())
+                          ? (i18n.language === 'tr' ? 'Sınırsız Randevu' : 'Unlimited Appointments')
+                          : `${plan.quota_monthly_appointments.toLocaleString(localeCode)} ${t('settings.subscribePage.appointmentsPerMonth')}`}
+                      </div>
+                      <div className={`text-xs mt-1 ${isPopular ? 'text-gray-500' : 'text-gray-500'}`}>
+                        {t('landing.pricing.monthlyLimit', { defaultValue: 'Aylık limit' })}
+                      </div>
+                    </div>
+
+                    {/* Features list */}
+                    <ul className="space-y-3 flex-1">
+                      {plan.features &&
+                        plan.features
+                          .filter((feature) => {
+                            const quotaStr = plan.quota_monthly_appointments.toLocaleString('tr-TR');
+                            return !(feature.includes(quotaStr) && feature.toLowerCase().includes('randevu'));
+                          })
+                          .map((feature, i) => (
+                            <li key={i} className="flex items-start gap-3 text-[15px] leading-relaxed">
+                              <Check
+                                className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isPopular ? 'text-emerald-400' : 'text-emerald-600'}`}
+                                strokeWidth={2.5}
+                              />
+                              <span className={isPopular ? 'text-gray-300' : 'text-gray-600'}>{feature}</span>
+                            </li>
+                          ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Trust bar (LandingPage ile aynı) */}
+          {!loading && plans.length > 0 && (
+            <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-x-10 gap-y-3 text-xs text-gray-500">
+              <div className="inline-flex items-center gap-2">
+                <Shield className="w-4 h-4 text-gray-500" />
+                {t('landing.pricing.trustBadge', { defaultValue: 'Güvenli ödeme — Stripe altyapısı' })}
+              </div>
+              <div className="inline-flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-gray-500" />
+                {t('landing.pricing.securePayment', { defaultValue: 'Tüm büyük kartlar' })}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      </section>
     </div>
   );
 };
