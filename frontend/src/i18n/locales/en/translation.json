@@ -1266,7 +1266,8 @@
   },
   "appCompliance": {
     "subscriptionInfo": "Subscription and billing are managed on our website. When you continue, you’ll be redirected to the subscription page automatically.",
-    "goToWebsite": "Go to Website"
+    "goToWebsite": "Go to Website",
+    "openWebsiteFailed": "Could not open the browser. Please try again."
   },
   "aha": {
     "spotlight": {

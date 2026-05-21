@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api, { BACKEND_URL } from "../api/api";
-import { Browser } from '@capacitor/browser';
+import { openExternalUrl } from "../lib/openExternalUrl";
 
 const getFullUrl = (url) => {
   if (!url) return null;
@@ -147,7 +147,7 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => Browser.open({ url: appointmentLink })}
+                    onClick={() => openExternalUrl(appointmentLink)}
                     className="px-4 py-2 backdrop-blur-md bg-white/60 border border-white/40 text-zinc-700 rounded-lg text-xs font-bold hover:bg-white/80 transition-colors flex items-center gap-1"
                   >
                     <ExternalLink className="w-3 h-3" /> {t('settings.onlineBookingPage.openLink')}

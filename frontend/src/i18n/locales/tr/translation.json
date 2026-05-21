@@ -1268,7 +1268,8 @@
   },
   "appCompliance": {
     "subscriptionInfo": "Abonelik ve faturalandırma işlemleri web sitemiz üzerinden yönetilir. Devam ettiğinizde abonelik sayfasına otomatik olarak yönlendirilirsiniz.",
-    "goToWebsite": "Web Sitesine Git"
+    "goToWebsite": "Web Sitesine Git",
+    "openWebsiteFailed": "Tarayıcı açılamadı. Lütfen tekrar deneyin."
   },
   "aha": {
     "spotlight": {

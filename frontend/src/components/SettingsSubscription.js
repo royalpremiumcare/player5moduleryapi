@@ -225,14 +225,16 @@ const SettingsSubscription = ({ onNavigate }) => {
                   <div className="mt-4">
                     <Button
                       onClick={async () => {
+                        let targetUrl = websiteSubscribeUrl;
                         try {
                           const resp = await api.post('/sso/create');
                           const code = resp?.data?.code;
-                          const ssoUrl = `${webUrl}/sso?code=${encodeURIComponent(code || '')}&redirect=${encodeURIComponent('/subscribe')}`;
-                          await openExternalUrl(ssoUrl);
-                        } catch (e) {
-                          await openExternalUrl(websiteSubscribeUrl);
-                        }
+                          if (code) {
+                            targetUrl = `${webUrl}/sso?code=${encodeURIComponent(code)}&redirect=${encodeURIComponent('/subscribe')}`;
+                          }
+                        } catch (_) {}
+                        const ok = await openExternalUrl(targetUrl);
+                        if (!ok) toast.error(t('appCompliance.openWebsiteFailed'));
                       }}
                       className="w-full bg-gray-900 hover:bg-gray-800 text-white font-semibold h-12 rounded-2xl shadow-md transition-colors flex items-center justify-center gap-2"
                     >
