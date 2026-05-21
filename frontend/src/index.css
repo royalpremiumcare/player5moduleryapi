@@ -16,6 +16,14 @@ body {
     padding-right: env(safe-area-inset-right);
 }
 
+/* iOS çentik (safe-area) altı background fix:
+ * body padding-top env() ile çentik bölgesinde html'in arka planı görünür.
+ * html'e tema-uyumlu bg verince (light=beyaz, dark=siyah) tüm fixed inset-0
+ * modal/sheet açıkken çentik gri kalmaz. Android'de env()=0 → etki yok. */
+@supports (padding: env(safe-area-inset-top)) {
+    html { background-color: hsl(var(--background)); }
+}
+
 code {
     font-family:
         source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;

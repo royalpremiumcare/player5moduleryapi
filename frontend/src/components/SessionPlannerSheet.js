@@ -286,7 +286,10 @@ const SessionPlannerSheet = ({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-zinc-950/45 backdrop-blur-[2px]">
+    <div
+      className="fixed inset-0 z-[70] flex flex-col bg-white sm:bg-zinc-950/45 sm:backdrop-blur-[2px]"
+      style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+    >
       <div className="flex flex-col flex-1 w-full max-w-lg mx-auto bg-white min-h-0 shadow-2xl rounded-t-2xl sm:rounded-2xl sm:my-auto sm:max-h-[min(100dvh,920px)] border border-zinc-100">
         <header className="flex items-start justify-between gap-3 px-5 pt-6 pb-4 border-b border-zinc-100/80 shrink-0 bg-zinc-50/40">
           <div className="min-w-0">
