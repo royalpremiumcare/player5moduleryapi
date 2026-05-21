@@ -509,7 +509,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                       )}
                       <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
                         {apt.session_number && apt.session_total && (
-                          <span className="text-[10px] bg-zinc-800 text-white px-1.5 py-0.5 rounded font-semibold tracking-wide">
+                          <span className="inline-flex items-center text-[10px] sm:text-xs font-semibold text-zinc-600 bg-zinc-100 border border-zinc-200/80 px-2 py-0.5 rounded-full whitespace-nowrap tracking-tight">
                             {apt.session_number}/{apt.session_total}
                           </span>
                         )}
@@ -628,7 +628,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                     )}
                     <div className="flex items-center gap-1 mt-1 flex-wrap">
                       {apt.session_number && apt.session_total && (
-                        <span className="text-[10px] bg-zinc-800 text-white px-1.5 py-0.5 rounded font-semibold tracking-wide">
+                        <span className="inline-flex items-center text-[10px] sm:text-xs font-semibold text-zinc-600 bg-zinc-100 border border-zinc-200/80 px-2 py-0.5 rounded-full whitespace-nowrap tracking-tight">
                           {apt.session_number}/{apt.session_total}
                         </span>
                       )}

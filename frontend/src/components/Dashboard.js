@@ -488,7 +488,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             <div className="flex items-center gap-2 mb-3">
               <p className="text-sm text-gray-600 truncate">{apt.service_name}</p>
               {apt.session_number && apt.session_total && (
-                <span className="text-[10px] bg-zinc-800 text-white px-1.5 py-0.5 rounded font-semibold tracking-wide whitespace-nowrap">
+                <span className="inline-flex items-center text-[10px] sm:text-xs font-semibold text-zinc-600 bg-zinc-100 border border-zinc-200/80 px-2 py-0.5 rounded-full whitespace-nowrap tracking-tight">
                   {apt.session_number}/{apt.session_total}
                 </span>
               )}

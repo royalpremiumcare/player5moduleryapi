@@ -139,7 +139,7 @@ const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess, noti
             <DialogTitle className="text-sm sm:text-base font-black text-zinc-900 leading-tight flex items-center gap-1.5 min-w-0">
               <span className="truncate">{t("sessionPlanner.title")}</span>
               {appointment?.session_number != null && appointment?.session_total != null && (
-                <span className="flex-shrink-0 text-[9px] bg-zinc-900 text-white px-1.5 py-0.5 rounded font-bold">
+                <span className="flex-shrink-0 inline-flex items-center text-[9px] font-bold text-zinc-600 bg-zinc-100 border border-zinc-200/80 px-1.5 py-0.5 rounded-full whitespace-nowrap tracking-tight">
                   {appointment.session_number}/{appointment.session_total}
                 </span>
               )}
