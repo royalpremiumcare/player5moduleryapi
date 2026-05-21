@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import api from "../api/api";
 import { Capacitor } from '@capacitor/core';
 import { openExternalUrl } from "../lib/openExternalUrl";
+import { PRICING_DISPLAY, normalizePlanKey } from "../lib/pricing";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import posthog from "../lib/posthog";
@@ -17,38 +18,11 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
     : 'https://plannapp.co';
   const websiteSubscribeUrl = `${webUrl}/subscribe`;
   
-  // Pricing Display Configuration - Exact flat numbers matching Stripe Fixed Amount Coupons
-  const PRICING_DISPLAY = {
-    try: {
-      standard:     { original: 1090, discounted: 990  },
-      professional: { original: 1490, discounted: 1390 },
-      premium:      { original: 1550, discounted: 1150 },
-      business:     { original: 1950, discounted: 1450 },
-      enterprise:   { original: 2350, discounted: 1750 },
-      corporate:    { original: 2850, discounted: 2490 },
-    },
-    gbp: {
-      // Math: Base Price - Coupon Amount = Discounted Price
-      standard:     { original: 16, discounted: 12 },     // 16 - 4 = 12
-      professional: { original: 24, discounted: 18 },     // 24 - 6 = 18
-      premium:      { original: 32, discounted: 24 },     // 32 - 8 = 24
-      business:     { original: 40, discounted: 30 },     // 40 - 10 = 30
-      enterprise:   { original: 56, discounted: 42 },     // 56 - 14 = 42
-      corporate:    { original: 80, discounted: 60 },     // 80 - 20 = 60
-    }
-  };
-  
-  // Plan ismine göre pricing key'i döndür
-  const getPlanPricingKey = (planName) => {
-    const planNameLower = planName.toLowerCase();
-    if (planNameLower.includes('standart') || planNameLower.includes('standard')) return 'standard';
-    if (planNameLower.includes('profesyonel') || planNameLower.includes('professional')) return 'professional';
-    if (planNameLower.includes('premium')) return 'premium';
-    if (planNameLower.includes('business')) return 'business';
-    if (planNameLower.includes('enterprise')) return 'enterprise';
-    if (planNameLower.includes('kurumsal') || planNameLower.includes('corporate')) return 'corporate';
-    return 'standard'; // fallback
-  };
+  // M9: PRICING_DISPLAY ve plan key normalize'i artık tek kaynak `lib/pricing.js`
+  // üzerinden geliyor (LandingPage.js da aynı modülü kullanır → drift önleme).
+
+  /** Subscribe.js fallback için "standard" döner — pricing.js null dönerse. */
+  const getPlanPricingKey = (planName) => normalizePlanKey(planName) || 'standard';
   
   // Plan isimleri çevirisi (i18n lookup; Trial → Deneme dahil)
   const getPlanName = (planName) => {

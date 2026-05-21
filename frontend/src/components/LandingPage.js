@@ -23,6 +23,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.en
 import { Capacitor } from '@capacitor/core';
 import { WHATSAPP_URL } from "../constants/contact";
 import metaPixel from "../lib/metaPixel";
+import { PRICING, normalizePlanKey, getYearlyPrice } from "../lib/pricing";
 
 // Public endpoint için axios instance (token gerektirmez)
 const publicApi = axios.create({
@@ -73,101 +74,71 @@ const LandingPage = () => {
   const dashboardImageSrc = i18n.language?.toLowerCase().startsWith('tr')
     ? `${dashboardAssetBase}/screenshots/landing-dashboard-tr.png?v=${dashboardAssetVersion}`
     : `${dashboardAssetBase}/screenshots/landing-dashboard-en.png?v=${dashboardAssetVersion}`;
-  // GBP Fiyatlandırma (İngilizce seçildiğinde)
-  // monthly: normal fiyat, monthlyDiscounted: %25 indirimli (yuvarlanmış), yearly: yıllık fiyat
-  const gbpPricing = {
-    'standart': { monthly: 16, monthlyDiscounted: 12, yearly: 160 },
-    'standard': { monthly: 16, monthlyDiscounted: 12, yearly: 160 },
-    'profesyonel': { monthly: 24, monthlyDiscounted: 18, yearly: 240 },
-    'professional': { monthly: 24, monthlyDiscounted: 18, yearly: 240 },
-    'premium': { monthly: 32, monthlyDiscounted: 24, yearly: 320 },
-    'business': { monthly: 40, monthlyDiscounted: 30, yearly: 400 },
-    'enterprise': { monthly: 56, monthlyDiscounted: 42, yearly: 560 },
-    'kurumsal': { monthly: 80, monthlyDiscounted: 60, yearly: 800 },
-    'corporate': { monthly: 80, monthlyDiscounted: 60, yearly: 800 },
-  };
+  // M9: PRICING tablosu artık tek kaynak (frontend/src/lib/pricing.js).
+  // Subscribe.js ve LandingPage burada aynı sayılardan beslenir — drift önleme.
+  // PRICING.try/gbp.{plan}.{original,discounted}; yearly = original * 10.
 
-  // TL İlk Ay İndirimli Fiyatlar (Türkçe seçildiğinde)
-  const tlFirstMonthPricing = {
-    'standart': 990,
-    'standard': 990,
-    'profesyonel': 1390,
-    'professional': 1390,
-    'premium': 1150,
-    'business': 1450,
-    'enterprise': 1750,
-    'kurumsal': 2490,
-    'corporate': 2490,
-  };
-
-  // TL Normal Aylık Fiyatlar (Türkçe seçildiğinde)
-  const tlMonthlyPricing = {
-    'standart': 1090,
-    'standard': 1090,
-    'profesyonel': 1490,
-    'professional': 1490,
-    'premium': 1550,
-    'business': 1950,
-    'enterprise': 2350,
-    'kurumsal': 2850,
-    'corporate': 2850,
-  };
-
-  // Para birimi ve fiyat formatlama
+  /**
+   * Plan + döviz + indirim/yıl bayraklarına göre fiyat döner.
+   * Backend `plan.price_monthly_*` alanları tablo dışı plan (gelecek) için
+   * yedek olarak kullanılır.
+   */
   const formatPrice = (plan, isYearly, hasDiscount) => {
-    const planKey = plan.name.toLowerCase();
+    const planKey = normalizePlanKey(plan.name);
     const isEnglish = i18n.language === 'en';
-    
-    if (isEnglish && gbpPricing[planKey]) {
+    const currencyCode = isEnglish ? 'gbp' : 'try';
+    const cell = planKey ? PRICING[currencyCode]?.[planKey] : null;
+
+    if (cell) {
       let price;
       if (isYearly) {
-        price = gbpPricing[planKey].yearly;
+        price = getYearlyPrice(currencyCode, planKey);
       } else if (hasDiscount) {
-        price = gbpPricing[planKey].monthlyDiscounted;
+        price = cell.discounted;
       } else {
-        price = gbpPricing[planKey].monthly;
+        price = cell.original;
       }
-      return { price, currency: '£', locale: 'en-GB' };
+      return isEnglish
+        ? { price, currency: '£', locale: 'en-GB' }
+        : { price, currency: '₺', locale: 'tr-TR' };
     }
-    
-    // TL fiyatları (sabit tablo) - aylık küsüratları yuvarla
-    const baseMonthlyPrice = tlMonthlyPricing[planKey] ?? Math.round(plan.price_monthly_original ?? plan.price_monthly);
+
+    // Tablo dışı plan (backend'den yeni eklenen) — eski davranışı koru.
+    const baseMonthlyPrice = Math.round(plan.price_monthly_original ?? plan.price_monthly);
     let price;
     if (isYearly) {
-      price = Math.round(baseMonthlyPrice * 10); // yıllık = aylık * 10 (2 ay ücretsiz)
+      price = Math.round(baseMonthlyPrice * 10);
     } else if (hasDiscount) {
-      // İndirimli fiyat: Önce sabit değerleri kontrol et, sonra backend, son olarak %25 indirim
-      if (tlFirstMonthPricing[planKey]) {
-        price = tlFirstMonthPricing[planKey];
-      } else if (plan.price_monthly_discounted) {
-        price = Math.round(plan.price_monthly_discounted);
-      } else {
-        price = Math.round(baseMonthlyPrice * 0.75); // %25 indirim
-      }
+      price = plan.price_monthly_discounted
+        ? Math.round(plan.price_monthly_discounted)
+        : Math.round(baseMonthlyPrice * 0.75);
     } else {
       price = baseMonthlyPrice;
     }
-    return { price, currency: '₺', locale: 'tr-TR' };
+    return isEnglish
+      ? { price, currency: '£', locale: 'en-GB' }
+      : { price, currency: '₺', locale: 'tr-TR' };
   };
 
-  // Orijinal fiyatı hesapla (indirim gösterimi için)
+  /** Orijinal (indirim öncesi) fiyatı verir — kullanıcıya üzeri çizili gösterim için. */
   const getOriginalPrice = (plan, isYearly) => {
-    const planKey = plan.name.toLowerCase();
+    const planKey = normalizePlanKey(plan.name);
     const isEnglish = i18n.language === 'en';
-    
-    if (isEnglish && gbpPricing[planKey]) {
-      const price = isYearly 
-        ? gbpPricing[planKey].monthly * 12 
-        : gbpPricing[planKey].monthly;
-      return { price, currency: '£', locale: 'en-GB' };
+    const currencyCode = isEnglish ? 'gbp' : 'try';
+    const cell = planKey ? PRICING[currencyCode]?.[planKey] : null;
+
+    if (cell) {
+      const price = isYearly ? cell.original * 12 : cell.original;
+      return isEnglish
+        ? { price, currency: '£', locale: 'en-GB' }
+        : { price, currency: '₺', locale: 'tr-TR' };
     }
-    
-    // TL fiyatları - aylık küsüratları yuvarla
-    const baseMonthlyPrice = tlMonthlyPricing[planKey] ?? Math.round(plan.price_monthly_original ?? plan.price_monthly);
-    const price = isYearly 
-      ? Math.round(baseMonthlyPrice * 12) 
-      : baseMonthlyPrice;
-    return { price, currency: '₺', locale: 'tr-TR' };
+
+    const baseMonthlyPrice = Math.round(plan.price_monthly_original ?? plan.price_monthly);
+    const price = isYearly ? Math.round(baseMonthlyPrice * 12) : baseMonthlyPrice;
+    return isEnglish
+      ? { price, currency: '£', locale: 'en-GB' }
+      : { price, currency: '₺', locale: 'tr-TR' };
   };
 
   // Backend'den gelen özellikleri çevir
