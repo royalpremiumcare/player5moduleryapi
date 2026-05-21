@@ -321,7 +321,7 @@ export default function MerchantPaymentSettings({ onNavigate }) {
         })}
 
         <p className="text-sm text-gray-500 leading-relaxed mt-3">
-          💡 Bilgilendirme: Cüzdanınızdaki bakiyeniz banka hesabınıza aktarılırken hiçbir havale veya transfer masrafı kesilmez. Cüzdanınızdaki tutar bankanıza NET olarak yatar. Platform hizmet bedeli, güvenli ödeme altyapısı ve 7/24 online randevu sistemi maliyetlerini kapsar.
+          💡 Bilgilendirme: Platform hizmet bedeli; 7/24 online randevu altyapısı, güvenli kredi kartı işleme, sanal POS ve müşteri destek hizmetlerinin tamamını kapsar.
         </p>
       </div>
 
@@ -363,9 +363,6 @@ export default function MerchantPaymentSettings({ onNavigate }) {
             </button>
           );
         })}
-        <p className="text-sm text-gray-500 leading-relaxed mt-3">
-          💡 Bilgilendirme: Platform hizmet bedeli; 7/24 online randevu altyapısı, güvenli kredi kartı işleme, sanal POS ve müşteri destek hizmetlerinin tamamını kapsar.
-        </p>
       </div>
 
       {/* Payout Mode selector removed — all orgs use weekly auto batch */}
