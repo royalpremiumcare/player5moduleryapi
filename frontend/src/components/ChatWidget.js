@@ -62,6 +62,49 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
   const [chatHistory, setChatHistory] = useState([]);
   const [usageInfo, setUsageInfo] = useState({ current: 0, limit: -1 });
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+
+  // AI modal açıkken arka plan (#app-wrapper) kaymasın — scroll kilidi.
+  // Panel mimarisinde scroll body'de değil #app-wrapper üzerinde olduğu için
+  // Radix/shadcn modal kilidi yetmiyor; touch/wheel dışarı sızınca dashboard kayıyordu.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const wrapper = document.getElementById('app-wrapper');
+    const savedScrollTop = wrapper?.scrollTop ?? 0;
+    const prevOverflow = wrapper?.style.overflow ?? '';
+
+    if (wrapper) {
+      wrapper.style.overflow = 'hidden';
+    }
+
+    const allowScrollInsideMessages = (target) => {
+      const el = messagesContainerRef.current;
+      return el && el.contains(target);
+    };
+
+    const blockBackgroundTouch = (e) => {
+      if (allowScrollInsideMessages(e.target)) return;
+      e.preventDefault();
+    };
+
+    const blockBackgroundWheel = (e) => {
+      if (allowScrollInsideMessages(e.target)) return;
+      e.preventDefault();
+    };
+
+    document.addEventListener('touchmove', blockBackgroundTouch, { passive: false });
+    document.addEventListener('wheel', blockBackgroundWheel, { passive: false });
+
+    return () => {
+      document.removeEventListener('touchmove', blockBackgroundTouch);
+      document.removeEventListener('wheel', blockBackgroundWheel);
+      if (wrapper) {
+        wrapper.style.overflow = prevOverflow;
+        wrapper.scrollTop = savedScrollTop;
+      }
+    };
+  }, [isOpen]);
 
   // Voice mode states
   const [voiceMode, setVoiceMode] = useState(false);
@@ -281,7 +324,18 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
 
   // Chat penceresi
   return (
-    <div className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+72px)] md:bottom-24 md:left-1/2 md:-translate-x-1/2 md:right-auto z-[1100] w-[22rem] max-w-[calc(100vw-2rem)] h-[520px] md:w-[740px] md:h-[460px] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200">
+    <>
+      {/* Scroll shield — arka plana dokunma/kaydırma geçmesin (görünmez) */}
+      <div
+        className="fixed inset-0 z-[1099] touch-none"
+        aria-hidden="true"
+        onClick={handleClose}
+      />
+
+      <div
+        className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+72px)] md:bottom-24 md:left-1/2 md:-translate-x-1/2 md:right-auto z-[1100] w-[22rem] max-w-[calc(100vw-2rem)] h-[520px] md:w-[740px] md:h-[460px] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200"
+        onClick={(e) => e.stopPropagation()}
+      >
       {/* Header */}
       <div className="bg-white/80 backdrop-blur-xl border-b border-gray-100 p-4">
         <div className="flex items-center justify-between">
@@ -332,7 +386,10 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 bg-gray-50"
+      >
         {messages.map((msg, idx) => (
           <div
             key={idx}
@@ -430,7 +487,8 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         )}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 };
 

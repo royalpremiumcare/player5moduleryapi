@@ -2,62 +2,78 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * SessionBadge — Stripe-style soft capsule with dot indicator + tabular numbers.
+ * SessionBadge — Mini segmented progress bar (Linear/Notion tarzı).
  *
- * Visual pattern (Plan B from premium UI alternatives):
- *   ●  1·4
+ * Visual pattern:
+ *   ▪▪▫▫  1/4
  *
- *   - Solda ufak dolu daire (varsayılan emerald-500) — "aktif" sinyali.
- *   - Sayı `tabular-nums` ile sabit genişlikli (1·4, 2·4, ...3·4'ün hizalanması garantili).
- *   - Beyaz zemin + ring + minimal shadow → Wise/Stripe minimalizmi.
- *
- * Tüm session badge'lerde tek-kaynak: Dashboard, Calendar, SessionPlannerDialog,
- * Customers vb. yerlerden bu component import edilir. Tasarım drift olmaz.
+ *   - Tamamlanan seanslar dolu segment, kalanlar açık gri.
+ *   - Yanında kompakt tabular sayı.
  *
  * @param {number} number  - Mevcut seans sırası (1, 2, ...)
  * @param {number} total   - Toplam seans (4, 6, ...)
- * @param {'sm'|'md'} size - Pill boyutu (varsayılan: md)
- * @param {'emerald'|'zinc'} tone - Dot rengi (varsayılan: emerald)
- * @param {boolean} onDark - Koyu zeminli kart üzerinde mi (badge zeminini şeffaflaştırır)
+ * @param {'sm'|'md'} size - Boyut (varsayılan: md)
+ * @param {boolean} onDark - Koyu zeminli kart üzerinde mi
  * @param {string} className
  */
 export default function SessionBadge({
   number,
   total,
   size = "md",
-  tone = "emerald",
   onDark = false,
   className = "",
 }) {
   if (number == null || total == null) return null;
 
-  const sizes = {
-    sm: "text-[10px] px-1.5 py-0.5 gap-1",
-    md: "text-[10px] sm:text-xs px-2 py-0.5 gap-1.5",
+  const barSizes = {
+    sm: "h-1.5 w-2",
+    md: "h-1.5 w-2.5",
   };
 
-  const dotTone = tone === "zinc"
-    ? "bg-zinc-900"
-    : "bg-emerald-500";
+  const labelSizes = {
+    sm: "text-[11px]",
+    md: "text-xs sm:text-[13px]",
+  };
 
-  const surface = onDark
-    ? "text-white bg-white/[0.08] border border-white/15"
-    : "text-zinc-700 bg-white border border-zinc-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)]";
+  const gapSizes = {
+    sm: "gap-2",
+    md: "gap-2",
+  };
+
+  const segmentGap = {
+    sm: "gap-0.5",
+    md: "gap-1",
+  };
+
+  const filledTone = onDark ? "bg-white" : "bg-zinc-900";
+  const emptyTone = onDark ? "bg-white/25" : "bg-zinc-200";
+  const textTone = onDark ? "text-white/70" : "text-zinc-500";
+
+  const barClass = barSizes[size] || barSizes.md;
+  const segmentCount = Math.min(Math.max(total, 1), 10);
 
   return (
     <span
       className={cn(
-        "inline-flex items-center font-semibold rounded-full whitespace-nowrap tabular-nums",
-        sizes[size] || sizes.md,
-        surface,
+        "inline-flex items-center whitespace-nowrap tabular-nums",
+        gapSizes[size] || gapSizes.md,
         className,
       )}
     >
-      <span className={cn("inline-block w-1.5 h-1.5 rounded-full shrink-0", dotTone)} />
-      <span>
-        {number}
-        <span className={cn("mx-0.5", onDark ? "text-white/40" : "text-zinc-400")}>·</span>
-        {total}
+      <span className={cn("inline-flex items-center", segmentGap[size] || segmentGap.md)} aria-hidden="true">
+        {Array.from({ length: segmentCount }).map((_, i) => (
+          <span
+            key={i}
+            className={cn(
+              "rounded-full shrink-0",
+              barClass,
+              i < number ? filledTone : emptyTone,
+            )}
+          />
+        ))}
+      </span>
+      <span className={cn("font-semibold tracking-tight", labelSizes[size] || labelSizes.md, textTone)}>
+        {number}/{total}
       </span>
     </span>
   );

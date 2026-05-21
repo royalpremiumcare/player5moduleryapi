@@ -13,6 +13,7 @@ import { useAuth } from "../context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import SessionBadge from "@/components/ui/session-badge";
+import { SHOW_APPOINTMENT_CARD_STATUS } from "@/constants/uiFlags";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
@@ -472,18 +473,20 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-start mb-1">
               <h3 className={`text-base font-bold text-gray-900 truncate ${isCancelled ? 'line-through text-gray-400' : ''}`}>{apt.customer_name}</h3>
-              {isCompleted ? (
-                <div className="bg-green-100 p-1.5 rounded-full shadow-sm">
-                  <Check className="w-4 h-4 text-green-600" />
-                </div>
-              ) : isCancelled ? (
-                <div className="bg-red-100 p-1.5 rounded-full shadow-sm">
-                  <X className="w-4 h-4 text-red-600" />
-                </div>
-              ) : (
-                <div className="bg-orange-100 p-1.5 rounded-full shadow-sm animate-pulse">
-                  <Clock className="w-4 h-4 text-orange-600" />
-                </div>
+              {SHOW_APPOINTMENT_CARD_STATUS && (
+                isCompleted ? (
+                  <div className="bg-green-100 p-1.5 rounded-full shadow-sm">
+                    <Check className="w-4 h-4 text-green-600" />
+                  </div>
+                ) : isCancelled ? (
+                  <div className="bg-red-100 p-1.5 rounded-full shadow-sm">
+                    <X className="w-4 h-4 text-red-600" />
+                  </div>
+                ) : (
+                  <div className="bg-orange-100 p-1.5 rounded-full shadow-sm animate-pulse">
+                    <Clock className="w-4 h-4 text-orange-600" />
+                  </div>
+                )
               )}
             </div>
             <div className="flex items-center gap-2 mb-3">
@@ -559,8 +562,22 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       {/* 1. HEADER — Karşılama (scroll ile kayar) */}
       <div className="px-5 pt-8 pb-4 bg-white relative">
 
-        {/* Sağ üst köşe — Takvim FAB (aktif seans varsa) + AI Asistan */}
-        <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
+        {/* Sağ üst köşe — AI Asistan (üst) + Takvim FAB (alt, aktif seans varsa) */}
+        <div className="absolute top-4 right-4 flex flex-col items-end gap-2 z-20">
+          {onOpenChat && (
+            <button
+              onClick={onOpenChat}
+              className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl bg-white/80 backdrop-blur-xl border border-gray-200/70 shadow-md shadow-black/8 hover:shadow-lg hover:bg-white active:scale-95 transition-all duration-200 group"
+            >
+              <div className="w-6 h-6 md:w-9 md:h-9 rounded-lg md:rounded-xl bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shrink-0">
+                <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-white group-hover:rotate-12 transition-transform duration-200" />
+              </div>
+              <div className="text-left hidden sm:block">
+                <p className="text-[11px] md:text-sm font-bold text-gray-800 leading-none">AI Asistan</p>
+                <p className="text-[9px] md:text-[11px] text-gray-400 leading-none mt-0.5">PLANN</p>
+              </div>
+            </button>
+          )}
           {hasActiveSessions && (
             <button
               type="button"
@@ -578,35 +595,16 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               </div>
             </button>
           )}
-          {onOpenChat && (
-            <button
-              onClick={onOpenChat}
-              className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl bg-white/80 backdrop-blur-xl border border-gray-200/70 shadow-md shadow-black/8 hover:shadow-lg hover:bg-white active:scale-95 transition-all duration-200 group"
-            >
-              <div className="w-6 h-6 md:w-9 md:h-9 rounded-lg md:rounded-xl bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shrink-0">
-                <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-white group-hover:rotate-12 transition-transform duration-200" />
-              </div>
-              <div className="text-left hidden sm:block">
-                <p className="text-[11px] md:text-sm font-bold text-gray-800 leading-none">AI Asistan</p>
-                <p className="text-[9px] md:text-[11px] text-gray-400 leading-none mt-0.5">PLANN</p>
-              </div>
-            </button>
-          )}
         </div>
 
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           {/* Sol Taraf: Karşılama
-              Mobilde sağ üstteki absolute butonların (Takvim FAB + AI Asistan)
-              altına binmeyi dinamik pr ile engelle: 0 buton → pr-0, 1 buton →
-              pr-20, 2 buton → pr-32. clamp() ile h1+tarih akıcı küçülür;
-              büyük Android font ayarlı cihazlarda tek satır boyunda durur. */}
+              Mobilde sağ üstteki absolute butonların (AI + Takvim dikey stack)
+              altına binmeyi engelle. Dikey dizilimde yatay genişlik tek buton
+              kadar — pr-20 yeterli. */}
           <div
             className={`tour-greeting min-w-0 flex-1 ${
-              (hasActiveSessions ? 1 : 0) + (onOpenChat ? 1 : 0) === 0
-                ? ''
-                : (hasActiveSessions ? 1 : 0) + (onOpenChat ? 1 : 0) === 1
-                ? 'pr-20 sm:pr-0'
-                : 'pr-32 sm:pr-0'
+              (hasActiveSessions || onOpenChat) ? 'pr-20 sm:pr-0' : ''
             }`}
           >
             {/* Tek satır garantisi: müşteri adı uzunsa truncate (alt satıra
@@ -614,7 +612,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 tam görünür kalır. flex-wrap kaldırıldı. */}
             <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-x-2 min-w-0">
               <span className="whitespace-nowrap shrink-0">
-                {greeting.text}<span className="ml-1 align-middle" style={{ fontSize: '1.2em' }}>{greeting.emoji}</span>,
+                {greeting.text}<span className="ml-1 align-middle" style={{ fontSize: '1.2em' }}>{greeting.emoji}</span>
               </span>
               <span className="text-gray-700 truncate min-w-0">{currentUserName}</span>
             </h1>

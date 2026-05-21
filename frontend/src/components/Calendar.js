@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import SessionBadge from "@/components/ui/session-badge";
+import { SHOW_APPOINTMENT_CARD_STATUS } from "@/constants/uiFlags";
 import {
   Select,
   SelectContent,
@@ -510,18 +511,20 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                       )}
                       <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
                         <SessionBadge number={apt.session_number} total={apt.session_total} />
-                        {isAppointmentActive(apt) ? (
-                          <span className="text-[10px] text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1">
-                            <span className="relative flex h-1.5 w-1.5">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500" />
+                        {SHOW_APPOINTMENT_CARD_STATUS && (
+                          isAppointmentActive(apt) ? (
+                            <span className="text-[10px] text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500" />
+                              </span>
+                              {i18n.language === 'tr' ? 'Aktif' : 'Active'}
                             </span>
-                            {i18n.language === 'tr' ? 'Aktif' : 'Active'}
-                          </span>
-                        ) : (
-                          <Badge className={`text-[10px] px-1.5 py-0 h-5 ${getStatusColor(apt.status)}`}>
-                            {getStatusLabel(apt.status)}
-                          </Badge>
+                          ) : (
+                            <Badge className={`text-[10px] px-1.5 py-0 h-5 ${getStatusColor(apt.status)}`}>
+                              {getStatusLabel(apt.status)}
+                            </Badge>
+                          )
                         )}
                       </div>
                     </div>
@@ -625,7 +628,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                     )}
                     <div className="flex items-center gap-1 mt-1 flex-wrap">
                       <SessionBadge number={apt.session_number} total={apt.session_total} />
-                      {isAppointmentActive(apt) && (
+                      {SHOW_APPOINTMENT_CARD_STATUS && isAppointmentActive(apt) && (
                         <span className="text-xs text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1">
                           <span className="relative flex h-1.5 w-1.5">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
@@ -799,18 +802,20 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                 )}
               </div>
               <SessionBadge number={apt.session_number} total={apt.session_total} size="sm" />
-              {isAppointmentActive(apt) ? (
-                <Badge className="text-xs flex-shrink-0 text-green-700 bg-green-50 border-green-200 flex items-center gap-1">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-                  </span>
-                  {t('appointments.status.active', i18n.language === 'tr' ? 'İşlemde' : 'Active')}
-                </Badge>
-              ) : (
-                <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
-                  {getStatusLabel(apt.status)}
-                </Badge>
+              {SHOW_APPOINTMENT_CARD_STATUS && (
+                isAppointmentActive(apt) ? (
+                  <Badge className="text-xs flex-shrink-0 text-green-700 bg-green-50 border-green-200 flex items-center gap-1">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                    </span>
+                    {t('appointments.status.active', i18n.language === 'tr' ? 'İşlemde' : 'Active')}
+                  </Badge>
+                ) : (
+                  <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
+                    {getStatusLabel(apt.status)}
+                  </Badge>
+                )
               )}
             </div>
           </Card>
@@ -1163,18 +1168,20 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                         )}
                       </div>
                       <SessionBadge number={apt.session_number} total={apt.session_total} size="sm" />
-                      {isAppointmentActive(apt) ? (
-                        <Badge className="text-xs flex-shrink-0 text-green-700 bg-green-50 border-green-200 flex items-center gap-1">
-                          <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-                          </span>
-                          {t('appointments.status.active', i18n.language === 'tr' ? 'İşlemde' : 'Active')}
-                        </Badge>
-                      ) : (
-                        <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
-                          {getStatusLabel(apt.status)}
-                        </Badge>
+                      {SHOW_APPOINTMENT_CARD_STATUS && (
+                        isAppointmentActive(apt) ? (
+                          <Badge className="text-xs flex-shrink-0 text-green-700 bg-green-50 border-green-200 flex items-center gap-1">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                            </span>
+                            {t('appointments.status.active', i18n.language === 'tr' ? 'İşlemde' : 'Active')}
+                          </Badge>
+                        ) : (
+                          <Badge className={`text-xs flex-shrink-0 ${getStatusColor(apt.status)}`}>
+                            {getStatusLabel(apt.status)}
+                          </Badge>
+                        )
                       )}
                     </div>
                   </Card>

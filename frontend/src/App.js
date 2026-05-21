@@ -1662,15 +1662,12 @@ function App() {
               </button>
             )}
 
-            {/* Yeni Randevu Ekle — premium minimal zinc-900.
-                .tour-new-appointment yuvarlak kalsın diye outline'ı nokta nokta
-                değil tam yuvarlak halo veriyoruz; tour highlight'ın kare
-                kutusunu görünmez yapmak için ::before halo bizim verdiğimiz. */}
+            {/* Yeni Randevu Ekle — koyu gri + hafif mavi gölge (seçenek 4). */}
             <button
               onClick={handleNewAppointment}
-              className="aha-fab-plus relative flex items-center justify-center w-14 h-14 bg-zinc-900 text-white rounded-full shadow-lg hover:bg-zinc-800 active:scale-95 transition -mt-4 tour-new-appointment"
+              className="aha-fab-plus relative flex items-center justify-center w-14 h-14 rounded-full -mt-4 tour-new-appointment text-white bg-gradient-to-b from-zinc-700 to-zinc-900 border border-zinc-600/45 shadow-[0_5px_16px_rgba(59,130,246,0.2),0_2px_6px_rgba(0,0,0,0.22)] hover:from-zinc-700 hover:to-black hover:shadow-[0_6px_18px_rgba(59,130,246,0.24),0_3px_8px_rgba(0,0,0,0.24)] active:scale-[0.97] transition-[transform,box-shadow,background] duration-150"
             >
-              <Plus className="w-6 h-6" />
+              <Plus className="w-6 h-6" strokeWidth={2.25} />
             </button>
 
             {/* Müşteriler */}
