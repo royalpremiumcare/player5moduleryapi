@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
 import { Capacitor } from '@capacitor/core';
-import { Browser } from '@capacitor/browser';
+import { openExternalUrl } from "../lib/openExternalUrl";
 
 const SettingsSubscription = ({ onNavigate }) => {
   const { t, i18n } = useTranslation();
@@ -48,14 +48,10 @@ const SettingsSubscription = ({ onNavigate }) => {
       if (!portalUrl) {
         throw new Error("Portal URL not received");
       }
-      
-      if (Capacitor.isNativePlatform()) {
-        // Native (Android/iOS) - In-App Browser ile aç
-        await Browser.open({ url: portalUrl });
-      } else {
-        // Web - Standart yönlendirme
-        window.location.href = portalUrl;
-      }
+
+      // Native'de sistem tarayıcısı (App.openUrl), web'de yeni sekme.
+      // Üçlü fallback için openExternalUrl (Plan 12.4).
+      await openExternalUrl(portalUrl);
     } catch (error) {
       console.error("Portal oluşturma hatası:", error);
       const errorMessage = error.response?.data?.detail || error.message || t('settings.subscriptionPage.portalError');
@@ -233,18 +229,9 @@ const SettingsSubscription = ({ onNavigate }) => {
                           const resp = await api.post('/sso/create');
                           const code = resp?.data?.code;
                           const ssoUrl = `${webUrl}/sso?code=${encodeURIComponent(code || '')}&redirect=${encodeURIComponent('/subscribe')}`;
-
-                          if (Capacitor.isNativePlatform()) {
-                            await Browser.open({ url: ssoUrl });
-                          } else {
-                            window.location.href = ssoUrl;
-                          }
+                          await openExternalUrl(ssoUrl);
                         } catch (e) {
-                          if (Capacitor.isNativePlatform()) {
-                            await Browser.open({ url: websiteSubscribeUrl });
-                          } else {
-                            window.location.href = websiteSubscribeUrl;
-                          }
+                          await openExternalUrl(websiteSubscribeUrl);
                         }
                       }}
                       className="w-full bg-gray-900 hover:bg-gray-800 text-white font-semibold h-12 rounded-2xl shadow-md transition-colors flex items-center justify-center gap-2"

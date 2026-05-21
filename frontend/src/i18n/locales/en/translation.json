@@ -918,7 +918,7 @@
       "trialEnding": "Your trial is ending, select a plan",
       "changePlan": "Change Plan",
       "manageSubscription": "Manage Subscription",
-      "redirecting": "Redirecting...",
+      "redirecting": "Redirecting to browser...",
       "portalError": "Could not open Stripe portal",
       "unlimited": "Unlimited"
     },
@@ -935,7 +935,7 @@
       "nextMonths": "In the following months, automatic payment will be made at the regular price.",
       "appointmentsPerMonth": "Appointments / Monthly",
       "currentSubscription": "Current Subscription",
-      "processing": "Processing...",
+      "processing": "Redirecting to browser...",
       "startSubscription": "Start Subscription",
       "paymentSuccess": "🎉 Payment successful! Your plan has been updated.",
       "plansLoadError": "Could not load plans",

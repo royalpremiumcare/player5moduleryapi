@@ -920,7 +920,7 @@
       "trialEnding": "Trial süreniz bitiyor, paket seçin",
       "changePlan": "Paketi Değiştir",
       "manageSubscription": "Aboneliği Yönet",
-      "redirecting": "Yönlendiriliyor...",
+      "redirecting": "Tarayıcıya yönlendiriliyor...",
       "portalError": "Stripe portal açılamadı",
       "unlimited": "Sınırsız"
     },
@@ -937,7 +937,7 @@
       "nextMonths": "Sonraki aylarda normal fiyattan otomatik olarak tahsilat yapılacaktır.",
       "appointmentsPerMonth": "Randevu / Aylık",
       "currentSubscription": "Mevcut Abonelik",
-      "processing": "İşleniyor...",
+      "processing": "Tarayıcıya yönlendiriliyor...",
       "startSubscription": "Aboneliği Başlat",
       "paymentSuccess": "Ödeme başarılı! Planınız güncellendi.",
       "plansLoadError": "Planlar yüklenemedi",

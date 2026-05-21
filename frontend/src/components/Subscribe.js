@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import api from "../api/api";
 import { Capacitor } from '@capacitor/core';
-import { Browser } from '@capacitor/browser';
+import { openExternalUrl } from "../lib/openExternalUrl";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import posthog from "../lib/posthog";
@@ -89,18 +89,9 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
                     const resp = await api.post('/sso/create');
                     const code = resp?.data?.code;
                     const ssoUrl = `${webUrl}/sso?code=${encodeURIComponent(code || '')}&redirect=${encodeURIComponent('/subscribe')}`;
-
-                    if (Capacitor.isNativePlatform()) {
-                      await Browser.open({ url: ssoUrl });
-                    } else {
-                      window.location.href = ssoUrl;
-                    }
+                    await openExternalUrl(ssoUrl);
                   } catch (e) {
-                    if (Capacitor.isNativePlatform()) {
-                      await Browser.open({ url: websiteSubscribeUrl });
-                    } else {
-                      window.location.href = websiteSubscribeUrl;
-                    }
+                    await openExternalUrl(websiteSubscribeUrl);
                   }
                 }}
                 className="w-full bg-gray-900 hover:bg-gray-800 text-white font-semibold py-6 rounded-2xl shadow-md transition-colors flex items-center justify-center gap-2"
@@ -276,16 +267,10 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
           });
         } catch (_) {}
 
-        // Stripe Checkout sayfasına yönlendir
+        // Stripe Checkout sayfasına yönlendir — native'de sistem tarayıcısı
+        // (App.openUrl) + üçlü fallback (Plan 12.4), web'de yeni sekme.
         const checkoutUrl = response.data.checkout_url;
-        
-        if (Capacitor.isNativePlatform()) {
-          // Native (Android/iOS) - In-App Browser ile aç
-          await Browser.open({ url: checkoutUrl });
-        } else {
-          // Web - Standart yönlendirme
-          window.location.href = checkoutUrl;
-        }
+        await openExternalUrl(checkoutUrl);
       } else {
         toast.error(t('settings.subscribePage.paymentPageError'));
         setProcessingPlanId(null);
