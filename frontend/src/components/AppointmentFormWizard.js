@@ -584,6 +584,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       const sessionTotal = draft.session_total;
       const need = Math.max(0, sessionTotal - 1);
       let waveRows = [];
+      let waveSucceeded = true;
       if (need > 0) {
         try {
           const wave = await fetchWavePlanSessions(api, {
@@ -600,23 +601,38 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
               time: s.time,
               staff_member_id: s.staff_member_id || undefined,
             }));
+          } else {
+            waveSucceeded = false;
           }
         } catch (waveErr) {
           console.warn("[wizard] wave-plan auto failed, falling back to manual", waveErr);
+          waveSucceeded = false;
         }
       }
-      // Wave-plan yeterli seans önermediyse manuel akışa düş.
-      if (need > 0 && waveRows.length !== need) {
-        toast.info(t("appointments.form.packageBulkIncompleteToSheet", { defaultValue: "Otomatik öneri yetersiz; planlamayı tamamla." }));
+      // Wave-plan yetersiz/başarısız: kullanıcıyı manuel dialog'a yumuşak geçir.
+      // (Bu, klasik "Otomatik dolduramadık → düzenle" UX'i — POST denenmedi.)
+      if (need > 0 && !waveSucceeded) {
+        toast.info(
+          t("appointments.form.packageBulkIncompleteToSheet", {
+            defaultValue: "Otomatik öneri yetersiz; planlamayı tamamla.",
+          })
+        );
         setPackageDraft(draft);
         setStep(4);
         return;
       }
+      // 1. seans için staff fallback (Sorun 5): kullanıcı personel seçmemişse
+      // wave-plan'dan dönen 2. seansın staff'ını al (backend admin fallback'ini
+      // burada yansıt). Personelsiz org'larda 1. seansta da admin adı görünür.
+      const firstStaff =
+        draft.staff_member_id ||
+        (waveRows[0] && waveRows[0].staff_member_id) ||
+        null;
       const firstRow = {
         date: draft.first_session_date,
         time: draft.first_session_time,
       };
-      if (draft.staff_member_id) firstRow.staff_member_id = draft.staff_member_id;
+      if (firstStaff) firstRow.staff_member_id = firstStaff;
       const rows = [firstRow, ...waveRows];
       const payload = {
         customer_name: draft.customer_name,
@@ -627,7 +643,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         session_total: sessionTotal,
         sessions: rows,
       };
-      if (draft.staff_member_id) payload.staff_member_id = draft.staff_member_id;
+      if (firstStaff) payload.staff_member_id = firstStaff;
       await api.post("/appointments/bulk-package", payload, {
         headers: { "Idempotency-Key": idempotencyKey },
       });
@@ -635,20 +651,21 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       try {
         await Haptics.notification({ type: NotificationType.Success });
       } catch (e) {}
-      await loadCustomers();
+      // Sorun 6: artificial 400ms setTimeout kaldırıldı. Parent unmount'u
+      // beklemeden onSave çağırıyoruz; arka planda loadCustomers fire-and-forget.
+      loadCustomers();
       setAvailabilityNonce((n) => n + 1);
-      await new Promise((r) => setTimeout(r, 400));
       onSave();
     } catch (err) {
+      // Sorun 1: 4xx/5xx (kota aşımı, çakışma, vb.) → kullanıcıya net hata
+      // mesajı göster, step 3'te kal. Dialog'a YANLIŞ olarak düşmüyoruz —
+      // POST hatasında dialog açmak kullanıcıyı şaşırtıyordu.
       console.error("[wizard] auto bulk-package failed", err);
       const msg = formatApiError(err, t, t("appointments.form.operationFailed"));
       toast.error(msg);
       try {
         await Haptics.notification({ type: NotificationType.Error });
       } catch (e) {}
-      // POST hatasında da manuel dialog açıp kullanıcıya planlama şansı ver.
-      setPackageDraft(draft);
-      setStep(4);
     } finally {
       setLoading(false);
     }
@@ -1193,19 +1210,22 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         open={true}
         onOpenChange={(o) => {
           if (!o) {
-            // Plan M2: Kullanıcı X'e bastı / backdrop'a tıkladı. HİÇBİR API
-            // çağrısı YAPILMAMIŞTI (handlePackagePlanStart sadece state
-            // setledi). DB temiz, yetim seans yok. State'i sıfırla, çağıranı
-            // bilgilendir.
+            // ABORT path: Kullanıcı X'e bastı / backdrop'a tıkladı. HİÇBİR
+            // API çağrısı yapılmamıştı (handlePackagePlanManual sadece state
+            // setledi). DB temiz. Step 3'e geri dön — wizard kapanmaz,
+            // kullanıcı planlamaya geri dönebilir veya formu değiştirebilir.
+            // (Eskiden onSave çağrılırdı → parent wizard'ı erkenden kapatırdı
+            // ve "iptal etmek" yerine "form kaybolur" UX bug'ı vardı.)
             setPackageDraft(null);
-            onSave();
+            setStep(3);
           }
         }}
         mode="newPackage"
         packageDraft={packageDraft}
         onSuccess={() => {
-          // Atomik /bulk-package başarılı: 1..N seans tek transaction'da
-          // yaratıldı. State'i temizle ve listenerleri uyandır.
+          // SUCCESS path: Atomik /bulk-package başarılı, 1..N seans tek
+          // transaction'da yaratıldı. State'i sıfırla + parent'ı bilgilendir
+          // → parent wizard'ı kapatır.
           setPackageDraft(null);
           onSave();
         }}

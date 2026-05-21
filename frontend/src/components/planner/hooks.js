@@ -124,12 +124,18 @@ export function usePlanSuggestion({
         // 1. seans draft'tan prepend edilir; planner'da kullanıcı 1..N
         // gösterimi/düzenlemesi yapabilir. Atomic create için tüm N seans
         // /bulk-package'a gönderilir (useOptimisticPlan handle ediyor).
+        //
+        // Sorun 5 fix: kullanıcı personel seçmemişse, wave-plan'dan dönen
+        // 2. seansın staff'ını 1. seansa da uygula. Backend admin fallback'i
+        // tek admin'li org'larda 2..N seanslarda admin atıyor; bunu 1. seansa
+        // da yansıt → planner UI'da 1. seansda admin adı boş kalmıyor.
+        const firstStaff = packageDraft.staff_member_id
+          ? String(packageDraft.staff_member_id)
+          : (waveRows[0] && waveRows[0].staff_member_id) || "";
         const firstRow = {
           date: packageDraft.first_session_date,
           time: packageDraft.first_session_time,
-          staff_member_id: packageDraft.staff_member_id
-            ? String(packageDraft.staff_member_id)
-            : "",
+          staff_member_id: firstStaff,
           unplanned: false,
           available: null,
           alternatives: [],

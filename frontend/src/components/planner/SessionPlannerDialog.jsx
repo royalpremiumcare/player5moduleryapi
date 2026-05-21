@@ -152,8 +152,13 @@ const SessionPlannerDialog = ({
   const { creating, submit } = useOptimisticPlan({
     appointment,
     sessions,
+    // Sorun 6 fix: çift kapatma sinyali kaldırıldı. Eskiden submit success
+    // sonrası HEM onOpenChange(false) HEM onSuccess() tetikleniyordu →
+    // parent iki ayrı state mutation yapıp ara render'da "boş modal"
+    // flicker'ı oluşuyordu. Artık sadece onSuccess çağırıyoruz; parent
+    // packageDraft=null + step reset yapınca dialog doğal olarak unmount
+    // olur. Cancel/abort path'i ise onOpenChange üzerinden ayrı yürür.
     onDone: () => {
-      onOpenChange(false);
       onSuccess && onSuccess();
     },
     t,

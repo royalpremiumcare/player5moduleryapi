@@ -612,19 +612,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 : 'pr-32 sm:pr-0'
             }`}
           >
-            <h1
-              className="font-bold text-gray-900 tracking-tight flex flex-wrap items-center gap-x-2 gap-y-1"
-              style={{ fontSize: 'clamp(1.125rem, 4.5vw, 1.5rem)' }}
-            >
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="whitespace-nowrap">
                 {greeting.text}<span className="ml-1 align-middle" style={{ fontSize: '1.2em' }}>{greeting.emoji}</span>,
               </span>
               <span className="text-gray-700">{currentUserName}</span>
             </h1>
-            <p
-              className="text-gray-600 font-medium mt-1.5 leading-relaxed"
-              style={{ fontSize: 'clamp(0.95rem, 3.5vw, 1.125rem)' }}
-            >
+            <p className="text-base md:text-lg text-gray-600 font-medium mt-1.5 leading-relaxed">
               {format(new Date(), "d MMMM EEEE", { locale: dateLocale })}
             </p>
           </div>

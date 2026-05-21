@@ -241,10 +241,21 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
           });
         } catch (_) {}
 
-        // Stripe Checkout sayfasına yönlendir — native'de sistem tarayıcısı
-        // (App.openUrl) + üçlü fallback (Plan 12.4), web'de yeni sekme.
+        // Stripe Checkout sayfasına yönlendir:
+        //  - Native (Capacitor): App.openUrl() ile sistem tarayıcısı (Plan 12.4
+        //    fallback'i ile birlikte).
+        //  - Web: aynı sekmede window.location.href ile yönlendir. Async POST
+        //    sonrası window.open(_blank) çağrısı çoğu mobil tarayıcıda popup
+        //    blocker'a takılıyor (user gesture'dan kopuk); "Aboneliği Başlat"
+        //    butonuna basınca hiçbir şey olmuyor gibi görünüyordu (Sorun 3).
+        //    Aynı sekmede yönlendirme = popup engellenmiyor + Stripe başarı
+        //    sayfası geri yönlendiriyor.
         const checkoutUrl = response.data.checkout_url;
-        await openExternalUrl(checkoutUrl);
+        if (Capacitor.isNativePlatform()) {
+          await openExternalUrl(checkoutUrl);
+        } else {
+          window.location.href = checkoutUrl;
+        }
       } else {
         toast.error(t('settings.subscribePage.paymentPageError'));
         setProcessingPlanId(null);
@@ -282,22 +293,22 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
         </button>
       </div>
 
-      {/* Section header (LandingPage pricing ile birebir tipografi) */}
-      <section className="pt-6 md:pt-8 pb-14 md:pb-16">
+      {/* Section header (LandingPage pricing ile birebir tipografi ama mobile-first) */}
+      <section className="pt-2 md:pt-8 pb-10 md:pb-16">
         <div className="container mx-auto px-4">
-          <div className="text-center max-w-2xl mx-auto mb-12 md:mb-14">
-            <span className="inline-block text-base md:text-lg font-semibold uppercase tracking-[0.22em] text-gray-500 mb-4">
+          <div className="text-center max-w-2xl mx-auto mb-8 md:mb-14">
+            <span className="inline-block text-xs md:text-base font-semibold uppercase tracking-[0.18em] md:tracking-[0.22em] text-gray-500 mb-3 md:mb-4">
               {t('settings.subscribePage.title')}
             </span>
-            <h2 className="text-4xl md:text-5xl lg:text-[3.5rem] font-bold tracking-tight text-gray-900 leading-[1.05] mb-5">
+            <h2 className="text-3xl md:text-4xl lg:text-[3.5rem] font-bold tracking-tight text-gray-900 leading-[1.1] md:leading-[1.05] mb-4 md:mb-5">
               {t('landing.pricing.title', { defaultValue: 'Size uygun planı seçin' })}
             </h2>
-            <p className="text-base md:text-lg text-gray-500 leading-relaxed">
+            <p className="text-sm md:text-lg text-gray-500 leading-relaxed">
               {t('settings.subscribePage.subtitle')}
             </p>
 
             {/* Billing toggle — Segmented pill (LandingPage ile aynı) */}
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+            <div className="mt-6 md:mt-9 flex flex-wrap items-center justify-center gap-x-4 md:gap-x-5 gap-y-3">
               <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white border border-gray-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
                 <button
                   type="button"
@@ -385,7 +396,7 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
                 return (
                   <div
                     key={plan.id}
-                    className={`relative flex flex-col rounded-[24px] p-8 lg:p-10 transition-all duration-300 ease-out ${
+                    className={`relative flex flex-col rounded-[20px] md:rounded-[24px] p-5 md:p-8 lg:p-10 transition-all duration-300 ease-out ${
                       isPopular
                         ? 'bg-gray-900 text-white ring-1 ring-gray-900 shadow-[0_24px_60px_-18px_rgba(17,24,39,0.4)]'
                         : 'bg-white text-gray-900 ring-1 ring-gray-200/80 hover:ring-gray-300 hover:-translate-y-1 hover:shadow-[0_18px_40px_-12px_rgba(17,24,39,0.12)]'
@@ -410,21 +421,21 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
 
                     {/* Plan adı + açıklama */}
                     <div>
-                      <h3 className={`text-2xl font-bold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                      <h3 className={`text-xl md:text-2xl font-bold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
                         {getPlanName(plan.name)}
                       </h3>
-                      <p className={`text-[15px] mt-2 leading-relaxed ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
+                      <p className={`text-sm md:text-[15px] mt-2 leading-relaxed ${isPopular ? 'text-gray-400' : 'text-gray-500'}`}>
                         {t(`landing.pricing.plans.${plan.name.toLowerCase()}.description`, { defaultValue: plan.target_audience_tr || '' })}
                       </p>
                     </div>
 
                     {/* Fiyat */}
-                    <div className="mt-8 mb-7">
+                    <div className="mt-6 md:mt-8 mb-5 md:mb-7">
                       <div className="flex items-baseline">
-                        <span className={`text-2xl font-medium ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
+                        <span className={`text-xl md:text-2xl font-medium ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
                           {currencySymbol}
                         </span>
-                        <span className={`text-[3.5rem] lg:text-[4rem] font-bold tracking-[-0.04em] tabular-nums leading-none ml-0.5 ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                        <span className={`text-[2.75rem] md:text-[3.5rem] lg:text-[4rem] font-bold tracking-[-0.04em] tabular-nums leading-none ml-0.5 ${isPopular ? 'text-white' : 'text-gray-900'}`}>
                           {(displayPrice ?? 0).toLocaleString(localeCode)}
                         </span>
                         <span className={`text-sm ml-2 ${isPopular ? 'text-gray-500' : 'text-gray-500'}`}>
@@ -460,7 +471,7 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
                       type="button"
                       onClick={() => !isCurrentPlan && handleStartSubscription(plan.id)}
                       disabled={isProcessing || isCurrentPlan}
-                      className={`w-full py-4 rounded-2xl font-semibold text-base transition-all duration-200 active:scale-[0.99] disabled:cursor-not-allowed ${
+                      className={`w-full py-3.5 md:py-4 rounded-xl md:rounded-2xl font-semibold text-sm md:text-base transition-all duration-200 active:scale-[0.99] disabled:cursor-not-allowed ${
                         isCurrentPlan
                           ? 'bg-gray-100 text-gray-400 ring-1 ring-gray-200'
                           : isPopular
@@ -476,18 +487,18 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
                     </button>
 
                     {/* Divider */}
-                    <div className={`mt-8 mb-6 h-px ${isPopular ? 'bg-white/[0.08]' : 'bg-gray-100'}`}></div>
+                    <div className={`mt-6 md:mt-8 mb-5 md:mb-6 h-px ${isPopular ? 'bg-white/[0.08]' : 'bg-gray-100'}`}></div>
 
                     {/* "What's included" label */}
-                    <p className={`text-xs font-semibold uppercase tracking-[0.16em] mb-4 ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <p className={`text-[10px] md:text-xs font-semibold uppercase tracking-[0.16em] mb-3 md:mb-4 ${isPopular ? 'text-gray-500' : 'text-gray-400'}`}>
                       {t('landing.pricing.includes', { defaultValue: 'Dahil olanlar' })}
                     </p>
 
                     {/* Quota highlight */}
-                    <div className={`mb-5 p-4 rounded-2xl ${
+                    <div className={`mb-4 md:mb-5 p-3.5 md:p-4 rounded-xl md:rounded-2xl ${
                       isPopular ? 'bg-white/[0.04] ring-1 ring-white/10' : 'bg-gray-50 ring-1 ring-gray-100'
                     }`}>
-                      <div className={`text-xl font-bold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
+                      <div className={`text-base md:text-xl font-bold tracking-tight ${isPopular ? 'text-white' : 'text-gray-900'}`}>
                         {['kurumsal', 'corporate'].includes(plan.name.toLowerCase())
                           ? (i18n.language === 'tr' ? 'Sınırsız Randevu' : 'Unlimited Appointments')
                           : `${plan.quota_monthly_appointments.toLocaleString(localeCode)} ${t('settings.subscribePage.appointmentsPerMonth')}`}
@@ -498,7 +509,7 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
                     </div>
 
                     {/* Features list */}
-                    <ul className="space-y-3 flex-1">
+                    <ul className="space-y-2.5 md:space-y-3 flex-1">
                       {plan.features &&
                         plan.features
                           .filter((feature) => {
@@ -506,9 +517,9 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
                             return !(feature.includes(quotaStr) && feature.toLowerCase().includes('randevu'));
                           })
                           .map((feature, i) => (
-                            <li key={i} className="flex items-start gap-3 text-[15px] leading-relaxed">
+                            <li key={i} className="flex items-start gap-2.5 md:gap-3 text-sm md:text-[15px] leading-relaxed">
                               <Check
-                                className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isPopular ? 'text-emerald-400' : 'text-emerald-600'}`}
+                                className={`w-4 h-4 md:w-5 md:h-5 flex-shrink-0 mt-0.5 ${isPopular ? 'text-emerald-400' : 'text-emerald-600'}`}
                                 strokeWidth={2.5}
                               />
                               <span className={isPopular ? 'text-gray-300' : 'text-gray-600'}>{feature}</span>
