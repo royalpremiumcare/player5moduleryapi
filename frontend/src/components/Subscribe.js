@@ -50,17 +50,11 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
     return 'standard'; // fallback
   };
   
-  // Plan isimleri çevirisi
+  // Plan isimleri çevirisi (i18n lookup; Trial → Deneme dahil)
   const getPlanName = (planName) => {
-    const planNameMap = {
-      'Standart': 'Standard',
-      'Profesyonel': 'Professional',
-      'Premium': 'Premium',
-      'Business': 'Business',
-      'Enterprise': 'Enterprise',
-      'Kurumsal': 'Corporate',
-    };
-    return i18n.language === 'en' && planNameMap[planName] ? planNameMap[planName] : planName;
+    if (!planName) return planName;
+    const key = String(planName).toLowerCase();
+    return t(`settings.subscriptionPage.planNames.${key}`, { defaultValue: planName });
   };
   
   // App Store Compliance: Mobil uygulamada (Android/iOS) ödeme sayfasını gizle

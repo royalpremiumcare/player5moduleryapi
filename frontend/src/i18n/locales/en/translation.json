@@ -896,6 +896,15 @@
       "title": "Subscription & Billing",
       "subtitle": "Your current plan and appointment quota",
       "loading": "Loading plan information...",
+      "planNames": {
+        "trial": "Trial",
+        "standart": "Standard",
+        "profesyonel": "Professional",
+        "premium": "Premium",
+        "business": "Business",
+        "enterprise": "Enterprise",
+        "kurumsal": "Corporate"
+      },
       "planPackage": "{{planName}} Plan",
       "yearlyPlan": "Yearly Plan",
       "monthlyPlan": "Monthly",

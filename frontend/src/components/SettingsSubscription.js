@@ -108,7 +108,7 @@ const SettingsSubscription = ({ onNavigate }) => {
             <div className="space-y-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="text-base font-semibold text-gray-900">{t('settings.subscriptionPage.planPackage', { planName: planInfo.plan_name })}</p>
+                  <p className="text-base font-semibold text-gray-900">{t('settings.subscriptionPage.planPackage', { planName: t(`settings.subscriptionPage.planNames.${(planInfo.plan_name || '').toLowerCase()}`, { defaultValue: planInfo.plan_name }) })}</p>
                   {planInfo.is_yearly && (
                     <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">
                       {t('settings.subscriptionPage.yearlyPlan')}

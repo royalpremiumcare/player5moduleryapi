@@ -898,6 +898,15 @@
       "title": "Abonelik ve Faturalandırma",
       "subtitle": "Mevcut paketiniz ve randevu kotanız",
       "loading": "Plan bilgisi yükleniyor...",
+      "planNames": {
+        "trial": "Deneme",
+        "standart": "Standart",
+        "profesyonel": "Profesyonel",
+        "premium": "Premium",
+        "business": "Business",
+        "enterprise": "Enterprise",
+        "kurumsal": "Kurumsal"
+      },
       "planPackage": "{{planName}} Paket",
       "yearlyPlan": "Yıllık Plan",
       "monthlyPlan": "Aylık",
