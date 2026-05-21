@@ -442,7 +442,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
 
       {/* Service Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl max-h-[85vh] flex flex-col">
+        <DialogContent className="max-w-md backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl max-h-[85vh] flex flex-col">
           <DialogHeader className="flex-shrink-0 pb-2">
             <DialogTitle className="text-xl font-black text-zinc-900">
               {editingService ? t('services.management.editTitle') : t('services.management.addTitle')}
@@ -451,9 +451,9 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               {t('services.management.dialogDescription')}
             </DialogDescription>
           </DialogHeader>
-          {/* `pr-2` scroll bar için sağ tarafta nefes payı bırakır;
-              input köşeleri artık scrollbar'ın altına girmez. */}
-          <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1 pr-2">
+          {/* `pr-2` scroll bar için sağ tarafta nefes payı bırakır; `px-1` ile sol+sağ simetri.
+              `overflow-x-hidden` mobilde 1px taşmaları engeller. */}
+          <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto overflow-x-hidden flex-1 px-1 pr-2">
             {/* Section: Temel Bilgiler */}
             <div className="flex items-center gap-3">
               <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
@@ -470,7 +470,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 onChange={(e) => { setFormErrors(prev => { const { name: _, ...rest } = prev; return rest; }); setFormData({ ...formData, name: e.target.value }); }}
                 placeholder={t('services.management.pricePlaceholder')}
                 required
-                className={`backdrop-blur-md bg-white/60 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.name ? 'border-red-400 border' : 'border-white/40'}`}
+                className={`backdrop-blur-md bg-white/60 border rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.name ? 'border-red-400' : 'border-white/40'}`}
               />
               {formErrors.name && <p className="text-xs text-red-500 font-medium">{formErrors.name}</p>}
             </div>
@@ -487,7 +487,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 onChange={(e) => { setFormErrors(prev => { const { price: _, ...rest } = prev; return rest; }); setFormData({ ...formData, price: e.target.value }); }}
                 placeholder="0"
                 required
-                className={`backdrop-blur-md bg-white/60 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.price ? 'border-red-400 border' : 'border-white/40'}`}
+                className={`backdrop-blur-md bg-white/60 border rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.price ? 'border-red-400' : 'border-white/40'}`}
               />
               {formErrors.price 
                 ? <p className="text-xs text-red-500 font-medium">{formErrors.price}</p>
@@ -510,7 +510,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 onChange={(e) => { setFormErrors(prev => { const { duration: _, ...rest } = prev; return rest; }); setFormData({ ...formData, duration: e.target.value }); }}
                 placeholder="30"
                 required
-                className={`backdrop-blur-md bg-white/60 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.duration ? 'border-red-400 border' : 'border-white/40'}`}
+                className={`backdrop-blur-md bg-white/60 border rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.duration ? 'border-red-400' : 'border-white/40'}`}
               />
               {formErrors.duration 
                 ? <p className="text-xs text-red-500 font-medium">{formErrors.duration}</p>
@@ -553,7 +553,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                   onChange={(e) => setFormData({ ...formData, sessionCount: e.target.value })}
                   placeholder="7"
                   required
-                  className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+                  className="backdrop-blur-md bg-white/60 border border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
                 />
                 <p className="text-xs text-zinc-500 font-medium">
                   {i18n.language === 'tr' ? 'Minimum 2 seans gereklidir' : 'Minimum 2 sessions required'}
@@ -627,7 +627,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                   }}
                   placeholder={i18n.language === 'tr' ? 'Min 200₺' : 'Min £3'}
                   required
-                  className={`backdrop-blur-md bg-white/60 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.depositAmount ? 'border-red-400 border' : 'border-white/40'}`}
+                  className={`backdrop-blur-md bg-white/60 border rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.depositAmount ? 'border-red-400' : 'border-white/40'}`}
                 />
                 {formErrors.depositAmount
                   ? <p className="text-xs text-red-500 font-medium">{formErrors.depositAmount}</p>
