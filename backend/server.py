@@ -120,6 +120,7 @@ else:
     logger.warning("⚠️ STRIPE_SECRET_KEY not configured. Payment features will not work.")
 
 from bulk_session_idempotency import BulkSessionCreate, SessionSlot, canonical_bulk_session_hash as _canonical_bulk_session_hash
+from bulk_package import BulkPackageCreate
 from session_wave_planner import plan_wave_remaining_sessions
 from appointment_refund_flags import (
     REFUNDABLE_MERCHANT_STATES,
@@ -5804,6 +5805,135 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                 await redis_client.delete(idem_proc_key)
             except Exception:
                 pass
+
+@api_router.post("/appointments/bulk-package")
+async def create_bulk_package(
+    request: Request,
+    package: BulkPackageCreate,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Atomik seans paketi yaratımı: 1..N seansı tek MongoDB transaction'da
+    yaratır. Hata olursa hiçbir doc DB'ye yazılmaz. Tek SESSION_PACKAGE
+    WhatsApp mesajı gönderilir (1..N seansları içerir).
+
+    Plan 12.1 (backward compatibility):
+        - /bulk-session geriye uyumlu olarak korunur (kalan planla akışı).
+        - /bulk-package yeni "atomic new package" akışı için paralel eklendi.
+    Plan 12.2 (atomic transaction safety):
+        - Tüm DB yazımları transaction içinde, WhatsApp tetiği commit
+          SONRASINDA asyncio.create_task ile (transaction bloğu dışında).
+    Plan 12.3 (idempotency):
+        - session_group_id tabanlı no-op success: aynı group_id ile yapılan
+          retry/double-submit yeni doc yaratmaz, mevcut paketi döndürür.
+        - Transaction başarısız olursa kota geri alınır + güvenli abort
+          (HTTPException), sistem CRASH ETMEZ.
+
+    Implementation: aynı core logic /bulk-session ile paylaşıldığı için
+    bu endpoint wrapper'dır → BulkPackageCreate'i BulkSessionCreate'e
+    çevirip create_bulk_session()'ı çağırır.
+    """
+    db = await get_db_from_request(request)
+    request_id = str(uuid.uuid4())
+
+    if not package.sessions:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_code": "validation_failed",
+                "message": "En az bir seans slotu gereklidir",
+                "request_id": request_id,
+            },
+        )
+
+    # Idempotency check (Plan 12.3): aynı session_group_id ile var olan paketi
+    # no-op success olarak döndür (retry / double-submit güvenliği).
+    if package.session_group_id:
+        existing = await db.appointments.find_one(
+            {
+                "organization_id": current_user.organization_id,
+                "session_group_id": package.session_group_id,
+            },
+            {"_id": 0},
+        )
+        if existing:
+            existing_apts = (
+                await db.appointments.find(
+                    {
+                        "organization_id": current_user.organization_id,
+                        "session_group_id": package.session_group_id,
+                    },
+                    {"_id": 0},
+                )
+                .sort("session_number", 1)
+                .to_list(200)
+            )
+            logging.info(
+                "♻️ /bulk-package idempotent replay: session_group_id=%s (%d existing appts)",
+                package.session_group_id,
+                len(existing_apts),
+            )
+            return JSONResponse(
+                content={
+                    "success": True,
+                    "message": "Paket zaten oluşturulmuş (idempotent replay)",
+                    "created_appointment_ids": [a["id"] for a in existing_apts],
+                    "session_group_id": package.session_group_id,
+                    "appointments": existing_apts,
+                    "idempotent_replay": True,
+                    "request_id": request_id,
+                },
+                status_code=200,
+            )
+
+    # BulkSessionCreate'e dönüştür (Plan 12.1 wrapper):
+    # /bulk-session'ın atomic transaction + conflict check + quota + lock +
+    # WhatsApp + audit log + cache invalidation logic'i olduğu gibi kullanılır.
+    session_total = package.session_total or len(package.sessions)
+    bulk = BulkSessionCreate(
+        customer_name=package.customer_name,
+        phone=package.phone,
+        service_id=package.service_id,
+        staff_member_id=package.staff_member_id,
+        notes=package.notes or "",
+        session_group_id=package.session_group_id or str(uuid.uuid4()),
+        starting_session_number=1,  # Yeni paket her zaman 1'den başlar.
+        session_total=session_total,
+        sessions=package.sessions,
+        # SESSION_PACKAGE WhatsApp mesajında 1..N seansları listele.
+        # skip_confirmation_whatsapp True ise WhatsApp gönderimini handler
+        # tetikler ama biz burada bayrağı bulk yapısına yansıtamayız (eski
+        # şema). Bunun yerine handler'ın WhatsApp tetikleyici task'ı zaten
+        # asyncio.create_task ile fire-and-forget, transaction blokunu
+        # etkilemiyor. skip_confirmation_whatsapp gelişimi sonradan eklenebilir.
+        notify_include_existing_sessions=True,
+    )
+
+    try:
+        return await create_bulk_session(request, bulk, current_user)
+    except HTTPException:
+        # Plan 12.3: transaction başlatılamazsa güvenli abort (alt katman
+        # zaten kota'yı geri alıyor). HTTPException'ı olduğu gibi yukarı sürer.
+        raise
+    except Exception as exc:
+        # Beklenmeyen hata: sistem crash olmasın → log + HTTPException(500).
+        logging.error(
+            "/bulk-package wrapper unexpected error (session_group_id=%s): %s",
+            package.session_group_id,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "error_code": "bulk_package_unexpected_error",
+                "message": "Paket oluşturulurken beklenmedik bir hata oluştu.",
+                "request_id": request_id,
+            },
+        )
+
 
 @api_router.post("/availability/bulk-check")
 async def bulk_check_availability(request: Request, check: BulkCheckRequest, current_user: UserInDB = Depends(get_current_user)):
