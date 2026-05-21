@@ -281,7 +281,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
 
   // Chat penceresi
   return (
-    <div className="fixed bottom-[88px] right-4 md:bottom-24 md:left-1/2 md:-translate-x-1/2 md:right-auto z-50 w-[22rem] max-w-[calc(100vw-2rem)] h-[520px] md:w-[740px] md:h-[460px] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200">
+    <div className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+72px)] md:bottom-24 md:left-1/2 md:-translate-x-1/2 md:right-auto z-[1100] w-[22rem] max-w-[calc(100vw-2rem)] h-[520px] md:w-[740px] md:h-[460px] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200">
       {/* Header */}
       <div className="bg-white/80 backdrop-blur-xl border-b border-gray-100 p-4">
         <div className="flex items-center justify-between">
