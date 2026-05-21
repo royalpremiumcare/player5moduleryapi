@@ -1,5 +1,4 @@
 import { Capacitor } from '@capacitor/core';
-import { App as CapApp } from '@capacitor/app';
 
 /**
  * WKWebView / PWA'da user-gesture bağlamı kaybolduğunda (async API sonrası)
@@ -20,15 +19,16 @@ function openViaAnchor(url) {
 }
 
 /**
- * Harici URL'i sistem tarayıcısında açar (çoklu fallback ile).
+ * Harici URL'i sistem tarayıcısında açar.
  *
- * Native: CapApp.openUrl → window.open(_system) → anchor click → location.href
- * Web: window.open(_blank) → anchor click → location.href
+ * Capacitor 7'de App.openUrl yok. Native'de window.open(_blank) veya
+ * location.assign, WKWebView delegate üzerinden UIApplication.shared.open /
+ * Android Intent ile dış tarayıcıyı açar.
  *
  * @param {string} url - Açılacak harici URL
- * @returns {Promise<boolean>} Başarılı olursa true
+ * @returns {boolean} Başarılı olursa true
  */
-export async function openExternalUrl(url) {
+export function openExternalUrl(url) {
   if (!url) return false;
 
   if (!Capacitor.isNativePlatform()) {
@@ -53,32 +53,27 @@ export async function openExternalUrl(url) {
     }
   }
 
+  // iOS: createWebViewWith → UIApplication.shared.open
+  // Android: Bridge.shouldOverrideUrlLoading → ACTION_VIEW intent
   try {
-    await CapApp.openUrl({ url });
+    window.open(url, '_blank');
     return true;
   } catch (err) {
-    console.warn('CapApp.openUrl failed, fallback to window.open(_system)', err);
-  }
-
-  try {
-    const win = window.open(url, '_system');
-    if (win !== null) return true;
-  } catch (err2) {
-    console.warn('window.open(_system) failed', err2);
+    console.warn('window.open(_blank) failed on native', err);
   }
 
   try {
     openViaAnchor(url);
     return true;
-  } catch (err3) {
-    console.warn('anchor click failed on native', err3);
+  } catch (err2) {
+    console.warn('anchor click failed on native', err2);
   }
 
   try {
-    window.location.href = url;
+    window.location.assign(url);
     return true;
-  } catch (err4) {
-    console.error('openExternalUrl(native) all fallbacks failed', err4);
+  } catch (err3) {
+    console.error('openExternalUrl(native) all fallbacks failed', err3);
     return false;
   }
 }

@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import api from "../api/api";
 import { Capacitor } from '@capacitor/core';
+import { buildWebsiteSubscribeUrl, openWebsiteSubscribe, prefetchWebsiteSubscribeUrl } from "../lib/openWebsiteSubscribe";
 import { openExternalUrl } from "../lib/openExternalUrl";
 import { PRICING_DISPLAY, normalizePlanKey, getYearlyPrice } from "../lib/pricing";
 import { toast } from "sonner";
@@ -16,10 +17,11 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
   const webUrl = i18n.language && i18n.language.toLowerCase().startsWith('en')
     ? 'https://plannapp.co.uk'
     : 'https://plannapp.co';
-  const websiteSubscribeUrl = `${webUrl}/subscribe`;
-  
-  // M9: PRICING_DISPLAY ve plan key normalize'i artık tek kaynak `lib/pricing.js`
-  // üzerinden geliyor (LandingPage.js da aynı modülü kullanır → drift önleme).
+  const websiteSubscribeUrl = buildWebsiteSubscribeUrl(webUrl, null);
+  const [appWebsiteUrl, setAppWebsiteUrl] = useState(websiteSubscribeUrl);
+
+  // App Store Compliance: Mobil uygulamada (Android/iOS) ödeme sayfasını gizle
+  const isAppMode = Capacitor.isNativePlatform();
 
   /** Subscribe.js fallback için "standard" döner — pricing.js null dönerse. */
   const getPlanPricingKey = (planName) => normalizePlanKey(planName) || 'standard';
@@ -30,10 +32,11 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
     const key = String(planName).toLowerCase();
     return t(`settings.subscriptionPage.planNames.${key}`, { defaultValue: planName });
   };
-  
-  // App Store Compliance: Mobil uygulamada (Android/iOS) ödeme sayfasını gizle
-  // Sadece native platform kontrolü yap, localStorage kontrolü yapma (web'de ?mode=app ile giriş yapıldığında localStorage'a yazılıyor)
-  const isAppMode = Capacitor.isNativePlatform();
+
+  useEffect(() => {
+    if (!isAppMode) return;
+    prefetchWebsiteSubscribeUrl(webUrl).then(setAppWebsiteUrl);
+  }, [isAppMode, webUrl]);
   
   // Eğer app mode ise, sadece bilgilendirme mesajı göster
   if (isAppMode) {
@@ -58,16 +61,9 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
               
               {/* CTA Button */}
               <Button
-                onClick={async () => {
-                  let targetUrl = websiteSubscribeUrl;
-                  try {
-                    const resp = await api.post('/sso/create');
-                    const code = resp?.data?.code;
-                    if (code) {
-                      targetUrl = `${webUrl}/sso?code=${encodeURIComponent(code)}&redirect=${encodeURIComponent('/subscribe')}`;
-                    }
-                  } catch (_) {}
-                  const ok = await openExternalUrl(targetUrl);
+                type="button"
+                onClick={() => {
+                  const ok = openWebsiteSubscribe(appWebsiteUrl);
                   if (!ok) toast.error(t('appCompliance.openWebsiteFailed'));
                 }}
                 className="w-full bg-gray-900 hover:bg-gray-800 text-white font-semibold py-6 rounded-2xl shadow-md transition-colors flex items-center justify-center gap-2"
@@ -254,7 +250,7 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
         //    sayfası geri yönlendiriyor.
         const checkoutUrl = response.data.checkout_url;
         if (Capacitor.isNativePlatform()) {
-          await openExternalUrl(checkoutUrl);
+          openExternalUrl(checkoutUrl);
         } else {
           window.location.href = checkoutUrl;
         }
