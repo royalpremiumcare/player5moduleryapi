@@ -26,7 +26,23 @@ import ManualScreen from "./ManualScreen";
 import { usePlanSuggestion, usePlannerSettings, useOptimisticPlan } from "./hooks";
 import { allGreen } from "./utils";
 
-const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess, notifyIncludeExistingSessions = false }) => {
+/**
+ * Plan M2: `mode` + `packageDraft` prop'ları.
+ *   - mode="remainder" (default, BC): mevcut "kalan planla" akışı.
+ *     appointment objesinden kalanları planlar, POST /bulk-session.
+ *   - mode="newPackage": AppointmentFormWizard step 4'ten çağrılır,
+ *     packageDraft (customer/phone/service/first_session/session_total/
+ *     session_group_id) ile 1..N atomik paket yaratımı, POST /bulk-package.
+ */
+const SessionPlannerDialog = ({
+  open,
+  onOpenChange,
+  appointment,
+  onSuccess,
+  notifyIncludeExistingSessions = false,
+  mode = "remainder",
+  packageDraft = null,
+}) => {
   const { t, i18n } = useTranslation();
   const isTr = i18n.language === "tr";
   const { userRole, canViewAll } = useAuth();
@@ -34,14 +50,42 @@ const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess, noti
   const [screen, setScreen] = useState("smart"); // "smart" | "manual"
   const [manualIndex, setManualIndex] = useState(0);
 
-  const remainingCount = appointment
-    ? Math.max(0, (Number(appointment.session_total) || 0) - (Number(appointment.session_number) || 0))
-    : 0;
+  const isNewPackage = mode === "newPackage" && !!packageDraft;
+
+  // newPackage: synthetic appointment objesi UI gösterimi için.
+  // Header rozet/açıklaması, SmartScreen ve ManualScreen tek bir
+  // appointment-like nesneden çalışır; hooks ise zaten mode + packageDraft
+  // alarak ayrı yol izler (gerçek API çağrılarında effectiveAppointment
+  // KULLANILMAZ).
+  const effectiveAppointment = isNewPackage
+    ? {
+        customer_name: packageDraft.customer_name,
+        phone: packageDraft.phone,
+        service_id: packageDraft.service_id,
+        service_name: packageDraft.service_name,
+        staff_member_id: packageDraft.staff_member_id,
+        service_duration: packageDraft.service_duration,
+        appointment_date: packageDraft.first_session_date,
+        appointment_time: packageDraft.first_session_time,
+        session_group_id: packageDraft.session_group_id,
+        session_number: 1,
+        session_total: packageDraft.session_total,
+        notes: packageDraft.notes,
+      }
+    : appointment;
+
+  // newPackage: tüm N seans gösterilir.
+  // remainder: kalanları gösterir (total - number).
+  const remainingCount = isNewPackage
+    ? Math.max(0, Number(packageDraft.session_total) || 0)
+    : appointment
+      ? Math.max(0, (Number(appointment.session_total) || 0) - (Number(appointment.session_number) || 0))
+      : 0;
 
   const { plannerSettings, allStaff, getDayRange } = usePlannerSettings(open);
 
   const { sessions, setSessions, loading, checking, load, check, patch } =
-    usePlanSuggestion({ appointment, open, plannerSettings, remainingCount });
+    usePlanSuggestion({ appointment, open, plannerSettings, remainingCount, mode, packageDraft });
 
   // Reset screen when dialog opens / closes
   useEffect(() => {
@@ -59,17 +103,18 @@ const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess, noti
   }, [allStaff]);
 
   const qualifiedStaff = useMemo(() => {
-    if (!appointment?.service_id || !plannerSettings) return [];
+    const serviceId = isNewPackage ? packageDraft?.service_id : appointment?.service_id;
+    if (!serviceId || !plannerSettings) return [];
     const users = allStaff || [];
     let q = users.filter((u) =>
       Array.isArray(u.permitted_service_ids) &&
-      u.permitted_service_ids.includes(appointment.service_id)
+      u.permitted_service_ids.includes(serviceId)
     );
     if (!plannerSettings.admin_provides_service) {
       q = q.filter((s) => s.role !== "admin");
     }
     return q;
-  }, [appointment?.service_id, plannerSettings, allStaff]);
+  }, [isNewPackage, packageDraft?.service_id, appointment?.service_id, plannerSettings, allStaff]);
 
   const showStaffPicker =
     (userRole === "admin" || userRole === "superadmin" || canViewAll) &&
@@ -113,10 +158,16 @@ const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess, noti
     },
     t,
     notifyIncludeExistingSessions,
+    mode,
+    packageDraft,
   });
 
-  const isEmpty = !appointment || remainingCount <= 0;
-  const startingNumber = (Number(appointment?.session_number) || 0) + 1;
+  // isEmpty: newPackage → packageDraft yoksa veya session_total=0; remainder → mevcut.
+  const isEmpty = isNewPackage
+    ? !packageDraft || remainingCount <= 0
+    : !appointment || remainingCount <= 0;
+  // startingNumber: newPackage → 1'den başlar. remainder → mevcut hesap.
+  const startingNumber = isNewPackage ? 1 : (Number(appointment?.session_number) || 0) + 1;
   const ready = allGreen(sessions);
 
   // -----  RENDER  ---------------------------------------------------------
@@ -138,14 +189,14 @@ const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess, noti
           <div className="flex-1 min-w-0 overflow-hidden">
             <DialogTitle className="text-sm sm:text-base font-black text-zinc-900 leading-tight flex items-center gap-1.5 min-w-0">
               <span className="truncate">{t("sessionPlanner.title")}</span>
-              {appointment?.session_number != null && appointment?.session_total != null && (
+              {effectiveAppointment?.session_number != null && effectiveAppointment?.session_total != null && (
                 <span className="flex-shrink-0 inline-flex items-center text-[9px] font-bold text-zinc-600 bg-zinc-100 border border-zinc-200/80 px-1.5 py-0.5 rounded-full whitespace-nowrap tracking-tight">
-                  {appointment.session_number}/{appointment.session_total}
+                  {effectiveAppointment.session_number}/{effectiveAppointment.session_total}
                 </span>
               )}
             </DialogTitle>
             <DialogDescription className="text-[11px] sm:text-xs text-zinc-500 truncate">
-              {[appointment?.customer_name, appointment?.service_name].filter(Boolean).join(" · ")}
+              {[effectiveAppointment?.customer_name, effectiveAppointment?.service_name].filter(Boolean).join(" · ")}
             </DialogDescription>
           </div>
           <button
@@ -164,7 +215,7 @@ const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess, noti
             <EmptyState isTr={isTr} onClose={() => onOpenChange(false)} />
           ) : screen === "smart" ? (
             <SmartScreen
-              appointment={appointment}
+              appointment={effectiveAppointment}
               sessions={sessions}
               loading={loading}
               checking={checking}
@@ -181,7 +232,7 @@ const SessionPlannerDialog = ({ open, onOpenChange, appointment, onSuccess, noti
             />
           ) : (
             <ManualScreen
-              appointment={appointment}
+              appointment={effectiveAppointment}
               sessionIndex={manualIndex}
               sessions={sessions}
               sessionNumber={startingNumber + manualIndex}

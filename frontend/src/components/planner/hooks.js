@@ -26,7 +26,14 @@ import { formatApiError } from "../../lib/apiError";
  *     suggested_staff, suggested_staff_name
  *   }
  */
-export function usePlanSuggestion({ appointment, open, plannerSettings, remainingCount }) {
+export function usePlanSuggestion({
+  appointment,
+  open,
+  plannerSettings,
+  remainingCount,
+  mode = "remainder",
+  packageDraft = null,
+}) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -34,51 +41,134 @@ export function usePlanSuggestion({ appointment, open, plannerSettings, remainin
   // effects depending on it can reliably re-fire even when length is unchanged.
   const [reloadTick, setReloadTick] = useState(0);
 
+  // Source object for staff fallback: appointment (remainder) or packageDraft
+  // (newPackage). Used inside mapRow for default staff_member_id.
+  const sourceStaff = mode === "newPackage"
+    ? packageDraft?.staff_member_id
+    : appointment?.staff_member_id;
+
   const mapRow = useCallback(
     (s, i, fallback = []) => ({
       date: s.date || fallback[i]?.date || "",
       time: s.time || fallback[i]?.time || "",
       staff_member_id: s.staff_member_id
         ? String(s.staff_member_id)
-        : (appointment?.staff_member_id && String(appointment.staff_member_id)) || "",
+        : (sourceStaff && String(sourceStaff)) || "",
       unplanned: !!s.unplanned,
       available: null,
       alternatives: [],
       suggested_staff: null,
       suggested_staff_name: null,
     }),
-    [appointment?.staff_member_id]
+    [sourceStaff]
   );
 
   const load = useCallback(async () => {
-    if (!appointment || remainingCount <= 0) {
+    const isNewPackage = mode === "newPackage";
+
+    if (isNewPackage) {
+      if (!packageDraft || !packageDraft.session_total || packageDraft.session_total < 1) {
+        setSessions([]);
+        return;
+      }
+    } else if (!appointment || remainingCount <= 0) {
       setSessions([]);
       return;
     }
+
     setLoading(true);
-    const fallback = buildRemainingSlotsFromAppointment(appointment, remainingCount, plannerSettings, {
-      intervalMinutes: plannerSettings?.appointment_interval || 30,
-      serviceDurationMinutes: appointment.service_duration ?? undefined,
-    });
+
+    // Plan M2: newPackage mode için 1. seans draft'tan, 2..N wave-plan'dan.
+    // wave-plan'a remaining_count = N - 1 gönderilir.
+    const sessionTotal = isNewPackage ? packageDraft.session_total : null;
+    const waveRemainingCount = isNewPackage
+      ? Math.max(0, sessionTotal - 1)
+      : remainingCount;
+
+    const wavePayload = isNewPackage
+      ? {
+          service_id: packageDraft.service_id,
+          first_session_date: packageDraft.first_session_date,
+          first_session_time: packageDraft.first_session_time,
+          remaining_count: waveRemainingCount,
+          staff_member_id: packageDraft.staff_member_id || undefined,
+        }
+      : {
+          service_id: appointment.service_id,
+          first_session_date: normalizeAppointmentDateStr(appointment.appointment_date),
+          first_session_time: appointment.appointment_time || "10:00",
+          remaining_count: waveRemainingCount,
+          staff_member_id: appointment.staff_member_id || undefined,
+        };
+
+    // Fallback (network hata durumunda): newPackage için sadece 1. seans
+    // draft'ı içeren tek-elemanlı liste; remainder için mevcut helper.
+    const fallback = isNewPackage
+      ? []
+      : buildRemainingSlotsFromAppointment(appointment, remainingCount, plannerSettings, {
+          intervalMinutes: plannerSettings?.appointment_interval || 30,
+          serviceDurationMinutes: appointment.service_duration ?? undefined,
+        });
+
     try {
-      const data = await fetchWavePlanSessions(api, {
-        service_id: appointment.service_id,
-        first_session_date: normalizeAppointmentDateStr(appointment.appointment_date),
-        first_session_time: appointment.appointment_time || "10:00",
-        remaining_count: remainingCount,
-        staff_member_id: appointment.staff_member_id || undefined,
-      });
-      const rows = (data?.sessions || []).map((s, i) => mapRow(s, i, fallback));
-      setSessions(rows.length ? rows : fallback.map((s, i) => mapRow(s, i, fallback)));
+      // Sadece N>1 ise wave-plan çağrılır; N=1 (sadece 1. seans) durumunda
+      // boş cevap döner ve aşağıda firstRow tek başına eklenir.
+      let waveRows = [];
+      if (waveRemainingCount > 0) {
+        const data = await fetchWavePlanSessions(api, wavePayload);
+        waveRows = (data?.sessions || []).map((s, i) => mapRow(s, i, fallback));
+      }
+
+      let rows;
+      if (isNewPackage) {
+        // 1. seans draft'tan prepend edilir; planner'da kullanıcı 1..N
+        // gösterimi/düzenlemesi yapabilir. Atomic create için tüm N seans
+        // /bulk-package'a gönderilir (useOptimisticPlan handle ediyor).
+        const firstRow = {
+          date: packageDraft.first_session_date,
+          time: packageDraft.first_session_time,
+          staff_member_id: packageDraft.staff_member_id
+            ? String(packageDraft.staff_member_id)
+            : "",
+          unplanned: false,
+          available: null,
+          alternatives: [],
+          suggested_staff: null,
+          suggested_staff_name: null,
+        };
+        rows = [firstRow, ...waveRows];
+      } else {
+        rows = waveRows.length ? waveRows : fallback.map((s, i) => mapRow(s, i, fallback));
+      }
+      setSessions(rows);
     } catch (e) {
       // Silent fallback — network hiccup shouldn't block the user.
       console.warn("[planner] wave-plan failed, falling back", e);
-      setSessions(fallback.map((s, i) => mapRow(s, i, fallback)));
+      if (isNewPackage) {
+        // newPackage'da en azından 1. seansı göster; kullanıcı 2..N için
+        // tarih/saat girene kadar Submit disabled kalır.
+        setSessions([
+          {
+            date: packageDraft.first_session_date,
+            time: packageDraft.first_session_time,
+            staff_member_id: packageDraft.staff_member_id
+              ? String(packageDraft.staff_member_id)
+              : "",
+            unplanned: false,
+            available: null,
+            alternatives: [],
+            suggested_staff: null,
+            suggested_staff_name: null,
+          },
+        ]);
+      } else {
+        setSessions(fallback.map((s, i) => mapRow(s, i, fallback)));
+      }
     } finally {
       setLoading(false);
       setReloadTick((x) => x + 1);
     }
-  }, [appointment, remainingCount, plannerSettings, mapRow]);
+  }, [appointment, remainingCount, plannerSettings, mapRow, mode, packageDraft]);
 
   const check = useCallback(async () => {
     if (!appointment || sessions.length === 0) return;
@@ -109,12 +199,18 @@ export function usePlanSuggestion({ appointment, open, plannerSettings, remainin
     }
   }, [appointment, sessions]);
 
-  // Auto-load on open + auto-check after first load
+  // Auto-load on open + auto-check after first load.
+  // newPackage mode'da appointment olmayabilir; packageDraft varsa load tetiklenir.
   useEffect(() => {
-    if (open && appointment && remainingCount > 0) {
+    if (!open) return;
+    if (mode === "newPackage") {
+      if (packageDraft && (packageDraft.session_total || 0) > 0) {
+        load();
+      }
+    } else if (appointment && remainingCount > 0) {
       load();
     }
-  }, [open, appointment, remainingCount, load]);
+  }, [open, appointment, remainingCount, load, mode, packageDraft]);
 
   // Auto-check: fires on every fresh reload (even if length is identical) so
   // re-plan / re-open reliably refreshes status dots without user action.
@@ -230,22 +326,35 @@ export function useStaffAvailability({ serviceId, date, time, staff, excludeAppo
 }
 
 /**
- * Commits the planned sessions via the bulk-session endpoint with optimistic
+ * Commits the planned sessions via the appropriate endpoint with optimistic
  * UI feedback and idempotent retries.
  *
- * `notifyIncludeExistingSessions` — Yeni paket akışında (AppointmentFormWizard
- * "Manuel Planla") 1. seans bu dialogtan önce POST /appointments ile yaratılır.
- * Müşteriye gidecek tek SESSION_PACKAGE WhatsApp mesajında 1. seansın da
- * listelenmesi için backend'e bayrak gönderilir. "Kalanları sonradan planla"
- * akışlarında (Dashboard / Calendar / SessionsHub / Customers) müşteri 1.
- * seansı zaten önceki mesajdan biliyor olduğu için bayrak false bırakılır ve
- * yalnızca yeni planlananlar listelenir.
+ * `mode`:
+ *   - "remainder" (default, BC): kalanları planla akışı. POST /bulk-session
+ *     ile starting_session_number = appointment.session_number + 1.
+ *     Dashboard / Calendar / SessionsHub / Customers'tan çağrılır.
+ *   - "newPackage" (Plan M2): yeni paket akışı. POST /bulk-package ile
+ *     atomik 1..N seans. AppointmentFormWizard step 4'ten çağrılır.
+ *     packageDraft prop'u ile customer/phone/service vb. parametre alır;
+ *     appointment objesi olmayabilir.
+ *
+ * `notifyIncludeExistingSessions` — sadece "remainder" mode için anlamlı.
+ * "newPackage" mode backend tarafında zaten 1..N tüm seansları
+ * listeler (notify_include_existing_sessions=True default).
  */
-export function useOptimisticPlan({ appointment, sessions, onDone, t, notifyIncludeExistingSessions = false }) {
+export function useOptimisticPlan({
+  appointment,
+  sessions,
+  onDone,
+  t,
+  notifyIncludeExistingSessions = false,
+  mode = "remainder",
+  packageDraft = null,
+}) {
   const [creating, setCreating] = useState(false);
 
   const submit = useCallback(async () => {
-    if (!appointment) return;
+    if (mode === "newPackage" ? !packageDraft : !appointment) return;
     setCreating(true);
     try {
       const rawSessions = sessions.map((s) => {
@@ -259,26 +368,51 @@ export function useOptimisticPlan({ appointment, sessions, onDone, t, notifyIncl
         toast.error(t ? t("sessionPlanner.validationFailed") : "Lütfen tarih ve saatleri kontrol edin.");
         return false;
       }
-      const startingNumber = (Number(appointment.session_number) || 1) + 1;
+
       const idempotencyKey =
         typeof crypto !== "undefined" && crypto.randomUUID
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const payload = buildBulkSessionPayload({
-        customer_name: appointment.customer_name,
-        phone: appointment.phone,
-        service_id: appointment.service_id,
-        staff_member_id: appointment.staff_member_id,
-        notes: appointment.notes || "",
-        session_group_id: appointment.session_group_id,
-        starting_session_number: startingNumber,
-        session_total: appointment.session_total,
-        sessions: rawSessions,
-        notify_include_existing_sessions: notifyIncludeExistingSessions,
-      });
-      await api.post("/appointments/bulk-session", payload, {
-        headers: { "Idempotency-Key": idempotencyKey },
-      });
+
+      if (mode === "newPackage") {
+        // Plan M2: yeni atomic endpoint. session_group_id frontend-generated
+        // (idempotency için zorunlu — packageDraft.session_group_id).
+        const draft = packageDraft || {};
+        const payload = {
+          customer_name: draft.customer_name,
+          phone: draft.phone,
+          service_id: draft.service_id,
+          notes: draft.notes || "",
+          session_group_id: draft.session_group_id,
+          session_total: draft.session_total || sessions.length,
+          sessions: rawSessions,
+        };
+        if (draft.staff_member_id) {
+          payload.staff_member_id = draft.staff_member_id;
+        }
+        await api.post("/appointments/bulk-package", payload, {
+          headers: { "Idempotency-Key": idempotencyKey },
+        });
+      } else {
+        // BC: kalanları planla — POST /bulk-session (mevcut, dokunulmadı).
+        const startingNumber = (Number(appointment.session_number) || 1) + 1;
+        const payload = buildBulkSessionPayload({
+          customer_name: appointment.customer_name,
+          phone: appointment.phone,
+          service_id: appointment.service_id,
+          staff_member_id: appointment.staff_member_id,
+          notes: appointment.notes || "",
+          session_group_id: appointment.session_group_id,
+          starting_session_number: startingNumber,
+          session_total: appointment.session_total,
+          sessions: rawSessions,
+          notify_include_existing_sessions: notifyIncludeExistingSessions,
+        });
+        await api.post("/appointments/bulk-session", payload, {
+          headers: { "Idempotency-Key": idempotencyKey },
+        });
+      }
+
       toast.success(
         t
           ? t("sessionPlanner.sessionsPlanned", { count: sessions.length })
@@ -294,7 +428,7 @@ export function useOptimisticPlan({ appointment, sessions, onDone, t, notifyIncl
     } finally {
       setCreating(false);
     }
-  }, [appointment, sessions, onDone, t, notifyIncludeExistingSessions]);
+  }, [appointment, sessions, onDone, t, notifyIncludeExistingSessions, mode, packageDraft]);
 
   return { creating, submit };
 }

@@ -26,7 +26,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { buildWizardRemainingPackageRows, buildBulkSessionPayload, fetchWavePlanSessions } from "../lib/sessionScheduling";
 import { formatApiError } from "@/lib/apiError";
 import SessionPlannerDialog from "./planner/SessionPlannerDialog";
 
@@ -63,17 +62,17 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
    * at previous position when navigating between steps" UX bug).
    */
   const contentScrollRef = useRef(null);
-  // Manuel paket akışında 1. seans wizard tarafından yaratılır, ardından
-  // SessionPlannerDialog kalan seansları planlar. Plan tamamlanmadan dialog
-  // kapatılırsa yetim 1. seansı temizlemek için bu ref'i kullanıyoruz.
-  const manualPlanCompletedRef = useRef(false);
 
   // State Yönetimi
   const [step, setStep] = useState(1);
   stepRef.current = step;
-  const [sheetAppointment, setSheetAppointment] = useState(null);
-  /** Otomatik/manuel aynı plan satırları — sheet ön doldurma (null = Hub / varsayılan üret) */
-  const [wizardSheetRows, setWizardSheetRows] = useState(null);
+  // Plan M2: yeni paket akışı tek atomik /bulk-package call'unda yaratılır.
+  // Step 3 → step 4 geçişinde 1. seansı önceden POST etmiyoruz; bu yüzden
+  // sheetAppointment yerine sadece "draft" tutuyoruz. SessionPlannerDialog
+  // mode="newPackage" + packageDraft prop'ları ile 1..N seansı tek seferde
+  // /bulk-package'a gönderir. Eski yetim-temizleme guard (manualPlanCompletedRef
+  // + DELETE /appointments) artık gereksiz — DB'ye HİÇBİR şey yazılmamıştır.
+  const [packageDraft, setPackageDraft] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [allStaff, setAllStaff] = useState([]);
   const [settings, setSettings] = useState(null);
@@ -489,6 +488,12 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     return payload;
   };
 
+  /**
+   * Plan M2 sonrası: paket alanları artık handlePackagePlanStart içinde
+   * üretiliyor (session_group_id frontend-generated, 1..N atomik). Tek
+   * seans randevu yaratımında session_count>1 olamaz (isNewMultiPackage
+   * branch ayrı), yine de güvenlik için no-op koruyucu.
+   */
   const attachNewPackageFields = (payload, svc) => {
     if (svc?.session_count && svc.session_count > 1) {
       payload.session_group_id = crypto.randomUUID();
@@ -499,211 +504,57 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     }
   };
 
-  /** Otomatik ve manuel aynı üretici — drift önleme */
-  const getPackagePlanRows = useCallback(() => {
-    if (!selectedService?.session_count || selectedService.session_count <= 1) {
-      return { rows: [], complete: true, expectedRemaining: 0 };
+  /**
+   * Plan M2: Tek-yol paket başlatıcı.
+   *
+   * Eski akış (handleAutomaticPackage / handleManualPackage) POST
+   * /appointments ile 1. seansı önceden yaratıyordu → kullanıcı X'e
+   * basarsa yetim seans kalıyordu. Yeni akış:
+   *   1. HİÇBİR API çağrısı yapmaz.
+   *   2. formData snapshot'ı + crypto.randomUUID() ile session_group_id
+   *      üretip packageDraft'a koyar.
+   *   3. setStep(4) ile SessionPlannerDialog'u mode="newPackage" açar.
+   *   4. Dialog "Kaydet" derken atomik POST /bulk-package → 1..N tek
+   *      transaction'da yaratılır (backend Plan 12.2).
+   *   5. Kullanıcı X'e basarsa state temizlenir, DB temiz kalır.
+   */
+  const handlePackagePlanStart = useCallback(() => {
+    if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
+      try {
+        Haptics.notification({ type: NotificationType.Error });
+      } catch (e) {}
+      toast.error(t("appointments.form.fillRequiredFields"));
+      return;
     }
-    const firstDateStr = format(formData.appointment_date, "yyyy-MM-dd");
-    return buildWizardRemainingPackageRows({
-      firstDateStr,
-      firstTime: formData.appointment_time,
-      sessionTotal: selectedService.session_count,
-      settings,
-      serviceDurationMinutes: selectedService.duration ?? 30,
-      intervalMinutes: settings?.appointment_interval || 30,
-    });
-  }, [formData.appointment_date, formData.appointment_time, selectedService, settings]);
-
-  /** Formda personel yoksa (otomatik atama) ilk POST yanıtındaki staff kullanılır. */
-  const resolvePackageBulkStaffId = (formStaff, apt) => {
-    const f = (formStaff ?? "").toString().trim();
-    if (f) return f;
-    const sid = apt?.staff_member_id;
-    if (sid == null || sid === "") return "";
-    return String(sid).trim();
-  };
-
-  const mapPlanRowsToSheetSessions = (rows, formStaff, apt) => {
-    const def = resolvePackageBulkStaffId(formStaff, apt);
-    return rows.map((r) => ({
-      date: r.date,
-      time: r.time,
-      staff_member_id: (r.staff_member_id && String(r.staff_member_id).trim()) || def,
-      available: null,
-      alternatives: [],
-    }));
-  };
-
-  const postRemainingPackageBulk = async (sessionGroupId, sessionTotal, rows, apt) => {
-    if (!rows?.length) return;
-    const idempotencyKey =
+    if (!selectedService?.session_count || selectedService.session_count <= 1) {
+      // Güvenlik: tek seansta packagePlanStart çağrılmamalı.
+      return;
+    }
+    const sessionTotal = selectedService.session_count;
+    const sessionGroupId =
       typeof crypto !== "undefined" && crypto.randomUUID
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const staffId = resolvePackageBulkStaffId(formData.staff_member_id, apt);
-    const bulkBody = buildBulkSessionPayload({
+    const staffId = (formData.staff_member_id || "").trim() || null;
+    const draft = {
       customer_name: formData.customer_name,
       phone: formData.phone,
       service_id: formData.service_id,
-      staff_member_id: staffId || undefined,
-      notes: formData.notes || "",
+      service_name: selectedService.name,
+      staff_member_id: staffId,
+      service_duration: selectedService.duration ?? 30,
+      first_session_date: format(formData.appointment_date, "yyyy-MM-dd"),
+      first_session_time: formData.appointment_time,
       session_group_id: sessionGroupId,
-      starting_session_number: 2,
       session_total: sessionTotal,
-      sessions: rows,
-      // Admin yeni paket akışı: 1. seans zaten bu wizardda oluşturuldu (POST
-      // /appointments). SESSION_PACKAGE WhatsApp mesajında 1. seansın da yer
-      // alması için backend'e bunu bildiriyoruz.
-      notify_include_existing_sessions: true,
-    });
-    await api.post("/appointments/bulk-session", bulkBody, {
-      headers: { "Idempotency-Key": idempotencyKey },
-    });
-  };
-
-  const handleAutomaticPackage = async () => {
-    if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
-      try {
-        await Haptics.notification({ type: NotificationType.Error });
-      } catch (e) {}
-      toast.error(t("appointments.form.fillRequiredFields"));
-      return;
-    }
-    const pkg = getPackagePlanRows();
-    setLoading(true);
+      notes: formData.notes || "",
+    };
+    setPackageDraft(draft);
+    setStep(4);
     try {
-      const payload = buildAppointmentPayload();
-      attachNewPackageFields(payload, selectedService);
-      const res = await api.post("/appointments", payload);
-      const apt = res.data;
-      toast.success(t("appointments.form.created"));
-      await loadCustomers();
-      setAvailabilityNonce((n) => n + 1);
-
-      let bulkRows = pkg.rows;
-      try {
-        const wave = await fetchWavePlanSessions(api, {
-          service_id: formData.service_id,
-          first_session_date: format(formData.appointment_date, "yyyy-MM-dd"),
-          first_session_time: formData.appointment_time,
-          remaining_count: (selectedService.session_count || 1) - 1,
-          staff_member_id: formData.staff_member_id || undefined,
-        });
-        const need = (selectedService.session_count || 1) - 1;
-        const planned = (wave.sessions || []).filter((s) => s.date && s.time && !s.unplanned);
-        if (planned.length === need && need > 0) {
-          bulkRows = planned.map((s) => ({
-            date: s.date,
-            time: s.time,
-            staff_member_id: s.staff_member_id || undefined,
-          }));
-        }
-      } catch (waveErr) {
-        console.warn("wave-plan fallback", waveErr);
-      }
-
-      if (!pkg.complete || !bulkRows.length) {
-        toast.warning(t("appointments.form.packageBulkIncompleteToSheet"));
-        setSheetAppointment(apt);
-        setWizardSheetRows(null);
-        setStep(4);
-        try {
-          await Haptics.notification({ type: NotificationType.Warning });
-        } catch (e) {}
-        return;
-      }
-
-      try {
-        await postRemainingPackageBulk(payload.session_group_id, selectedService.session_count, bulkRows, apt);
-        toast.success(t("appointments.form.packageBulkScheduled", { count: bulkRows.length }));
-        setWizardSheetRows(null);
-        try {
-          await Haptics.notification({ type: NotificationType.Success });
-        } catch (e) {}
-        await new Promise((r) => setTimeout(r, 500));
-        onSave();
-      } catch (bulkErr) {
-        console.error(bulkErr);
-        const detailMsg = formatApiError(bulkErr, t, "");
-        toast.warning(
-          detailMsg
-            ? `${t("appointments.form.packageBulkScheduleFailed")}: ${detailMsg}`
-            : t("appointments.form.packageBulkScheduleFailed")
-        );
-        setSheetAppointment(apt);
-        setWizardSheetRows(mapPlanRowsToSheetSessions(bulkRows, formData.staff_member_id, apt));
-        setStep(4);
-      }
-    } catch (error) {
-      try {
-        await Haptics.notification({ type: NotificationType.Error });
-      } catch (e) {}
-      toast.error(formatApiError(error, t, t("appointments.form.operationFailed")));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleManualPackage = async () => {
-    if (!formData.customer_name || !formData.phone || !formData.service_id || !formData.appointment_time) {
-      try {
-        await Haptics.notification({ type: NotificationType.Error });
-      } catch (e) {}
-      toast.error(t("appointments.form.fillRequiredFields"));
-      return;
-    }
-    const pkg = getPackagePlanRows();
-    // Yeni manuel akış başlıyor — yetim temizleme guard'ını sıfırla.
-    manualPlanCompletedRef.current = false;
-    setLoading(true);
-    try {
-      const payload = buildAppointmentPayload();
-      attachNewPackageFields(payload, selectedService);
-      const res = await api.post("/appointments", payload);
-      toast.success(t("appointments.form.created"));
-      await loadCustomers();
-      setAvailabilityNonce((n) => n + 1);
-      const apt = res.data;
-      if (apt && !apt.service_name && selectedService) {
-        apt.service_name = selectedService.name;
-      }
-      let rowsForSheet = pkg.rows;
-      try {
-        const wave = await fetchWavePlanSessions(api, {
-          service_id: formData.service_id,
-          first_session_date: format(formData.appointment_date, "yyyy-MM-dd"),
-          first_session_time: formData.appointment_time,
-          remaining_count: (selectedService.session_count || 1) - 1,
-          staff_member_id: formData.staff_member_id || undefined,
-        });
-        const need = (selectedService.session_count || 1) - 1;
-        const planned = (wave.sessions || []).filter((s) => s.date && s.time && !s.unplanned);
-        if (planned.length === need && need > 0) {
-          rowsForSheet = planned.map((s) => ({
-            date: s.date,
-            time: s.time,
-            staff_member_id: s.staff_member_id || undefined,
-          }));
-        }
-      } catch (e) {
-        console.warn("wave-plan fallback (manual)", e);
-      }
-      setSheetAppointment(apt);
-      setWizardSheetRows(mapPlanRowsToSheetSessions(rowsForSheet, formData.staff_member_id, apt));
-      setStep(4);
-      try {
-        await Haptics.notification({ type: NotificationType.Success });
-      } catch (e) {}
-    } catch (error) {
-      try {
-        await Haptics.notification({ type: NotificationType.Error });
-      } catch (e) {}
-      toast.error(formatApiError(error, t, t("appointments.form.operationFailed")));
-    } finally {
-      setLoading(false);
-    }
-  };
+      Haptics.notification({ type: NotificationType.Success });
+    } catch (e) {}
+  }, [formData, selectedService, t]);
 
   const handleSubmit = async () => {
     if (isNewMultiPackage) return;
@@ -1238,50 +1089,31 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     );
   };
 
-  if (step === 4 && sheetAppointment) {
+  if (step === 4 && packageDraft) {
     return (
       <SessionPlannerDialog
         open={true}
-        onOpenChange={async (o) => {
+        onOpenChange={(o) => {
           if (!o) {
-            // Manuel planlama yarıda kesildi (kullanıcı X'e bastı veya backdrop'a
-            // tıkladı): 1. seans wizard'da POST /appointments ile zaten yaratılmıştı
-            // ama kalan 2..N seans hiç planlanmadığı için yetim olarak kalıyor.
-            // Kullanıcıya onay sor, onaylarsa 1. seansı sil.
-            if (!manualPlanCompletedRef.current && sheetAppointment?.id) {
-              const confirmed = typeof window !== "undefined"
-                ? window.confirm(t("appointments.form.confirmCancelManualPackage"))
-                : true;
-              if (!confirmed) return; // Dialog açık kalsın, kullanıcı planlamaya devam etsin.
-              try {
-                await api.delete(`/appointments/${sheetAppointment.id}`);
-                toast.success(t("appointments.form.packageCancelled"));
-              } catch (delErr) {
-                console.warn("Orphan first-session delete failed", delErr);
-                toast.error(formatApiError(delErr, t, t("appointments.form.operationFailed")));
-              }
-            }
-            setSheetAppointment(null);
-            setWizardSheetRows(null);
+            // Plan M2: Kullanıcı X'e bastı / backdrop'a tıkladı. HİÇBİR API
+            // çağrısı YAPILMAMIŞTI (handlePackagePlanStart sadece state
+            // setledi). DB temiz, yetim seans yok. State'i sıfırla, çağıranı
+            // bilgilendir.
+            setPackageDraft(null);
             onSave();
           }
         }}
-        appointment={sheetAppointment}
+        mode="newPackage"
+        packageDraft={packageDraft}
         onSuccess={() => {
-          // Plan başarıyla tamamlandı: yetim temizleme guard'ını işaretle ki
-          // dialog kapanırken yanlışlıkla 1. seans silinmesin.
-          manualPlanCompletedRef.current = true;
-          setSheetAppointment(null);
-          setWizardSheetRows(null);
+          // Atomik /bulk-package başarılı: 1..N seans tek transaction'da
+          // yaratıldı. State'i temizle ve listenerleri uyandır.
+          setPackageDraft(null);
           onSave();
         }}
-        // Manuel paket akışı: 1. seans bu wizardda yaratıldı
-        // (handleManualPackage → POST /appointments). Müşteriye gidecek tek
-        // SESSION_PACKAGE WhatsApp mesajında 1. seansın da yer alması için
-        // backend'e bayrağı geçiriyoruz. (Otomatik akış, dialog'a hiç
-        // girmeden bulk POST yaptığı için kendi içinde aynı bayrağı zaten
-        // gönderiyor.)
-        notifyIncludeExistingSessions={true}
+        // newPackage modunda backend zaten notify_include_existing_sessions=
+        // True ile çağırıyor (1..N tüm seansları içeren tek SESSION_PACKAGE
+        // mesajı). Prop'a gerek yok; default false bırakıyoruz.
       />
     );
   }
@@ -1357,7 +1189,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                <div className="flex flex-col gap-3">
                  <Button
                    type="button"
-                   onClick={handleAutomaticPackage}
+                   onClick={handlePackagePlanStart}
                    disabled={loading || !formData.appointment_time}
                    className="w-full bg-zinc-900 text-white font-bold text-base h-14 rounded-2xl shadow-xl hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                  >
@@ -1372,7 +1204,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                  <Button
                    type="button"
                    variant="outline"
-                   onClick={handleManualPackage}
+                   onClick={handlePackagePlanStart}
                    disabled={loading || !formData.appointment_time}
                    className="w-full h-14 rounded-2xl border-zinc-200 font-bold text-zinc-900 bg-white hover:bg-zinc-50 disabled:opacity-50"
                  >
