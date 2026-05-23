@@ -608,13 +608,11 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             }`}
           >
             {/* Tek satır garantisi: müşteri adı uzunsa truncate (alt satıra
-                düşmek yerine "...") — greeting + emoji + virgül her zaman
-                tam görünür kalır. flex-wrap kaldırıldı. */}
+                düşmek yerine "...") — selamlama tam görünür kalır, emoji ismin sonunda. */}
             <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-x-2 min-w-0">
-              <span className="whitespace-nowrap shrink-0">
-                {greeting.text}<span className="ml-1 align-middle" style={{ fontSize: '1.2em' }}>{greeting.emoji}</span>
-              </span>
-              <span className="text-gray-700 truncate min-w-0">{currentUserName}</span>
+              <span className="whitespace-nowrap shrink-0">{greeting.text}</span>
+              <span className="text-gray-900 truncate min-w-0">{currentUserName}</span>
+              <span className="shrink-0 align-middle" style={{ fontSize: '1.2em' }}>{greeting.emoji}</span>
             </h1>
             <p className="text-base md:text-lg text-gray-600 font-medium mt-1.5 leading-relaxed">
               {format(new Date(), "d MMMM EEEE", { locale: dateLocale })}

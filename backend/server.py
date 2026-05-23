@@ -4537,22 +4537,31 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
     except Exception as emit_error:
         logger.error(f"Failed to emit appointment_updated: {emit_error}", exc_info=True)
     
-    # Tarih/saat değişince müşteriye tek WhatsApp (düz metin; çift şablon yok)
+    # Tarih/saat değişince müşteriye geçici olarak CONFIRMATION şablonu gönderiliyor
     try:
         od, ot = appointment.get("appointment_date"), appointment.get("appointment_time")
         nd, nt = updated_appointment.get("appointment_date"), updated_appointment.get("appointment_time")
+        
         if (od != nd or ot != nt) and updated_appointment.get("phone"):
-            from whatsapp_service import send_whatsapp_text, format_date_for_display, detect_language_from_phone, WHATSAPP_ENABLED
+            from whatsapp_service import send_whatsapp_template, WHATSAPP_ENABLED
+            
             if WHATSAPP_ENABLED:
                 ph = updated_appointment.get("phone")
-                lang = detect_language_from_phone(str(ph))
-                fd = format_date_for_display(nd or "")
                 nm = (updated_appointment.get("customer_name") or "").strip()
-                if lang == "TR":
-                    txt = f"Merhaba {nm},\nRandevunuz güncellendi.\nTarih: {fd}\nSaat: {nt}\n{company_name}"
-                else:
-                    txt = f"Hello {nm},\nYour appointment was updated.\nDate: {fd}\nTime: {nt}\n{company_name}"
-                send_whatsapp_text(ph, txt)
+                
+                send_whatsapp_template(
+                    to_number=ph,
+                    template_type="CONFIRMATION",
+                    customer_name=nm,
+                    company_name=company_name, 
+                    appointment_date=nd,       
+                    appointment_time=nt,       
+                    service_name=updated_appointment.get("service_name", ""),
+                    support_phone=updated_appointment.get("support_phone", ""),
+                    business_lat=updated_appointment.get("lat"), 
+                    business_lng=updated_appointment.get("lng"),
+                    business_address=updated_appointment.get("address", "")
+                )
     except Exception as wa_upd_err:
         logging.warning(f"Reschedule WhatsApp skipped: {wa_upd_err}")
     
