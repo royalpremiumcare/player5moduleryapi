@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../api/api";
 import { toast } from "sonner";
-import { Wallet, ArrowUpRight, ArrowDownLeft, Snowflake, Clock, TrendingUp, Send, ChevronDown, Shield, AlertTriangle, ArrowLeft, Undo2 } from "lucide-react";
+import { Wallet, ArrowUpRight, ArrowDownLeft, Clock, TrendingUp, Send, ChevronDown, Shield, AlertTriangle, ArrowLeft, Plus, AlertCircle } from "lucide-react";
 import RefundRequestModal from "./RefundRequestModal";
+import PaymentRequestDrawer from "./PaymentRequestDrawer";
 
 const formatMoney = (minor, currency) => {
   if (currency === "GBP") {
@@ -29,6 +30,7 @@ export default function MerchantWallet({ onNavigate }) {
   const [txTotal, setTxTotal] = useState(0);
   const [showPaymentInfo, setShowPaymentInfo] = useState(false);
   const [refundModalOpen, setRefundModalOpen] = useState(false);
+  const [paymentDrawerOpen, setPaymentDrawerOpen] = useState(false);
   const [features, setFeatures] = useState({ refund_requests_ui: true });
 
   const loadFeatures = useCallback(async () => {
@@ -117,6 +119,37 @@ export default function MerchantWallet({ onNavigate }) {
     }
   };
 
+  const handleCreatePaymentLink = async ({ customer_name, customer_phone, description, amount }) => {
+    const bcLocal = wallet?.base_currency || "TRY";
+    const tempId = `temp_${Date.now()}`;
+    const tempTx = {
+      id: tempId,
+      type: "payment",
+      state: "pending",
+      amount_display: formatMoney(Math.round(amount * 100), bcLocal),
+      customer_name,
+      customer_phone,
+      created_at: new Date().toISOString(),
+    };
+    // Optimistic: geçici 'Bekliyor' satırını listenin en üstüne ekle
+    setTransactions((prev) => [tempTx, ...prev]);
+    setActiveTab("overview");
+    try {
+      const res = await api.post("/merchant/payment-links", { customer_name, customer_phone, description, amount });
+      toast.success(
+        res.data?.whatsapp_sent
+          ? "Ödeme linki WhatsApp ile gönderildi"
+          : "Ödeme linki oluşturuldu (WhatsApp gönderilemedi)"
+      );
+      await loadTransactions(1);
+    } catch (e) {
+      // Hata: optimistic satırı geri al
+      setTransactions((prev) => prev.filter((t) => t.id !== tempId));
+      const d = e.response?.data?.detail;
+      toast.error(typeof d === "string" ? d : "Ödeme linki oluşturulamadı");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -184,37 +217,24 @@ export default function MerchantWallet({ onNavigate }) {
         currency={bc}
         payoutLoading={payoutLoading}
         onRequestPayout={handleRequestPayout}
+        onRequestPayment={() => setPaymentDrawerOpen(true)}
       />
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-100 dark:border-gray-700">
-          <Clock className="h-4 w-4 text-yellow-500 mb-1" />
+      {/* Quick Stats — borderless, dikey divider'larla tek blok */}
+      <div className="grid grid-cols-3 divide-x divide-gray-200 dark:divide-gray-700">
+        <div className="px-3 first:pl-0">
           <p className="text-xs text-gray-500">Bekleyen</p>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatMoney(wallet.pending, bc)}</p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{formatMoney(wallet.pending, bc)}</p>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-100 dark:border-gray-700">
-          <Snowflake className="h-4 w-4 text-blue-400 mb-1" />
+        <div className="px-3">
           <p className="text-xs text-gray-500">Dondurulmuş</p>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatMoney(wallet.frozen, bc)}</p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{formatMoney(wallet.frozen, bc)}</p>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-100 dark:border-gray-700">
-          <TrendingUp className="h-4 w-4 text-green-500 mb-1" />
+        <div className="px-3">
           <p className="text-xs text-gray-500">Toplam Kazanç</p>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatMoney(wallet.total_earned, bc)}</p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-white mt-0.5">{formatMoney(wallet.total_earned, bc)}</p>
         </div>
       </div>
-
-      {/* PLANN v2 — Refund Request Button (SA kill-switch ile kapatılabilir) */}
-      {features.refund_requests_ui && (
-        <button
-          onClick={() => setRefundModalOpen(true)}
-          className="w-full py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2 bg-white border border-zinc-200 text-zinc-800 hover:bg-zinc-50 active:scale-[0.98] transition"
-        >
-          <Undo2 className="h-4 w-4" />
-          İade Talebi Oluştur
-        </button>
-      )}
 
       {/* Info note — collapsible */}
       <div
@@ -235,21 +255,6 @@ export default function MerchantWallet({ onNavigate }) {
           </ul>
         )}
       </div>
-
-      {/* Payout warnings */}
-      {!wallet.payout_enabled && wallet.payout_enabled_reasons?.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
-          <div className="text-xs text-amber-700">
-            <p className="font-medium mb-1">Ödeme için gereken koşullar:</p>
-            <ul className="space-y-0.5">
-              {wallet.payout_enabled_reasons.map((r, i) => (
-                <li key={i}>• {reasonLabels[r] || r}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
@@ -397,6 +402,18 @@ export default function MerchantWallet({ onNavigate }) {
         </div>
       )}
 
+      {/* PLANN v2 — İade Talebi (ikincil, zarif text-link) */}
+      {features.refund_requests_ui && (
+        <div className="pt-1 text-center">
+          <button
+            onClick={() => setRefundModalOpen(true)}
+            className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition-colors"
+          >
+            İade talebi oluştur
+          </button>
+        </div>
+      )}
+
       {/* PLANN v2 — Refund Request Modal */}
       <RefundRequestModal
         open={refundModalOpen}
@@ -406,22 +423,21 @@ export default function MerchantWallet({ onNavigate }) {
           loadWallet();
         }}
       />
+
+      {/* Pay-by-Link — Ödeme İste Drawer */}
+      <PaymentRequestDrawer
+        open={paymentDrawerOpen}
+        onClose={() => setPaymentDrawerOpen(false)}
+        baseCurrency={bc}
+        currencySymbol={sym}
+        onSubmit={handleCreatePaymentLink}
+      />
     </div>
   );
 }
 
-const reasonLabels = {
-  kyc_not_verified: "KYC kimlik doğrulaması tamamlanmadı. Ödeme ayarlarından doğrulama yapabilirsiniz.",
-  recipient_not_verified: "Banka hesap bilgileri henüz doğrulanmadı. İlk ödeme transferinde banka tarafından otomatik doğrulanacaktır.",
-  has_frozen_balance: "Dondurulmuş bakiye mevcut — itiraz süreci devam ediyor",
-  iban_cooldown_active: "IBAN değişiklik güvenlik süresi aktif (48 saat). Bu süre dolmadan ödeme talep edilemez.",
-  below_tier_limit: "Mevcut bakiye, kademenizin minimum ödeme eşiğinin altında",
-  settings_not_found: "Ödeme ayarları bulunamadı. Lütfen ödeme ayarlarınızı tamamlayın.",
-  wallet_not_found: "Cüzdan bulunamadı — destek ile iletişime geçin",
-};
-
 // ----- Unified Balance Card (v1 bakiye + v2 batch status, tek gövdede) -----
-function UnifiedBalanceCard({ wallet, v2Status, currency, payoutLoading, onRequestPayout }) {
+function UnifiedBalanceCard({ wallet, v2Status, currency, payoutLoading, onRequestPayout, onRequestPayment }) {
   const fmt = (m) => formatMoney(m || 0, currency);
 
   // v2 durum varsa onu kullan, yoksa v1 alanlarından türet
@@ -470,14 +486,23 @@ function UnifiedBalanceCard({ wallet, v2Status, currency, payoutLoading, onReque
   }
 
   return (
-    <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-5 border border-gray-200 shadow-sm">
-      <p className="text-sm text-gray-500 font-medium">Kullanılabilir Bakiye</p>
-      <p className="text-3xl font-bold mt-1 text-gray-900">{fmt(available)}</p>
-      {wallet.refund_reserve > 0 && (
-        <p className="text-xs text-gray-400 mt-1">
-          İade rezervi: {fmt(wallet.refund_reserve)}
-        </p>
-      )}
+    <div className="px-1 pt-1">
+      {/* Bakiye + kompakt birincil aksiyon */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm text-gray-500 font-medium">Kullanılabilir Bakiye</p>
+          <p className="text-3xl font-bold mt-0.5 text-gray-900 dark:text-white">{fmt(available)}</p>
+          {wallet.refund_reserve > 0 && (
+            <p className="text-xs text-gray-400 mt-1">İade rezervi: {fmt(wallet.refund_reserve)}</p>
+          )}
+        </div>
+        <button
+          onClick={onRequestPayment}
+          className="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-black active:scale-95 transition shadow-sm"
+        >
+          <Plus className="h-4 w-4" /> Ödeme İste
+        </button>
+      </div>
 
       {/* Progress bar — sadece threshold anlamlıysa göster */}
       {threshold > 0 && (
@@ -486,17 +511,24 @@ function UnifiedBalanceCard({ wallet, v2Status, currency, payoutLoading, onReque
             <span>Ödeme eşiği: {fmt(threshold)}</span>
             <span>%{pct}</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
             <div
               className="bg-zinc-900 rounded-full h-2 transition-all duration-500"
               style={{ width: `${pct}%` }}
             />
           </div>
+          {/* Eşik altı için tek satırlık zarif uyarı (eski sarı kutunun yerine) */}
+          {kind === "under_threshold" && (
+            <p className="mt-2 text-xs text-gray-500 flex items-center gap-1.5">
+              <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+              <span>Ödeme almak için <b className="font-semibold text-gray-700 dark:text-gray-300">{fmt(remaining)}</b> daha işlem hacmi gerekli.</span>
+            </p>
+          )}
         </div>
       )}
 
-      {/* Contextual status strip */}
-      {contextMsg && (
+      {/* Diğer durumlar için renkli, hafif şerit (under_threshold hariç) */}
+      {contextMsg && kind !== "under_threshold" && (
         <div className={`mt-4 rounded-xl border px-3 py-2.5 flex items-start gap-2 ${p.strip}`}>
           <Icon className="h-4 w-4 mt-0.5 shrink-0" />
           <div className="flex-1 text-xs">
@@ -505,7 +537,6 @@ function UnifiedBalanceCard({ wallet, v2Status, currency, payoutLoading, onReque
           </div>
         </div>
       )}
-
     </div>
   );
 }

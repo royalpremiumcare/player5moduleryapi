@@ -29,6 +29,7 @@ import base64
 import json
 import secrets
 import io
+import math
 from PIL import Image as PilImage
 import openpyxl
 import csv
@@ -1922,6 +1923,24 @@ async def check_quota_and_increment(db, organization_id: str) -> tuple[bool, str
             trial_end = datetime.fromisoformat(trial_end.replace('Z', '+00:00'))
         if trial_end and datetime.now(timezone.utc) > trial_end:
             return False, "Deneme süreniz doldu. Devam etmek için lütfen bir paket seçin."
+    
+    # GÜVENLİK: Ücretli aboneliklerde süre + grace period (SUBSCRIPTION_GRACE_DAYS)
+    # kontrolü. Bitiş tarihi geçip toleransı da aşan abonelikler, kotaları kalsa
+    # bile randevu oluşturamaz. SuperAdmin paneliyle (_compute_subscription_status)
+    # birebir tutarlı davranır.
+    if plan_id != 'tier_trial':
+        _now = datetime.now(timezone.utc)
+        _has_deadline = any(
+            _parse_plan_dt(plan_doc.get(_k)) is not None
+            for _k in ("next_billing_date", "next_payment_date", "quota_reset_date")
+        )
+        if not _has_deadline:
+            # Fail-open: tarih yoksa engelleme yok ama sessiz de geçme.
+            logger.warning("UYARI: %s için abonelik bitiş tarihi bulunamadı!", organization_id)
+        else:
+            _, _sub_key, _ = _compute_subscription_status(plan_doc, _now)
+            if _sub_key == "expired":
+                return False, "Abonelik süreniz doldu, lütfen ödeme yönteminizi güncelleyin."
     
     # Kota reset kontrolü (eski mantık - quota_reset_date bazlı)
     quota_reset = plan_doc.get('quota_reset_date')
@@ -12424,7 +12443,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
 
         # Doğrulama kodunu müşteriye WhatsApp Authentication Template ile gönder
         try:
-            from whatsapp_service import format_phone_number, detect_language_from_phone
+            from whatsapp_service import format_phone_number, detect_language_from_phone, _post_with_retry
             phone_clean = format_phone_number(appointment.phone)
             wa_lang = detect_language_from_phone(appointment.phone)
             wa_template_name = "randevu_dogrulama" if wa_lang == "TR" else "randevu_dogrulama_en"
@@ -12460,13 +12479,10 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                     ]
                 }
             }
-            wa_resp = await asyncio.to_thread(
-                lambda: requests.post(wa_api_url, json=wa_payload, headers=wa_headers, timeout=10)
+            await asyncio.to_thread(
+                lambda: _post_with_retry(wa_api_url, wa_headers, wa_payload, context="verification_code")
             )
-            if wa_resp.status_code == 200:
-                logging.info(f"📱 Doğrulama kodu müşteriye gönderildi: {appointment.phone} → {code}")
-            else:
-                logging.warning(f"⚠️ WA doğrulama kodu gönderilemedi: {wa_resp.status_code} {wa_resp.text[:200]}")
+            logging.info(f"📱 Doğrulama kodu müşteriye gönderildi: {appointment.phone} → {code}")
         except Exception as wa_err:
             logging.error(f"❌ WA doğrulama kodu gönderim hatası: {wa_err}")
 
@@ -13370,6 +13386,74 @@ async def delete_resolved_contacts(
         logging.error(f"❌ [SUPERADMIN] Çözülen iletişim talepleri silinirken hata: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Çözülen iletişim talepleri silinirken hata oluştu")
 
+# Ücretli planlarda Stripe yenilemesi tam kayıt saatinde tetiklenir ve invoice.paid
+# webhook'u next_billing_date'i biraz sonra günceller. Bu boşlukta (ve Stripe dunning
+# sürecinde) işletmeyi "Süresi Doldu" göstermemek için tolerans tanınır.
+SUBSCRIPTION_GRACE_DAYS = 3
+
+
+def _parse_plan_dt(val):
+    """Plan tarihini timezone-aware datetime'a çevirir (str/datetime/None destekli)."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val if val.tzinfo else val.replace(tzinfo=timezone.utc)
+    if isinstance(val, str):
+        try:
+            return datetime.fromisoformat(val.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def _ceil_days(delta: timedelta) -> int:
+    """timedelta'yı gün olarak YUKARI yuvarlar.
+
+    Python'da timedelta.days tabana yuvarladığı için bitiş anı (örn. 22:50)
+    1 saniye geçtiğinde bile -1 döner. ceil ile bitişe saatler kala 0 yerine
+    kalan tam gün gösterilir ve bitiş anında erkenden negatife düşmez.
+    """
+    return math.ceil(delta.total_seconds() / 86400)
+
+
+def _compute_subscription_status(plan_doc: dict, now: datetime):
+    """Ortak abonelik durumu hesabı → (durumu, durum_key, days_left).
+
+    Ücretli planlarda bitiş tarihi geçse bile SUBSCRIPTION_GRACE_DAYS kadar
+    tolerans tanınır; bu sürede "Yenileniyor" gösterilir (Stripe otomatik
+    yeniler, webhook gecikebilir). Tolerans aşılırsa "Süresi Doldu".
+    """
+    plan_id = plan_doc.get("plan_id", "tier_trial")
+
+    if plan_id == "tier_trial":
+        trial_end = _parse_plan_dt(plan_doc.get("trial_end_date"))
+        if not trial_end:
+            return "Trial", "trial", None
+        days_left = _ceil_days(trial_end - now)
+        if now > trial_end:
+            return "Deneme Bitti", "expired", days_left
+        return f"{days_left} Gün Kaldı", "trial", days_left
+
+    # Ücretli plan — bitiş tarihini sırayla dene
+    deadline = None
+    for key in ("next_billing_date", "next_payment_date", "quota_reset_date"):
+        deadline = _parse_plan_dt(plan_doc.get(key))
+        if deadline:
+            break
+    if not deadline:
+        return "Aktif", "active", None
+
+    days_left = _ceil_days(deadline - now)
+    if now <= deadline:
+        return "Aktif", "active", days_left
+
+    # Bitiş geçti — grace period içindeyse henüz expired sayma.
+    # Yenileme penceresinde days_left'i 0'da tut (panelde "-1 gün" karışıklığını önler).
+    if (now - deadline) <= timedelta(days=SUBSCRIPTION_GRACE_DAYS):
+        return "Yenileniyor", "active", max(days_left, 0)
+    return "Süresi Doldu", "expired", days_left
+
+
 @api_router.get("/superadmin/organizations")
 async def get_superadmin_organizations(request: Request, current_user: UserInDB = Depends(get_superadmin_user), db = Depends(get_db)):
     """Detaylı işletme listesi - Sadece superadmin"""
@@ -13442,18 +13526,6 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
         staff_counts = await db.users.aggregate(staff_pipeline).to_list(len(org_ids))
         staff_map = {s["_id"]: s["count"] for s in staff_counts}
 
-        def _parse_plan_dt(val):
-            if val is None:
-                return None
-            if isinstance(val, datetime):
-                return val if val.tzinfo else val.replace(tzinfo=timezone.utc)
-            if isinstance(val, str):
-                try:
-                    return datetime.fromisoformat(val.replace("Z", "+00:00"))
-                except ValueError:
-                    return None
-            return None
-
         organizations_list = []
         
         for setting in all_settings:
@@ -13486,37 +13558,7 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
                 abonelik_paketi = plan_info.get("name", "Trial") if plan_info else "Trial"
                 billing_cycle = plan_doc.get("billing_cycle", "monthly")
 
-                if plan_id == "tier_trial":
-                    trial_end = _parse_plan_dt(plan_doc.get("trial_end_date"))
-                    if trial_end:
-                        days_left = (trial_end - now).days
-                        if days_left < 0:
-                            abonelik_durumu = "Deneme Bitti"
-                            abonelik_durumu_key = "expired"
-                        else:
-                            abonelik_durumu = f"{days_left} Gün Kaldı"
-                            abonelik_durumu_key = "trial"
-                    else:
-                        abonelik_durumu = "Trial"
-                        abonelik_durumu_key = "trial"
-                else:
-                    # Ücretli: önce next_billing_date (Stripe checkout), sonra eski next_payment_date, sonra kota tarihi
-                    deadline = None
-                    for key in ("next_billing_date", "next_payment_date", "quota_reset_date"):
-                        deadline = _parse_plan_dt(plan_doc.get(key))
-                        if deadline:
-                            break
-                    if deadline:
-                        days_left = (deadline - now).days
-                        if days_left < 0:
-                            abonelik_durumu = "Süresi Doldu"
-                            abonelik_durumu_key = "expired"
-                        else:
-                            abonelik_durumu = "Aktif"
-                            abonelik_durumu_key = "active"
-                    else:
-                        abonelik_durumu = "Aktif"
-                        abonelik_durumu_key = "active"
+                abonelik_durumu, abonelik_durumu_key, days_left = _compute_subscription_status(plan_doc, now)
 
             organizations_list.append({
                 "organization_id": org_id,
@@ -13542,6 +13584,90 @@ async def get_superadmin_organizations(request: Request, current_user: UserInDB 
     except Exception as e:
         logging.error(f"Error in get_superadmin_organizations: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"İşletme listesi alınırken hata oluştu: {str(e)}")
+
+
+class SuperAdminBroadcastEmail(BaseModel):
+    subject: str
+    message: str  # düz metin veya HTML — newline'lar <br/> olarak çevrilir
+    organization_ids: Optional[List[str]] = None  # None/boş = tüm işletmeler
+    send_to_all: bool = False
+
+
+def _wrap_broadcast_email(message: str) -> str:
+    """SuperAdmin duyuru mailini PLANN marka şablonuna sarar."""
+    import html as _html
+    # Basit HTML algılama: tag içeriyorsa olduğu gibi kullan, yoksa escape + <br/>
+    if re.search(r"<[a-zA-Z][^>]*>", message):
+        body_html = message
+    else:
+        body_html = _html.escape(message).replace("\n", "<br/>")
+    return f"""\
+<html><body style="font-family:Arial,sans-serif;color:#18181b;max-width:600px;margin:0 auto;">
+<div style="border:1px solid #e4e4e7;border-radius:12px;padding:24px;">
+<img src="https://plannapp.co/api/static/logo.png" alt="PLANN" style="height:32px;margin-bottom:16px;"/>
+<div style="font-size:14px;line-height:1.6;">{body_html}</div>
+<p style="color:#71717a;font-size:12px;margin-top:24px;">Plann Ekibi</p>
+</div></body></html>"""
+
+
+@api_router.post("/superadmin/broadcast-email")
+async def superadmin_broadcast_email(
+    payload: SuperAdminBroadcastEmail,
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """Tüm işletmelere veya seçili işletmelere e-posta gönder - Sadece superadmin"""
+    if not payload.subject.strip() or not payload.message.strip():
+        raise HTTPException(status_code=400, detail="Konu ve mesaj zorunludur.")
+
+    # Hedef organizasyonları belirle
+    query = {"role": "admin"}
+    if not payload.send_to_all:
+        org_ids = [o for o in (payload.organization_ids or []) if o]
+        if not org_ids:
+            raise HTTPException(status_code=400, detail="En az bir işletme seçin veya 'tümüne gönder' kullanın.")
+        query["organization_id"] = {"$in": org_ids}
+
+    admins = await db.users.find(query, {"_id": 0, "username": 1, "full_name": 1, "email": 1, "organization_id": 1}).to_list(10000)
+    if not admins:
+        raise HTTPException(status_code=404, detail="Gönderilecek işletme sahibi bulunamadı.")
+
+    email_re = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    html_content = _wrap_broadcast_email(payload.message)
+
+    sent, failed, skipped = [], [], []
+    seen_emails = set()
+    for admin in admins:
+        to_email = (admin.get("email") or admin.get("username") or "").strip()
+        if not email_re.match(to_email):
+            skipped.append({"organization_id": admin.get("organization_id"), "reason": "geçersiz e-posta", "value": to_email})
+            continue
+        if to_email.lower() in seen_emails:
+            continue
+        seen_emails.add(to_email.lower())
+        ok = await send_email(
+            to_email=to_email,
+            subject=payload.subject,
+            html_content=html_content,
+            to_name=admin.get("full_name") or to_email,
+        )
+        (sent if ok else failed).append(to_email)
+
+    logging.info(
+        f"📧 [SUPERADMIN BROADCAST] '{payload.subject}' — gönderilen={len(sent)} "
+        f"başarısız={len(failed)} atlanan={len(skipped)} (by {current_user.username})"
+    )
+    return {
+        "success": True,
+        "sent_count": len(sent),
+        "failed_count": len(failed),
+        "skipped_count": len(skipped),
+        "sent": sent,
+        "failed": failed,
+        "skipped": skipped,
+    }
+
 
 @api_router.get("/marketing/organizations")
 async def get_marketing_organizations(request: Request, current_user: UserInDB = Depends(get_marketing_user), db = Depends(get_db)):
@@ -13590,31 +13716,8 @@ async def get_marketing_organizations(request: Request, current_user: UserInDB =
                 plan_info = next((p for p in PLANS if p['id'] == plan_id), None)
                 abonelik_paketi = plan_info.get('name', 'Trial') if plan_info else 'Trial'
                 billing_cycle = plan_doc.get('billing_cycle', 'monthly')
-                
-                # Kalan gün hesapla
-                if plan_id == 'tier_trial':
-                    trial_end = plan_doc.get('trial_end_date')
-                    if trial_end:
-                        if isinstance(trial_end, str):
-                            trial_end = datetime.fromisoformat(trial_end.replace('Z', '+00:00'))
-                        days_left = (trial_end - now).days
-                        if days_left < 0:
-                            abonelik_durumu = "Deneme Bitti"
-                        else:
-                            abonelik_durumu = f"{days_left} Gün Kaldı"
-                    else:
-                        abonelik_durumu = "Trial"
-                else:
-                    # Ücretli paket - quota_reset_date'e bak
-                    quota_reset = plan_doc.get('quota_reset_date')
-                    if quota_reset:
-                        if isinstance(quota_reset, str):
-                            quota_reset = datetime.fromisoformat(quota_reset.replace('Z', '+00:00'))
-                        days_left = (quota_reset - now).days
-                        abonelik_durumu = f"{days_left} Gün Kaldı" if days_left >= 0 else "Yenileme Bekliyor"
-                    else:
-                        abonelik_durumu = "Aktif"
-                        days_left = 30
+
+                abonelik_durumu, _durum_key, days_left = _compute_subscription_status(plan_doc, now)
             
             # Toplam ödeme miktarı
             payment_logs = await db.payment_logs.find({

@@ -254,6 +254,204 @@ async def create_customer_checkout_session(
     }
 
 
+async def create_payment_link_session(
+    db,
+    organization_id: str,
+    customer_name: str,
+    customer_phone: str,
+    description: str,
+    base_amount_minor: int,
+) -> Dict[str, Any]:
+    """
+    Create a standalone "Pay-by-Link" (Ödeme İste) Stripe Checkout Session.
+
+    Müşteriden bağımsız, tek seferlik tahsilat. Randevu/hizmet bağlantısı YOK.
+    Girilen tutar `net_target` (online tutar) olarak kabul edilir — full online,
+    kapora yok. Komisyon tercihi tenant `settings.fee_preference`'tan gelir ve
+    tam gross-up (`compute_customer_price`) uygulanır.
+
+    Webhook eşleşmesi mevcut `_handle_checkout_completed` tarafından
+    `stripe_checkout_session_id` ile yapılır; `appointment_id` olmadığı için
+    randevu güncelleme/bildirim bloğu otomatik atlanır.
+    """
+    settings = await db.settings.find_one({"organization_id": organization_id})
+    if not settings:
+        raise ValueError(f"Settings not found for organization: {organization_id}")
+
+    base_currency = settings.get("base_currency", "TRY")
+    tier = settings.get("payout_tier", "standard")
+    fee_preference = settings.get("fee_preference", "seller_pays")
+    merchant_slug = settings.get("slug", "")
+    company_name = settings.get("company_name", "İşletme")
+
+    if base_amount_minor <= 0:
+        raise ValueError(f"Amount must be positive: {base_amount_minor}")
+
+    from .money import MIN_ONLINE_PAYMENT_MINOR, format_display
+    min_online = MIN_ONLINE_PAYMENT_MINOR.get(base_currency, 30_000)
+    if base_amount_minor < min_online:
+        raise ValueError(f"Minimum tutar {format_display(min_online, base_currency)} olmalıdır")
+
+    # Pay-by-Link her zaman full online (kapora yok). deposit_rule olmadan
+    # gross-up/fee_calculator online tutarı 0 sayıp customer_price=0 üretir,
+    # bu yüzden açıkça full_online kuralı geçilir.
+    deposit_rule = DepositRule(payment_rule="full_online")
+
+    # Tam gross-up (full online, kapora yok). Flag kapalıysa legacy fee_calculator.
+    gross_up_enabled = is_env_flag_enabled("FEATURE_GROSS_UP")
+    gross_up_result = None
+    if gross_up_enabled:
+        try:
+            gross_up_result = compute_customer_price(
+                base_currency=base_currency,
+                service_price_minor=base_amount_minor,
+                fee_preference=fee_preference,
+                tier=tier,
+                deposit_rule=deposit_rule,
+            )
+        except GrossUpError as ge:
+            logger.error("payment-link gross-up failed, falling back to legacy: %s", ge)
+            gross_up_result = None
+
+    fee_result = calculate_fee(
+        base_currency=base_currency,
+        service_price_minor=base_amount_minor,
+        fee_preference=fee_preference,
+        tier=tier,
+        deposit_rule=deposit_rule,
+    )
+
+    if gross_up_result is not None:
+        customer_price_minor = gross_up_result.customer_price_minor
+        merchant_net_minor = gross_up_result.merchant_net_minor
+        platform_fee_minor = gross_up_result.platform_fee_minor
+        processor_fee_minor = gross_up_result.stripe_fee_minor
+        payout_fee_minor = gross_up_result.wise_fee_minor
+    else:
+        customer_price_minor = fee_result.gross_minor
+        merchant_net_minor = fee_result.net_minor
+        platform_fee_minor = fee_result.fee_minor
+        processor_fee_minor = 0
+        payout_fee_minor = 0
+
+    if customer_price_minor <= 0:
+        raise ValueError("Computed customer price is zero; cannot create payment link")
+
+    # 1) Önce pending transaction oluştur — tx_id, Stripe client_reference_id için gerekli.
+    tx_doc = await create_transaction(
+        db=db,
+        organization_id=organization_id,
+        base_currency=base_currency,
+        tx_type="payment",
+        amount_display_minor=merchant_net_minor,
+        fee_amount_minor=platform_fee_minor,
+        fee_rate_bps=fee_result.fee_rate_bps,
+        fee_preference=fee_preference,
+        appointment_id=None,
+        customer_phone=customer_phone,
+        customer_name=customer_name,
+        description=description,
+        payment_type="payment_link",
+        customer_price_minor=customer_price_minor,
+        merchant_net_minor=merchant_net_minor,
+        platform_fee_minor=platform_fee_minor,
+        stripe_fee_minor=processor_fee_minor,
+        wise_fee_minor=payout_fee_minor,
+        gross_up_applied=bool(gross_up_result is not None),
+        service_price_minor=base_amount_minor,
+    )
+    tx_id = tx_doc["id"]
+
+    custom_text_note = (
+        "Platform hizmet bedeli iade kapsamı dışındadır. "
+        "PLANNAPP LTD adına tahsil edilmektedir."
+    ) if base_currency == "TRY" else (
+        "Platform service fee is non-refundable. "
+        "Collected on behalf of PLANNAPP LTD."
+    )
+
+    product_data = {
+        "name": (description.strip()[:250] if description and description.strip() else f"Ödeme - {company_name}"),
+        "description": f"{company_name} tarafından oluşturulan ödeme talebi",
+    }
+    logo = settings.get("logo_url") or ""
+    if logo:
+        product_data["images"] = [logo if logo.startswith("http") else f"https://plannapp.co{logo}"]
+    else:
+        product_data["images"] = ["https://plannapp.co/api/static/logo.png"]
+
+    stripe_session = stripe.checkout.Session.create(
+        payment_method_types=["card"],
+        mode="payment",
+        client_reference_id=tx_id,
+        line_items=[{
+            "price_data": {
+                "currency": fee_result.stripe_currency,
+                "unit_amount": customer_price_minor,
+                "product_data": product_data,
+            },
+            "quantity": 1,
+        }],
+        custom_text={"submit": {"message": custom_text_note}},
+        metadata={
+            "organization_id": organization_id,
+            "customer_phone": customer_phone,
+            "customer_name": customer_name,
+            "description": description,
+            "base_currency": base_currency,
+            "fee_preference": fee_preference,
+            # Legacy aliases (dual-write)
+            "fee_minor": str(platform_fee_minor),
+            "net_minor": str(merchant_net_minor),
+            # Canonical PLANN v2 fields
+            "customer_price_minor": str(customer_price_minor),
+            "merchant_net_minor": str(merchant_net_minor),
+            "platform_fee_minor": str(platform_fee_minor),
+            "stripe_fee_minor": str(processor_fee_minor),
+            "wise_fee_minor": str(payout_fee_minor),
+            "gross_up_applied": "true" if gross_up_result is not None else "false",
+            "payment_rule": "full_online",
+            "is_merchant_payment": "true",
+            "transaction_id": tx_id,
+        },
+        success_url=(
+            f"https://plannapp.co/{merchant_slug}?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
+            if merchant_slug else PAYMENT_SUCCESS_URL + "?session_id={CHECKOUT_SESSION_ID}"
+        ),
+        cancel_url=(
+            f"https://plannapp.co/{merchant_slug}?payment=cancelled"
+            if merchant_slug else PAYMENT_CANCEL_URL
+        ),
+        allow_promotion_codes=True,
+    )
+
+    # 2) Session id'yi tx'e bağla — webhook eşleşmesi bunun üzerinden yapılır.
+    await db.merchant_transactions.update_one(
+        {"id": tx_id},
+        {"$set": {"stripe_checkout_session_id": stripe_session.id}},
+    )
+    tx_doc["stripe_checkout_session_id"] = stripe_session.id
+    # Mongo insert_one tx_doc'a ObjectId `_id` ekler — JSON serialize edilemez, çıkar.
+    tx_doc.pop("_id", None)
+
+    logger.info(
+        "Payment link created: org=%s tx=%s session=%s customer_price=%d merchant_net=%d %s grossup=%s",
+        organization_id, tx_id, stripe_session.id, customer_price_minor,
+        merchant_net_minor, base_currency, gross_up_result is not None,
+    )
+
+    return {
+        "checkout_url": stripe_session.url,
+        "session_id": stripe_session.id,
+        "transaction_id": tx_id,
+        "customer_price_minor": customer_price_minor,
+        "merchant_net_minor": merchant_net_minor,
+        "platform_fee_minor": platform_fee_minor,
+        "base_currency": base_currency,
+        "transaction": tx_doc,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Webhook Processing
 # ---------------------------------------------------------------------------

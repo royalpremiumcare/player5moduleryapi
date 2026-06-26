@@ -12,10 +12,32 @@ from datetime import datetime, timezone, timedelta
 from stripe_service import create_checkout_session, parse_webhook_event
 from server import (
     get_current_user, UserInDB, PlanUpdateRequest, 
-    get_db_from_request, get_plan_info, get_organization_plan
+    get_db_from_request, get_plan_info, get_organization_plan,
+    send_email
 )
 
 logger = logging.getLogger(__name__)
+
+# Abonelik yenileme başarısızlığı gibi kritik olaylarda bilgilendirilecek sistem yöneticisi
+SUPERADMIN_ALERT_EMAIL = "fatihsenyuz12@gmail.com"
+
+
+async def _find_org_plan_by_subscription(db, subscription_id):
+    """
+    Stripe subscription ID'sine göre işletme planını bul.
+
+    Geçmiş veri tutarsızlığı nedeniyle abonelik ID'si bazı kayıtlarda
+    'subscription_id', bazılarında 'stripe_subscription_id' alanında saklı.
+    Webhook'ların sessizce kayıt bulamamasını önlemek için her iki alana da bakar.
+    """
+    if not subscription_id:
+        return None
+    return await db.organization_plans.find_one({
+        "$or": [
+            {"subscription_id": subscription_id},
+            {"stripe_subscription_id": subscription_id},
+        ]
+    })
 
 async def create_stripe_checkout_session_handler(
     request: Request,
@@ -266,31 +288,248 @@ async def handle_stripe_webhook_handler(request: Request) -> Response:
             
             # Subscription'a göre organization'ı bul ve plan süresini uzat
             db = await get_db_from_request(request)
-            org_plan = await db.organization_plans.find_one({"subscription_id": subscription_id})
-            
-            if org_plan:
-                # Bir sonraki ödeme tarihini güncelle
-                next_billing = datetime.now(timezone.utc) + timedelta(days=30)
+            org_plan = await _find_org_plan_by_subscription(db, subscription_id)
+
+            if not org_plan:
+                logger.warning(
+                    f"invoice.payment_succeeded: subscription_id={subscription_id} "
+                    f"için organization_plan bulunamadı, süre uzatma atlanıyor."
+                )
+            else:
+                # Bir sonraki ödeme tarihini Stripe'ın faturalama döngüsünden al.
+                # Python ile manuel timedelta EKLEME — DB ile Stripe periyodu
+                # zamanla senkron dışı kalmasın diye doğrudan payload'daki
+                # fatura kalemi period.end (Unix timestamp) kullanılır.
+                period_end_ts = None
+                try:
+                    lines = (invoice.get('lines') or {}).get('data') or []
+                    if lines:
+                        period_end_ts = (lines[0].get('period') or {}).get('end')
+                    # Fallback: invoice seviyesindeki period_end
+                    if period_end_ts is None:
+                        period_end_ts = invoice.get('period_end')
+                except Exception:
+                    period_end_ts = None
+
+                if period_end_ts:
+                    next_billing = datetime.fromtimestamp(period_end_ts, tz=timezone.utc)
+                else:
+                    # Güvenlik ağı: timestamp yoksa kullanıcıyı kilitlememek için
+                    # 30 gün ekle ve uyarı logla.
+                    logger.warning(
+                        f"invoice.payment_succeeded: period.end bulunamadı, "
+                        f"30 günlük fallback uygulanıyor. subscription_id={subscription_id}"
+                    )
+                    next_billing = datetime.now(timezone.utc) + timedelta(days=30)
+
+                # organization_id üzerinden güncelle ve abonelik alanlarını
+                # tutarlı hale getir (subscription_id geçmişte None kalmış olabilir).
                 await db.organization_plans.update_one(
-                    {"subscription_id": subscription_id},
+                    {"organization_id": org_plan.get("organization_id")},
                     {"$set": {
+                        "status": "active",
+                        "subscription_id": subscription_id,
+                        "stripe_subscription_id": subscription_id,
                         "next_billing_date": next_billing.isoformat(),
                         "last_payment_date": datetime.now(timezone.utc).isoformat(),
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     }}
                 )
                 
-                logger.info(f"Recurring payment işlendi: {subscription_id}")
+                logger.info(
+                    f"Recurring payment işlendi: org={org_plan.get('organization_id')} "
+                    f"subscription_id={subscription_id} - next_billing_date={next_billing.isoformat()}"
+                )
+
+                # Yenileme ödemesini payment_logs'a kaydet (SuperAdmin MRR/Toplam Ciro
+                # bu koleksiyondan hesaplanır). Fatura ID ile idempotent — aynı webhook
+                # iki kez gelirse çift kayıt oluşmaz.
+                invoice_id = invoice.get('id')
+                amount_paid_minor = invoice.get('amount_paid')
+                if amount_paid_minor is None:
+                    amount_paid_minor = invoice.get('amount_due') or 0
+                renewal_amount = amount_paid_minor / 100
+                renewal_currency = (invoice.get('currency') or 'try').upper()
+                created_iso = datetime.now(timezone.utc).isoformat()
+                if period_end_ts:
+                    # Fatura döneminin başlangıcını created_at olarak kullan (doğru tarih)
+                    line_period = (lines[0].get('period') or {}) if lines else {}
+                    period_start_ts = line_period.get('start') or invoice.get('period_start')
+                    if period_start_ts:
+                        created_iso = datetime.fromtimestamp(period_start_ts, tz=timezone.utc).isoformat()
+
+                existing_log = None
+                if invoice_id:
+                    existing_log = await db.payment_logs.find_one({"stripe_invoice_id": invoice_id})
+                if existing_log:
+                    logger.info(
+                        f"invoice.payment_succeeded: invoice_id={invoice_id} için payment_log "
+                        f"zaten mevcut, çift kayıt oluşturulmadı."
+                    )
+                else:
+                    await db.payment_logs.insert_one({
+                        "organization_id": org_plan.get("organization_id"),
+                        "plan_id": org_plan.get("plan_id"),
+                        "status": "active",
+                        "amount": renewal_amount,
+                        "currency": renewal_currency,
+                        "billing_cycle": org_plan.get("billing_cycle", "monthly"),
+                        "payment_provider": "stripe",
+                        "payment_type": "renewal",
+                        "stripe_subscription_id": subscription_id,
+                        "stripe_invoice_id": invoice_id,
+                        "created_at": created_iso,
+                        "completed_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    logger.info(
+                        f"Yenileme payment_log kaydedildi: org={org_plan.get('organization_id')} "
+                        f"amount={renewal_amount} {renewal_currency} invoice_id={invoice_id}"
+                    )
         
         elif event_type == 'invoice.payment_failed':
-            # Recurring payment başarısız
+            # Recurring payment başarısız — dunning bildirimi
             invoice = event['data']['object']
-            subscription_id = invoice['subscription']
-            
+            subscription_id = invoice.get('subscription')
+
             logger.warning(f"Recurring payment başarısız: {subscription_id}")
-            
-            # TODO: Admin'e e-posta gönder, plan'ı suspend et
-        
+
+            db = await get_db_from_request(request)
+
+            # 1) Aboneliğe bağlı işletmeyi bul
+            org_plan = await _find_org_plan_by_subscription(db, subscription_id)
+            if not org_plan:
+                logger.warning(
+                    f"invoice.payment_failed: subscription_id={subscription_id} "
+                    f"için organization_plan bulunamadı, dunning atlanıyor."
+                )
+            else:
+                organization_id = org_plan.get("organization_id")
+
+                # İşletme adını settings'ten çek
+                org_settings = await db.settings.find_one({"organization_id": organization_id}) or {}
+                company_name = (
+                    org_settings.get("company_name")
+                    or org_settings.get("business_name")
+                    or "İşletmeniz"
+                )
+
+                # 2) Stripe payload'undan dinamik ödeme verilerini ayıkla
+                amount_due_minor = invoice.get('amount_due') or 0
+                amount_due = amount_due_minor / 100
+                currency = (invoice.get('currency') or 'try').upper()
+                hosted_invoice_url = invoice.get('hosted_invoice_url')
+                customer_email = invoice.get('customer_email')
+
+                # Fatura e-postası yoksa, işletmenin admin kullanıcısına düş
+                if not customer_email:
+                    admin_user = await db.users.find_one(
+                        {"organization_id": organization_id, "role": "admin"}
+                    )
+                    if admin_user:
+                        customer_email = admin_user.get("username")
+
+                amount_str = f"{amount_due:,.2f}"
+
+                # 3a) SuperAdmin bildirimi
+                try:
+                    sa_subject = f"[Kritik] Abonelik Yenileme Başarısız: {company_name}"
+                    sa_html = f"""
+<h2 style="color:#ef4444;margin-top:0;">Abonelik Yenileme Başarısız</h2>
+<p><strong>{company_name}</strong> işletmesinin abonelik yenileme ödemesi başarısız oldu.</p>
+<table style="border-collapse:collapse;font-size:14px;margin:16px 0;">
+  <tr><td style="padding:4px 12px;"><strong>İşletme</strong></td><td>{company_name}</td></tr>
+  <tr><td style="padding:4px 12px;"><strong>Organization ID</strong></td><td><code>{organization_id}</code></td></tr>
+  <tr><td style="padding:4px 12px;"><strong>Kesilmesi gereken tutar</strong></td><td>{amount_str} {currency}</td></tr>
+  <tr><td style="padding:4px 12px;"><strong>Subscription ID</strong></td><td><code>{subscription_id}</code></td></tr>
+</table>
+<p>Stripe otomatik retry işlemlerine devam ediyor.</p>
+"""
+                    await send_email(
+                        to_email=SUPERADMIN_ALERT_EMAIL,
+                        subject=sa_subject,
+                        html_content=sa_html,
+                        to_name="PLANN SuperAdmin",
+                    )
+                except Exception as e:
+                    logger.error(f"invoice.payment_failed: SuperAdmin e-postası gönderilemedi: {e}")
+
+                # 3b) İşletme sahibi bildirimi
+                if customer_email:
+                    try:
+                        pay_button = ""
+                        if hosted_invoice_url:
+                            pay_button = f"""
+<p style="text-align:center;margin:28px 0;">
+  <a href="{hosted_invoice_url}" target="_blank"
+     style="background-color:#007bff;color:#ffffff;padding:14px 28px;text-decoration:none;border-radius:6px;font-size:16px;font-weight:bold;display:inline-block;">
+    Ödememi Güvenle Tamamla
+  </a>
+</p>
+<p style="font-size:13px;color:#888;word-break:break-all;">Buton çalışmıyorsa: {hosted_invoice_url}</p>
+"""
+                        owner_subject = "PLANN Abonelik Yenilemeniz Hakkında Önemli Bilgilendirme"
+                        owner_html = f"""
+<h2 style="margin-top:0;">Abonelik Yenilemeniz Hakkında</h2>
+<p>Merhaba,</p>
+<p>PLANN abonelik yenileme işleminiz bankanız/kartınız tarafından reddedildiği için tamamlanamadı.</p>
+<p>İşlemlerinizin aksamaması için <strong>3 günlük tolerans süreniz</strong> başlatılmıştır. Bu süreçte randevu almaya devam edebilirsiniz; ancak 3 gün sonunda ödeme tamamlanmazsa sisteminiz geçici olarak kilitlenecektir.</p>
+<p>Bakiyenizi kontrol ettikten sonra aşağıdaki güvenli bağlantı üzerinden ödemenizi manuel olarak anında tamamlayabilirsiniz:</p>
+{pay_button}
+<p style="margin-top:24px;">Teşekkürler,<br/>PLANN Ekibi</p>
+"""
+                        await send_email(
+                            to_email=customer_email,
+                            subject=owner_subject,
+                            html_content=owner_html,
+                            to_name=company_name,
+                        )
+                    except Exception as e:
+                        logger.error(f"invoice.payment_failed: İşletme sahibi e-postası gönderilemedi: {e}")
+                else:
+                    logger.warning(
+                        f"invoice.payment_failed: org={organization_id} için müşteri e-postası "
+                        f"bulunamadı, işletme sahibi bilgilendirilemedi."
+                    )
+
+        elif event_type == 'customer.subscription.deleted':
+            # Stripe tüm retry'leri tüketip aboneliği iptal etti — sessizce kapat
+            subscription = event['data']['object']
+            subscription_id = subscription.get('id')
+
+            logger.info(f"Subscription iptal edildi (Stripe): {subscription_id}")
+
+            db = await get_db_from_request(request)
+            org_plan = await _find_org_plan_by_subscription(db, subscription_id)
+
+            if not org_plan:
+                logger.warning(
+                    f"customer.subscription.deleted: subscription_id={subscription_id} "
+                    f"için organization_plan bulunamadı, işlem atlanıyor."
+                )
+            else:
+                organization_id = org_plan.get("organization_id")
+                now_iso = datetime.now(timezone.utc).isoformat()
+
+                # Planı trial'a düşür, durumu canceled yap ve abonelik kalıntılarını temizle
+                await db.organization_plans.update_one(
+                    {"organization_id": organization_id},
+                    {"$set": {
+                        "plan_id": "tier_trial",
+                        "status": "canceled",
+                        "next_billing_date": None,
+                        "next_payment_date": None,
+                        "stripe_subscription_id": None,
+                        "subscription_id": None,
+                        "updated_at": now_iso,
+                    }}
+                )
+
+                logger.info(
+                    f"customer.subscription.deleted: org={organization_id} planı tier_trial'a "
+                    f"düşürüldü, status=canceled, abonelik alanları temizlendi. "
+                    f"subscription_id={subscription_id}"
+                )
+
         return Response(content="OK", status_code=200)
         
     except Exception as e:

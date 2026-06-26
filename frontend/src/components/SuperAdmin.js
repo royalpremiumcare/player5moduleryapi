@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BarChart2, Building2, MessageSquare, MessageCircle, Target, Users, LogOut, Menu, X, Wallet, Shield } from "lucide-react";
+import { BarChart2, Building2, MessageSquare, MessageCircle, Target, Users, LogOut, Menu, X, Wallet, Shield, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import SAOverview from "./superadmin/SAOverview";
@@ -10,6 +10,7 @@ import SALeads from "./superadmin/SALeads";
 import SAUsers from "./superadmin/SAUsers";
 import SAFinancial from "./superadmin/SAFinancial";
 import SAFinancialV2 from "./superadmin/SAFinancialV2";
+import SAEmailBroadcast from "./superadmin/SAEmailBroadcast";
 
 const NAV_ITEMS = [
   { id: "overview",       label: "Genel Bakış",    icon: BarChart2 },
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { id: "users",          label: "Kullanıcılar",   icon: Users },
   { id: "financial",      label: "Finansal",       icon: Wallet },
   { id: "financial-v2",   label: "Finansal v2",    icon: Shield },
+  { id: "email",          label: "Mail Gönder",    icon: Mail },
 ];
 
 const SuperAdmin = ({ onNavigate }) => {
@@ -37,6 +39,7 @@ const SuperAdmin = ({ onNavigate }) => {
       case "users":         return <SAUsers />;
       case "financial":     return <SAFinancial />;
       case "financial-v2":  return <SAFinancialV2 />;
+      case "email":         return <SAEmailBroadcast />;
       default:              return <SAOverview />;
     }
   };

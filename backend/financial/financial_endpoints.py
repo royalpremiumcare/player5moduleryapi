@@ -44,7 +44,7 @@ from .schemas import (
 from .fee_calculator import calculate_fee_preview, DepositRule
 from .feature_flags import is_env_flag_enabled
 from .gross_up_service import compute_customer_price as _gross_up_compute, GrossUpError
-from .merchant_checkout import create_customer_checkout_session, handle_stripe_merchant_webhook
+from .merchant_checkout import create_customer_checkout_session, create_payment_link_session, handle_stripe_merchant_webhook
 from .payout_service import check_payout_eligibility, create_payout_batch, process_payout_batch
 from .compliance import (
     check_kyc_status,
@@ -391,6 +391,94 @@ async def get_transactions(
         "page": page,
         "per_page": per_page,
         "total_pages": (total + per_page - 1) // per_page,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 3b-2. Pay-by-Link ("Ödeme İste")
+# ---------------------------------------------------------------------------
+
+class PaymentLinkCreate(BaseModel):
+    customer_name: str
+    customer_phone: str
+    description: str
+    amount: float  # major units (ör. 1250.00)
+
+
+@router.post("/api/merchant/payment-links", dependencies=[Depends(_require_admin)])
+async def create_payment_link(request: Request, body: PaymentLinkCreate):
+    """
+    Tek seferlik tahsilat linki oluşturur ve müşteriye WhatsApp ile gönderir.
+
+    - Tutar major birimde alınır, minor'a çevrilir.
+    - Stripe Checkout Session + pending merchant_transaction oluşturulur.
+    - WhatsApp gönderimi tahsilatı bloklamaz (try/except).
+    """
+    db = _get_db(request)
+    user = request.state.current_user
+    org_id = user.get("organization_id", "")
+
+    customer_name = (body.customer_name or "").strip()
+    customer_phone = (body.customer_phone or "").strip()
+    description = (body.description or "").strip()
+
+    if not customer_phone:
+        raise HTTPException(status_code=400, detail="Müşteri telefonu zorunludur")
+    if not description:
+        raise HTTPException(status_code=400, detail="Açıklama zorunludur")
+    if body.amount is None or body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Geçerli bir tutar giriniz")
+
+    base_amount_minor = int(round(body.amount * 100))
+
+    try:
+        result = await create_payment_link_session(
+            db=db,
+            organization_id=org_id,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            description=description,
+            base_amount_minor=base_amount_minor,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error("create_payment_link failed: org=%s err=%s", org_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Ödeme linki oluşturulamadı")
+
+    # WhatsApp ile ödeme linkini gönder (hata tahsilatı bloklamaz)
+    whatsapp_sent = False
+    try:
+        settings = await db.settings.find_one({"organization_id": org_id}) or {}
+        company_name = settings.get("company_name", "İşletme")
+        base_currency = result.get("base_currency", "TRY")
+        final_amount_display = format_display(result.get("customer_price_minor", 0), base_currency)
+
+        # Şablon header'ı IMAGE bekliyor — işletme logosu, yoksa varsayılan PLANN logosu
+        logo = settings.get("logo_url") or ""
+        if logo:
+            header_image_url = logo if logo.startswith("http") else f"https://plannapp.co{logo}"
+        else:
+            header_image_url = "https://plannapp.co/api/static/plannlogo.png"
+
+        from whatsapp_service import send_payment_link_template
+        send_payment_link_template(
+            to_number=customer_phone,
+            customer_name=customer_name,
+            company_name=company_name,
+            description=description,
+            final_amount_display=final_amount_display,
+            checkout_url=result["checkout_url"],
+            header_image_url=header_image_url,
+        )
+        whatsapp_sent = True
+    except Exception as e:
+        logger.error("payment-link WhatsApp send failed: org=%s err=%s", org_id, e, exc_info=True)
+
+    return {
+        "checkout_url": result["checkout_url"],
+        "transaction": result.get("transaction"),
+        "whatsapp_sent": whatsapp_sent,
     }
 
 

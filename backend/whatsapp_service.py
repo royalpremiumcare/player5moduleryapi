@@ -241,6 +241,83 @@ def _build_body(params: List[str]) -> dict:
     }
 
 # ============================================================================
+# RETRY HELPER — Meta transient hataları (code 1/2, 5xx, timeout) için
+# ============================================================================
+
+WA_MAX_RETRIES = 3
+WA_RETRY_DELAYS = [2, 5, 10]  # saniye (deneme 1→2, 2→3, ...)
+
+
+def _is_transient_meta_error(response) -> bool:
+    """Meta yanıtı geçici (retry edilebilir) bir hata mı?
+
+    Retry koşulları:
+      - HTTP 5xx
+      - Hata gövdesinde is_transient: true
+      - Hata kodu 1 (API Unknown) veya 2 (API Service)
+    """
+    if response.status_code >= 500:
+        return True
+    try:
+        err = response.json().get("error", {})
+        if err.get("is_transient"):
+            return True
+        if err.get("code") in (1, 2):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _post_with_retry(url: str, headers: dict, payload: dict, context: str) -> dict:
+    """Meta WA API'ye retry'lı POST. Başarılı yanıtın JSON gövdesini döner.
+
+    Transient hatalarda (5xx, code 1/2, is_transient, timeout/bağlantı) max
+    WA_MAX_RETRIES deneme yapar, aralarda exponential backoff bekler.
+    Kalıcı 4xx hatalarda hemen raise eder.
+    """
+    import time
+
+    last_exception = None
+    for attempt in range(1, WA_MAX_RETRIES + 1):
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=15)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as conn_err:
+            last_exception = conn_err
+            logger.warning(
+                f"Meta WA bağlantı hatası ({context}) attempt={attempt}/{WA_MAX_RETRIES}: {conn_err}"
+            )
+            if attempt < WA_MAX_RETRIES:
+                time.sleep(WA_RETRY_DELAYS[attempt - 1])
+            continue
+
+        if response.ok:
+            return response.json()
+
+        logger.error(
+            f"Meta WA API error ({context}) attempt={attempt}/{WA_MAX_RETRIES}: "
+            f"status={response.status_code} body={response.text}"
+        )
+
+        if not _is_transient_meta_error(response):
+            # Kalıcı hata (geçersiz şablon, izin, numara format vb.) — retry anlamsız
+            response.raise_for_status()
+
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as http_err:
+            last_exception = http_err
+
+        if attempt < WA_MAX_RETRIES:
+            delay = WA_RETRY_DELAYS[attempt - 1]
+            logger.warning(f"Meta WA transient hata ({context}) — {delay}s sonra tekrar denenecek")
+            time.sleep(delay)
+
+    logger.error(f"Meta WA gönderim {WA_MAX_RETRIES} denemede de başarısız ({context})")
+    raise last_exception
+
+
+# ============================================================================
 # META WHATSAPP CLOUD API — DÜŞÜK SEVİYE GÖNDERME
 # ============================================================================
 
@@ -298,18 +375,78 @@ def send_meta_whatsapp_template(
         f"to={formatted_to} components={len(components) if components else 0}"
     )
 
-    response = requests.post(url, headers=headers, json=payload, timeout=15)
-
-    if not response.ok:
-        logger.error(
-            f"Meta WA API error: status={response.status_code} body={response.text}"
-        )
-        response.raise_for_status()
-
-    data = response.json()
+    data = _post_with_retry(url, headers, payload, context=f"template={template_name}")
     message_id = data.get("messages", [{}])[0].get("id", "unknown")
     logger.info(f"Meta WA mesaj gönderildi. id={message_id}")
     return message_id
+
+
+# ============================================================================
+# PAY-BY-LINK ("ÖDEME İSTE") ŞABLON GÖNDERİMİ
+# ============================================================================
+
+def send_payment_link_template(
+    to_number: str,
+    customer_name: str,
+    company_name: str,
+    description: str,
+    final_amount_display: str,
+    checkout_url: str,
+    header_image_url: str = "https://plannapp.co/api/static/plannlogo.png",
+) -> str:
+    """
+    Tek seferlik ödeme talebini, Meta'da onaylı `tek_seferlik_odeme_tr` şablonuyla
+    müşteriye WhatsApp üzerinden gönderir.
+
+    Şablon yapısı:
+        HEADER = IMAGE (header_image_url — işletme logosu / varsayılan PLANN logosu)
+        BODY:
+            {{1}} = customer_name (müşteri)
+            {{2}} = company_name (işletme)
+            {{3}} = description
+            {{4}} = final_amount_display (ör. "₺1.250,00")
+        BUTTON (URL, index 0) dinamik suffix = `checkout_url.split("/pay/")[-1]`
+            → `cs_live_...` segmenti. Şablonun buton base URL'i Stripe checkout
+            domain'i olarak yapılandırılmıştır.
+    """
+    if not WHATSAPP_ENABLED:
+        return "disabled"
+
+    # URL butonu için dinamik segmenti ayıkla
+    url_suffix = checkout_url.split("/pay/")[-1] if "/pay/" in checkout_url else checkout_url
+
+    components = [
+        {
+            "type": "header",
+            "parameters": [
+                {"type": "image", "image": {"link": header_image_url}},
+            ],
+        },
+        {
+            "type": "body",
+            "parameters": [
+                {"type": "text", "text": str(customer_name or "")},
+                {"type": "text", "text": str(company_name or "")},
+                {"type": "text", "text": str(description or "")},
+                {"type": "text", "text": str(final_amount_display or "")},
+            ],
+        },
+        {
+            "type": "button",
+            "sub_type": "url",
+            "index": "0",
+            "parameters": [
+                {"type": "text", "text": url_suffix},
+            ],
+        },
+    ]
+
+    return send_meta_whatsapp_template(
+        to_number=to_number,
+        template_name="tek_seferlik_odeme_tr",
+        language_code="tr",
+        components=components,
+    )
 
 
 # ============================================================================
@@ -328,12 +465,7 @@ def send_whatsapp_text(to_number: str, body: str) -> str:
     headers = {"Authorization": f"Bearer {META_ACCESS_TOKEN}", "Content-Type": "application/json"}
     payload = {"messaging_product": "whatsapp", "to": formatted_to, "type": "text", "text": {"body": body}}
 
-    response = requests.post(url, headers=headers, json=payload, timeout=15)
-    if not response.ok:
-        logger.error(f"Meta WA text error: status={response.status_code} body={response.text}")
-        response.raise_for_status()
-
-    data = response.json()
+    data = _post_with_retry(url, headers, payload, context="text")
     msg_id = data.get("messages", [{}])[0].get("id", "unknown")
     logger.info(f"Meta WA text gönderildi. id={msg_id} to={formatted_to}")
     return msg_id
