@@ -64,7 +64,8 @@ const SectionTitle = ({ title }) => (
 const Settings = ({ onNavigate, userRole, onLogout }) => {
   const { t } = useTranslation();
   const isStaff = userRole === 'staff' || userRole === 'personnel';
-  const [notificationStatus, setNotificationStatus] = useState('default');
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [showContact, setShowContact] = useState(false);
 
@@ -77,21 +78,28 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
   }, [showContact]);
 
   // --- BİLDİRİM MANTIĞI ---
+  // Switch backend aboneliğine göre çalışır (OS izni ≠ kayıtlı cihaz).
   useEffect(() => {
-    const checkNotificationStatus = async () => {
+    const syncPushStatus = async () => {
       const isNative = Capacitor.isNativePlatform();
       if (isNative) {
         try {
           const status = await PushNotifications.checkPermissions();
-          setNotificationStatus(status.receive);
+          setPermissionStatus(status.receive);
         } catch {
-          setNotificationStatus('default');
+          setPermissionStatus('default');
         }
       } else if ('Notification' in window) {
-        setNotificationStatus(Notification.permission);
+        setPermissionStatus(Notification.permission);
+      }
+      try {
+        const res = await api.get('/push/status');
+        setPushSubscribed(!!res.data?.subscribed);
+      } catch {
+        setPushSubscribed(false);
       }
     };
-    checkNotificationStatus();
+    syncPushStatus();
   }, []);
 
   const handleEnableNotifications = async () => {
@@ -116,6 +124,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                   platform: 'ios'
                 }
               });
+              setPushSubscribed(true);
             }
           } else {
             // Android: Capacitor registration event kullan
@@ -128,12 +137,14 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                   platform: platform
                 }
               });
+              setPushSubscribed(true);
             });
           }
-          setNotificationStatus('granted');
+          setPushSubscribed(true);
+          setPermissionStatus('granted');
           toast.success(t('settings.notificationsEnabledSuccess'));
         } else {
-          setNotificationStatus('denied');
+          setPermissionStatus('denied');
           toast.error(t('settings.notificationsPermissionDenied'));
         }
       } catch (error) {
@@ -153,7 +164,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
     setIsSubscribing(true);
     try {
       const permission = await Notification.requestPermission();
-      setNotificationStatus(permission);
+      setPermissionStatus(permission);
       
       if (permission === 'granted') {
         const registration = await navigator.serviceWorker.ready;
@@ -177,6 +188,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
         });
 
         await api.post('/push/subscribe', { subscription: subscription.toJSON() });
+        setPushSubscribed(true);
         toast.success(t('settings.notificationsEnabledSuccess'));
       } else if (permission === 'denied') {
         toast.error(t('settings.notificationsPermissionDeniedWeb'));
@@ -192,7 +204,7 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
     setIsSubscribing(true);
     try {
       await api.delete('/push/unsubscribe');
-      setNotificationStatus('default');
+      setPushSubscribed(false);
       toast.success(t('settings.notificationsDisabledSuccess'));
     } catch (error) {
       toast.error(t('settings.notificationsDisableError'));
@@ -385,17 +397,23 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
         <SectionTitle title={t('settings.sections.appPreferences')} />
         <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
           
-          {/* Bildirimler (Switch) */}
+          {/* Bildirimler (Switch) — backend aboneliğine göre; OS izni ayrı kalır */}
           <SettingItem 
-            icon={notificationStatus === 'granted' ? Bell : BellOff} 
+            icon={pushSubscribed ? Bell : BellOff} 
             title={t('settings.notifications')}
-            subtitle={notificationStatus === 'granted' ? t('settings.notificationsOn') : t('settings.notificationsOff')}
+            subtitle={
+              pushSubscribed
+                ? t('settings.notificationsOn')
+                : permissionStatus === 'granted'
+                  ? t('settings.notificationsOffButPermissionGranted')
+                  : t('settings.notificationsOff')
+            }
             rightElement={
               <Switch 
-                checked={notificationStatus === 'granted'}
+                checked={pushSubscribed}
                 onCheckedChange={handleToggleNotifications}
                 disabled={isSubscribing}
-                className="scale-110" // Switch'i biraz büyüttük
+                className="scale-110"
               />
             }
           />

@@ -9467,6 +9467,23 @@ async def unsubscribe_push(request: Request, current_user: UserInDB = Depends(ge
     
     return {"message": f"Deleted {result.deleted_count} subscriptions"}
 
+
+@api_router.get("/push/status")
+async def push_subscription_status(request: Request, current_user: UserInDB = Depends(get_current_user)):
+    """Kullanıcının backend'de kayıtlı push aboneliği var mı? (OS izni ≠ kayıtlı cihaz)"""
+    db = await get_db_from_request(request)
+    count = await db.push_subscriptions.count_documents({
+        "organization_id": current_user.organization_id,
+        "user_id": current_user.username,
+    })
+    subs = await db.push_subscriptions.find(
+        {"organization_id": current_user.organization_id, "user_id": current_user.username},
+        {"platform": 1, "_id": 0},
+    ).to_list(10)
+    platforms = list({s.get("platform") or "web" for s in subs})
+    return {"subscribed": count > 0, "count": count, "platforms": platforms}
+
+
 @api_router.post("/push/debug")
 async def push_debug(request: Request):
     """iOS push debug - her adımı logla"""
@@ -14119,7 +14136,14 @@ async def superadmin_broadcast_push(
 
     subscriptions = await db.push_subscriptions.find(sub_query).to_list(None)
     if not subscriptions:
-        raise HTTPException(status_code=404, detail="Gönderilecek push aboneliği bulunamadı.")
+        logging.warning(
+            f"🔔 [SUPERADMIN BROADCAST PUSH] Abonelik bulunamadı — "
+            f"hedef={'tümü' if payload.send_to_all else payload.organization_ids} (by {current_user.username})"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="Seçilen işletmelerde push'a kayıtlı cihaz bulunamadı. Bildirim almak için kullanıcıların uygulamadan/web'den bildirim izni vermiş olması gerekir.",
+        )
 
     # data payload — action verilirse mağaza yönlendirme bilgisi de ekle
     data = {}
@@ -14144,6 +14168,78 @@ async def superadmin_broadcast_push(
         "failed": stats["failed"],
         "removed": stats["removed"],
     }
+
+
+@api_router.get("/superadmin/push/subscriber-counts")
+async def get_push_subscriber_counts(
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """İşletme bazında push'a kayıtlı cihaz sayıları - Sadece superadmin.
+
+    SAPushBroadcast ekranında hangi işletmelerin bildirim alabileceğini
+    göstermek için kullanılır.
+    """
+    pipeline = [{"$group": {"_id": {"org": "$organization_id", "platform": "$platform"}, "count": {"$sum": 1}}}]
+    rows = await db.push_subscriptions.aggregate(pipeline).to_list(None)
+
+    def _bucket(platform):
+        # ios/android dışındaki her şey (web, None, eski kayıtlar) web kabul edilir
+        p = (platform or "").lower()
+        return p if p in ("ios", "android") else "web"
+
+    counts = {}  # { org_id: {"ios": n, "android": n, "web": n, "total": n} }
+    totals = {"ios": 0, "android": 0, "web": 0, "total": 0}
+    unassigned = {"ios": 0, "android": 0, "web": 0, "total": 0}
+
+    for r in rows:
+        key = r.get("_id") or {}
+        oid = key.get("org")
+        bucket = _bucket(key.get("platform"))
+        n = r.get("count", 0)
+
+        totals[bucket] += n
+        totals["total"] += n
+
+        if oid:
+            entry = counts.setdefault(oid, {"ios": 0, "android": 0, "web": 0, "total": 0})
+            entry[bucket] += n
+            entry["total"] += n
+        else:
+            unassigned[bucket] += n
+            unassigned["total"] += n
+
+    # İşletme isimlerini çöz: settings.company_name -> admin kullanıcı -> temsili abone e-postası
+    count_org_ids = list(counts.keys())
+    name_map = {}
+    if count_org_ids:
+        for s in await db.settings.find(
+            {"organization_id": {"$in": count_org_ids}}, {"organization_id": 1, "company_name": 1}
+        ).to_list(None):
+            if s.get("company_name"):
+                name_map[s["organization_id"]] = s["company_name"]
+
+        missing = [o for o in count_org_ids if o not in name_map]
+        if missing:
+            for a in await db.users.find(
+                {"organization_id": {"$in": missing}, "role": "admin"},
+                {"organization_id": 1, "full_name": 1, "username": 1},
+            ).to_list(None):
+                name_map.setdefault(a["organization_id"], a.get("full_name") or a.get("username"))
+
+        missing2 = [o for o in missing if o not in name_map]
+        if missing2:
+            for sub in await db.push_subscriptions.find(
+                {"organization_id": {"$in": missing2}}, {"organization_id": 1, "user_id": 1}
+            ).to_list(None):
+                soid = sub.get("organization_id")
+                if soid and soid not in name_map and sub.get("user_id"):
+                    name_map[soid] = f"{sub['user_id']} (atanmamış)"
+
+    names = {o: (name_map.get(o) or "Bilinmeyen işletme") for o in count_org_ids}
+
+    return {"counts": counts, "totals": totals, "unassigned": unassigned, "names": names}
 
 
 @api_router.get("/marketing/organizations")

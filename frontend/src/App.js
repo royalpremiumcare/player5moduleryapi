@@ -895,6 +895,35 @@ function App() {
     }
   }, [token, pushSubscribed, subscribeToPush]);
 
+  // Uygulama ön plana gelince / web sekmesi açılınca aboneliği yenile
+  // (OS izni varken backend kaydı silinmişse superadmin'de "cihaz yok" görünmesin)
+  useEffect(() => {
+    if (!token) return;
+
+    let removed = false;
+    const resync = () => {
+      if (!removed) subscribeToPush();
+    };
+
+    let appListener;
+    if (Capacitor.isNativePlatform()) {
+      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) resync();
+      }).then((l) => { appListener = l; });
+    }
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') resync();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      removed = true;
+      appListener?.remove();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [token, subscribeToPush]);
+
   // WebSocket setup for real-time updates
   const socketRef = useRef(null);
   const listenersInitializedRef = useRef(false);

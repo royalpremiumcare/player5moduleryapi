@@ -58,23 +58,10 @@ api.interceptors.response.use(
 
       // App mode kontrolü - yönlendirmeden ÖNCE kontrol et
       const isAppMode = localStorage.getItem('is_app_mode') === 'true';
-      
-      // Backend'de push subscription'ları sil (FCM token'ı temizle)
-      try {
-        const currentToken = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-        if (currentToken) {
-          // Token varsa backend'e unsubscribe isteği gönder
-          await api.delete('/push/unsubscribe').catch(err => {
-            // Hata olsa bile devam et (token geçersiz olabilir)
-            console.warn('Push unsubscribe error (ignored):', err);
-          });
-        }
-      } catch (unsubError) {
-        // Hata olsa bile devam et
-        console.warn('Push unsubscribe error (ignored):', unsubError);
-      }
-      
-      // Sadece auth bilgilerini sil - is_app_mode'u KORUYORUZ
+
+      // Push aboneliği burada silinmez — yalnızca açık logout veya Ayarlar'dan
+      // bildirim kapatma aboneliği siler. Token süresi dolunca cihaz kaydı korunur.
+
       localStorage.removeItem('authToken');
       localStorage.removeItem('userRole');
       sessionStorage.removeItem('authToken');

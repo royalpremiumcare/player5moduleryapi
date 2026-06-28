@@ -852,6 +852,7 @@
     "locationSubtitle": "Adres ve konum bilgileri",
     "notificationsOn": "Bildirimler açık",
     "notificationsOff": "Bildirimler kapalı",
+    "notificationsOffButPermissionGranted": "Kapalı — izin verilmiş, açmak için dokunun",
     "notificationsRepairSubtitle": "Bildirim gelmiyorsa sorun gidericiyi çalıştır",
     "helpCenterSubtitle": "Sıkça sorulan sorular ve destek",
     "logoutSubtitle": "Oturumu güvenli bir şekilde kapat",

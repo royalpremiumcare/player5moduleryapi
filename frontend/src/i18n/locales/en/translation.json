@@ -850,6 +850,7 @@
     "locationSubtitle": "Address and location information",
     "notificationsOn": "Notifications on",
     "notificationsOff": "Notifications off",
+    "notificationsOffButPermissionGranted": "Off — permission granted, tap to enable",
     "notificationsRepairSubtitle": "Run the troubleshooter if notifications are not coming",
     "helpCenterSubtitle": "Frequently asked questions and support",
     "logoutSubtitle": "Sign out securely",

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Search, Bell, Send, CheckSquare, Square, RefreshCw, Users, Loader2, Sparkles, ExternalLink } from "lucide-react";
+import { Search, Bell, Send, CheckSquare, Square, RefreshCw, Users, Loader2, Sparkles, ExternalLink, Smartphone, X } from "lucide-react";
 import { toast } from "sonner";
 import api from "../../api/api";
 
@@ -30,6 +30,9 @@ const PRESETS = [
 
 export default function SAPushBroadcast() {
   const [orgs, setOrgs] = useState([]);
+  const [subCounts, setSubCounts] = useState({});
+  const [orgNames, setOrgNames] = useState({});
+  const [totals, setTotals] = useState({ ios: 0, android: 0, web: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(new Set());
@@ -40,12 +43,19 @@ export default function SAPushBroadcast() {
   const [activePreset, setActivePreset] = useState(null);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
+  const [detailPlatform, setDetailPlatform] = useState(null); // 'ios' | 'android' | 'web' | 'total'
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/superadmin/organizations");
-      setOrgs(res.data.organizations || []);
+      const [orgRes, countRes] = await Promise.all([
+        api.get("/superadmin/organizations"),
+        api.get("/superadmin/push/subscriber-counts"),
+      ]);
+      setOrgs(orgRes.data.organizations || []);
+      setSubCounts(countRes.data.counts || {});
+      setOrgNames(countRes.data.names || {});
+      setTotals(countRes.data.totals || { ios: 0, android: 0, web: 0, total: 0 });
     } catch {
       toast.error("İşletmeler yüklenemedi");
     } finally {
@@ -72,20 +82,50 @@ export default function SAPushBroadcast() {
     });
   };
 
-  const allFilteredSelected = filtered.length > 0 && filtered.every(o => selected.has(o.organization_id));
+  // Sadece cihazı olan (push aboneliği bulunan) işletmeler seçilebilir
+  const orgBreakdown = (orgId) => subCounts[orgId] || { ios: 0, android: 0, web: 0, total: 0 };
+  const deviceCount = (orgId) => orgBreakdown(orgId).total || 0;
+  // Platform kırılımını kısa etikete çevir: "2 iOS · 1 Android"
+  const breakdownLabel = (orgId) => {
+    const b = orgBreakdown(orgId);
+    const parts = [];
+    if (b.ios) parts.push(`${b.ios} iOS`);
+    if (b.android) parts.push(`${b.android} Android`);
+    if (b.web) parts.push(`${b.web} Web`);
+    return parts.join(" · ");
+  };
+  const selectableFiltered = filtered.filter(o => deviceCount(o.organization_id) > 0);
+  const allFilteredSelected = selectableFiltered.length > 0 && selectableFiltered.every(o => selected.has(o.organization_id));
   const toggleAllFiltered = () => {
     setSelected(prev => {
       const next = new Set(prev);
       if (allFilteredSelected) {
-        filtered.forEach(o => next.delete(o.organization_id));
+        selectableFiltered.forEach(o => next.delete(o.organization_id));
       } else {
-        filtered.forEach(o => next.add(o.organization_id));
+        selectableFiltered.forEach(o => next.add(o.organization_id));
       }
       return next;
     });
   };
 
-  const recipientCount = sendToAll ? orgs.length : selected.size;
+  const recipientCount = sendToAll ? (totals.total || 0) : Array.from(selected).reduce((sum, id) => sum + deviceCount(id), 0);
+
+  const PLATFORM_LABELS = { ios: "iOS", android: "Android", web: "Web", total: "Tüm cihazlar" };
+
+  // Seçili platforma sahip işletmeler (cihaz sayısına göre azalan)
+  const detailOrgs = useMemo(() => {
+    if (!detailPlatform) return [];
+    const nameOf = (id) =>
+      orgs.find(o => o.organization_id === id)?.isletme_adi || orgNames[id] || "Bilinmeyen işletme";
+    return Object.entries(subCounts)
+      .map(([orgId, b]) => ({
+        orgId,
+        name: nameOf(orgId),
+        count: detailPlatform === "total" ? (b.total || 0) : (b[detailPlatform] || 0),
+      }))
+      .filter(o => o.count > 0)
+      .sort((a, b) => b.count - a.count);
+  }, [detailPlatform, subCounts, orgs, orgNames]);
 
   const applyPreset = (preset) => {
     setActivePreset(preset.id);
@@ -103,7 +143,9 @@ export default function SAPushBroadcast() {
       toast.error("En az bir işletme seçin veya 'Tüm işletmelere gönder' seçeneğini işaretleyin");
       return;
     }
-    const target = sendToAll ? `TÜM işletmelere (${orgs.length})` : `${selected.size} işletmeye`;
+    const target = sendToAll
+      ? `TÜM işletmelere (${totals.total} cihaz)`
+      : `${selected.size} işletmeye (${recipientCount} cihaz)`;
     if (!window.confirm(`Push bildirim ${target} gönderilecek. Emin misiniz?`)) return;
 
     setSending(true);
@@ -143,7 +185,7 @@ export default function SAPushBroadcast() {
             <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
               <Users className="w-4 h-4 text-indigo-500" />
               Alıcılar
-              <span className="text-xs font-normal text-gray-400">({recipientCount} seçili)</span>
+              <span className="text-xs font-normal text-gray-400">({recipientCount} cihaz)</span>
             </h3>
             <button onClick={load} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
               <RefreshCw className={`w-4 h-4 text-gray-500 ${loading ? "animate-spin" : ""}`} />
@@ -160,7 +202,10 @@ export default function SAPushBroadcast() {
               onChange={e => setSendToAll(e.target.checked)}
               className="w-4 h-4 accent-indigo-600"
             />
-            <span className="text-sm font-medium text-gray-800">Tüm işletmelere gönder ({orgs.length})</span>
+            <span className="text-sm font-medium text-gray-800">
+              Tüm işletmelere gönder
+              <span className="ml-1 text-xs font-normal text-gray-500">({totals.total} cihaz)</span>
+            </span>
           </label>
 
           {!sendToAll && (
@@ -194,25 +239,36 @@ export default function SAPushBroadcast() {
           ) : (
             filtered.map(org => {
               const checked = selected.has(org.organization_id);
+              const devices = deviceCount(org.organization_id);
+              const hasDevices = devices > 0;
               return (
                 <label
                   key={org.organization_id}
-                  className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
+                  className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${
                     checked ? "bg-indigo-50/60" : "hover:bg-gray-50"
-                  }`}
+                  } ${hasDevices ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
                 >
                   <input
                     type="checkbox"
                     checked={checked}
+                    disabled={!hasDevices}
                     onChange={() => toggleOrg(org.organization_id)}
                     className="w-4 h-4 accent-indigo-600 flex-shrink-0"
                   />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900 truncate">{org.isletme_adi}</p>
                     <p className="text-xs text-gray-400 truncate">
                       {org.admin_full_name && org.admin_full_name !== "-" ? org.admin_full_name : "İsimsiz yönetici"}
                     </p>
                   </div>
+                  <span
+                    title={hasDevices ? breakdownLabel(org.organization_id) : ""}
+                    className={`flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${
+                      hasDevices ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-400"
+                    }`}
+                  >
+                    {hasDevices ? breakdownLabel(org.organization_id) : "cihaz yok"}
+                  </span>
                 </label>
               );
             })
@@ -222,6 +278,40 @@ export default function SAPushBroadcast() {
 
       {/* Sağ: Bildirim içeriği */}
       <div className="space-y-4">
+        {/* Platform özeti — toplam kayıtlı cihazlar */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
+            <Smartphone className="w-4 h-4 text-indigo-500" />
+            Kayıtlı Cihazlar
+          </h3>
+          <div className="grid grid-cols-4 gap-3 text-center">
+            {[
+              { key: "ios", label: "iOS" },
+              { key: "android", label: "Android" },
+              { key: "web", label: "Web" },
+              { key: "total", label: "Toplam" },
+            ].map(({ key, label }) => {
+              const isTotal = key === "total";
+              const disabled = (totals[key] || 0) === 0;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setDetailPlatform(key)}
+                  className={`rounded-lg p-3 transition-colors ${
+                    isTotal ? "bg-indigo-50 hover:bg-indigo-100" : "bg-gray-50 hover:bg-gray-100"
+                  } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                >
+                  <p className={`text-xl font-bold ${isTotal ? "text-indigo-700" : "text-gray-900"}`}>{totals[key]}</p>
+                  <p className={`text-xs ${isTotal ? "text-indigo-600" : "text-gray-500"}`}>{label}</p>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-gray-400 mt-2 text-center">İşletme dökümü için bir kutuya dokunun.</p>
+        </div>
+
         {/* Hazır şablonlar */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-3">
           <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
@@ -303,7 +393,7 @@ export default function SAPushBroadcast() {
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            {sending ? "Gönderiliyor..." : `Bildirim Gönder (${recipientCount} işletme)`}
+            {sending ? "Gönderiliyor..." : `Bildirim Gönder (${recipientCount} cihaz)`}
           </button>
           <p className="text-xs text-gray-400">
             Bildirim, seçili işletmelerdeki tüm kayıtlı cihazlara (web + mobil) gönderilir.
@@ -334,6 +424,47 @@ export default function SAPushBroadcast() {
           </div>
         )}
       </div>
+
+      {/* Platform işletme dökümü modalı */}
+      {detailPlatform && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setDetailPlatform(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-indigo-500" />
+                {PLATFORM_LABELS[detailPlatform]} cihazı olan işletmeler
+                <span className="text-xs font-normal text-gray-400">({detailOrgs.length})</span>
+              </h3>
+              <button
+                onClick={() => setDetailPlatform(null)}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+              {detailOrgs.length === 0 ? (
+                <div className="p-6 text-center text-sm text-gray-400">İşletme bulunamadı</div>
+              ) : (
+                detailOrgs.map(o => (
+                  <div key={o.orgId} className="flex items-center justify-between px-4 py-2.5">
+                    <p className="text-sm font-medium text-gray-900 truncate pr-3">{o.name}</p>
+                    <span className="flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                      {o.count} cihaz
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
