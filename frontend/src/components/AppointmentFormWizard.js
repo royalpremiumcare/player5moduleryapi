@@ -89,6 +89,9 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     notes: "",
   });
 
+  // Çoklu hizmet seçimi (feature flag arkasında, yalnızca yeni randevuda)
+  const [selectedServiceIds, setSelectedServiceIds] = useState([]);
+
   // Data States
   const [availableSlots, setAvailableSlots] = useState([]);
   const [busySlots, setBusySlots] = useState([]);
@@ -136,6 +139,16 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         staff_member_id: appointment.staff_member_id || "",
         notes: appointment.notes || "",
       });
+      // Çoklu hizmet düzenleme: mevcut hizmet snapshot'larından seçim listesini kur
+      if (Array.isArray(appointment.services) && appointment.services.length > 0) {
+        const ordered = [...appointment.services]
+          .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+          .map((s) => s.service_id)
+          .filter(Boolean);
+        setSelectedServiceIds(ordered.length > 0 ? ordered : (appointment.service_id ? [appointment.service_id] : []));
+      } else if (appointment.service_id) {
+        setSelectedServiceIds([appointment.service_id]);
+      }
       setStep(3);
     }
   }, [appointment]);
@@ -190,6 +203,63 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   const isNewMultiPackage =
     !appointment && selectedService?.session_count && selectedService.session_count > 1;
   const wizardTotalSteps = isNewMultiPackage ? 4 : 3;
+
+  // Çoklu hizmet: org flag açıkken (hem yeni hem düzenleme randevusunda)
+  const multiServiceEnabled = settings?.multi_service_enabled === true;
+
+  // Etkin hizmet kimlikleri: çoklu modda seçim listesi, aksi halde tek service_id
+  const effectiveServiceIds = useMemo(() => {
+    if (multiServiceEnabled) return selectedServiceIds;
+    return formData.service_id ? [formData.service_id] : [];
+  }, [multiServiceEnabled, selectedServiceIds, formData.service_id]);
+
+  const selectedServiceObjs = useMemo(
+    () => effectiveServiceIds.map((id) => services.find((s) => s.id === id)).filter(Boolean),
+    [effectiveServiceIds, services]
+  );
+  const multiTotalPrice = useMemo(
+    () => selectedServiceObjs.reduce((sum, s) => sum + (Number(s.price) || 0), 0),
+    [selectedServiceObjs]
+  );
+  const multiTotalDuration = useMemo(
+    () => selectedServiceObjs.reduce((sum, s) => sum + (Number(s.duration) || 30), 0),
+    [selectedServiceObjs]
+  );
+
+  // Çoklu modda formData.service_id'yi ilk seçili hizmete senkronla
+  // (paket tespiti, geriye dönük alanlar ve fallback availability için)
+  useEffect(() => {
+    if (!multiServiceEnabled) return;
+    const first = selectedServiceIds[0] || "";
+    setFormData((prev) => (prev.service_id === first ? prev : { ...prev, service_id: first }));
+  }, [selectedServiceIds, multiServiceEnabled]);
+
+  // Çoklu modda hizmet seçim/kaldırma (paketler tek seçimliktir)
+  const handleServicePick = useCallback((service) => {
+    if (!multiServiceEnabled) {
+      setSelectedServiceIds([service.id]);
+      setFormData((prev) => ({ ...prev, service_id: service.id }));
+      setStep(2);
+      return;
+    }
+    const isPackage = service.session_count && service.session_count > 1;
+    if (isPackage) {
+      // Paket seçilince tek hizmete indir ve otomatik ilerle
+      setSelectedServiceIds([service.id]);
+      setStep(2);
+      return;
+    }
+    setSelectedServiceIds((prev) => {
+      const hasPackage = prev.some((id) => {
+        const s = services.find((x) => x.id === id);
+        return s?.session_count && s.session_count > 1;
+      });
+      const base = hasPackage ? [] : prev;
+      return base.includes(service.id)
+        ? base.filter((id) => id !== service.id)
+        : [...base, service.id];
+    });
+  }, [multiServiceEnabled, services]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -262,14 +332,20 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   }, [customers, debouncedCustomerSearchTerm, i18n.language]);
 
   useEffect(() => {
-    if (formData.service_id && allStaff.length > 0) {
-      let qualified = allStaff.filter(s => s.permitted_service_ids?.includes(formData.service_id));
+    if (effectiveServiceIds.length > 0 && allStaff.length > 0) {
+      // Çoklu hizmette: tüm seçili hizmetleri verebilen personeller (kesişim)
+      let qualified = allStaff.filter((s) => {
+        const permitted = new Set(s.permitted_service_ids || []);
+        return effectiveServiceIds.every((id) => permitted.has(id));
+      });
       if (settings && !settings.admin_provides_service) {
         qualified = qualified.filter(s => s.role !== 'admin');
       }
       setQualifiedStaff(qualified);
+    } else {
+      setQualifiedStaff([]);
     }
-  }, [formData.service_id, allStaff, settings]);
+  }, [effectiveServiceIds, allStaff, settings]);
 
   // --- API CALLS ---
 
@@ -299,10 +375,13 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   };
 
   const loadAvailableSlots = useCallback(async () => {
-    if (!formData.service_id || !formData.appointment_date || !settings) return;
+    if (effectiveServiceIds.length === 0 || !formData.appointment_date || !settings) return;
     try {
       const dateStr = format(formData.appointment_date, "yyyy-MM-dd");
-      const params = { service_id: formData.service_id, date: dateStr };
+      const params = { date: dateStr };
+      // Çoklu hizmette toplam süre + personel kesişimi için service_ids gönder
+      if (effectiveServiceIds.length > 1) params.service_ids = effectiveServiceIds.join(",");
+      else params.service_id = effectiveServiceIds[0];
       if (formData.staff_member_id) params.staff_id = formData.staff_member_id;
       if (appointment?.id) params.exclude_appointment_id = appointment.id;
 
@@ -323,7 +402,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       setBusySlots([]);
     }
   }, [
-    formData.service_id,
+    effectiveServiceIds,
     formData.appointment_date,
     formData.staff_member_id,
     settings,
@@ -333,10 +412,10 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   ]);
 
   useEffect(() => {
-    if (formData.service_id && formData.appointment_date && step === 3 && settings) {
+    if (effectiveServiceIds.length > 0 && formData.appointment_date && step === 3 && settings) {
       loadAvailableSlots();
     }
-  }, [loadAvailableSlots, step, availabilityNonce]);
+  }, [loadAvailableSlots, step, availabilityNonce, effectiveServiceIds]);
 
   // --- HANDLERS ---
 
@@ -486,6 +565,11 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       payload.staff_member_id = currentUser.username;
     }
     if (!payload.staff_member_id) delete payload.staff_member_id;
+    // Çoklu hizmet: service_ids gönder, tek service_id'yi kaldır (ambiguity önlenir)
+    if (multiServiceEnabled && effectiveServiceIds.length > 1) {
+      payload.service_ids = effectiveServiceIds;
+      delete payload.service_id;
+    }
     return payload;
   };
 
@@ -811,42 +895,44 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             className="pl-10 h-12 backdrop-blur-md bg-white/50 md:bg-white/75 border-black rounded-xl focus:ring-zinc-900 shadow-sm"
           />
         </div>
-      <div className="grid grid-cols-1 gap-3">
-        {visibleServices.map((service) => (
+      <div className={`grid grid-cols-1 gap-3 ${multiServiceEnabled && selectedServiceIds.length > 0 ? 'pb-28' : ''}`}>
+        {visibleServices.map((service) => {
+          const active = effectiveServiceIds.includes(service.id);
+          const isPackage = service.session_count && service.session_count > 1;
+          return (
           <div 
             key={service.id}
-            onClick={() => {
-              setFormData(prev => ({ ...prev, service_id: service.id }));
-              setStep(2);
-            }}
+            onClick={() => handleServicePick(service)}
             className={`group p-5 backdrop-blur-xl border rounded-2xl shadow-lg hover:shadow-xl cursor-pointer transition-[background-color,border-color,box-shadow] duration-200 active:scale-[0.99] flex justify-between items-center
-              ${formData.service_id === service.id 
+              ${active 
                 ? 'bg-zinc-900/90 border-zinc-900 text-white' 
                 : 'bg-white/40 md:bg-white/70 border-white/20 hover:bg-white/60 md:hover:bg-white/80 hover:border-white/40'}
             `}
           >
             <div>
-              <h3 className={`font-bold ${formData.service_id === service.id ? 'text-white' : 'text-zinc-900'}`}>
+              <h3 className={`font-bold ${active ? 'text-white' : 'text-zinc-900'}`}>
                 {service.name}
               </h3>
-              <p className={`text-sm mt-1 font-medium ${formData.service_id === service.id ? 'text-zinc-200' : 'text-zinc-500'}`}>
+              <p className={`text-sm mt-1 font-medium ${active ? 'text-zinc-200' : 'text-zinc-500'}`}>
 {i18n.language === 'en' ? `${currencySymbol}${Math.round(service.price)}` : `${Math.round(service.price)}${currencySymbol}`} • {service.duration || 30} {t('appointments.form.durationUnit')}
               </p>
-              {service.session_count && service.session_count > 1 && (
-                <span className={`inline-block text-xs mt-1.5 px-2 py-0.5 rounded-full font-bold ${formData.service_id === service.id ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-700'}`}>
+              {isPackage && (
+                <span className={`inline-block text-xs mt-1.5 px-2 py-0.5 rounded-full font-bold ${active ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-700'}`}>
                   {service.session_count} {i18n.language === 'tr' ? 'Seanslık Paket' : 'Session Package'}
                 </span>
               )}
             </div>
-            <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-300
-              ${formData.service_id === service.id 
+            <div className={`w-7 h-7 flex items-center justify-center transition-all duration-300 border-2
+              ${multiServiceEnabled && !isPackage ? 'rounded-md' : 'rounded-full'}
+              ${active 
                 ? 'border-white bg-white' 
                 : 'border-zinc-200 group-hover:border-zinc-400'}
             `}>
-              {formData.service_id === service.id && <Check className="w-4 h-4 text-zinc-900" strokeWidth={3} />}
+              {active && <Check className="w-4 h-4 text-zinc-900" strokeWidth={3} />}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1298,9 +1384,14 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
              <div className="flex justify-between items-center mb-4 text-sm">
                 <span className="text-zinc-500 font-bold uppercase tracking-wider">{t('common.total')}</span>
                 <span className="text-2xl font-black text-zinc-900">
-                   {i18n.language === 'en'
-                     ? `${currencySymbol}${Math.round(filteredServices.find(s => s.id === formData.service_id)?.price || 0)}`
-                     : `${Math.round(filteredServices.find(s => s.id === formData.service_id)?.price || 0)}${currencySymbol}`}
+                   {(() => {
+                     const total = effectiveServiceIds.length > 1
+                       ? multiTotalPrice
+                       : (filteredServices.find(s => s.id === formData.service_id)?.price || selectedService?.price || 0);
+                     return i18n.language === 'en'
+                       ? `${currencySymbol}${Math.round(total)}`
+                       : `${Math.round(total)}${currencySymbol}`;
+                   })()}
                 </span>
              </div>
              {isNewMultiPackage ? (
@@ -1346,6 +1437,35 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
                  )}
                </Button>
              )}
+          </div>
+        )}
+
+        {/* ADIM 1 ÇOKLU HİZMET: Sepet özeti + devam */}
+        {step === 1 && multiServiceEnabled && selectedServiceIds.length > 0 && !isNewMultiPackage && (
+          <div
+            className="px-6 pt-4 backdrop-blur-2xl bg-zinc-900 text-white border-t border-white/20 z-20 shrink-0 shadow-lg flex items-center gap-3"
+            style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
+          >
+            <div className="flex-1 leading-tight">
+              <div className="font-bold text-base">
+                {i18n.language === 'en'
+                  ? `${currencySymbol}${Math.round(multiTotalPrice)}`
+                  : `${Math.round(multiTotalPrice)}${currencySymbol}`}
+              </div>
+              <div className="text-xs text-zinc-300">
+                {selectedServiceIds.length} {i18n.language === 'en' ? 'services' : 'hizmet'}
+                {' · '}
+                {Math.floor(multiTotalDuration / 60) > 0 ? `${Math.floor(multiTotalDuration / 60)} ${i18n.language === 'en' ? 'h' : 'sa'} ` : ''}
+                {multiTotalDuration % 60 > 0 ? `${multiTotalDuration % 60} ${i18n.language === 'en' ? 'min' : 'dk'}` : (Math.floor(multiTotalDuration / 60) > 0 ? '' : `0 ${i18n.language === 'en' ? 'min' : 'dk'}`)}
+              </div>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setStep(2)}
+              className="bg-white hover:bg-zinc-100 text-zinc-900 font-bold h-12 px-6 rounded-xl"
+            >
+              {t('common.continue')}
+            </Button>
           </div>
         )}
       </div>

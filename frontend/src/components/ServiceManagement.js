@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Briefcase, Edit, Trash2, Plus, ArrowLeft, GripVertical } from "lucide-react";
+import { Briefcase, Edit, Trash2, Plus, ArrowLeft, GripVertical, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
@@ -42,7 +42,35 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const SortableServiceCard = ({ service, i18n, t, onEdit, onDelete }) => {
+const SortableCategoryRow = ({ category, t, onEdit, onDelete }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: category.id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+  return (
+    <div ref={setNodeRef} style={style}>
+      <div className={`flex items-center gap-3 p-3 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 shadow-sm transition-all ${isDragging ? 'opacity-80 ring-2 ring-blue-500 shadow-lg' : ''}`}>
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="p-1.5 -ml-1 rounded-lg text-zinc-400 hover:text-zinc-600 active:bg-white/50 touch-none transition-colors"
+          aria-label={t('services.management.dragToReorder', 'Sürükleyerek sırala')}
+        >
+          <GripVertical className="w-4 h-4" />
+        </button>
+        <Tag className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+        <span className="flex-1 min-w-0 text-sm font-bold text-zinc-900 truncate">{category.name}</span>
+        <Button onClick={() => onEdit(category)} size="sm" variant="outline" className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-lg font-bold shadow-sm h-8 px-2">
+          <Edit className="w-3.5 h-3.5" />
+        </Button>
+        <Button onClick={() => onDelete(category)} size="sm" variant="outline" className="text-red-600 hover:bg-red-50 backdrop-blur-md bg-white/60 border-white/40 hover:border-red-300 rounded-lg font-bold shadow-sm h-8 px-2">
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const SortableServiceCard = ({ service, categoryName, i18n, t, onEdit, onDelete }) => {
   const {
     attributes,
     listeners,
@@ -89,6 +117,11 @@ const SortableServiceCard = ({ service, i18n, t, onEdit, onDelete }) => {
                 {service.session_count && service.session_count > 1 && (
                   <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
                     {service.session_count} {i18n.language === 'tr' ? 'seans' : 'sessions'}
+                  </span>
+                )}
+                {categoryName && (
+                  <span className="text-xs bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded-full font-bold inline-flex items-center gap-1">
+                    <Tag className="w-3 h-3" />{categoryName}
                   </span>
                 )}
                 {service.payment_rule && service.payment_rule !== 'on_site' && (
@@ -140,19 +173,105 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
   const [showAssignReminder, setShowAssignReminder] = useState(false);
   const [lastAddedServiceName, setLastAddedServiceName] = useState("");
   const [editingService, setEditingService] = useState(null);
-  const [formData, setFormData] = useState({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2", paymentRule: "on_site", depositAmount: "" });
+  const [formData, setFormData] = useState({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2", paymentRule: "on_site", depositAmount: "", categoryId: "" });
   const [loading, setLoading] = useState(false);
   const [formErrors, setFormErrors] = useState({});
   const [settings, setSettings] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [orderedServices, setOrderedServices] = useState([]);
   const [reordering, setReordering] = useState(false);
+  // Kategoriler
+  const [categories, setCategories] = useState([]);
+  const [orderedCategories, setOrderedCategories] = useState([]);
+  const [categoryDialog, setCategoryDialog] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryName, setCategoryName] = useState("");
+  const [deleteCategoryDialog, setDeleteCategoryDialog] = useState(null);
+  const [savingCategory, setSavingCategory] = useState(false);
 
   useEffect(() => {
     setOrderedServices(Array.isArray(services) ? services : []);
   }, [services]);
 
+  useEffect(() => {
+    setOrderedCategories(Array.isArray(categories) ? categories : []);
+  }, [categories]);
+
   const serviceIds = useMemo(() => orderedServices.map((s) => s.id), [orderedServices]);
+  const categoryIds = useMemo(() => orderedCategories.map((c) => c.id), [orderedCategories]);
+  const categoryNameById = useMemo(() => {
+    const m = {};
+    categories.forEach((c) => { m[c.id] = c.name; });
+    return m;
+  }, [categories]);
+
+  const loadCategories = async () => {
+    try {
+      const res = await api.get("/categories");
+      setCategories(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      console.error("Kategoriler yüklenemedi:", e);
+    }
+  };
+
+  useEffect(() => { loadCategories(); }, []);
+
+  const handleCategorySubmit = async (e) => {
+    e.preventDefault();
+    if (!categoryName.trim()) return;
+    setSavingCategory(true);
+    try {
+      if (editingCategory) {
+        await api.put(`/categories/${editingCategory.id}`, { name: categoryName.trim() });
+        toast.success(t('services.categories.updated', 'Kategori güncellendi'));
+      } else {
+        await api.post('/categories', { name: categoryName.trim() });
+        toast.success(t('services.categories.added', 'Kategori eklendi'));
+      }
+      setCategoryDialog(false);
+      setCategoryName("");
+      setEditingCategory(null);
+      await loadCategories();
+    } catch (error) {
+      toast.error(t('services.categories.saveFailed', 'Kategori kaydedilemedi'));
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const handleCategoryDelete = async (categoryId) => {
+    try {
+      await api.delete(`/categories/${categoryId}`);
+      toast.success(t('services.categories.deleted', 'Kategori silindi'));
+      setDeleteCategoryDialog(null);
+      await loadCategories();
+      onRefresh();
+    } catch (error) {
+      toast.error(t('services.categories.deleteFailed', 'Kategori silinemedi'));
+    }
+  };
+
+  const persistCategoryOrder = async (next) => {
+    try {
+      await api.post('/categories/reorder', { category_ids: next.map((c) => c.id) });
+      await loadCategories();
+    } catch (error) {
+      await loadCategories();
+    }
+  };
+
+  const handleCategoryDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setOrderedCategories((prev) => {
+      const oldIndex = prev.findIndex((c) => c.id === active.id);
+      const newIndex = prev.findIndex((c) => c.id === over.id);
+      if (oldIndex < 0 || newIndex < 0) return prev;
+      const next = arrayMove(prev, oldIndex, newIndex);
+      persistCategoryOrder(next);
+      return next;
+    });
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -168,7 +287,8 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       isSessionPackage: !!(service.session_count && service.session_count > 1),
       sessionCount: (service.session_count && service.session_count > 1) ? service.session_count.toString() : "2",
       paymentRule: service.payment_rule || "on_site",
-      depositAmount: service.deposit_amount ? service.deposit_amount.toString() : ""
+      depositAmount: service.deposit_amount ? service.deposit_amount.toString() : "",
+      categoryId: service.category_id || ""
     });
     setFormErrors({});
     setShowDialog(true);
@@ -204,7 +324,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
 
   const handleNew = () => {
     setEditingService(null);
-    setFormData({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2", paymentRule: "on_site", depositAmount: "" });
+    setFormData({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2", paymentRule: "on_site", depositAmount: "", categoryId: "" });
     setFormErrors({});
     setShowDialog(true);
   };
@@ -260,7 +380,8 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
         name: formData.name, price, duration, 
         session_count: formData.isSessionPackage ? parseInt(formData.sessionCount) : null,
         payment_rule: formData.paymentRule || "on_site",
-        deposit_amount: formData.paymentRule === "deposit" ? parseFloat(formData.depositAmount) || null : null
+        deposit_amount: formData.paymentRule === "deposit" ? parseFloat(formData.depositAmount) || null : null,
+        category_id: formData.categoryId || null
       };
       
       if (editingService) {
@@ -276,7 +397,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       }
       
       setShowDialog(false);
-      setFormData({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2", paymentRule: "on_site", depositAmount: "" });
+      setFormData({ name: "", price: "", duration: "30", isSessionPackage: false, sessionCount: "2", paymentRule: "on_site", depositAmount: "", categoryId: "" });
       onRefresh();
     } catch (error) {
       toast.error(t('services.management.operationFailed'));
@@ -358,6 +479,48 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
         </div>
       </div>
 
+      {/* KART: Kategoriler */}
+      <div className="px-4 pt-4 pb-4">
+        <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-black text-zinc-900 mb-1">{t('services.categories.title', 'Kategoriler')}</h3>
+                <p className="text-sm text-zinc-600 font-medium">{t('services.categories.subtitle', 'Hizmetlerinizi gruplayın ve müşteri sayfasındaki sırayı belirleyin')}</p>
+              </div>
+              <Button
+                onClick={() => { setEditingCategory(null); setCategoryName(""); setCategoryDialog(true); }}
+                size="sm"
+                className="bg-zinc-900 hover:bg-black rounded-xl font-bold shadow-md flex-shrink-0"
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                {t('services.categories.add', 'Kategori')}
+              </Button>
+            </div>
+
+            {orderedCategories.length === 0 ? (
+              <p className="text-sm text-zinc-500 font-medium py-2">{t('services.categories.empty', 'Henüz kategori yok. İsteğe bağlıdır.')}</p>
+            ) : (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCategoryDragEnd}>
+                <SortableContext items={categoryIds} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-2">
+                    {orderedCategories.map((category) => (
+                      <SortableCategoryRow
+                        key={category.id}
+                        category={category}
+                        t={t}
+                        onEdit={(c) => { setEditingCategory(c); setCategoryName(c.name); setCategoryDialog(true); }}
+                        onDelete={setDeleteCategoryDialog}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* KART: Online Randevu Ayarları */}
       <div className="px-4 pt-4 pb-4">
         <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
@@ -397,6 +560,21 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                   disabled={savingSettings || !settings}
                 />
               </div>
+
+              <div className="flex items-center justify-between p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 shadow-sm">
+                <div className="flex-1">
+                  <Label htmlFor="multi-service" className="text-sm font-bold text-zinc-900 cursor-pointer">
+                    {t('services.management.multiService', 'Çoklu Hizmet Seçimi')}
+                  </Label>
+                  <p className="text-xs text-zinc-600 mt-1 font-medium">{t('services.management.multiServiceNote', 'Müşteriler tek randevuda birden fazla hizmet seçebilir')}</p>
+                </div>
+                <Switch
+                  id="multi-service"
+                  checked={settings?.multi_service_enabled === true}
+                  onCheckedChange={(checked) => handleSettingsChange("multi_service_enabled", checked)}
+                  disabled={savingSettings || !settings}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -422,6 +600,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                   <SortableServiceCard
                     key={service.id}
                     service={service}
+                    categoryName={service.category_id ? categoryNameById[service.category_id] : null}
                     i18n={i18n}
                     t={t}
                     onEdit={handleEdit}
@@ -517,6 +696,22 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 : <p className="text-xs text-zinc-500 font-medium">{t('services.management.durationNote')}</p>
               }
             </div>
+            {categories.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="service-category" className="text-sm font-bold text-zinc-700">{t('services.categories.label', 'Kategori')}</Label>
+                <select
+                  id="service-category"
+                  value={formData.categoryId}
+                  onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                  className="w-full backdrop-blur-md bg-white/60 border border-white/40 rounded-xl h-11 px-3 text-sm font-medium text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                >
+                  <option value="">{t('services.categories.none', 'Kategorisiz')}</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {/* Section: Paket Tipi */}
             <div className="flex items-center gap-3 pt-2">
               <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
@@ -719,6 +914,64 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
             <AlertDialogAction
               data-testid="confirm-delete-service"
               onClick={() => handleDelete(deleteDialog?.id)}
+              className="bg-red-500 hover:bg-red-600 rounded-xl font-bold shadow-lg"
+            >
+              {t('common.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Category Dialog */}
+      <Dialog open={categoryDialog} onOpenChange={setCategoryDialog}>
+        <DialogContent className="max-w-md backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black text-zinc-900">
+              {editingCategory ? t('services.categories.editTitle', 'Kategori Düzenle') : t('services.categories.addTitle', 'Kategori Ekle')}
+            </DialogTitle>
+            <DialogDescription className="text-zinc-600 font-medium">
+              {t('services.categories.dialogDescription', 'Hizmetlerinizi gruplamak için bir kategori adı girin')}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCategorySubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="category-name" className="text-sm font-bold text-zinc-700">{t('services.categories.label', 'Kategori')}</Label>
+              <Input
+                id="category-name"
+                value={categoryName}
+                onChange={(e) => setCategoryName(e.target.value)}
+                placeholder={t('services.categories.placeholder', 'Örn: Saç Hizmetleri')}
+                required
+                className="backdrop-blur-md bg-white/60 border border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCategoryDialog(false)} className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-11 font-bold">
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" disabled={savingCategory} className="bg-zinc-900 hover:bg-black rounded-xl h-11 font-bold shadow-lg">
+                {savingCategory ? t('settings.profile.buttons.saving') : t('common.save')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Category Delete Confirmation */}
+      <AlertDialog open={!!deleteCategoryDialog} onOpenChange={() => setDeleteCategoryDialog(null)}>
+        <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-black text-zinc-900">{t('services.categories.deleteTitle', 'Kategoriyi Sil')}</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-600 font-medium">
+              {t('services.categories.deleteDescription', 'Bu kategori silinecek. Bağlı hizmetler kategorisiz kalacak (silinmez).')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold">
+              {t('common.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleCategoryDelete(deleteCategoryDialog?.id)}
               className="bg-red-500 hover:bg-red-600 rounded-xl font-bold shadow-lg"
             >
               {t('common.delete')}

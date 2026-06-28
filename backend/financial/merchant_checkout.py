@@ -254,6 +254,250 @@ async def create_customer_checkout_session(
     }
 
 
+def _resolve_service_price_minor(service: Dict[str, Any]) -> int:
+    p = service.get("price_minor", 0)
+    if not p and service.get("price"):
+        p = int(round(service["price"] * 100))
+    return p
+
+
+def _compute_service_amounts(
+    base_currency: str,
+    tier: str,
+    fee_preference: str,
+    service: Dict[str, Any],
+    session_count: int,
+) -> Dict[str, Any]:
+    """Tek bir hizmet için müşteri/merchant/komisyon tutarlarını hesaplar (Akıllı D toplamı için)."""
+    service_price_minor = _resolve_service_price_minor(service)
+    deposit_rule = _build_deposit_rule(service)
+
+    gross_up_enabled = is_env_flag_enabled("FEATURE_GROSS_UP")
+    gross_up_result = None
+    if gross_up_enabled:
+        try:
+            gross_up_result = compute_customer_price(
+                base_currency=base_currency,
+                service_price_minor=service_price_minor,
+                fee_preference=fee_preference,
+                tier=tier,
+                deposit_rule=deposit_rule,
+            )
+        except GrossUpError as ge:
+            logger.error("multi gross-up failed, legacy fallback: %s", ge)
+            gross_up_result = None
+
+    fee_result = calculate_fee(
+        base_currency=base_currency,
+        service_price_minor=service_price_minor,
+        fee_preference=fee_preference,
+        tier=tier,
+        deposit_rule=deposit_rule,
+        session_count=session_count,
+    )
+
+    if gross_up_result is not None:
+        return {
+            "customer": gross_up_result.customer_price_minor,
+            "net": gross_up_result.merchant_net_minor,
+            "platform": gross_up_result.platform_fee_minor,
+            "processor": gross_up_result.stripe_fee_minor,
+            "payout": gross_up_result.wise_fee_minor,
+            "service_price_minor": service_price_minor,
+            "stripe_currency": fee_result.stripe_currency,
+            "fee_rate_bps": fee_result.fee_rate_bps,
+            "gross_up": True,
+        }
+    return {
+        "customer": fee_result.gross_minor,
+        "net": fee_result.net_minor,
+        "platform": fee_result.fee_minor,
+        "processor": 0,
+        "payout": 0,
+        "service_price_minor": service_price_minor,
+        "stripe_currency": fee_result.stripe_currency,
+        "fee_rate_bps": fee_result.fee_rate_bps,
+        "gross_up": False,
+    }
+
+
+async def create_multi_service_checkout_session(
+    db,
+    organization_id: str,
+    service_ids: list,
+    appointment_id: str,
+    customer_phone: str,
+    customer_name: str = "",
+) -> Dict[str, Any]:
+    """Akıllı D: Çoklu hizmet için TEK line item'lı toplu kapora/ödeme Checkout Session.
+
+    Her hizmetin müşteri tutarı ayrı ayrı hesaplanır, toplanır ve Stripe'a tek
+    kalem ("Randevu Ödemesi (N Hizmet)") olarak gönderilir. service_ids ve
+    service_names metadata'da saklanır (webhook + dashboard okunabilirliği).
+    """
+    settings = await db.settings.find_one({"organization_id": organization_id})
+    if not settings:
+        raise ValueError(f"Settings not found for org: {organization_id}")
+
+    base_currency = settings.get("base_currency", "TRY")
+    tier = settings.get("payout_tier", "standard")
+    fee_preference = settings.get("fee_preference", "seller_pays")
+    merchant_slug = settings.get("slug", "")
+    company_name = settings.get("company_name", "İşletme")
+
+    docs = await db.services.find(
+        {"id": {"$in": service_ids}, "organization_id": organization_id}
+    ).to_list(len(service_ids))
+    by_id = {d["id"]: d for d in docs}
+    ordered = [by_id[sid] for sid in service_ids if sid in by_id]
+    if len(ordered) != len(service_ids):
+        raise ValueError("One or more services not found")
+
+    total_customer = 0
+    total_net = 0
+    total_platform = 0
+    total_processor = 0
+    total_payout = 0
+    total_service_price = 0
+    stripe_currency = None
+    fee_rate_bps = 0
+    any_gross_up = False
+    service_names = []
+    for svc in ordered:
+        amt = _compute_service_amounts(base_currency, tier, fee_preference, svc, 1)
+        total_customer += amt["customer"]
+        total_net += amt["net"]
+        total_platform += amt["platform"]
+        total_processor += amt["processor"]
+        total_payout += amt["payout"]
+        total_service_price += amt["service_price_minor"]
+        stripe_currency = amt["stripe_currency"]
+        fee_rate_bps = amt["fee_rate_bps"]
+        any_gross_up = any_gross_up or amt["gross_up"]
+        service_names.append(svc.get("name", "Hizmet"))
+
+    if total_customer <= 0:
+        return {
+            "payment_required": False,
+            "payment_rule": "on_site",
+            "message": "Bu hizmetler için online ödeme gerekmez.",
+        }
+
+    custom_text_note = (
+        "Platform hizmet bedeli iade kapsamı dışındadır. "
+        "PLANNAPP LTD adına tahsil edilmektedir."
+    ) if base_currency == "TRY" else (
+        "Platform service fee is non-refundable. "
+        "Collected on behalf of PLANNAPP LTD."
+    )
+
+    n = len(ordered)
+    product_name = (
+        f"Randevu Ödemesi ({n} Hizmet) - {company_name}"
+        if base_currency == "TRY"
+        else f"Appointment Payment ({n} services) - {company_name}"
+    )
+    product_data = {
+        "name": product_name,
+        "description": " + ".join(service_names)[:480],
+    }
+    logo = settings.get("logo_url") or ""
+    if logo:
+        product_data["images"] = [logo if logo.startswith("http") else f"https://plannapp.co{logo}"]
+    else:
+        product_data["images"] = ["https://plannapp.co/api/static/logo.png"]
+
+    stripe_session = stripe.checkout.Session.create(
+        payment_method_types=["card"],
+        mode="payment",
+        line_items=[{
+            "price_data": {
+                "currency": stripe_currency,
+                "unit_amount": total_customer,
+                "product_data": product_data,
+            },
+            "quantity": 1,
+        }],
+        custom_text={"submit": {"message": custom_text_note}},
+        metadata={
+            "organization_id": organization_id,
+            "appointment_id": appointment_id,
+            "service_id": service_ids[0],
+            "service_ids": ",".join(service_ids),
+            "service_names": ",".join(service_names)[:480],
+            "customer_phone": customer_phone,
+            "base_currency": base_currency,
+            "fee_preference": fee_preference,
+            "fee_minor": str(total_platform),
+            "net_minor": str(total_net),
+            "customer_price_minor": str(total_customer),
+            "merchant_net_minor": str(total_net),
+            "platform_fee_minor": str(total_platform),
+            "stripe_fee_minor": str(total_processor),
+            "wise_fee_minor": str(total_payout),
+            "gross_up_applied": "true" if any_gross_up else "false",
+            "session_count": "1",
+            "payment_rule": "deposit",
+            "is_merchant_payment": "true",
+            "is_multi_service": "true",
+        },
+        success_url=f"https://plannapp.co/{merchant_slug}?payment=success&session_id={{CHECKOUT_SESSION_ID}}" if merchant_slug else PAYMENT_SUCCESS_URL + "?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url=f"https://plannapp.co/{merchant_slug}?payment=cancelled" if merchant_slug else PAYMENT_CANCEL_URL,
+        allow_promotion_codes=True,
+    )
+
+    session_group_id = None
+    if appointment_id:
+        apt = await db.appointments.find_one({"id": appointment_id}, {"session_group_id": 1})
+        if apt:
+            session_group_id = apt.get("session_group_id")
+
+    tx_doc = await create_transaction(
+        db=db,
+        organization_id=organization_id,
+        base_currency=base_currency,
+        tx_type="payment",
+        amount_display_minor=total_net,
+        fee_amount_minor=total_platform,
+        fee_rate_bps=fee_rate_bps,
+        fee_preference=fee_preference,
+        appointment_id=appointment_id,
+        customer_phone=customer_phone,
+        stripe_checkout_session_id=stripe_session.id,
+        customer_name=customer_name,
+        session_group_id=session_group_id,
+        customer_price_minor=total_customer,
+        merchant_net_minor=total_net,
+        platform_fee_minor=total_platform,
+        stripe_fee_minor=total_processor,
+        wise_fee_minor=total_payout,
+        gross_up_applied=any_gross_up,
+        service_price_minor=total_service_price,
+    )
+
+    logger.info(
+        "Multi-service checkout created: org=%s session=%s services=%d customer_price=%d",
+        organization_id, stripe_session.id, n, total_customer,
+    )
+
+    return {
+        "payment_required": True,
+        "checkout_url": stripe_session.url,
+        "session_id": stripe_session.id,
+        "transaction_id": tx_doc["id"],
+        "gross_minor": total_customer,
+        "net_minor": total_net,
+        "fee_minor": total_platform,
+        "customer_price_minor": total_customer,
+        "merchant_net_minor": total_net,
+        "platform_fee_minor": total_platform,
+        "stripe_fee_minor": total_processor,
+        "wise_fee_minor": total_payout,
+        "gross_up_applied": any_gross_up,
+        "base_currency": base_currency,
+    }
+
+
 async def create_payment_link_session(
     db,
     organization_id: str,

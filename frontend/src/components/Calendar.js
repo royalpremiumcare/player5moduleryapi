@@ -320,6 +320,16 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
     };
   }, []);
 
+  // Çoklu hizmette kompakt etiket: "Saç (+2)"; aksi halde tam isim
+  const serviceDisplayName = (apt) => {
+    if (Array.isArray(apt?.services) && apt.services.length > 1) {
+      const sorted = [...apt.services].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+      const first = sorted[0]?.name_snapshot || apt.service_name;
+      return `${first} (+${apt.services.length - 1})`;
+    }
+    return apt?.service_name;
+  };
+
   const getStaffName = (staffId) => {
     // Eğer ayarlar kapalıysa (customer_can_choose_staff ve admin_provides_service kapalı), personel bilgisi gösterilmemeli
     if (settings && !settings.customer_can_choose_staff && !settings.admin_provides_service) {
@@ -529,7 +539,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                       </div>
                     </div>
                     <p className="text-sm font-semibold text-gray-900 truncate">{apt.customer_name}</p>
-                    <p className="text-xs text-gray-600 truncate">{apt.service_name}</p>
+                    <p className="text-xs text-gray-600 truncate">{serviceDisplayName(apt)}</p>
                     {(userRole === 'admin' || canViewAll) && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
                       <div className="flex items-center gap-1 mt-1">
                         <User className="w-3 h-3 text-gray-500 flex-shrink-0" />
@@ -619,7 +629,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                       </div>
                     </div>
                     <p className="font-semibold text-base sm:text-xs text-gray-900 mb-1 truncate">{apt.customer_name}</p>
-                    <p className="text-sm sm:text-xs text-gray-600 truncate">{apt.service_name}</p>
+                    <p className="text-sm sm:text-xs text-gray-600 truncate">{serviceDisplayName(apt)}</p>
                     {(userRole === 'admin' || canViewAll) && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
                       <div className="flex items-center gap-1 mt-2 sm:mt-1">
                         <User className="w-4 h-4 sm:w-3 sm:h-3 text-gray-500 flex-shrink-0" />
@@ -793,7 +803,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                   </div>
                 </div>
                 <p className="text-base sm:text-base font-semibold text-gray-900 mb-1 sm:mb-1 truncate">{apt.customer_name}</p>
-                <p className="text-sm sm:text-sm text-gray-600 mb-2 sm:mb-2 truncate">{apt.service_name}</p>
+                <p className="text-sm sm:text-sm text-gray-600 mb-2 sm:mb-2 truncate">{serviceDisplayName(apt)}</p>
                 {(userRole === 'admin' || canViewAll) && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
                   <div className="flex items-center gap-2 mt-2 sm:mt-2">
                     <User className="w-4 h-4 sm:w-4 sm:h-4 text-gray-500 flex-shrink-0" />
@@ -971,10 +981,31 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
 
               {/* Randevu Detayları */}
               <div className="space-y-3 pt-3 border-t border-gray-200">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">{t('appointments.fields.service')}</span>
-                  <span className="text-sm font-semibold text-gray-900">{selectedAppointment.service_name}</span>
-                </div>
+                {Array.isArray(selectedAppointment.services) && selectedAppointment.services.length > 1 ? (
+                  <div className="space-y-2">
+                    <span className="text-sm text-gray-600">{t('appointments.fields.service')}</span>
+                    <div className="space-y-1.5 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                      {[...selectedAppointment.services]
+                        .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+                        .map((svc, idx) => (
+                          <div key={`${svc.service_id}-${idx}`} className="flex items-center justify-between gap-2">
+                            <span className="text-sm text-gray-900 flex items-center gap-2 min-w-0">
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-zinc-900 text-white text-[10px] font-bold flex-shrink-0">{idx + 1}</span>
+                              <span className="truncate">{svc.name_snapshot}</span>
+                            </span>
+                            <span className="text-xs text-gray-500 flex-shrink-0">
+                              {svc.duration_snapshot} {i18n.language === 'tr' ? 'dk' : 'min'} · {Math.round(svc.price_snapshot).toLocaleString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB')} {i18n.language === 'tr' ? '₺' : '£'}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">{t('appointments.fields.service')}</span>
+                    <span className="text-sm font-semibold text-gray-900">{selectedAppointment.service_name}</span>
+                  </div>
+                )}
                 
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">{t('appointments.fields.date')}</span>
@@ -1159,7 +1190,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
                           </div>
                         </div>
                         <p className="text-base font-semibold text-gray-900 mb-1">{apt.customer_name}</p>
-                        <p className="text-sm text-gray-600 mb-2">{apt.service_name}</p>
+                        <p className="text-sm text-gray-600 mb-2">{serviceDisplayName(apt)}</p>
                         {(userRole === 'admin' || canViewAll) && apt.staff_member_id && getStaffName(apt.staff_member_id) && (
                           <div className="flex items-center gap-1 mt-2">
                             <User className="w-4 h-4 text-gray-500 flex-shrink-0" />

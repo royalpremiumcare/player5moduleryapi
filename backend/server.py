@@ -2122,6 +2122,34 @@ async def create_audit_log(
     except Exception as e:
         logger.error(f"Failed to create audit log: {e}")
 
+# === ÇOKLU HİZMET: Cache Invalidation Yardımcıları ===
+async def _invalidate_redis_pattern(request: Request, pattern: str):
+    """Belirtilen pattern'e uyan tüm Redis anahtarlarını siler."""
+    redis_client = getattr(request.app.state, 'redis_client', None) if hasattr(request, 'app') else None
+    if not redis_client:
+        return
+    try:
+        keys = await redis_client.keys(pattern)
+        if keys:
+            await redis_client.delete(*keys)
+            logging.info(f"🧹 CACHE TEMİZLENDİ: {len(keys)} anahtar (pattern: {pattern})")
+    except Exception as e:
+        logging.error(f"Redis pattern silme hatası ({pattern}): {e}")
+
+async def invalidate_fee_cache(request: Request, org_id: str):
+    """Fee-preview cache'ini (org bazlı) temizler. Fiyat/komisyon/kur değişiminde çağrılmalı."""
+    await _invalidate_redis_pattern(request, f"plann:fee:{org_id}:*")
+
+async def invalidate_availability_cache(request: Request, org_id: str):
+    """Availability cache'ini (org bazlı) temizler. Randevu create/update/delete'te çağrılmalı."""
+    await _invalidate_redis_pattern(request, f"plann:avail:{org_id}:*")
+
+async def invalidate_service_caches(request: Request, org_id: str):
+    """Hizmet/kategori değişiminde fee + availability cache'ini birlikte temizler."""
+    await invalidate_fee_cache(request, org_id)
+    await invalidate_availability_cache(request, org_id)
+
+
 # === VERİ MODELLERİ (Aynı kaldı) ===
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -2141,16 +2169,32 @@ class PlanUpdateRequest(BaseModel):
     currency: Optional[str] = None  # 'gbp' veya 'try' - otomatik algılanır
 class ContactRequest(BaseModel): name: str = Field(..., min_length=1); phone: str = Field(..., min_length=10); email: Optional[str] = None; message: Optional[str] = None
 class ContactStatusUpdate(BaseModel): status: Literal["pending", "contacted", "resolved"]
+# === Hizmet Kategorileri ===
+class Category(BaseModel):
+    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); name: str; order: Optional[int] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+class CategoryCreate(BaseModel): name: str; order: Optional[int] = None
+class CategoryUpdate(BaseModel): name: Optional[str] = None; order: Optional[int] = None
 class Service(BaseModel):
-    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); name: str; price: float; duration: int = 30; order: Optional[int] = None; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-class ServiceCreate(BaseModel): name: str; price: float; duration: int = 30; order: Optional[int] = None; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None
-class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[float] = None; duration: Optional[int] = None; order: Optional[int] = None; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None
+    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); name: str; price: float; duration: int = 30; order: Optional[int] = None; category_id: Optional[str] = None; version: int = 1; is_active: bool = True; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+class ServiceCreate(BaseModel): name: str; price: float; duration: int = 30; order: Optional[int] = None; category_id: Optional[str] = None; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None
+class ServiceUpdate(BaseModel): name: Optional[str] = None; price: Optional[float] = None; duration: Optional[int] = None; order: Optional[int] = None; category_id: Optional[str] = None; session_count: Optional[int] = None; payment_rule: Optional[str] = None; deposit_percentage: Optional[int] = None; deposit_amount: Optional[float] = None
+# === Çoklu Hizmet: değişmez (immutable) snapshot kalemi ===
+class AppointmentService(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    service_id: str
+    sequence: int = 0          # uygulanma sırası (order/sort_order DEĞİL)
+    name_snapshot: str
+    slug_snapshot: Optional[str] = None  # analytics için stabil anahtar (örn. "hair-cut")
+    duration_snapshot: int = 30
+    price_snapshot: float = 0.0
+    service_version: int = 1   # hizmet sürümü (Haircut v3/v4 takibi)
+
 class Appointment(BaseModel):
-    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None; source: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None; refund_eligible: Optional[bool] = None
+    model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); customer_name: str; phone: str; service_id: str; service_name: str; service_price: float; appointment_date: str; appointment_time: str; notes: str = ""; status: str = "Bekliyor"; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc)); completed_at: Optional[str] = None; service_duration: Optional[int] = None; source: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None; refund_eligible: Optional[bool] = None; services: Optional[List[AppointmentService]] = None; selection_type: str = "INDIVIDUAL"
 class AppointmentCreate(BaseModel):
-    customer_name: str; phone: str; service_id: str; appointment_date: str; appointment_time: str; notes: str = ""; staff_member_id: Optional[str] = None; turnstile_token: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None; skip_confirmation_whatsapp: bool = False
+    customer_name: str; phone: str; service_id: Optional[str] = None; service_ids: Optional[List[str]] = None; appointment_date: str; appointment_time: str; notes: str = ""; staff_member_id: Optional[str] = None; turnstile_token: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None; skip_confirmation_whatsapp: bool = False
 class AppointmentUpdate(BaseModel):
-    customer_name: Optional[str] = None; phone: Optional[str] = None; address: Optional[str] = None; service_id: Optional[str] = None; appointment_date: Optional[str] = None; appointment_time: Optional[str] = None; notes: Optional[str] = None; status: Optional[str] = None; staff_member_id: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None
+    customer_name: Optional[str] = None; phone: Optional[str] = None; address: Optional[str] = None; service_id: Optional[str] = None; service_ids: Optional[List[str]] = None; appointment_date: Optional[str] = None; appointment_time: Optional[str] = None; notes: Optional[str] = None; status: Optional[str] = None; staff_member_id: Optional[str] = None; session_group_id: Optional[str] = None; session_number: Optional[int] = None; session_total: Optional[int] = None; payment_status: Optional[str] = None
 class Transaction(BaseModel):
     model_config = ConfigDict(extra="ignore"); organization_id: str; id: str = Field(default_factory=lambda: str(uuid.uuid4())); appointment_id: str; customer_name: str; service_name: str; amount: float; date: str; staff_member_id: Optional[str] = None; created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 class TransactionUpdate(BaseModel): amount: float
@@ -2175,6 +2219,7 @@ class Settings(BaseModel):
     logo_url: Optional[str] = None; sms_reminder_hours: float = 1.0; sector: Optional[str] = None; admin_provides_service: bool = False
     images: List[str] = Field(default_factory=list)
     show_service_duration_on_public: bool = True; show_service_price_on_public: bool = True
+    multi_service_enabled: bool = False
     break_limit_minutes: int = 60; break_limit_count: int = 2
     location: Optional[BusinessLocation] = None
     business_hours: Optional[dict] = Field(default_factory=lambda: {
@@ -4423,22 +4468,38 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
     query = {"id": appointment_id, "organization_id": current_user.organization_id}; appointment = await db.appointments.find_one(query, {"_id": 0})
     if not appointment: raise HTTPException(status_code=404, detail="Randevu bulunamadı")
     update_data = {k: v for k, v in appointment_update.model_dump().items() if v is not None}
+    # Çoklu hizmet güncellemesi: service_id veya service_ids geldiyse snapshot + toplam değerleri yeniden kur
+    if 'service_ids' in update_data or 'service_id' in update_data:
+        _settings_flag = await db.settings.find_one({"organization_id": current_user.organization_id}, {"_id": 0, "multi_service_enabled": 1})
+        _multi_enabled = bool((_settings_flag or {}).get("multi_service_enabled", False))
+        _snap, _tot_dur, _tot_price, _merged, _ids = await resolve_services(
+            db, current_user.organization_id, appointment_update, multi_enabled=_multi_enabled
+        )
+        update_data.pop('service_ids', None)
+        update_data['service_id'] = _ids[0]
+        update_data['services'] = _snap
+        update_data['service_name'] = _merged['name']
+        update_data['service_price'] = _merged['price']
+        update_data['service_duration'] = _merged['duration']
     # Tarih/saat veya personel değişikliği varsa çakışma kontrolü yap
     if 'appointment_date' in update_data or 'appointment_time' in update_data or 'staff_member_id' in update_data:
         check_date = update_data.get('appointment_date', appointment['appointment_date'])
         check_time = update_data.get('appointment_time', appointment['appointment_time'])
         check_staff = update_data.get('staff_member_id', appointment.get('staff_member_id'))
 
-        # Hizmet süresini bul (güncelleniyorsa yeni hizmet, değilse mevcut)
-        check_service_id = update_data.get('service_id', appointment.get('service_id'))
-        service_duration = appointment.get('service_duration') or 30
-        if check_service_id:
-            service_doc = await db.services.find_one(
-                {"id": check_service_id, "organization_id": current_user.organization_id},
-                {"_id": 0, "duration": 1}
-            )
-            if service_doc and service_doc.get('duration'):
-                service_duration = service_doc.get('duration')
+        # Hizmet süresini bul: çoklu hizmet güncellemesinde update_data'daki toplam süre kullanılır
+        if 'service_duration' in update_data:
+            service_duration = update_data['service_duration']
+        else:
+            check_service_id = update_data.get('service_id', appointment.get('service_id'))
+            service_duration = appointment.get('service_duration') or 30
+            if check_service_id:
+                service_doc = await db.services.find_one(
+                    {"id": check_service_id, "organization_id": current_user.organization_id},
+                    {"_id": 0, "duration": 1}
+                )
+                if service_doc and service_doc.get('duration'):
+                    service_duration = service_doc.get('duration')
 
         # Yeni randevunun bitiş saatini hesapla
         new_start_hour, new_start_minute = map(int, check_time.split(':'))
@@ -4454,7 +4515,8 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
                 "id": {"$ne": appointment_id},
                 "staff_member_id": check_staff,
                 "appointment_date": check_date,
-                "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled"]}
+                # Müsaitlik ile tutarlı: ödeme bekleyen/iptal slotları çakışma saymaz
+                "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled", "Ödeme Bekleniyor"]}
             },
             {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1}
         ).to_list(200)
@@ -4501,9 +4563,6 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
                 status_code=400,
                 detail=f"Bu personelin {check_date} tarihinde {check_time} saatinde mola var. Lütfen başka bir saat seçin."
             )
-    if 'service_id' in update_data:
-        service_query = {"id": update_data['service_id'], "organization_id": current_user.organization_id}; service = await db.services.find_one(service_query, {"_id": 0})
-        if service: update_data['service_name'] = service['name']; update_data['service_price'] = service['price']
     new_status = update_data.get('status'); old_status = appointment['status']
     if new_status == 'Tamamlandı' and old_status != 'Tamamlandı':
         update_data['completed_at'] = datetime.now(timezone.utc).isoformat()
@@ -4679,21 +4738,27 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
     if not quota_ok:
         raise HTTPException(status_code=403, detail=quota_error)
     
-    service_query = {"id": appointment.service_id, "organization_id": current_user.organization_id}
-    service = await db.services.find_one(service_query, {"_id": 0})
-    if not service: 
-        # Kota artırıldı ama hizmet bulunamadı, geri al
+    # Çoklu hizmet çözümleme (feature flag arkasında). Tek hizmette eski davranış birebir korunur;
+    # çoklu hizmette süre/fiyat toplanır ve "merged_service" mevcut mantığı bozmadan kullanılır.
+    _settings_flag = await db.settings.find_one({"organization_id": current_user.organization_id}, {"_id": 0, "multi_service_enabled": 1})
+    _multi_enabled = bool((_settings_flag or {}).get("multi_service_enabled", False))
+    try:
+        snapshot_lines, total_duration, total_price, service, resolved_service_ids = await resolve_services(
+            db, current_user.organization_id, appointment, multi_enabled=_multi_enabled
+        )
+    except HTTPException:
+        # Kota artırıldı ama hizmet çözümleme başarısız, geri al
         plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
         if plan_doc:
             await db.organization_plans.update_one(
                 {"organization_id": current_user.organization_id},
                 {"$inc": {"quota_usage": -1}}
             )
-        raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
+        raise
     
     # PERSONEL KONTROL: Staff ise sadece kendi hizmetlerine randevu alabilir (can_view_all_appointments yetkisi yoksa)
     if current_user.role == "staff" and not current_user.can_view_all_appointments:
-        if service["id"] not in current_user.permitted_service_ids:
+        if any(sid not in current_user.permitted_service_ids for sid in resolved_service_ids):
             # Kota artırıldı ama yetki yok, geri al
             plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id})
             if plan_doc:
@@ -4758,9 +4823,10 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                 "organization_id": current_user.organization_id,
                 "staff_member_id": appointment.staff_member_id,
                 "appointment_date": appointment.appointment_date,
-                "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled"]}
+                # Müsaitlik ile tutarlı: ödeme bekleyen/iptal slotları çakışma saymaz
+                "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled", "Ödeme Bekleniyor"]}
             },
-            {"_id": 0, "appointment_time": 1, "service_id": 1}
+            {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1}
         ).to_list(100)
         
         # --- PERFORMANS DOKUNUŞU: BULK FETCH ---
@@ -4782,8 +4848,8 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
             existing_start_time = existing_appt['appointment_time']
             existing_service_id = existing_appt.get('service_id')
             
-            # Veritabanına gitmek yerine sözlükten (hafızadan) süreyi al
-            existing_duration = duration_map.get(existing_service_id, 30)
+            # Çoklu hizmette saklı TOPLAM süreyi kullan; yoksa canlı tek-hizmet süresi (hafızadan)
+            existing_duration = existing_appt.get('service_duration') or duration_map.get(existing_service_id, 30)
             
             # Mevcut randevunun bitiş saatini hesapla
             existing_start_hour, existing_start_minute = map(int, existing_start_time.split(':'))
@@ -4852,10 +4918,10 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
         admin_provides_service = settings_data.get('admin_provides_service', True) if settings_data else True
         no_assignable_staff = False
         
-        # Bu hizmeti verebilen personelleri bul
+        # Bu hizmet(ler)i verebilen personelleri bul (çoklu hizmette KESİŞİM: tümünü verebilmeli)
         qualified_staff_query = {
             "organization_id": current_user.organization_id,
-            "permitted_service_ids": {"$in": [appointment.service_id]}
+            "permitted_service_ids": {"$all": resolved_service_ids}
         }
         
         # Admin hizmet vermiyorsa, admin'i listeden çıkar
@@ -4874,7 +4940,7 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                 {"username": current_user.username, "organization_id": current_user.organization_id, "role": "admin"},
                 {"_id": 0, "username": 1, "role": 1, "permitted_service_ids": 1}
             )
-            if admin_provides_service and admin_user and appointment.service_id in (admin_user.get('permitted_service_ids') or []):
+            if admin_provides_service and admin_user and all(sid in (admin_user.get('permitted_service_ids') or []) for sid in resolved_service_ids):
                 qualified_staff = [{"username": admin_user['username'], "role": "admin"}]
                 logging.info(f"⚠️ No staff found, but admin can provide service. Using admin: {admin_user['username']}")
 
@@ -4913,9 +4979,10 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                 {
                     "organization_id": current_user.organization_id,
                     "appointment_date": appointment.appointment_date,
-                    "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled"]}
+                    # Müsaitlik ile tutarlı: ödeme bekleyen/iptal slotları çakışma saymaz
+                    "status": {"$nin": ["İptal", "İptal Edildi", "Cancelled", "Ödeme Bekleniyor"]}
                 },
-                {"_id": 0, "appointment_time": 1, "service_id": 1}
+                {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1}
             ).to_list(1000)
 
             def time_to_minutes(time_str):
@@ -4934,7 +5001,11 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                     continue
                 existing_service_id = existing_appt.get('service_id')
 
-                if existing_service_id:
+                # Çoklu hizmette saklı TOPLAM süreyi kullan; yoksa canlı tek-hizmet süresi
+                stored_dur = existing_appt.get('service_duration')
+                if stored_dur:
+                    existing_duration = int(stored_dur)
+                elif existing_service_id:
                     existing_service = await db.services.find_one({"id": existing_service_id}, {"_id": 0, "duration": 1})
                     existing_duration = existing_service.get('duration', 30) if existing_service else 30
                 else:
@@ -5007,10 +5078,12 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                 )
     
     appointment_data = appointment.model_dump(); 
+    appointment_data['service_id'] = resolved_service_ids[0]  # ilk hizmet (geriye dönük uyum)
+    appointment_data['services'] = snapshot_lines  # çoklu hizmet snapshot kalemleri
     appointment_data['service_name'] = service['name']; 
     appointment_data['service_price'] = service['price']
     appointment_data['staff_member_id'] = assigned_staff_id
-    appointment_data['service_duration'] = service.get('duration', 30)  # Hizmet süresini ekle
+    appointment_data['service_duration'] = service.get('duration', 30)  # Toplam hizmet süresi
     try:
         turkey_tz = ZoneInfo("Europe/Istanbul"); now = datetime.now(turkey_tz); dt_str = f"{appointment.appointment_date} {appointment.appointment_time}"
         naive_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M"); appointment_dt = naive_dt.replace(tzinfo=turkey_tz)
@@ -5031,6 +5104,7 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
         # Dashboard ve Müşteri listesini siliyoruz ki yeni veri anında görünsün
         await invalidate_cache(request, "dashboard_stats", current_user)
         await invalidate_cache(request, "customers_list", current_user)
+        await invalidate_availability_cache(request, current_user.organization_id)
         
         # 🔑 İşimiz bitti, en başta koyduğumuz kilidi (Lock) artık kaldırabiliriz
         redis_client = getattr(request.app.state, 'redis_client', None)
@@ -5227,6 +5301,91 @@ IDEMPOTENCY_BULK_SESSION_TTL_SEC = int(os.environ.get("IDEMPOTENCY_BULK_SESSION_
 IDEMPOTENCY_BULK_SESSION_LOCK_SEC = int(os.environ.get("IDEMPOTENCY_BULK_SESSION_LOCK_SEC", "120"))
 
 # === SESSION PACKAGE ENDPOINTS ===
+
+def _slugify_service(name: str) -> str:
+    """Hizmet adından analytics için stabil slug üretir (TR karakter desteği)."""
+    s = (name or "").strip().lower()
+    trmap = str.maketrans("çğıöşü", "cgiosu")
+    s = s.translate(trmap)
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s or "service"
+
+
+async def resolve_services(db, organization_id: str, appointment, *, multi_enabled: bool = True):
+    """Çoklu hizmet çözümleme + doğrulama (tek kaynak).
+
+    Returns: (snapshot_lines: List[dict], total_duration: int, total_price: float,
+              merged_service: dict, service_ids: List[str])
+    merged_service: mevcut tek-hizmet mantığını bozmadan kullanılacak birleşik hizmet
+    (id=ilk hizmet, name=birleşik, price=Σ, duration=Σ).
+    Geçersiz girdide HTTPException fırlatır.
+    """
+    sid_single = getattr(appointment, "service_id", None)
+    sid_list = getattr(appointment, "service_ids", None)
+
+    if sid_single and sid_list:
+        raise HTTPException(status_code=400, detail="service_id ve service_ids aynı anda gönderilemez")
+
+    if sid_list is not None:
+        if not multi_enabled:
+            sid_list = sid_list[:1]
+        if len(sid_list) == 0:
+            raise HTTPException(status_code=400, detail="En az bir hizmet seçilmelidir")
+        if len(set(sid_list)) != len(sid_list):
+            raise HTTPException(status_code=400, detail="Aynı hizmet birden fazla seçilemez")
+        ordered_ids = list(sid_list)
+    elif sid_single:
+        ordered_ids = [sid_single]
+    else:
+        raise HTTPException(status_code=400, detail="Hizmet seçilmedi")
+
+    docs = await db.services.find(
+        {"id": {"$in": ordered_ids}, "organization_id": organization_id}, {"_id": 0}
+    ).to_list(len(ordered_ids))
+    by_id = {d["id"]: d for d in docs}
+    for sid in ordered_ids:
+        d = by_id.get(sid)
+        if not d:
+            raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
+        if d.get("is_active") is False:
+            raise HTTPException(status_code=400, detail="Pasif hizmet seçildi")
+
+    pkg_count = sum(1 for sid in ordered_ids if (by_id[sid].get("session_count") or 1) > 1)
+    if pkg_count and len(ordered_ids) > 1:
+        raise HTTPException(status_code=400, detail="Seans paketi diğer hizmetlerle birlikte seçilemez")
+
+    snapshot_lines = []
+    total_duration = 0
+    total_price = 0.0
+    for idx, sid in enumerate(ordered_ids):
+        d = by_id[sid]
+        dur = int(d.get("duration", 30) or 30)
+        price = float(d.get("price", 0) or 0)
+        total_duration += dur
+        total_price += price
+        snapshot_lines.append({
+            "service_id": sid,
+            "sequence": idx,
+            "name_snapshot": d.get("name", ""),
+            "slug_snapshot": _slugify_service(d.get("name", "")),
+            "duration_snapshot": dur,
+            "price_snapshot": price,
+            "service_version": int(d.get("version", 1) or 1),
+        })
+
+    merged_service = dict(by_id[ordered_ids[0]])
+    merged_service["duration"] = total_duration
+    merged_service["price"] = total_price
+    merged_service["name"] = " + ".join(line["name_snapshot"] for line in snapshot_lines)
+    # Çoklu hizmette toplam ödeme kuralı: herhangi biri online/deposit ise toplu kapora (Akıllı D).
+    if len(ordered_ids) > 1:
+        rules = [(by_id[sid].get("payment_rule") or "on_site") for sid in ordered_ids]
+        if any(r in ("online", "deposit", "full_online") for r in rules):
+            merged_service["payment_rule"] = "deposit"
+        else:
+            merged_service["payment_rule"] = "on_site"
+    return snapshot_lines, total_duration, total_price, merged_service, ordered_ids
+
 
 def _time_to_minutes(time_str: str) -> int:
     try:
@@ -6944,8 +7103,15 @@ async def get_appointments(
     except Exception:
         turkey_tz = timezone(timedelta(hours=3)); now = datetime.now(turkey_tz)
     
-    # Tüm servisleri bir kerede çek (performans için)
-    service_ids = [appt.get('service_id') for appt in appointments_from_db if appt.get('service_id')]
+    # Tüm servisleri bir kerede çek (performans için) — çoklu hizmette
+    # snapshot içindeki tüm service_id'leri de topla ki toplam süre doğru hesaplansın
+    service_ids = []
+    for appt in appointments_from_db:
+        if appt.get('service_id'):
+            service_ids.append(appt['service_id'])
+        for line in (appt.get('services') or []):
+            if line.get('service_id'):
+                service_ids.append(line['service_id'])
     services_dict = {}
     if service_ids:
         unique_service_ids = list(set(service_ids))
@@ -6965,7 +7131,15 @@ async def get_appointments(
         
         # Service duration ekle (bitiş saati hesaplamak için)
         appt_service_id = appt.get('service_id')
-        if appt_service_id and appt_service_id in services_dict:
+        appt_services = appt.get('services')
+        if isinstance(appt_services, list) and len(appt_services) > 0:
+            # Çoklu hizmet: tüm hizmetlerin süresini topla (canlı süre yoksa snapshot)
+            total_dur = 0
+            for line in appt_services:
+                sid = line.get('service_id')
+                total_dur += services_dict.get(sid, line.get('duration_snapshot', 30) or 30)
+            appt['service_duration'] = total_dur or 30
+        elif appt_service_id and appt_service_id in services_dict:
             appt['service_duration'] = services_dict[appt_service_id]
             logging.debug(f"✅ Randevu {appt.get('id', 'unknown')}: service_duration={appt['service_duration']} (service_id={appt_service_id})")
         else:
@@ -7057,6 +7231,10 @@ async def delete_service(request: Request, service_id: str, current_user: UserIn
     db = await get_db_from_request(request); query = {"id": service_id, "organization_id": current_user.organization_id}
     result = await db.services.delete_one(query)
     if result.deleted_count == 0: raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
+    try:
+        await invalidate_service_caches(request, current_user.organization_id)
+    except Exception as e:
+        logging.error(f"Service cache invalidation failed: {e}")
     return {"message": "Hizmet silindi"}
 
 def _validate_service_payment_limits(price: float, payment_rule: Optional[str], deposit_amount: Optional[float]):
@@ -7088,16 +7266,34 @@ async def update_service(request: Request, service_id: str, service_update: Serv
     effective_rule = service_update.payment_rule if service_update.payment_rule is not None else service.get("payment_rule")
     effective_deposit = service_update.deposit_amount if service_update.deposit_amount is not None else service.get("deposit_amount")
     _validate_service_payment_limits(effective_price, effective_rule, effective_deposit)
+    if service_update.category_id:
+        cat = await db.categories.find_one({"id": service_update.category_id, "organization_id": current_user.organization_id}, {"_id": 0, "id": 1})
+        if not cat:
+            raise HTTPException(status_code=400, detail="Geçersiz kategori")
     raw = service_update.model_dump()
     update_data = {k: v for k, v in raw.items() if v is not None}
     unset_data = {}
-    for field in ("session_count", "deposit_percentage", "deposit_amount"):
+    for field in ("session_count", "deposit_percentage", "deposit_amount", "category_id"):
         if field in raw and raw[field] is None and field in service:
             unset_data[field] = ""
+    # Optimistic lock / versiyonlama: fiyat/süre/isim değişiminde version artır.
+    # Böylece açık checkout'lar snapshot'taki service_version ile tutarlı kalır.
+    version_changing = any(
+        f in update_data and update_data[f] != service.get(f)
+        for f in ("price", "duration", "name")
+    )
+    if version_changing:
+        update_data["version"] = int(service.get("version", 1)) + 1
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     ops = {}
     if update_data: ops["$set"] = update_data
     if unset_data: ops["$unset"] = unset_data
-    if ops: await db.services.update_one(query, ops)
+    if ops:
+        await db.services.update_one(query, ops)
+        try:
+            await invalidate_service_caches(request, current_user.organization_id)
+        except Exception as e:
+            logging.error(f"Service cache invalidation failed: {e}")
     updated_service = await db.services.find_one(query, {"_id": 0})
     if isinstance(updated_service['created_at'], str): updated_service['created_at'] = datetime.fromisoformat(updated_service['created_at'].replace('Z', '+00:00'))
     return updated_service
@@ -7117,6 +7313,10 @@ async def create_service(request: Request, service: ServiceCreate, current_user:
     
     db = await get_db_from_request(request)
     _validate_service_payment_limits(service.price, service.payment_rule, service.deposit_amount)
+    if service.category_id:
+        cat = await db.categories.find_one({"id": service.category_id, "organization_id": current_user.organization_id}, {"_id": 0, "id": 1})
+        if not cat:
+            raise HTTPException(status_code=400, detail="Geçersiz kategori")
 
     service_data = service.model_dump()
     if service_data.get("order") is None:
@@ -7144,6 +7344,10 @@ async def create_service(request: Request, service: ServiceCreate, current_user:
         )
     except Exception as e:
         logging.error(f"Failed to auto-assign service to staff: {e}")
+    try:
+        await invalidate_service_caches(request, current_user.organization_id)
+    except Exception as e:
+        logging.error(f"Service cache invalidation failed: {e}")
     return service_obj
 
 @api_router.get("/services", response_model=List[Service])
@@ -7166,6 +7370,100 @@ async def get_services(request: Request, current_user: UserInDB = Depends(get_cu
 
     services_sorted = sorted(services, key=sort_key)
     return services_sorted
+
+# === CATEGORIES ROUTES (Hizmet Kategorileri) ===
+def _sort_categories(categories: List[dict]) -> List[dict]:
+    def key(cat: dict):
+        order = cat.get("order")
+        created = cat.get("created_at")
+        created_str = created.isoformat() if isinstance(created, datetime) else (created or "")
+        return (order if isinstance(order, int) else 1_000_000, created_str, cat.get("name") or "")
+    return sorted(categories, key=key)
+
+@api_router.get("/categories", response_model=List[Category])
+async def get_categories(request: Request, current_user: UserInDB = Depends(get_current_user)):
+    db = await get_db_from_request(request)
+    cats = await db.categories.find({"organization_id": current_user.organization_id}, {"_id": 0}).to_list(1000)
+    for cat in cats:
+        if isinstance(cat.get("created_at"), str):
+            cat["created_at"] = datetime.fromisoformat(cat["created_at"].replace("Z", "+00:00"))
+    return _sort_categories(cats)
+
+@api_router.post("/categories", response_model=Category)
+async def create_category(request: Request, category: CategoryCreate, current_user: UserInDB = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    db = await get_db_from_request(request)
+    data = category.model_dump()
+    if data.get("order") is None:
+        last = await db.categories.find(
+            {"organization_id": current_user.organization_id}, {"_id": 0, "order": 1}
+        ).sort("order", -1).limit(1).to_list(1)
+        last_order = last[0].get("order") if last else None
+        data["order"] = (last_order + 1) if isinstance(last_order, int) else 0
+    cat_obj = Category(**data, organization_id=current_user.organization_id)
+    doc = cat_obj.model_dump(); doc["created_at"] = doc["created_at"].isoformat()
+    await db.categories.insert_one(doc)
+    return cat_obj
+
+@api_router.put("/categories/{category_id}", response_model=Category)
+async def update_category(request: Request, category_id: str, category_update: CategoryUpdate, current_user: UserInDB = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    db = await get_db_from_request(request); query = {"id": category_id, "organization_id": current_user.organization_id}
+    cat = await db.categories.find_one(query, {"_id": 0})
+    if not cat:
+        raise HTTPException(status_code=404, detail="Kategori bulunamadı")
+    update_data = {k: v for k, v in category_update.model_dump().items() if v is not None}
+    if update_data:
+        await db.categories.update_one(query, {"$set": update_data})
+    updated = await db.categories.find_one(query, {"_id": 0})
+    if isinstance(updated.get("created_at"), str):
+        updated["created_at"] = datetime.fromisoformat(updated["created_at"].replace("Z", "+00:00"))
+    return updated
+
+@api_router.delete("/categories/{category_id}")
+async def delete_category(request: Request, category_id: str, current_user: UserInDB = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    db = await get_db_from_request(request); query = {"id": category_id, "organization_id": current_user.organization_id}
+    cat = await db.categories.find_one(query, {"_id": 0})
+    if not cat:
+        raise HTTPException(status_code=404, detail="Kategori bulunamadı")
+    # Önce bağlı hizmetlerin category_id'sini atomik şekilde temizle, sonra kategoriyi sil.
+    # Yarım kalmayı önlemek için update_many başarısız olursa kategori silinmez.
+    await db.services.update_many(
+        {"organization_id": current_user.organization_id, "category_id": category_id},
+        {"$unset": {"category_id": ""}}
+    )
+    await db.categories.delete_one(query)
+    try:
+        await invalidate_service_caches(request, current_user.organization_id)
+    except Exception as e:
+        logging.error(f"Category cache invalidation failed: {e}")
+    return {"message": "Kategori silindi"}
+
+@api_router.post("/categories/reorder", status_code=204)
+async def reorder_categories(request: Request, payload: dict, current_user: UserInDB = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    category_ids = payload.get("category_ids")
+    if not isinstance(category_ids, list) or not category_ids:
+        raise HTTPException(status_code=400, detail="Invalid category_ids")
+    unique_ids = list(dict.fromkeys(category_ids))
+    db = await get_db_from_request(request)
+    existing = await db.categories.find(
+        {"organization_id": current_user.organization_id, "id": {"$in": unique_ids}}, {"_id": 0, "id": 1}
+    ).to_list(2000)
+    existing_ids = {c.get("id") for c in existing}
+    if any(cid not in existing_ids for cid in unique_ids):
+        raise HTTPException(status_code=400, detail="Invalid category_ids")
+    for idx, cid in enumerate(unique_ids):
+        await db.categories.update_one(
+            {"organization_id": current_user.organization_id, "id": cid},
+            {"$set": {"order": idx}}
+        )
+    return None
 
 # === TRANSACTIONS ROUTES ===
 @api_router.get("/transactions", response_model=List[Transaction])
@@ -8820,7 +9118,7 @@ async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends
     # Süresi geçen "Bekliyor" randevuları bul
     today_waiting_appointments = await db.appointments.find(
         {**base_query, "appointment_date": today, "status": "Bekliyor"},
-        {"_id": 0, "id": 1, "appointment_date": 1, "appointment_time": 1, "service_price": 1, "customer_name": 1, "service_name": 1, "service_id": 1, "staff_member_id": 1}
+        {"_id": 0, "id": 1, "appointment_date": 1, "appointment_time": 1, "service_price": 1, "customer_name": 1, "service_name": 1, "service_id": 1, "service_duration": 1, "staff_member_id": 1}
     ).to_list(1000)
 
     if today_waiting_appointments:
@@ -8840,7 +9138,8 @@ async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends
             try:
                 dt_str = f"{appt['appointment_date']} {appt['appointment_time']}"
                 appointment_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M").replace(tzinfo=turkey_tz)
-                duration = services_dict.get(appt.get('service_id'), 30)
+                # Çoklu hizmette saklı toplam süreyi tercih et; yoksa canlı tek-hizmet süresi
+                duration = appt.get('service_duration') or services_dict.get(appt.get('service_id'), 30)
                 if now >= (appointment_dt + timedelta(minutes=duration)):
                     ids_to_update.append(appt['id'])
                     transactions_to_create.append(Transaction(
@@ -8925,7 +9224,7 @@ async def get_personnel_stats(request: Request, current_user: UserInDB = Depends
     # ÖNCE: Bugünkü "Bekliyor" status'ündeki personelin randevularını otomatik tamamla
     today_waiting_appointments = await db.appointments.find(
         {**base_query, "appointment_date": today, "status": "Bekliyor", "staff_member_id": current_user.username},
-        {"_id": 0, "id": 1, "appointment_date": 1, "appointment_time": 1, "service_price": 1, "customer_name": 1, "service_name": 1, "service_id": 1}
+        {"_id": 0, "id": 1, "appointment_date": 1, "appointment_time": 1, "service_price": 1, "customer_name": 1, "service_name": 1, "service_id": 1, "service_duration": 1}
     ).to_list(1000)
     
     # Servisleri çek (duration bilgisi için)
@@ -8945,8 +9244,8 @@ async def get_personnel_stats(request: Request, current_user: UserInDB = Depends
             dt_str = f"{appt['appointment_date']} {appt['appointment_time']}"
             naive_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
             appointment_dt = naive_dt.replace(tzinfo=turkey_tz)
-            # Randevu bitiş saatini hesapla (başlangıç saati + hizmet süresi)
-            service_duration_minutes = services_dict.get(appt.get('service_id'), 30)
+            # Randevu bitiş saatini hesapla — çoklu hizmette saklı toplam süre
+            service_duration_minutes = appt.get('service_duration') or services_dict.get(appt.get('service_id'), 30)
             completion_threshold = appointment_dt + timedelta(minutes=service_duration_minutes)
             if now >= completion_threshold:
                 ids_to_update.append(appt['id'])
@@ -10114,15 +10413,19 @@ async def add_break(request: Request, break_data: BreakCreate, current_user: Use
             "staff_member_id": current_user.username,
             "status": {"$ne": "İptal"}
         },
-        {"_id": 0, "appointment_time": 1, "service_id": 1, "customer_name": 1}
+        {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1, "customer_name": 1}
     ).to_list(100)
     
     # Her randevunun bitiş saatini hesapla ve çakışma kontrol et
     conflicting_appointments = []
     for appt in appointments:
-        # Randevu süresini al
-        appt_service = await db.services.find_one({"id": appt.get("service_id")}, {"_id": 0, "duration": 1})
-        appt_duration = appt_service.get("duration", 30) if appt_service else 30
+        # Randevu süresini al — çoklu hizmette saklı TOPLAM süre
+        stored_dur = appt.get("service_duration")
+        if stored_dur:
+            appt_duration = int(stored_dur)
+        else:
+            appt_service = await db.services.find_one({"id": appt.get("service_id")}, {"_id": 0, "duration": 1})
+            appt_duration = appt_service.get("duration", 30) if appt_service else 30
         
         appt_start_time = appt["appointment_time"]
         appt_start_parts = appt_start_time.split(":")
@@ -10242,13 +10545,18 @@ async def admin_add_staff_break(
             "staff_member_id": staff_id,
             "status": {"$ne": "İptal"}
         },
-        {"_id": 0, "appointment_time": 1, "service_id": 1, "customer_name": 1}
+        {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1, "customer_name": 1}
     ).to_list(100)
 
     conflicting_appointments = []
     for appt in appointments:
-        appt_service = await db.services.find_one({"id": appt.get("service_id")}, {"_id": 0, "duration": 1})
-        appt_duration = appt_service.get("duration", 30) if appt_service else 30
+        # Çoklu hizmette saklı TOPLAM süre
+        stored_dur = appt.get("service_duration")
+        if stored_dur:
+            appt_duration = int(stored_dur)
+        else:
+            appt_service = await db.services.find_one({"id": appt.get("service_id")}, {"_id": 0, "duration": 1})
+            appt_duration = appt_service.get("duration", 30) if appt_service else 30
 
         appt_start_time = appt["appointment_time"]
         appt_start_parts = appt_start_time.split(":")
@@ -11327,6 +11635,10 @@ async def get_public_business(request: Request, slug: str):
         )
 
     services = sorted(services, key=sort_key)
+
+    # Kategorileri çek (sıralı)
+    categories = await db.categories.find({"organization_id": organization_id}, {"_id": 0}).to_list(1000)
+    categories = _sort_categories(categories)
     
     # Ayarları çek
     settings = await db.settings.find_one({"organization_id": organization_id}, {"_id": 0})
@@ -11366,6 +11678,7 @@ async def get_public_business(request: Request, slug: str):
         "location": settings.get('location'),
         "organization_id": organization_id,
         "services": services,
+        "categories": categories,
         "staff_members": staff_members,
         "settings": {
             "customer_can_choose_staff": settings.get('customer_can_choose_staff', False),
@@ -11373,14 +11686,36 @@ async def get_public_business(request: Request, slug: str):
             "work_end_hour": settings.get('work_end_hour', 18),
             "appointment_interval": settings.get('appointment_interval', 30),
             "show_service_duration_on_public": settings.get('show_service_duration_on_public', True),
-            "show_service_price_on_public": settings.get('show_service_price_on_public', True)
+            "show_service_price_on_public": settings.get('show_service_price_on_public', True),
+            "multi_service_enabled": settings.get('multi_service_enabled', False)
         }
     }
 
 @api_router.get("/public/availability/{organization_id}")
-async def get_availability(request: Request, organization_id: str, service_id: str, date: str, staff_id: Optional[str] = None, exclude_appointment_id: Optional[str] = None):
-    """Model D: Personel bazlı akıllı müsaitlik kontrolü - business_hours ve days_off kullanır"""
+async def get_availability(request: Request, organization_id: str, service_id: Optional[str] = None, service_ids: Optional[str] = None, date: str = "", staff_id: Optional[str] = None, exclude_appointment_id: Optional[str] = None):
+    """Model D: Personel bazlı akıllı müsaitlik kontrolü - business_hours ve days_off kullanır.
+
+    Çoklu hizmet: service_ids (virgülle ayrılmış) verilirse toplam süre kadar kesintisiz
+    blok aranır ve personel KESİŞİMİ (tüm hizmetleri verebilen) uygulanır.
+    """
     db = await get_db_from_request(request)
+
+    # Çoklu/tekli hizmet parametre normalizasyonu
+    service_id_list = [s.strip() for s in service_ids.split(",") if s.strip()] if service_ids else ([service_id] if service_id else [])
+    if not service_id_list:
+        raise HTTPException(status_code=400, detail="Hizmet seçilmedi")
+    service_id = service_id_list[0]
+
+    # Availability cache (org+staff+date+service_ids) — randevu create/update/delete'te invalidate edilir
+    redis_client = getattr(request.app.state, 'redis_client', None) if hasattr(request, 'app') else None
+    _avail_cache_key = f"plann:avail:{organization_id}:{date}:{staff_id or 'auto'}:{exclude_appointment_id or '-'}:{'-'.join(sorted(service_id_list))}"
+    if redis_client:
+        try:
+            _cached = await redis_client.get(_avail_cache_key)
+            if _cached:
+                return json.loads(_cached)
+        except Exception:
+            pass
     
     # Ayarları al (admin_provides_service ve business_hours için)
     settings = await db.settings.find_one({"organization_id": organization_id}, {"_id": 0})
@@ -11419,7 +11754,7 @@ async def get_availability(request: Request, organization_id: str, service_id: s
         staff_query = {
             "organization_id": organization_id,
             "username": staff_id,
-            "permitted_service_ids": {"$in": [service_id]}
+            "permitted_service_ids": {"$all": service_id_list}
         }
         
         # Admin'in "hizmet verir" ayarı kapalıysa, admin'i personel listesinden çıkar
@@ -11438,7 +11773,7 @@ async def get_availability(request: Request, organization_id: str, service_id: s
                 {"organization_id": organization_id, "role": "admin", "username": staff_id},
                 {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
             )
-            if admin_user and service_id in (admin_user.get('permitted_service_ids') or []):
+            if admin_user and all(s in (admin_user.get('permitted_service_ids') or []) for s in service_id_list):
                 # Admin bu hizmeti verebiliyorsa, admin'i personel listesine ekle
                 staff_members = [admin_user]
                 logging.info(f"⚠️ Availability: Selected staff not found, but admin can provide service. Using admin: {admin_user['username']}")
@@ -11460,10 +11795,10 @@ async def get_availability(request: Request, organization_id: str, service_id: s
                 "message": "Seçili personel bu gün izinli"
             }
     else:
-        # O hizmeti verebilen TÜM personelleri bul (Array içinde arama)
+        # O hizmet(ler)i verebilen TÜM personelleri bul (çoklu hizmette KESİŞİM: tümünü verebilmeli)
         staff_query = {
             "organization_id": organization_id,
-            "permitted_service_ids": {"$in": [service_id]}
+            "permitted_service_ids": {"$all": service_id_list}
         }
         
         # Admin'in "hizmet verir" ayarı kapalıysa, admin'i personel listesinden çıkar
@@ -11477,7 +11812,7 @@ async def get_availability(request: Request, organization_id: str, service_id: s
         
         # Eğer başka personel yoksa ve admin_provides_service kapalıysa bile, admin'in bu hizmeti verebilip veremediğini kontrol et
         if not staff_members:
-            logging.info(f"⚠️ Availability: No staff found for service_id={service_id}, admin_provides_service={admin_provides_service}. Checking admin...")
+            logging.info(f"⚠️ Availability: No staff found for service_ids={service_id_list}, admin_provides_service={admin_provides_service}. Checking admin...")
             # Admin'in bu hizmeti verebilip veremediğini kontrol et
             admin_user = await db.users.find_one(
                 {"organization_id": organization_id, "role": "admin"},
@@ -11485,8 +11820,8 @@ async def get_availability(request: Request, organization_id: str, service_id: s
             )
             if admin_user:
                 admin_permitted_services = admin_user.get('permitted_service_ids') or []
-                logging.info(f"⚠️ Availability: Admin found: {admin_user['username']}, permitted_service_ids: {admin_permitted_services}, checking service_id: {service_id}")
-                if service_id in admin_permitted_services:
+                logging.info(f"⚠️ Availability: Admin found: {admin_user['username']}, permitted_service_ids: {admin_permitted_services}, checking service_ids: {service_id_list}")
+                if all(s in admin_permitted_services for s in service_id_list):
                     # Admin bu hizmeti verebiliyorsa, admin'i personel listesine ekle
                     # Admin'in tüm gerekli alanlarını ekle (breaks dahil — slot meşgul listesine doğru eklenmesi için)
                     admin_staff_member = {
@@ -11558,12 +11893,12 @@ async def get_availability(request: Request, organization_id: str, service_id: s
         open_hour, open_minute = 9, 0
         close_hour, close_minute = 18, 0
     
-    # Hizmet süresini al
-    service = await db.services.find_one({"id": service_id}, {"_id": 0, "duration": 1})
-    if not service:
+    # Hizmet süresini al — çoklu hizmette TOPLAM süre (kesintisiz blok)
+    _svc_docs = await db.services.find({"id": {"$in": service_id_list}, "organization_id": organization_id}, {"_id": 0, "id": 1, "duration": 1}).to_list(len(service_id_list))
+    _dur_map = {d["id"]: int(d.get("duration", 30) or 30) for d in _svc_docs}
+    if any(sid not in _dur_map for sid in service_id_list):
         return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Hizmet bulunamadı"}
-    
-    service_duration = service.get('duration', 30)  # Dakika cinsinden
+    service_duration = sum(_dur_map[sid] for sid in service_id_list)  # Dakika cinsinden (toplam)
     
     # KRİTİK: Personel aynı anda sadece 1 müşteriye hizmet verebilir
     # O hizmeti verebilen personellerin o tarihteki TÜM randevularını çek (hangi hizmet olursa olsun)
@@ -11585,7 +11920,7 @@ async def get_availability(request: Request, organization_id: str, service_id: s
         appt_query["id"] = {"$ne": exclude_appointment_id}
     all_staff_appointments = await db.appointments.find(
         appt_query,
-        {"_id": 0, "appointment_time": 1, "staff_member_id": 1, "service_name": 1, "service_id": 1}
+        {"_id": 0, "appointment_time": 1, "staff_member_id": 1, "service_name": 1, "service_id": 1, "service_duration": 1, "services": 1}
     ).to_list(1000)
     
     logging.info(f"📋 Found {len(all_staff_appointments)} appointments for staff_ids: {staff_ids}")
@@ -11610,12 +11945,17 @@ async def get_availability(request: Request, organization_id: str, service_id: s
     # Her randevunun bitiş saatini hesapla (hizmet süresine göre)
     appointments_with_end_time = []
     for appt in all_staff_appointments:
-        appt_service_id = appt.get('service_id')
-        if appt_service_id:
-            appt_service = await db.services.find_one({"id": appt_service_id}, {"_id": 0, "duration": 1})
-            appt_duration = appt_service.get('duration', 30) if appt_service else 30
+        # Çoklu hizmette saklı TOPLAM süreyi kullan; yoksa canlı tek-hizmet süresi
+        stored_dur = appt.get('service_duration')
+        if stored_dur:
+            appt_duration = int(stored_dur)
         else:
-            appt_duration = 30  # Varsayılan
+            appt_service_id = appt.get('service_id')
+            if appt_service_id:
+                appt_service = await db.services.find_one({"id": appt_service_id}, {"_id": 0, "duration": 1})
+                appt_duration = appt_service.get('duration', 30) if appt_service else 30
+            else:
+                appt_duration = 30  # Varsayılan
         
         start_time_str = appt['appointment_time']
         start_hour, start_minute = map(int, start_time_str.split(':'))
@@ -11776,24 +12116,31 @@ async def get_availability(request: Request, organization_id: str, service_id: s
                 available_count = len(staff_members) - len(busy_staff_unique)
                 logging.debug(f"   ✅ Available slot: {potential_start_time}-{potential_end_time} ({available_count}/{len(staff_members)} staff available)")
     
-    logging.info(f"🔍 Service: {service_id}, Date: {date}, Duration: {service_duration}min")
+    logging.info(f"🔍 Services: {service_id_list}, Date: {date}, Duration: {service_duration}min")
     logging.info(f"👥 Qualified staff: {len(staff_members)} - {staff_ids}")
     logging.info(f"📅 Total appointments: {len(appointments_with_end_time)}")
     logging.info(f"✅ Available slots: {len(final_available_slots)}")
     logging.info(f"🚫 Busy slots: {len(busy_slots)}")
-    return {
+    _avail_result = {
         "available_slots": final_available_slots,
         "busy_slots": busy_slots,
         "all_slots": potential_slots,
         "message": "OK"
     }
+    if redis_client:
+        try:
+            await redis_client.setex(_avail_cache_key, 45, json.dumps(_avail_result))
+        except Exception:
+            pass
+    return _avail_result
 
 
 @api_router.get("/availability")
 async def get_internal_availability(
     request: Request,
-    service_id: str,
     date: str,
+    service_id: Optional[str] = None,
+    service_ids: Optional[str] = None,
     staff_id: Optional[str] = None,
     exclude_appointment_id: Optional[str] = None,
     current_user: UserInDB = Depends(get_current_user)
@@ -11803,9 +12150,15 @@ async def get_internal_availability(
     Admin panelindeki randevu oluşturma akışında, personel seçilmediyse (auto-assign)
     slotlar personelin haftalık izin günlerine (days_off) bağlı olmamalıdır.
     staff_id verilirse, seçilen personelin days_off kontrolü uygulanır.
+    Çoklu hizmet: service_ids (virgülle ayrılmış) verilirse toplam süre + personel kesişimi.
     """
     db = await get_db_from_request(request)
     organization_id = current_user.organization_id
+
+    service_id_list = [s.strip() for s in service_ids.split(",") if s.strip()] if service_ids else ([service_id] if service_id else [])
+    if not service_id_list:
+        raise HTTPException(status_code=400, detail="Hizmet seçilmedi")
+    service_id = service_id_list[0]
 
     if staff_id is not None:
         _sid = str(staff_id).strip().lower()
@@ -11846,7 +12199,7 @@ async def get_internal_availability(
         staff_query = {
             "organization_id": organization_id,
             "username": staff_id,
-            "permitted_service_ids": {"$in": [service_id]}
+            "permitted_service_ids": {"$all": service_id_list}
         }
 
         if not admin_provides_service:
@@ -11866,7 +12219,7 @@ async def get_internal_availability(
                 {"organization_id": organization_id, "role": "admin", "username": staff_id},
                 {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
             )
-            if admin_user and service_id in (admin_user.get('permitted_service_ids') or []):
+            if admin_user and all(s in (admin_user.get('permitted_service_ids') or []) for s in service_id_list):
                 staff_members = [admin_user]
                 logging.info(f"⚠️ Internal /availability: admin_provides_service=False ama admin {staff_id} permitted'da, fallback aktif")
 
@@ -11885,7 +12238,7 @@ async def get_internal_availability(
     else:
         staff_query = {
             "organization_id": organization_id,
-            "permitted_service_ids": {"$in": [service_id]}
+            "permitted_service_ids": {"$all": service_id_list}
         }
 
         if not admin_provides_service:
@@ -11903,7 +12256,7 @@ async def get_internal_availability(
                 {"organization_id": organization_id, "role": "admin"},
                 {"_id": 0, "id": 1, "username": 1, "role": 1, "days_off": 1, "permitted_service_ids": 1, "breaks": 1}
             )
-            if admin_user and service_id in (admin_user.get('permitted_service_ids') or []):
+            if admin_user and all(s in (admin_user.get('permitted_service_ids') or []) for s in service_id_list):
                 staff_members = [admin_user]
                 logging.info(f"⚠️ Internal /availability (no staff_id): falling back to admin {admin_user['username']}")
 
@@ -11937,14 +12290,11 @@ async def get_internal_availability(
                 open_hour, open_minute = 9, 0
                 close_hour, close_minute = 18, 0
 
-            service = await db.services.find_one(
-                {"id": service_id, "organization_id": organization_id},
-                {"_id": 0, "duration": 1}
-            )
-            if not service:
+            _svc_docs = await db.services.find({"id": {"$in": service_id_list}, "organization_id": organization_id}, {"_id": 0, "id": 1, "duration": 1}).to_list(len(service_id_list))
+            _dur_map = {d["id"]: int(d.get("duration", 30) or 30) for d in _svc_docs}
+            if any(sid not in _dur_map for sid in service_id_list):
                 return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Hizmet bulunamadı"}
-
-            service_duration = service.get('duration', 30)
+            service_duration = sum(_dur_map[sid] for sid in service_id_list)
 
             # Organizasyondaki tüm randevular: aynı gün/saatte çakışma varsa slotu "busy" say.
             int_appt_query = {
@@ -11956,20 +12306,25 @@ async def get_internal_availability(
                 int_appt_query["id"] = {"$ne": exclude_appointment_id}
             org_appointments = await db.appointments.find(
                 int_appt_query,
-                {"_id": 0, "appointment_time": 1, "service_id": 1}
+                {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1}
             ).to_list(1000)
 
             appointments_with_end_time = []
             for appt in org_appointments:
-                appt_service_id = appt.get('service_id')
-                if appt_service_id:
-                    appt_service = await db.services.find_one(
-                        {"id": appt_service_id, "organization_id": organization_id},
-                        {"_id": 0, "duration": 1}
-                    )
-                    appt_duration = appt_service.get('duration', 30) if appt_service else 30
+                # Çoklu hizmette saklı TOPLAM süreyi kullan; yoksa canlı tek-hizmet süresi
+                stored_dur = appt.get('service_duration')
+                if stored_dur:
+                    appt_duration = int(stored_dur)
                 else:
-                    appt_duration = 30
+                    appt_service_id = appt.get('service_id')
+                    if appt_service_id:
+                        appt_service = await db.services.find_one(
+                            {"id": appt_service_id, "organization_id": organization_id},
+                            {"_id": 0, "duration": 1}
+                        )
+                        appt_duration = appt_service.get('duration', 30) if appt_service else 30
+                    else:
+                        appt_duration = 30
 
                 start_time_str = appt.get('appointment_time')
                 if not start_time_str:
@@ -12068,14 +12423,11 @@ async def get_internal_availability(
         open_hour, open_minute = 9, 0
         close_hour, close_minute = 18, 0
 
-    service = await db.services.find_one(
-        {"id": service_id, "organization_id": organization_id},
-        {"_id": 0, "duration": 1}
-    )
-    if not service:
+    _svc_docs = await db.services.find({"id": {"$in": service_id_list}, "organization_id": organization_id}, {"_id": 0, "id": 1, "duration": 1}).to_list(len(service_id_list))
+    _dur_map = {d["id"]: int(d.get("duration", 30) or 30) for d in _svc_docs}
+    if any(sid not in _dur_map for sid in service_id_list):
         return {"available_slots": [], "all_slots": [], "busy_slots": [], "message": "Hizmet bulunamadı"}
-
-    service_duration = service.get('duration', 30)
+    service_duration = sum(_dur_map[sid] for sid in service_id_list)
 
     staff_ids = [staff['username'] for staff in staff_members]
     # Unassigned randevuları (staff_member_id None/"" /eksik) da dahil et — admin
@@ -12096,20 +12448,25 @@ async def get_internal_availability(
         int_staff_query["id"] = {"$ne": exclude_appointment_id}
     all_staff_appointments = await db.appointments.find(
         int_staff_query,
-        {"_id": 0, "appointment_time": 1, "staff_member_id": 1, "service_id": 1}
+        {"_id": 0, "appointment_time": 1, "staff_member_id": 1, "service_id": 1, "service_duration": 1}
     ).to_list(1000)
 
     appointments_with_end_time = []
     for appt in all_staff_appointments:
-        appt_service_id = appt.get('service_id')
-        if appt_service_id:
-            appt_service = await db.services.find_one(
-                {"id": appt_service_id, "organization_id": organization_id},
-                {"_id": 0, "duration": 1}
-            )
-            appt_duration = appt_service.get('duration', 30) if appt_service else 30
+        # Çoklu hizmette saklı TOPLAM süreyi kullan; yoksa canlı tek-hizmet süresi
+        stored_dur = appt.get('service_duration')
+        if stored_dur:
+            appt_duration = int(stored_dur)
         else:
-            appt_duration = 30
+            appt_service_id = appt.get('service_id')
+            if appt_service_id:
+                appt_service = await db.services.find_one(
+                    {"id": appt_service_id, "organization_id": organization_id},
+                    {"_id": 0, "duration": 1}
+                )
+                appt_duration = appt_service.get('duration', 30) if appt_service else 30
+            else:
+                appt_duration = 30
 
         start_time_str = appt['appointment_time']
         start_hour, start_minute = map(int, start_time_str.split(':'))
@@ -12387,9 +12744,16 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             high_risk = True
             logging.info(f"🌍 Geo uyuşmazlık: IP={geo_country}, tel={phone_country} → yüksek risk")
 
-    # Hizmetin ödeme kuralını önceden kontrol et (doğrulama kararı için gerekli)
-    service_for_rule = await db.services.find_one({"id": appointment.service_id}, {"_id": 0, "payment_rule": 1})
-    payment_rule = (service_for_rule or {}).get("payment_rule", "on_site")
+    # Çoklu hizmet çözümleme (feature flag arkasında) + toplam ödeme kuralı.
+    # Geçersiz girdide burada 400 döner — kota/lock'a hiç dokunulmaz.
+    _settings_flag = await db.settings.find_one({"organization_id": organization_id}, {"_id": 0, "multi_service_enabled": 1})
+    _multi_enabled = bool((_settings_flag or {}).get("multi_service_enabled", False))
+    snapshot_lines, total_duration, total_price, service, resolved_service_ids = await resolve_services(
+        db, organization_id, appointment, multi_enabled=_multi_enabled
+    )
+    # Geriye dönük uyum: appointment.service_id'yi ilk hizmete normalize et
+    object.__setattr__(appointment, "service_id", resolved_service_ids[0])
+    payment_rule = service.get("payment_rule", "on_site")
 
     # KATMAN 3 KARAR: VIP bypass mı, WhatsApp doğrulama mı?
     skip_verification = False
@@ -12431,7 +12795,8 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
         appointment_payload = {
             "customer_name": appointment.customer_name,
             "phone": appointment.phone,
-            "service_id": appointment.service_id,
+            "service_id": resolved_service_ids[0],
+            "service_ids": resolved_service_ids,
             "appointment_date": appointment.appointment_date,
             "appointment_time": appointment.appointment_time,
             "notes": appointment.notes,
@@ -12523,18 +12888,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     if not quota_ok:
         raise HTTPException(status_code=403, detail=quota_error)
     
-    # Service'i bul
-    service = await db.services.find_one({"id": appointment.service_id}, {"_id": 0})
-    if not service:
-        # Kota artırıldı ama hizmet bulunamadı, geri al
-        plan_doc = await db.organization_plans.find_one({"organization_id": organization_id})
-        if plan_doc:
-            await db.organization_plans.update_one(
-                {"organization_id": organization_id},
-                {"$inc": {"quota_usage": -1}}
-            )
-        raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
-    
+    # Service zaten yukarıda resolve_services ile çözümlendi (merged_service = toplam süre/fiyat/isim)
     assigned_staff_id = None
     
     # AKILLI ATAMA MANTIĞI
@@ -12557,7 +12911,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             "appointment_date": appointment.appointment_date,
             "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}
             },
-            {"_id": 0, "appointment_time": 1, "service_id": 1}
+            {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1}
         ).to_list(100)
         
         # Her randevunun bitiş saatini hesapla ve çakışma kontrolü yap
@@ -12566,8 +12920,11 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             existing_start_time = existing_appt['appointment_time']
             existing_service_id = existing_appt.get('service_id')
             
-            # Mevcut randevunun hizmet süresini bul
-            if existing_service_id:
+            # Mevcut randevunun hizmet süresini bul — çoklu hizmette saklı TOPLAM süre
+            stored_dur = existing_appt.get('service_duration')
+            if stored_dur:
+                existing_duration = int(stored_dur)
+            elif existing_service_id:
                 existing_service = await db.services.find_one({"id": existing_service_id}, {"_id": 0, "duration": 1})
                 existing_duration = existing_service.get('duration', 30) if existing_service else 30
             else:
@@ -12635,7 +12992,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                 {"organization_id": organization_id, "role": "admin"},
                 {"_id": 0, "username": 1, "role": 1, "permitted_service_ids": 1}
             )
-            if admin_user and appointment.service_id in (admin_user.get('permitted_service_ids') or []):
+            if admin_user and all(sid in (admin_user.get('permitted_service_ids') or []) for sid in resolved_service_ids):
                 # Çakışma kontrolü — admin'in VE atanmamış randevuları kontrol et
                 admin_username = admin_user['username']
                 conflict_appts = await db.appointments.find(
@@ -12688,7 +13045,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             # Bu hizmeti verebilen personelleri bul
             qualified_staff_query = {
                 "organization_id": organization_id,
-                "permitted_service_ids": {"$in": [appointment.service_id]}
+                "permitted_service_ids": {"$all": resolved_service_ids}
             }
             
             # Admin hizmet vermiyorsa, admin'i listeden çıkar
@@ -12708,7 +13065,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                     {"organization_id": organization_id, "role": "admin"},
                     {"_id": 0, "username": 1, "role": 1, "permitted_service_ids": 1}
                 )
-                if admin_user and appointment.service_id in (admin_user.get('permitted_service_ids') or []):
+                if admin_user and all(sid in (admin_user.get('permitted_service_ids') or []) for sid in resolved_service_ids):
                     qualified_staff = [{"username": admin_user['username'], "role": "admin"}]
                     logging.info(f"⚠️ Public: No staff found, but admin can provide service. Using admin: {admin_user['username']}")
             
@@ -12739,7 +13096,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                         "appointment_date": appointment.appointment_date,
                         "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}
                     },
-                    {"_id": 0, "appointment_time": 1, "service_id": 1}
+                    {"_id": 0, "appointment_time": 1, "service_id": 1, "service_duration": 1}
                 ).to_list(100)
                 
                 # Çakışma kontrolü
@@ -12748,8 +13105,11 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                     existing_start_time = existing_appt['appointment_time']
                     existing_service_id = existing_appt.get('service_id')
                     
-                    # Mevcut randevunun hizmet süresini bul
-                    if existing_service_id:
+                    # Mevcut randevunun hizmet süresini bul — çoklu hizmette saklı TOPLAM süre
+                    stored_dur = existing_appt.get('service_duration')
+                    if stored_dur:
+                        existing_duration = int(stored_dur)
+                    elif existing_service_id:
                         existing_service = await db.services.find_one({"id": existing_service_id}, {"_id": 0, "duration": 1})
                         existing_duration = existing_service.get('duration', 30) if existing_service else 30
                     else:
@@ -12802,9 +13162,11 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     
     # Randevuyu oluştur
     appointment_data = appointment.model_dump()
+    appointment_data['service_id'] = resolved_service_ids[0]  # ilk hizmet (geriye dönük uyum)
+    appointment_data['services'] = snapshot_lines  # çoklu hizmet snapshot kalemleri
     appointment_data['service_name'] = service['name']
     appointment_data['service_price'] = service['price']
-    appointment_data['service_duration'] = service.get('duration', 30)  # Hizmet süresini ekle
+    appointment_data['service_duration'] = service.get('duration', 30)  # Toplam hizmet süresi
     appointment_data['staff_member_id'] = assigned_staff_id
     appointment_data['source'] = 'public_booking'  # Public booking'den geldiğini işaretle
     
@@ -12858,6 +13220,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
         mock_user = type('obj', (object,), {'organization_id': organization_id})
         await invalidate_cache(request, "dashboard_stats", mock_user)
         await invalidate_cache(request, "customers_list", mock_user)
+        await invalidate_availability_cache(request, organization_id)
         logging.info(f"🧹 Public randevu sonrası admin cache temizlendi: {organization_id}")
     except Exception as e:
         logging.error(f"❌ Public süpürge hatası: {e}")
@@ -13117,10 +13480,17 @@ async def verify_code_and_create_appointment(request: Request):
     if not quota_ok:
         raise HTTPException(status_code=403, detail=quota_error)
 
-    service = await db.services.find_one({"id": apt_dict.get("service_id")}, {"_id": 0})
-    if not service:
+    # Çoklu hizmet çözümleme (snapshot + toplam süre/fiyat)
+    try:
+        _apt_in = AppointmentCreate(**apt_dict)
+        _settings_flag = await db.settings.find_one({"organization_id": org_id}, {"_id": 0, "multi_service_enabled": 1})
+        _multi_enabled = bool((_settings_flag or {}).get("multi_service_enabled", False))
+        snapshot_lines, total_duration, total_price, service, resolved_service_ids = await resolve_services(
+            db, org_id, _apt_in, multi_enabled=_multi_enabled
+        )
+    except HTTPException:
         await db.organization_plans.update_one({"organization_id": org_id}, {"$inc": {"quota_usage": -1}})
-        raise HTTPException(status_code=404, detail="Hizmet bulunamadı.")
+        raise
 
     payment_rule = service.get("payment_rule", "on_site")
     apt_status = "Bekliyor"
@@ -13132,6 +13502,8 @@ async def verify_code_and_create_appointment(request: Request):
     apt_obj = Appointment(**{
         **apt_dict,
         "organization_id": org_id,
+        "service_id": resolved_service_ids[0],
+        "services": snapshot_lines,
         "service_name": service.get("name", ""),
         "service_price": service.get("price", 0),
         "service_duration": service.get("duration", 30),

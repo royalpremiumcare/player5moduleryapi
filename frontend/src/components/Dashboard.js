@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import io from "socket.io-client";
 import {
   Calendar, Clock, Phone, Edit, Trash2, Check, X,
-  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee, TrendingUp, CalendarDays, Sparkles
+  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee, TrendingUp, CalendarDays, Sparkles, ChevronDown, Layers
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
@@ -165,6 +165,40 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       const endMinutes = totalMinutes % 60;
       return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
     } catch (e) { return null; }
+  };
+
+  // Çoklu hizmette kompakt etiket: "Saç (+2)" — uzun birleşik isim kesilmesin
+  const isMultiService = (apt) => Array.isArray(apt?.services) && apt.services.length > 1;
+
+  const serviceDisplayName = (apt) => {
+    if (isMultiService(apt)) {
+      const sorted = [...apt.services].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+      // İlk hizmet adı; çoklu hizmet sayısı ayrı rozette gösterilir
+      return sorted[0]?.name_snapshot || apt.service_name;
+    }
+    return apt?.service_name;
+  };
+
+  // Çoklu hizmet detay listesi (sıra + süre) — kart genişletilince personel hangi
+  // hizmetleri sırayla vereceğini görür
+  const renderServiceBreakdown = (apt) => {
+    if (!isMultiService(apt)) return null;
+    const sorted = [...apt.services].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+    return (
+      <div className="space-y-1.5">
+        {sorted.map((s, idx) => (
+          <div key={s.service_id || idx} className="flex items-center justify-between gap-2 text-sm">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-5 h-5 flex-shrink-0 rounded-full bg-zinc-900 text-white text-[11px] font-bold flex items-center justify-center">{idx + 1}</span>
+              <span className="font-medium text-gray-800 truncate">{s.name_snapshot}</span>
+            </div>
+            {s.duration_snapshot ? (
+              <span className="flex-shrink-0 text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{s.duration_snapshot} {t('publicBooking.minutes')}</span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    );
   };
 
   const toggleNote = (id) => setExpandedNoteId(prev => prev === id ? null : id);
@@ -434,6 +468,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     const isCancelled = apt.status === "İptal" || apt.status === "İptal Edildi" || apt.status === "Cancelled" || apt.status === t('dashboard.status.cancelled');
     const isCompleted = apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed');
     const hasNote = apt.notes && apt.notes.trim().length > 0;
+    const hasMulti = isMultiService(apt);
     const isExpanded = expandedNoteId === apt.id;
 
     const swipeIsOpen = openSwipeCardId === apt.id ? openSwipeCardSide : null;
@@ -458,12 +493,12 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       }
     };
     const handleSwipeDelete = () => setDeleteDialog(apt);
-    const handleCardTap = () => { if (hasNote) toggleNote(apt.id); };
+    const handleCardTap = () => { if (hasNote || hasMulti) toggleNote(apt.id); };
 
     const cardInner = (
       <div
         key={apt.id}
-        className={`bg-white rounded-xl p-4 border border-gray-200 border-l-4 shadow-sm hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 ${isCancelled ? 'opacity-60' : ''} ${hasNote ? 'cursor-pointer' : ''} ${apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'border-l-amber-400' : apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed') ? 'border-l-green-500' : isCancelled ? 'border-l-red-500' : 'border-l-gray-300'}`}
+        className={`bg-white rounded-xl p-4 border border-gray-200 border-l-4 shadow-sm hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 ${isCancelled ? 'opacity-60' : ''} ${(hasNote || hasMulti) ? 'cursor-pointer' : ''} ${apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'border-l-amber-400' : apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed') ? 'border-l-green-500' : isCancelled ? 'border-l-red-500' : 'border-l-gray-300'}`}
       >
         <div className="flex gap-4">
           <div className="flex flex-col items-center justify-center min-w-[60px] border-r border-gray-100 pr-4">
@@ -490,7 +525,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               )}
             </div>
             <div className="flex items-center gap-2 mb-3">
-              <p className="text-sm text-gray-600 truncate">{apt.service_name}</p>
+              <p className="text-sm text-gray-600 truncate">{serviceDisplayName(apt)}</p>
+              {hasMulti && (
+                <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-zinc-700 bg-zinc-100 rounded-full pl-1.5 pr-1.5 py-0.5">
+                  <Layers className="w-3 h-3" />
+                  <span>{apt.services.length}</span>
+                  <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                </span>
+              )}
               <SessionBadge number={apt.session_number} total={apt.session_total} />
               {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
             </div>
@@ -526,12 +568,19 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             </div>
           </div>
         </div>
-        {isExpanded && hasNote && (
-          <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200">
-            <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm shadow-sm">
-              <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
-              <p className="font-medium">{apt.notes}</p>
-            </div>
+        {isExpanded && (hasMulti || hasNote) && (
+          <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200 space-y-3">
+            {hasMulti && (
+              <div className="bg-zinc-50 p-3 rounded-lg shadow-sm">
+                {renderServiceBreakdown(apt)}
+              </div>
+            )}
+            {hasNote && (
+              <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm shadow-sm">
+                <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                <p className="font-medium">{apt.notes}</p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -776,6 +825,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               {upcoming.slice(0, upcomingVisibleCount).map((apt) => (
                 (() => {
                   const hasNote = apt.notes && apt.notes.trim().length > 0;
+                  const hasMulti = isMultiService(apt);
                   const isExpanded = expandedNoteId === apt.id;
                   const isCancelledU = apt.status === "İptal" || apt.status === "İptal Edildi" || apt.status === "Cancelled" || apt.status === t('dashboard.status.cancelled');
                   const isCompletedU = apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed');
@@ -801,7 +851,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   const upcomingInner = (
                     <div
                       key={apt.id}
-                      className={`p-4 bg-white hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 md:rounded-xl md:border md:border-gray-200 md:shadow-sm ${hasNote ? 'cursor-pointer' : ''}`}
+                      className={`p-4 bg-white hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 md:rounded-xl md:border md:border-gray-200 md:shadow-sm ${(hasNote || hasMulti) ? 'cursor-pointer' : ''}`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
@@ -812,7 +862,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                           <div>
                             <h4 className="text-base font-bold text-gray-900">{apt.customer_name}</h4>
                             <div className="flex items-center gap-2">
-                              <p className="text-sm text-gray-500">{apt.service_name} • {apt.appointment_time}</p>
+                              <p className="text-sm text-gray-500">{serviceDisplayName(apt)} • {apt.appointment_time}</p>
+                              {hasMulti && (
+                                <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-zinc-700 bg-zinc-100 rounded-full pl-1.5 pr-1.5 py-0.5">
+                                  <Layers className="w-3 h-3" />
+                                  <span>{apt.services.length}</span>
+                                  <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                </span>
+                              )}
                               {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 text-amber-500 animate-pulse" />}
                             </div>
                           </div>
@@ -842,12 +899,19 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                         </div>
                       </div>
 
-                      {isExpanded && hasNote && (
-                        <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200">
-                          <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm shadow-sm">
-                            <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
-                            <p className="font-medium">{apt.notes}</p>
-                          </div>
+                      {isExpanded && (hasMulti || hasNote) && (
+                        <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200 space-y-3">
+                          {hasMulti && (
+                            <div className="bg-zinc-50 p-3 rounded-lg shadow-sm">
+                              {renderServiceBreakdown(apt)}
+                            </div>
+                          )}
+                          {hasNote && (
+                            <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm shadow-sm">
+                              <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                              <p className="font-medium">{apt.notes}</p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -861,7 +925,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                       onEdit={() => onEditAppointment(apt)}
                       onCancel={handleSwipeCancelU}
                       onDelete={() => setDeleteDialog(apt)}
-                      onTap={() => { if (hasNote) toggleNote(apt.id); }}
+                      onTap={() => { if (hasNote || hasMulti) toggleNote(apt.id); }}
                     >
                       {upcomingInner}
                     </SwipeableAppointmentCard>

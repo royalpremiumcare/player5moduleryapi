@@ -44,7 +44,7 @@ from .schemas import (
 from .fee_calculator import calculate_fee_preview, DepositRule
 from .feature_flags import is_env_flag_enabled
 from .gross_up_service import compute_customer_price as _gross_up_compute, GrossUpError
-from .merchant_checkout import create_customer_checkout_session, create_payment_link_session, handle_stripe_merchant_webhook
+from .merchant_checkout import create_customer_checkout_session, create_multi_service_checkout_session, create_payment_link_session, handle_stripe_merchant_webhook
 from .payout_service import check_payout_eligibility, create_payout_batch, process_payout_batch
 from .compliance import (
     check_kyc_status,
@@ -649,7 +649,8 @@ async def get_payout_history(
 
 class PublicCheckoutRequest(BaseModel):
     organization_id: str
-    service_id: str
+    service_id: Optional[str] = None
+    service_ids: Optional[List[str]] = None
     appointment_id: str
     customer_phone: str
     customer_name: Optional[str] = None
@@ -658,19 +659,36 @@ class PublicCheckoutRequest(BaseModel):
 
 @router.post("/api/public/checkout")
 async def public_checkout(request: Request, body: PublicCheckoutRequest):
-    """Create a checkout session for a customer (public, no auth)."""
+    """Create a checkout session for a customer (public, no auth).
+
+    Çoklu hizmet: service_ids (>1) verilirse Akıllı D toplu kapora (tek line item).
+    """
     db = _get_db(request)
 
     try:
-        result = await create_customer_checkout_session(
-            db=db,
-            organization_id=body.organization_id,
-            service_id=body.service_id,
-            appointment_id=body.appointment_id,
-            customer_phone=body.customer_phone,
-            session_count=body.session_count,
-            customer_name=body.customer_name or "",
-        )
+        ids = [s for s in (body.service_ids or []) if s]
+        if len(ids) > 1:
+            result = await create_multi_service_checkout_session(
+                db=db,
+                organization_id=body.organization_id,
+                service_ids=ids,
+                appointment_id=body.appointment_id,
+                customer_phone=body.customer_phone,
+                customer_name=body.customer_name or "",
+            )
+        else:
+            single_id = (ids[0] if ids else None) or body.service_id
+            if not single_id:
+                raise ValueError("service_id veya service_ids gereklidir")
+            result = await create_customer_checkout_session(
+                db=db,
+                organization_id=body.organization_id,
+                service_id=single_id,
+                appointment_id=body.appointment_id,
+                customer_phone=body.customer_phone,
+                session_count=body.session_count,
+                customer_name=body.customer_name or "",
+            )
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -680,16 +698,51 @@ async def public_checkout(request: Request, body: PublicCheckoutRequest):
 async def public_fee_preview(
     request: Request,
     organization_id: str,
-    service_id: str,
+    service_id: Optional[str] = None,
+    service_ids: Optional[str] = None,
     session_count: int = 1,
 ):
-    """Preview fees for a service (public, no auth)."""
+    """Preview fees for a service (public, no auth).
+
+    Çoklu hizmet: service_ids (virgülle ayrılmış) verilirse her hizmetin önizleme
+    tutarları toplanır (Akıllı D). Sonuç org bazlı Redis'te 60sn cache'lenir;
+    hizmet/kategori değişiminde invalidate edilir (plann:fee:{org}:*).
+    """
     db = _get_db(request)
+
+    # Çoklu/tekli normalizasyon
+    id_list = [s.strip() for s in service_ids.split(",") if s.strip()] if service_ids else ([service_id] if service_id else [])
+    if not id_list:
+        raise HTTPException(status_code=400, detail="service_id veya service_ids gereklidir")
+
+    # Cache get
+    redis_client = getattr(request.app.state, 'redis_client', None) if hasattr(request, 'app') else None
+    _fee_cache_key = f"plann:fee:{organization_id}:{session_count}:{'-'.join(sorted(id_list))}"
+    if redis_client:
+        try:
+            _cached = await redis_client.get(_fee_cache_key)
+            if _cached:
+                import json as _json
+                return _json.loads(_cached)
+        except Exception:
+            pass
 
     settings = await db.settings.find_one({"organization_id": organization_id})
     if not settings:
         raise HTTPException(status_code=404, detail="Organization not found")
 
+    # Çoklu hizmet: her hizmetin önizlemesini topla
+    if len(id_list) > 1:
+        result = await _multi_fee_preview(db, settings, organization_id, id_list, session_count)
+        if redis_client:
+            try:
+                import json as _json
+                await redis_client.setex(_fee_cache_key, 60, _json.dumps(result))
+            except Exception:
+                pass
+        return result
+
+    service_id = id_list[0]
     service = await db.services.find_one({
         "id": service_id,
         "organization_id": organization_id,
@@ -770,7 +823,95 @@ async def public_fee_preview(
 
     preview["fee_preference"] = fee_preference
     preview["currency_symbol"] = CURRENCY_SYMBOLS.get(base_currency, "₺")
+    if redis_client:
+        try:
+            import json as _json
+            await redis_client.setex(_fee_cache_key, 60, _json.dumps(preview))
+        except Exception:
+            pass
     return preview
+
+
+def _build_deposit_rule_for_preview(service: dict):
+    """fee-preview için service'ten DepositRule üretir (tekli mantıkla aynı)."""
+    if service.get("payment_rule") == "deposit":
+        deposit_amount = service.get("deposit_amount")
+        if deposit_amount is not None:
+            return DepositRule(payment_rule="deposit", deposit_type="fixed", deposit_value=int(round(deposit_amount * 100)))
+        dep_pct = service.get("deposit_percentage", 30)
+        return DepositRule(payment_rule="deposit", deposit_type="percentage", deposit_value=dep_pct * 100)
+    if service.get("payment_rule") in ("full_online", "online"):
+        return DepositRule(payment_rule="full_online")
+    return None
+
+
+async def _multi_fee_preview(db, settings: dict, organization_id: str, id_list: list, session_count: int) -> dict:
+    """Çoklu hizmet fee-preview: her hizmetin müşteri/merchant/komisyon tutarlarını toplar."""
+    base_currency = settings.get("base_currency", "TRY")
+    tier = settings.get("payout_tier", "standard")
+    fee_preference = settings.get("fee_preference", "buyer_pays")
+
+    docs = await db.services.find({"id": {"$in": id_list}, "organization_id": organization_id}).to_list(len(id_list))
+    by_id = {d["id"]: d for d in docs}
+    if any(sid not in by_id for sid in id_list):
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    gross_up = is_env_flag_enabled("FEATURE_GROSS_UP")
+    seller_customer = seller_net = 0
+    buyer_customer = buyer_net = 0
+    deposit_applied = False
+    deposit_minor_total = 0
+    full_price_minor_total = 0
+
+    for sid in id_list:
+        svc = by_id[sid]
+        price = svc.get("price_minor", 0)
+        if not price and svc.get("price"):
+            price = int(round(svc["price"] * 100))
+        full_price_minor_total += price or 0
+        deposit_rule = _build_deposit_rule_for_preview(svc)
+        if gross_up:
+            try:
+                gu_seller = _gross_up_compute(base_currency=base_currency, service_price_minor=price, fee_preference="seller_pays", tier=tier, deposit_rule=deposit_rule)
+                gu_buyer = _gross_up_compute(base_currency=base_currency, service_price_minor=price, fee_preference="buyer_pays", tier=tier, deposit_rule=deposit_rule)
+                seller_customer += gu_seller.customer_price_minor
+                seller_net += gu_seller.merchant_net_minor
+                buyer_customer += gu_buyer.customer_price_minor
+                buyer_net += gu_buyer.merchant_net_minor
+                deposit_applied = deposit_applied or gu_buyer.deposit_applied
+                deposit_minor_total += gu_buyer.deposit_minor or 0
+                continue
+            except Exception as e:
+                logger.warning("multi fee-preview gross-up failed for %s: %s", sid, e)
+        # Legacy fallback
+        p = calculate_fee_preview(base_currency, price, tier, session_count, deposit_rule)
+        seller_customer += p.get("seller_pays", {}).get("customer_pays", 0)
+        seller_net += p.get("seller_pays", {}).get("merchant_receives", 0)
+        buyer_customer += p.get("buyer_pays", {}).get("customer_pays", 0)
+        buyer_net += p.get("buyer_pays", {}).get("merchant_receives", 0)
+        deposit_applied = deposit_applied or p.get("deposit_applied", False)
+        deposit_minor_total += p.get("deposit_minor", 0) or 0
+
+    return {
+        "seller_pays": {
+            "customer_pays": seller_customer,
+            "merchant_receives": seller_net,
+            "platform_fee": seller_customer - seller_net,
+        },
+        "buyer_pays": {
+            "customer_pays": buyer_customer,
+            "merchant_receives": buyer_net,
+            "platform_fee": buyer_customer - buyer_net,
+        },
+        "deposit_applied": deposit_applied,
+        "deposit_minor": deposit_minor_total,
+        "full_service_price_minor": full_price_minor_total,
+        "gross_up_applied": bool(gross_up),
+        "fee_preference": fee_preference,
+        "currency_symbol": CURRENCY_SYMBOLS.get(base_currency, "₺"),
+        "multi_service": True,
+        "service_count": len(id_list),
+    }
 
 
 # ---------------------------------------------------------------------------

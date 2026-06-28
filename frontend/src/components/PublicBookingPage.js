@@ -2,8 +2,11 @@ import { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import { useParams } from "react-router-dom";
 import { format } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
-import { Calendar as CalendarIcon, Clock, Check, AlertCircle, User, ArrowRight, ArrowLeft, Loader2, ChevronLeft, ChevronRight, X, MessageCircle, QrCode as QrCodeIcon, Info } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Check, AlertCircle, User, ArrowRight, ArrowLeft, Loader2, ChevronLeft, ChevronRight, X, MessageCircle, QrCode as QrCodeIcon, Info, GripVertical, ShoppingBag, Trash2, ChevronDown } from "lucide-react";
 // Raw Turnstile API used via window.turnstile (loaded in index.html)
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { QRCodeSVG } from "qrcode.react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
@@ -37,6 +40,55 @@ const fmtPrice = (minor) => {
 const publicApi = axios.create({
   baseURL: `${BACKEND_URL}/api`,
 });
+
+// Çoklu hizmet sepetinde sıralanabilir (drag-drop) satır
+const SortableCartItem = ({ service, index, onRemove, currencySymbol, currentLang, showDuration }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: service.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : 'auto',
+    opacity: isDragging ? 0.85 : 1,
+  };
+  const priceLabel = currentLang === 'en'
+    ? `${currencySymbol}${Math.round(service.price).toLocaleString('tr-TR')}`
+    : `${Math.round(service.price).toLocaleString('tr-TR')}${currencySymbol}`;
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 p-3 rounded-xl border border-zinc-200 bg-white"
+    >
+      <button
+        type="button"
+        className="touch-none cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-700 p-1"
+        {...attributes}
+        {...listeners}
+        aria-label="reorder"
+      >
+        <GripVertical className="w-5 h-5" />
+      </button>
+      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-900 text-white text-xs font-bold flex-shrink-0">
+        {index + 1}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-zinc-900 truncate">{service.name}</p>
+        <div className="flex items-center gap-2 text-xs text-zinc-500">
+          {showDuration && <span>{service.duration || 30} {currentLang === 'en' ? 'min' : 'dk'}</span>}
+          <span className="font-medium text-zinc-700">{priceLabel}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onRemove(service.id)}
+        className="text-zinc-400 hover:text-red-600 p-1 transition-colors"
+        aria-label="remove"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
 
 const BusinessGallery = memo(({ images }) => {
   const validImages = useMemo(() => (Array.isArray(images) ? images.filter(Boolean) : []), [images]);
@@ -208,7 +260,10 @@ const PublicBookingPage = () => {
   const [staffMembers, setStaffMembers] = useState([]);
   const [settings, setSettings] = useState(null);
 
-  const [selectedService, setSelectedService] = useState(null);
+  // Çoklu hizmet: kaynak liste; tekli mod tek elemanlı çalışır (geriye dönük uyum)
+  const [selectedServices, setSelectedServices] = useState([]);
+  const selectedService = selectedServices[0] || null;
+  const [cartOpen, setCartOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState("");
@@ -314,6 +369,67 @@ const PublicBookingPage = () => {
 
   const currentVisualStep = getVisualStepNumber(currentStep);
 
+  // Çoklu hizmet türetilmiş değerler
+  const multiEnabled = settings?.multi_service_enabled === true;
+  const categories = business?.categories || [];
+  const selectedServiceIds = selectedServices.map((s) => s.id);
+  const totalPrice = selectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+  const totalDuration = selectedServices.reduce((sum, s) => sum + (Number(s.duration) || 30), 0);
+  const isServiceSelected = (id) => selectedServiceIds.includes(id);
+
+  // Hizmetleri kategoriye göre grupla (sırasız hizmetler en sona "Diğer").
+  // Kategori varsa hem tekli hem çoklu modda accordion için gruplanır.
+  const groupedServices = useMemo(() => {
+    if (categories.length === 0) {
+      return [{ id: null, name: null, items: services }];
+    }
+    const byId = {};
+    categories.forEach((c) => { byId[c.id] = { id: c.id, name: c.name, items: [] }; });
+    const uncategorized = { id: '__none__', name: currentLang === 'en' ? 'Other' : 'Diğer', items: [] };
+    services.forEach((svc) => {
+      if (svc.category_id && byId[svc.category_id]) byId[svc.category_id].items.push(svc);
+      else uncategorized.items.push(svc);
+    });
+    const ordered = categories.map((c) => byId[c.id]).filter((g) => g.items.length > 0);
+    if (uncategorized.items.length > 0) ordered.push(uncategorized);
+    return ordered;
+  }, [categories, services, currentLang]);
+
+  // Accordion: kategori varsa açılır-kapanır; ilk kategori varsayılan açık
+  const useAccordion = categories.length > 0 && groupedServices.length > 1;
+  const [openCategoryIds, setOpenCategoryIds] = useState(null);
+  useEffect(() => {
+    if (openCategoryIds === null && groupedServices.length > 0 && useAccordion) {
+      setOpenCategoryIds([groupedServices[0].id]);
+    }
+  }, [groupedServices, useAccordion, openCategoryIds]);
+  const toggleCategory = (catId) => {
+    setOpenCategoryIds((prev) => {
+      const cur = prev || [];
+      return cur.includes(catId) ? cur.filter((id) => id !== catId) : [...cur, catId];
+    });
+  };
+
+  const cartSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } })
+  );
+
+  const handleCartDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setSelectedServices((prev) => {
+      const oldIndex = prev.findIndex((s) => s.id === active.id);
+      const newIndex = prev.findIndex((s) => s.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  };
+
+  const removeFromCart = (id) => {
+    setSelectedServices((prev) => prev.filter((s) => s.id !== id));
+  };
+
   const getLogoUrl = (logoUrl) => {
     if (!logoUrl) return null;
     return logoUrl;
@@ -357,11 +473,12 @@ const PublicBookingPage = () => {
   // `currentStep >= 3` boolean olarak dependency'de — adım 3→4, 4→5 geçişlerinde
   // boolean değişmediği için useEffect tekrar fire etmez (gereksiz network kapatıldı).
   const stepReady = currentStep >= 3;
+  const selectedServiceKey = selectedServices.map((s) => s.id).join(",");
   useEffect(() => {
-    if (stepReady && selectedService && selectedDate && business) {
+    if (stepReady && selectedServices.length > 0 && selectedDate && business) {
       loadAvailableSlots();
     }
-  }, [selectedService, selectedDate, selectedStaff, business, stepReady]);
+  }, [selectedServiceKey, selectedDate, selectedStaff, business, stepReady]);
 
   // WebSocket — başka müşteri randevu alınca slot grid'i tazele.
   // Yoğun saatlerde flood olmasın diye 500ms debounce.
@@ -431,14 +548,19 @@ const PublicBookingPage = () => {
   };
 
   const loadAvailableSlots = async () => {
-    if (!selectedService || !selectedDate || !business) return;
+    if (selectedServices.length === 0 || !selectedDate || !business) return;
     setSlotsLoading(true);
     try {
       const dateStr = format(selectedDate, "yyyy-MM-dd");
       const params = {
-        service_id: selectedService.id,
         date: dateStr
       };
+      // Çoklu hizmette toplam süre + personel kesişimi için service_ids gönder
+      if (selectedServiceIds.length > 1) {
+        params.service_ids = selectedServiceIds.join(",");
+      } else {
+        params.service_id = selectedServiceIds[0];
+      }
       
       if (selectedStaff) {
         params.staff_id = selectedStaff;
@@ -489,10 +611,12 @@ const PublicBookingPage = () => {
   loadSlotsRef.current = loadAvailableSlots;
 
   const getQualifiedStaff = () => {
-    if (!selectedService) return [];
-    return staffMembers.filter(staff => 
-      staff.permitted_service_ids && staff.permitted_service_ids.includes(selectedService.id)
-    );
+    if (selectedServices.length === 0) return [];
+    // Çoklu hizmet: tüm seçili hizmetleri verebilen personeller (KESİŞİM)
+    return staffMembers.filter(staff => {
+      const permitted = new Set(staff.permitted_service_ids || []);
+      return selectedServiceIds.every((id) => permitted.has(id));
+    });
   };
 
   const handleNotMe = () => {
@@ -505,7 +629,7 @@ const PublicBookingPage = () => {
   const canGoNext = () => {
     switch (currentStep) {
       case 1:
-        return selectedService !== null;
+        return selectedServices.length > 0;
       case 2:
         return true; 
       case 3:
@@ -544,11 +668,20 @@ const PublicBookingPage = () => {
   
   // Hizmet seçildiğinde çalışır
   const handleServiceSelect = (service) => {
-    setSelectedService(service);
     setSelectedStaff(null);
+
+    if (multiEnabled) {
+      // Çoklu mod: toggle (seç/kaldır), otomatik ilerleme YOK — sepet bar'dan devam edilir
+      setSelectedServices((prev) => {
+        const exists = prev.some((s) => s.id === service.id);
+        return exists ? prev.filter((s) => s.id !== service.id) : [...prev, service];
+      });
+      return;
+    }
+
+    // Tekli mod: eski davranış (seç + otomatik ilerle)
+    setSelectedServices([service]);
     setFeePreview(null);
-    
-    // Fetch fee preview for online/deposit services
     if (service.payment_rule && service.payment_rule !== 'on_site' && business?.organization_id) {
       publicApi.get(`/public/fee-preview`, {
         params: {
@@ -558,9 +691,6 @@ const PublicBookingPage = () => {
         }
       }).then(res => setFeePreview(res.data)).catch(() => {});
     }
-    
-    // Çift tıklama sorununu çözmek için:
-    // Doğrudan state güncellemesi beklemeden bir sonraki adıma geçişi planla
     setTimeout(() => {
         if (!showStaffStep) {
             setCurrentStep(3); // Personeli atla, Tarihe git
@@ -569,6 +699,42 @@ const PublicBookingPage = () => {
         }
     }, 300);
   };
+
+  // Çoklu modda devam: seçilen hizmetleri onaylayıp sonraki adıma geç
+  const handleMultiContinue = () => {
+    if (selectedServices.length === 0) return;
+    if (!showStaffStep) {
+      setSelectedStaff(null);
+      setCurrentStep(3);
+    } else {
+      setCurrentStep(2);
+    }
+  };
+
+  // Çoklu modda kombinasyon fee-preview (online/deposit hizmet varsa)
+  useEffect(() => {
+    if (!multiEnabled || !business?.organization_id || selectedServices.length === 0) {
+      if (multiEnabled) setFeePreview(null);
+      return;
+    }
+    const needsPayment = selectedServices.some((s) => s.payment_rule && s.payment_rule !== 'on_site');
+    if (!needsPayment) { setFeePreview(null); return; }
+    const params = { organization_id: business.organization_id };
+    if (selectedServiceIds.length > 1) params.service_ids = selectedServiceIds.join(",");
+    else params.service_id = selectedServiceIds[0];
+    publicApi.get(`/public/fee-preview`, { params }).then(res => setFeePreview(res.data)).catch(() => {});
+  }, [selectedServiceKey, multiEnabled, business]);
+
+  // Seçili personel artık tüm hizmetleri veremiyorsa sıfırla
+  useEffect(() => {
+    if (!selectedStaff) return;
+    const stillQualified = staffMembers.some((staff) => {
+      if (staff.username !== selectedStaff) return false;
+      const permitted = new Set(staff.permitted_service_ids || []);
+      return selectedServiceIds.every((id) => permitted.has(id));
+    });
+    if (!stillQualified) setSelectedStaff(null);
+  }, [selectedServiceKey]);
 
   // Saat seçildiğinde çalışır
   const handleTimeSelect = (slot) => {
@@ -588,7 +754,7 @@ const PublicBookingPage = () => {
       resetTimeoutRef.current = null;
       setSuccess(false);
       setCurrentStep(1);
-      setSelectedService(null);
+      setSelectedServices([]);
       setSelectedStaff(null);
       setSelectedDate(new Date());
       setSelectedTime("");
@@ -602,7 +768,7 @@ const PublicBookingPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!selectedService || !selectedDate || !selectedTime || !customerFullName || !phone) {
+    if (selectedServices.length === 0 || !selectedDate || !selectedTime || !customerFullName || !phone) {
       toast.error(t('publicBooking.errorFillAll'));
       return;
     }
@@ -628,16 +794,24 @@ const PublicBookingPage = () => {
       const payload = {
         customer_name: fullName,
         phone: fullPhoneNumber,
-        service_id: selectedService.id,
         appointment_date: format(selectedDate, "yyyy-MM-dd"),
         appointment_time: selectedTime,
         notes: "",
         staff_member_id: selectedStaff || null,
         turnstile_token: token,
       };
+      // Çoklu hizmette service_ids; tekli mod eski service_id davranışını korur
+      if (selectedServiceIds.length > 1) {
+        payload.service_ids = selectedServiceIds;
+      } else {
+        payload.service_id = selectedServiceIds[0];
+      }
 
+      // Idempotency-Key: aynı sepetin çift gönderimini engeller
+      const idempotencyKey = `${business.organization_id}:${selectedServiceIds.join('-')}:${payload.appointment_date}:${payload.appointment_time}:${fullPhoneNumber}`;
       const response = await publicApi.post(`/public/appointments`, payload, {
-        params: { organization_id: business.organization_id }
+        params: { organization_id: business.organization_id },
+        headers: { 'Idempotency-Key': idempotencyKey },
       });
 
       if (response.data.needs_verification) {
@@ -654,18 +828,20 @@ const PublicBookingPage = () => {
       }
 
       // Stripe checkout redirect for online/deposit payment rules
-      const paymentRule = selectedService.payment_rule;
-      console.log('[Checkout] selectedService:', selectedService.name, 'payment_rule:', paymentRule, 'appointment response:', response.data);
-      if (paymentRule === "online" || paymentRule === "deposit") {
+      // Çoklu hizmette: herhangi bir hizmet online/deposit ise toplu kapora (Akıllı D)
+      const needsPayment = selectedServices.some((s) => s.payment_rule === "online" || s.payment_rule === "deposit");
+      if (needsPayment) {
         try {
           toast.info(i18n.language === 'tr' ? 'Ödeme sayfasına yönlendiriliyorsunuz...' : 'Redirecting to payment page...');
-          const checkoutRes = await publicApi.post(`/public/checkout`, {
+          const checkoutBody = {
             organization_id: business.organization_id,
-            service_id: selectedService.id,
             appointment_id: response.data.appointment?.id || response.data.id || response.data.appointment_id,
             customer_name: fullName,
             customer_phone: fullPhoneNumber,
-          });
+          };
+          if (selectedServiceIds.length > 1) checkoutBody.service_ids = selectedServiceIds;
+          else checkoutBody.service_id = selectedServiceIds[0];
+          const checkoutRes = await publicApi.post(`/public/checkout`, checkoutBody);
           if (checkoutRes.data?.checkout_url) {
             window.location.href = checkoutRes.data.checkout_url;
             return;
@@ -720,7 +896,7 @@ const PublicBookingPage = () => {
     }
     setSuccess(false);
     setCurrentStep(1);
-    setSelectedService(null);
+    setSelectedServices([]);
     setSelectedStaff(null);
     setSelectedDate(new Date());
     setSelectedTime("");
@@ -761,13 +937,15 @@ const PublicBookingPage = () => {
         const paymentRule = res.data.service_payment_rule;
         if ((paymentRule === 'online' || paymentRule === 'deposit') && res.data.appointment_id) {
           try {
-            const checkoutRes = await publicApi.post('/public/checkout', {
+            const checkoutBody = {
               organization_id: business.organization_id,
-              service_id: selectedService.id,
               appointment_id: res.data.appointment_id,
               customer_name: customerFullName.trim(),
               customer_phone: verificationPhone,
-            });
+            };
+            if (selectedServiceIds.length > 1) checkoutBody.service_ids = selectedServiceIds;
+            else checkoutBody.service_id = selectedServiceIds[0];
+            const checkoutRes = await publicApi.post('/public/checkout', checkoutBody);
             if (checkoutRes.data?.checkout_url) {
               toast.success(currentLang === 'en' ? 'Appointment confirmed! Redirecting to payment...' : 'Randevunuz onaylandı! Ödeme sayfasına yönlendiriliyorsunuz...');
               window.location.href = checkoutRes.data.checkout_url;
@@ -938,7 +1116,7 @@ const PublicBookingPage = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 text-sm">
               <div className="flex justify-between bg-white border border-zinc-200 rounded-lg px-3 py-2">
                 <span className="text-zinc-500">{t('publicBooking.service')}</span>
-                <span className="font-semibold text-zinc-900">{selectedService?.name || '-'}</span>
+                <span className="font-semibold text-zinc-900 text-right">{selectedServices.length > 1 ? `${selectedServices.length} ${currentLang === 'en' ? 'services' : 'hizmet'}` : (selectedService?.name || '-')}</span>
               </div>
               <div className="flex justify-between bg-white border border-zinc-200 rounded-lg px-3 py-2">
                 <span className="text-zinc-500">{t('publicBooking.time')}</span>
@@ -1089,67 +1267,116 @@ const PublicBookingPage = () => {
               
               {/* ADIM 1: Hizmet Seçimi */}
               {currentStep === 1 && (
-                <div key="step1" className="space-y-6 animate-in slide-in-from-right-8 fade-in duration-300">
-                  <h2 className="lg:hidden text-2xl font-bold text-zinc-900 tracking-tight">{t('publicBooking.step1')}</h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {services.map((service) => (
-                      <button
-                        key={service.id}
-                        type="button"
-                        onClick={() => handleServiceSelect(service)}
-                        className={`group p-6 rounded-xl border text-left transition-all duration-200 relative flex flex-col h-full ${
-                          selectedService?.id === service.id
-                            ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900 scale-[1.02]"
-                            : "border-zinc-200 bg-white hover:border-zinc-400 hover:shadow-sm"
-                        }`}
-                      >
-                        <div className="flex justify-between items-start w-full mb-3">
-                           <span className={`font-bold text-lg tracking-tight ${selectedService?.id === service.id ? 'text-zinc-900' : 'text-zinc-900'}`}>
-                             {service.name}
-                           </span>
-                           {selectedService?.id === service.id && (
-                             <div className="w-6 h-6 bg-zinc-900 rounded-full flex items-center justify-center animate-in zoom-in duration-200">
-                               <Check className="w-3 h-3 text-white" />
-                             </div>
-                           )}
-                        </div>
-                        
-                        {service.session_count && service.session_count > 1 && (
-                          <div className="mb-2">
-                            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
-                              {service.session_count} {currentLang === 'tr' ? 'Seanslık Paket' : 'Session Package'}
-                            </span>
-                          </div>
-                        )}
-                        {service.payment_rule && service.payment_rule !== 'on_site' && (
-                          <div className="mb-2">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                              service.payment_rule === 'deposit'
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-emerald-100 text-emerald-700'
-                            }`}>
-                              {service.payment_rule === 'deposit'
-                                ? (currentLang === 'tr' ? 'Kapora Gerekli' : 'Deposit Required')
-                                : (currentLang === 'tr' ? 'Online Ödeme' : 'Online Payment')
-                              }
-                            </span>
-                          </div>
-                        )}
-                        <div className="mt-auto flex items-center justify-between w-full pt-4 border-t border-dashed border-zinc-200">
-                            {settings?.show_service_duration_on_public !== false && (
-                                <span className="text-sm font-medium text-zinc-500 bg-zinc-100 px-2 py-1 rounded">
-                                  {(service.duration || 30)} {t('publicBooking.minutes')}
-                                </span>
-                            )}
-                            {settings?.show_service_price_on_public !== false && (
-                                <span className="text-lg font-bold text-zinc-900">
-                                  {currentLang === 'en' ? `${currencySymbol}${Math.round(service.price).toLocaleString('tr-TR')}` : `${Math.round(service.price).toLocaleString('tr-TR')}${currencySymbol}`}
-                                </span>
-                            )}
-                        </div>
-                      </button>
-                    ))}
+                <div key="step1" className={`space-y-6 animate-in slide-in-from-right-8 fade-in duration-300 ${multiEnabled && selectedServices.length > 0 ? 'pb-40 lg:pb-32' : ''}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="lg:hidden text-2xl font-bold text-zinc-900 tracking-tight">{t('publicBooking.step1')}</h2>
+                    {multiEnabled && (
+                      <span className="hidden lg:inline-flex text-xs font-medium text-zinc-500 bg-zinc-100 px-3 py-1 rounded-full">
+                        {currentLang === 'en' ? 'Select one or more services' : 'Bir veya birden fazla hizmet seçin'}
+                      </span>
+                    )}
                   </div>
+
+                  {groupedServices.map((group, gIdx) => {
+                    const selectedInCat = multiEnabled ? group.items.filter((s) => isServiceSelected(s.id)).length : 0;
+                    const isOpen = !useAccordion || (openCategoryIds || []).includes(group.id);
+                    return (
+                    <div key={group.id || `g-${gIdx}`} className={useAccordion ? "rounded-xl border border-zinc-200 overflow-hidden" : "space-y-3"}>
+                      {useAccordion && group.name ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleCategory(group.id)}
+                          className="w-full flex items-center justify-between px-4 py-3.5 bg-gradient-to-r from-zinc-700 to-zinc-800 hover:from-zinc-800 hover:to-zinc-900 transition-colors"
+                        >
+                          <span className="font-bold text-white flex items-center gap-2 tracking-tight">
+                            {group.name}
+                            <span className="text-[11px] font-semibold text-zinc-100 bg-white/20 rounded-full px-2 py-0.5 min-w-[1.5rem] text-center">{group.items.length}</span>
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {selectedInCat > 0 && (
+                              <span className="text-xs font-bold bg-emerald-500 text-white rounded-full px-2 py-0.5">{selectedInCat}</span>
+                            )}
+                            <ChevronDown className={`w-5 h-5 text-zinc-300 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                          </div>
+                        </button>
+                      ) : (
+                        multiEnabled && group.name && (
+                          <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-500 pt-2">{group.name}</h3>
+                        )
+                      )}
+                      {isOpen && (
+                      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${useAccordion ? 'p-4' : ''}`}>
+                        {group.items.map((service) => {
+                          const active = multiEnabled ? isServiceSelected(service.id) : selectedService?.id === service.id;
+                          return (
+                            <button
+                              key={service.id}
+                              type="button"
+                              onClick={() => handleServiceSelect(service)}
+                              className={`group p-6 rounded-xl border text-left transition-all duration-200 relative flex flex-col h-full ${
+                                active
+                                  ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900 scale-[1.02]"
+                                  : "border-zinc-200 bg-white hover:border-zinc-400 hover:shadow-sm"
+                              }`}
+                            >
+                              <div className="flex justify-between items-start w-full mb-3">
+                                 <span className="font-bold text-lg tracking-tight text-zinc-900">
+                                   {service.name}
+                                 </span>
+                                 {multiEnabled ? (
+                                   <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-200 ${active ? 'bg-zinc-900 border-zinc-900' : 'border-zinc-300 bg-white'}`}>
+                                     {active && <Check className="w-3.5 h-3.5 text-white" />}
+                                   </div>
+                                 ) : (
+                                   active && (
+                                     <div className="w-6 h-6 bg-zinc-900 rounded-full flex items-center justify-center animate-in zoom-in duration-200">
+                                       <Check className="w-3 h-3 text-white" />
+                                     </div>
+                                   )
+                                 )}
+                              </div>
+
+                              {service.session_count && service.session_count > 1 && (
+                                <div className="mb-2">
+                                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                                    {service.session_count} {currentLang === 'tr' ? 'Seanslık Paket' : 'Session Package'}
+                                  </span>
+                                </div>
+                              )}
+                              {service.payment_rule && service.payment_rule !== 'on_site' && (
+                                <div className="mb-2">
+                                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                                    service.payment_rule === 'deposit'
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-emerald-100 text-emerald-700'
+                                  }`}>
+                                    {service.payment_rule === 'deposit'
+                                      ? (currentLang === 'tr' ? 'Kapora Gerekli' : 'Deposit Required')
+                                      : (currentLang === 'tr' ? 'Online Ödeme' : 'Online Payment')
+                                    }
+                                  </span>
+                                </div>
+                              )}
+                              <div className="mt-auto flex items-center justify-between w-full pt-4 border-t border-dashed border-zinc-200">
+                                  {settings?.show_service_duration_on_public !== false && (
+                                      <span className="text-sm font-medium text-zinc-500 bg-zinc-100 px-2 py-1 rounded">
+                                        {(service.duration || 30)} {t('publicBooking.minutes')}
+                                      </span>
+                                  )}
+                                  {settings?.show_service_price_on_public !== false && (
+                                      <span className="text-lg font-bold text-zinc-900">
+                                        {currentLang === 'en' ? `${currencySymbol}${Math.round(service.price).toLocaleString('tr-TR')}` : `${Math.round(service.price).toLocaleString('tr-TR')}${currencySymbol}`}
+                                      </span>
+                                  )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      )}
+                    </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -1231,7 +1458,7 @@ const PublicBookingPage = () => {
                           <p className="text-zinc-400 text-sm">{currentLang === 'en' ? 'Loading slots...' : 'Saatler yükleniyor...'}</p>
                         </div>
                       ) : availableSlots.length > 0 ? (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                           {availableSlots.map((slot) => {
                             const isSelected = selectedTime === slot;
                             return (
@@ -1239,12 +1466,13 @@ const PublicBookingPage = () => {
                                 key={slot}
                                 type="button"
                                 onClick={() => handleTimeSelect(slot)}
-                                className={`py-3 px-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                                className={`py-3 px-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-1.5 ${
                                   isSelected
                                     ? "bg-zinc-900 text-white shadow-md scale-105"
                                     : "bg-white border border-zinc-200 text-zinc-700 hover:border-zinc-900 hover:bg-zinc-50"
                                 }`}
                               >
+                                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isSelected ? 'bg-emerald-400' : 'bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.18)]'}`} />
                                 {slot}
                               </button>
                             );
@@ -1368,9 +1596,19 @@ const PublicBookingPage = () => {
                             {t('publicBooking.appointmentSummary')}
                           </h3>
                           <div className="space-y-4 text-sm">
-                             <div className="flex justify-between">
-                                <span className="text-zinc-500">{t('publicBooking.service')}</span>
-                                <span className="font-bold text-zinc-900 text-right">{selectedService?.name}</span>
+                             <div className="flex justify-between items-start gap-3">
+                                <span className="text-zinc-500 flex-shrink-0">{t('publicBooking.service')}</span>
+                                {selectedServices.length > 1 ? (
+                                  <div className="text-right space-y-1">
+                                    {selectedServices.map((s, i) => (
+                                      <div key={s.id} className="font-bold text-zinc-900 leading-tight">
+                                        <span className="text-zinc-400 font-normal mr-1">{i + 1}.</span>{s.name}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="font-bold text-zinc-900 text-right">{selectedService?.name}</span>
+                                )}
                              </div>
                              <div className="flex justify-between">
                                 <span className="text-zinc-500">{t('publicBooking.staff')}</span>
@@ -1463,7 +1701,7 @@ const PublicBookingPage = () => {
                                   <div className="flex justify-between items-center">
                                     <span className="text-zinc-600 font-medium">{t('publicBooking.price')}</span>
                                     <span className="text-2xl font-bold text-zinc-900">
-                                      {selectedService ? (currentLang === 'en' ? `${currencySymbol}${Math.round(selectedService.price)}` : `${Math.round(selectedService.price)}${currencySymbol}`) : "-"}
+                                      {selectedServices.length > 0 ? (currentLang === 'en' ? `${currencySymbol}${Math.round(totalPrice).toLocaleString('tr-TR')}` : `${Math.round(totalPrice).toLocaleString('tr-TR')}${currencySymbol}`) : "-"}
                                     </span>
                                   </div>
                                 )}
@@ -1507,6 +1745,104 @@ const PublicBookingPage = () => {
             </form>
         </div>
       </div>
+
+      {/* STICKY SEPET BARI (çoklu hizmet, sadece Adım 1) */}
+      {multiEnabled && currentStep === 1 && selectedServices.length > 0 && (
+        <>
+          {cartOpen && (
+            <div
+              className="fixed inset-0 z-40 bg-black/40 animate-in fade-in duration-200"
+              onClick={() => setCartOpen(false)}
+            />
+          )}
+          <div className="fixed bottom-0 left-0 right-0 z-50">
+            {/* Genişleyen sepet listesi */}
+            {cartOpen && (
+              <div className="bg-white border-t border-zinc-200 rounded-t-2xl shadow-2xl max-h-[55vh] overflow-y-auto animate-in slide-in-from-bottom duration-200">
+                <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ShoppingBag className="w-5 h-5 text-zinc-900" />
+                      <h3 className="font-bold text-zinc-900">
+                        {currentLang === 'en' ? 'Selected Services' : 'Seçilen Hizmetler'}
+                      </h3>
+                    </div>
+                    <button type="button" onClick={() => setCartOpen(false)} className="text-zinc-400 hover:text-zinc-900 p-1">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    {currentLang === 'en'
+                      ? 'Drag to reorder the application sequence.'
+                      : 'Uygulama sırasını değiştirmek için sürükleyin.'}
+                  </p>
+                  <DndContext sensors={cartSensors} collisionDetection={closestCenter} onDragEnd={handleCartDragEnd}>
+                    <SortableContext items={selectedServiceIds} strategy={verticalListSortingStrategy}>
+                      <div className="space-y-2">
+                        {selectedServices.map((svc, idx) => (
+                          <SortableCartItem
+                            key={svc.id}
+                            service={svc}
+                            index={idx}
+                            onRemove={removeFromCart}
+                            currencySymbol={currencySymbol}
+                            currentLang={currentLang}
+                            showDuration={settings?.show_service_duration_on_public !== false}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                </div>
+              </div>
+            )}
+
+            {/* Özet bar */}
+            <div
+              className="bg-zinc-900 text-white shadow-2xl"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            >
+              <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCartOpen((o) => !o)}
+                  className="flex-1 flex items-center gap-3 text-left active:scale-[0.99] transition-transform"
+                >
+                  <div className="relative">
+                    <ShoppingBag className="w-6 h-6" />
+                    <span className="absolute -top-2 -right-2 bg-white text-zinc-900 text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                      {selectedServices.length}
+                    </span>
+                  </div>
+                  <div className="leading-tight">
+                    <div className="font-bold text-base">
+                      {currentLang === 'en'
+                        ? `${currencySymbol}${Math.round(totalPrice).toLocaleString('tr-TR')}`
+                        : `${Math.round(totalPrice).toLocaleString('tr-TR')}${currencySymbol}`}
+                    </div>
+                    {settings?.show_service_duration_on_public !== false && (
+                      <div className="text-xs text-zinc-300">
+                        {Math.floor(totalDuration / 60) > 0 ? `${Math.floor(totalDuration / 60)} ${currentLang === 'en' ? 'h' : 'sa'} ` : ''}
+                        {totalDuration % 60 > 0 ? `${totalDuration % 60} ${currentLang === 'en' ? 'min' : 'dk'}` : (Math.floor(totalDuration / 60) > 0 ? '' : `0 ${currentLang === 'en' ? 'min' : 'dk'}`)}
+                        {' · '}
+                        {currentLang === 'en' ? `${selectedServices.length} services` : `${selectedServices.length} hizmet`}
+                      </div>
+                    )}
+                  </div>
+                </button>
+                <Button
+                  type="button"
+                  onClick={handleMultiContinue}
+                  className="bg-white hover:bg-zinc-100 text-zinc-900 font-bold h-12 px-6 rounded-lg flex items-center gap-2"
+                >
+                  <span>{t('publicBooking.next')}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
