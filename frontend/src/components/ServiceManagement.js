@@ -58,7 +58,7 @@ const SortableCategoryRow = ({ category, t, onEdit, onDelete }) => {
           <GripVertical className="w-4 h-4" />
         </button>
         <Tag className="w-4 h-4 text-indigo-500 flex-shrink-0" />
-        <span className="flex-1 min-w-0 text-sm font-bold text-zinc-900 truncate">{category.name}</span>
+        <span className="flex-1 min-w-0 text-sm font-bold text-zinc-900 break-words leading-snug">{category.name}</span>
         <Button onClick={() => onEdit(category)} size="sm" variant="outline" className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-lg font-bold shadow-sm h-8 px-2">
           <Edit className="w-3.5 h-3.5" />
         </Button>

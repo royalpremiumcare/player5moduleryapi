@@ -101,6 +101,82 @@ function App() {
       setCurrentView("dashboard");
     }
   }, [hasActiveSessions, currentView]);
+
+  // ===== GÖRÜNÜM GEÇMİŞİ + iOS GERİ KAYDIRMA =====
+  // Panel navigasyonu history kullanmadığı için (setCurrentView state),
+  // görünüm geçmişini ayrı bir yığında tutuyoruz ve sol kenardan sağa
+  // kaydırma jestiyle bir önceki görünüme dönüyoruz.
+  const viewHistoryRef = useRef([]);
+  const skipHistoryRef = useRef(false);
+  const prevViewRef = useRef(currentView);
+
+  useEffect(() => {
+    const prev = prevViewRef.current;
+    if (prev !== currentView) {
+      if (skipHistoryRef.current) {
+        skipHistoryRef.current = false;
+      } else {
+        viewHistoryRef.current.push(prev);
+        if (viewHistoryRef.current.length > 50) viewHistoryRef.current.shift();
+      }
+      prevViewRef.current = currentView;
+    }
+  }, [currentView]);
+
+  const goBack = useCallback(() => {
+    // 1) Açık form/modal varsa önce onu kapat
+    if (showForm) {
+      setShowForm(false);
+      return true;
+    }
+    // 2) Görünüm geçmişinden bir önceki ekrana dön
+    const stack = viewHistoryRef.current;
+    if (stack.length > 0) {
+      const target = stack.pop();
+      skipHistoryRef.current = true;
+      setShowForm(false);
+      setCurrentView(target);
+      return true;
+    }
+    return false;
+  }, [showForm]);
+
+  // iOS sol-kenar kaydırma (geri) jesti
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'ios') return;
+    const EDGE_PX = 30;      // sol kenardan başlama eşiği
+    const THRESH_PX = 70;    // minimum yatay kayma
+    let tracking = false;
+    let startX = 0, startY = 0, startT = 0;
+    const onStart = (e) => {
+      const tp = e.touches && e.touches[0];
+      if (!tp) { tracking = false; return; }
+      if (tp.clientX <= EDGE_PX) {
+        tracking = true; startX = tp.clientX; startY = tp.clientY; startT = Date.now();
+      } else {
+        tracking = false;
+      }
+    };
+    const onEnd = (e) => {
+      if (!tracking) return;
+      tracking = false;
+      const tp = e.changedTouches && e.changedTouches[0];
+      if (!tp) return;
+      const dx = tp.clientX - startX;
+      const dy = Math.abs(tp.clientY - startY);
+      const dt = Date.now() - startT;
+      // Yatay, sağa doğru, hızlı ve yeterince uzun bir kaydırma
+      if (dx > THRESH_PX && dy < 80 && dt < 600) {
+        goBack();
+      }
+    };
+    document.addEventListener('touchstart', onStart, { passive: true });
+    document.addEventListener('touchend', onEnd, { passive: true });
+    return () => {
+      document.removeEventListener('touchstart', onStart);
+      document.removeEventListener('touchend', onEnd);
+    };
+  }, [goBack]);
   
   // Notification states
   const [notifications, setNotifications] = useState([]);
