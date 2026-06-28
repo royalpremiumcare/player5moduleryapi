@@ -226,6 +226,55 @@ async def send_email(to_email: str, subject: str, html_content: str, to_name: st
         logging.error(traceback.format_exc())
         return False
 
+
+# ============================================================================
+# === ORTAK MARKA E-POSTA ŞABLONU ===
+# ============================================================================
+# Tüm e-postalar (kayıt/hoş geldin, abonelik, duyuru vb.) aynı PLANN marka
+# şablonunu kullanır: logolu açık gri başlık, beyaz içerik gövdesi, alt bilgi.
+# `content_html` gövde hücresinin içine yerleştirilir.
+
+def _wrap_brand_email(content_html: str, lang: str = "tr") -> str:
+    """İçeriği PLANN marka e-posta şablonuna (kayıt e-postası ile aynı) sarar."""
+    logo_url = "https://plannapp.co/api/static/logo.png"
+    logo_alt = "PLANN Logo" if lang == "en" else "PLANN Logosu"
+    year = datetime.now(timezone.utc).year
+    footer = (
+        f"© {year} PLANN. All rights reserved."
+        if lang == "en"
+        else f"© {year} PLANN. Tüm hakları saklıdır."
+    )
+    return f"""
+    <html>
+    <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
+        <table width="100%" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+                <td align="center" style="padding: 20px 0;">
+                    <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+                        <tr>
+                            <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                                <img src="{logo_url}" alt="{logo_alt}" style="max-width: 150px; height: auto;">
+                            </td>
+                        </tr>
+                        <tr style="background-color: #ffffff;">
+                            <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
+                                {content_html}
+                            </td>
+                        </tr>
+                        <tr style="background-color: #f9f9f9;">
+                            <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                                <p>{footer}</p>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
+
+
 # Subscription email helpers
 def _get_domain_from_request(request: Request) -> str:
     try:
@@ -2241,112 +2290,113 @@ class PushSubscription(BaseModel):
 class PushSubscriptionCreate(BaseModel):
     subscription: dict  # {endpoint, keys: {p256dh, auth}, platform}
 
+# Verilen abonelik listesine push teslim eden ortak yardımcı (native FCM + web VAPID)
+async def _deliver_push_to_subscriptions(db, subscriptions, title: str, body: str, data: dict = None):
+    """Abonelik listesine push gönderir. Döner: gönderim istatistikleri."""
+    stats = {"native_sent": 0, "web_sent": 0, "failed": 0, "removed": 0}
+
+    notification_payload = json.dumps({
+        "title": title,
+        "body": body,
+        "icon": "https://plannapp.co/icons/icon-192x192.png",
+        "badge": "https://plannapp.co/icons/badge-mono-96x96.png",
+        "data": data or {},
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+
+    for sub in subscriptions:
+        # Native Platform (Android/iOS) - Firebase Cloud Messaging (FCM)
+        platform = sub.get("platform")
+        if platform in ['android', 'ios']:
+            try:
+                # FCM data payload: TÜM key/value string olmalı (FCM zorunluluğu)
+                fcm_data = {str(k): str(v) for k, v in (data or {}).items() if v is not None}
+
+                message = messaging.Message(
+                    token=sub["endpoint"], # Native için endpoint token'dır
+                    notification=messaging.Notification(
+                        title=title,
+                        body=body,
+                    ),
+                    data=fcm_data, # String key-value olmalı
+                    android=messaging.AndroidConfig(
+                        priority='high',
+                        notification=messaging.AndroidNotification(
+                            icon='ic_stat_icon', # Native resource adı
+                            color='#2563eb',
+                            click_action='FLUTTER_NOTIFICATION_CLICK' # Capacitor için standart
+                        ),
+                    ),
+                    apns=messaging.APNSConfig(
+                        payload=messaging.APNSPayload(
+                            aps=messaging.Aps(
+                                badge=1,
+                                sound='default'
+                            )
+                        )
+                    )
+                )
+                response = messaging.send(message)
+                stats["native_sent"] += 1
+                logger.info(f"✅ Native Push sent ({platform}): {response}")
+            except Exception as e:
+                stats["failed"] += 1
+                logger.error(f"❌ Native Push Error for {sub.get('user_id', 'unknown')}: {e}")
+                if 'registration-token-not-registered' in str(e) or 'invalid-argument' in str(e):
+                    await db.push_subscriptions.delete_one({"_id": sub["_id"]})
+                    stats["removed"] += 1
+                    logger.info(f"Removed invalid native subscription")
+            continue # Native gönderildi, web push kısmını atla
+
+        # Web Push (VAPID)
+        if not VAPID_PRIVATE_KEY:
+            continue
+        try:
+            subscription_info = {
+                "endpoint": sub["endpoint"],
+                "keys": sub["keys"]
+            }
+            webpush(
+                subscription_info=subscription_info,
+                data=notification_payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims=VAPID_CLAIMS.copy(),
+                ttl=86400,
+                headers={"Urgency": "high"}
+            )
+            stats["web_sent"] += 1
+            logger.info(f"✅ Web Push sent to user: {sub.get('user_id', 'unknown')}")
+        except WebPushException as e:
+            stats["failed"] += 1
+            logger.error(f"❌ WebPushException for {sub.get('user_id', 'unknown')}: {e}")
+            if e.response and e.response.status_code in [404, 410]:
+                await db.push_subscriptions.delete_one({"_id": sub["_id"]})
+                stats["removed"] += 1
+                logger.info(f"Removed invalid push subscription: {sub.get('user_id', 'unknown')}")
+        except Exception as e:
+            stats["failed"] += 1
+            logger.error(f"❌ Unexpected error for {sub.get('user_id', 'unknown')}: {type(e).__name__}: {e}")
+
+    return stats
+
+
 # Push notification gönderme fonksiyonu
 async def send_push_notification(db, organization_id: str, title: str, body: str, data: dict = None, user_id: str = None):
     """Belirli bir organizasyondaki tüm kullanıcılara veya belirli bir kullanıcıya push notification gönder"""
-    if not VAPID_PRIVATE_KEY:
-        logger.warning("VAPID_PRIVATE_KEY not configured, skipping push notification")
-        return
-    
     try:
         # Abonelikleri bul
         query = {"organization_id": organization_id}
         if user_id:
             query["user_id"] = user_id
-            
+
         subscriptions = await db.push_subscriptions.find(query).to_list(None)
-        
+
         if not subscriptions:
             logger.info(f"No push subscriptions found for org: {organization_id}")
             return
-        
-        notification_payload = json.dumps({
-            "title": title,
-            "body": body,
-            "icon": "https://plannapp.co/icons/icon-192x192.png",
-            "badge": "https://plannapp.co/icons/badge-mono-96x96.png",
-            "data": data or {},
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-        
-        # Her aboneliğe bildirim gönder
-        logger.info(f"🔔 Sending push to {len(subscriptions)} subscriptions")
-        for sub in subscriptions:
-            # Native Platform (Android/iOS) - Firebase Cloud Messaging (FCM)
-            platform = sub.get("platform")
-            if platform in ['android', 'ios']:
-                try:
-                    logger.info(f"🔔 Sending Native Push ({platform}) to: {sub.get('user_id', 'unknown')}")
-                    
-                    # FCM Message oluştur
-                    message = messaging.Message(
-                        token=sub["endpoint"], # Native için endpoint token'dır
-                        notification=messaging.Notification(
-                            title=title,
-                            body=body,
-                        ),
-                        data=data or {}, # String key-value olmalı
-                        android=messaging.AndroidConfig(
-                            priority='high',
-                            notification=messaging.AndroidNotification(
-                                icon='ic_stat_icon', # Native resource adı
-                                color='#2563eb',
-                                click_action='FLUTTER_NOTIFICATION_CLICK' # Capacitor için standart
-                            ),
-                        ),
-                        apns=messaging.APNSConfig(
-                            payload=messaging.APNSPayload(
-                                aps=messaging.Aps(
-                                    badge=1,
-                                    sound='default'
-                                )
-                            )
-                        )
-                    )
-                    
-                    # Gönder
-                    response = messaging.send(message)
-                    logger.info(f"✅ Native Push sent: {response}")
-                    
-                except Exception as e:
-                    logger.error(f"❌ Native Push Error for {sub.get('user_id', 'unknown')}: {e}")
-                    # Token geçersizse sil (firebase exception kontrolü eklenebilir)
-                    if 'registration-token-not-registered' in str(e) or 'invalid-argument' in str(e):
-                         await db.push_subscriptions.delete_one({"_id": sub["_id"]})
-                         logger.info(f"Removed invalid native subscription")
-                continue # Native gönderildi, web push kısmını atla
 
-            # Web Push (VAPID) - Mevcut Kod
-            try:
-                subscription_info = {
-                    "endpoint": sub["endpoint"],
-                    "keys": sub["keys"]
-                }
-                logger.info(f"🔔 Attempting Web Push to: {sub.get('user_id', 'unknown')} - endpoint: {sub['endpoint'][:50]}...")
-                
-                webpush(
-                    subscription_info=subscription_info,
-                    data=notification_payload,
-                    vapid_private_key=VAPID_PRIVATE_KEY,
-                    vapid_claims=VAPID_CLAIMS.copy(),
-                    ttl=86400,
-                    headers={"Urgency": "high"}
-                )
-                logger.info(f"✅ Web Push sent to user: {sub.get('user_id', 'unknown')}")
-                
-            except WebPushException as e:
-                # Subscription geçersiz - sil
-                logger.error(f"❌ WebPushException for {sub.get('user_id', 'unknown')}: {e}")
-                if e.response:
-                    logger.error(f"   Response status: {e.response.status_code}")
-                    logger.error(f"   Response headers: {dict(e.response.headers) if e.response.headers else 'none'}")
-                    logger.error(f"   Response body: {e.response.text if e.response.text else 'empty'}")
-                if e.response and e.response.status_code in [404, 410]:
-                    await db.push_subscriptions.delete_one({"_id": sub["_id"]})
-                    logger.info(f"Removed invalid push subscription: {sub.get('user_id', 'unknown')}")
-            except Exception as e:
-                logger.error(f"❌ Unexpected error for {sub.get('user_id', 'unknown')}: {type(e).__name__}: {e}")
-                    
+        logger.info(f"🔔 Sending push to {len(subscriptions)} subscriptions")
+        await _deliver_push_to_subscriptions(db, subscriptions, title, body, data)
     except Exception as e:
         logger.error(f"Error sending push notifications: {e}")
 
@@ -13965,21 +14015,16 @@ class SuperAdminBroadcastEmail(BaseModel):
     send_to_all: bool = False
 
 
-def _wrap_broadcast_email(message: str) -> str:
-    """SuperAdmin duyuru mailini PLANN marka şablonuna sarar."""
+def _wrap_broadcast_email(message: str, lang: str = "tr") -> str:
+    """SuperAdmin duyuru mailini ortak PLANN marka şablonuna (kayıt e-postası
+    ile aynı) sarar."""
     import html as _html
     # Basit HTML algılama: tag içeriyorsa olduğu gibi kullan, yoksa escape + <br/>
     if re.search(r"<[a-zA-Z][^>]*>", message):
         body_html = message
     else:
         body_html = _html.escape(message).replace("\n", "<br/>")
-    return f"""\
-<html><body style="font-family:Arial,sans-serif;color:#18181b;max-width:600px;margin:0 auto;">
-<div style="border:1px solid #e4e4e7;border-radius:12px;padding:24px;">
-<img src="https://plannapp.co/api/static/logo.png" alt="PLANN" style="height:32px;margin-bottom:16px;"/>
-<div style="font-size:14px;line-height:1.6;">{body_html}</div>
-<p style="color:#71717a;font-size:12px;margin-top:24px;">Plann Ekibi</p>
-</div></body></html>"""
+    return _wrap_brand_email(body_html, lang=lang)
 
 
 @api_router.post("/superadmin/broadcast-email")
@@ -14038,6 +14083,66 @@ async def superadmin_broadcast_email(
         "sent": sent,
         "failed": failed,
         "skipped": skipped,
+    }
+
+
+class SuperAdminBroadcastPush(BaseModel):
+    title: str
+    body: str
+    organization_ids: Optional[List[str]] = None  # None/boş = tüm işletmeler
+    send_to_all: bool = False
+    action: Optional[str] = None  # örn. "OPEN_STORE" — istemcide mağaza yönlendirmesi
+
+
+@api_router.post("/superadmin/broadcast-push")
+async def superadmin_broadcast_push(
+    payload: SuperAdminBroadcastPush,
+    request: Request,
+    current_user: UserInDB = Depends(get_superadmin_user),
+    db = Depends(get_db)
+):
+    """Tüm işletmelere veya seçili işletmelere push bildirim gönder - Sadece superadmin.
+
+    action="OPEN_STORE" verilirse, bildirime dokunan kullanıcı işletim
+    sistemine göre native mağaza uygulamasına yönlendirilir (istemci tarafı).
+    """
+    if not payload.title.strip() or not payload.body.strip():
+        raise HTTPException(status_code=400, detail="Başlık ve mesaj zorunludur.")
+
+    # Hedef abonelik sorgusu
+    sub_query = {}
+    if not payload.send_to_all:
+        org_ids = [o for o in (payload.organization_ids or []) if o]
+        if not org_ids:
+            raise HTTPException(status_code=400, detail="En az bir işletme seçin veya 'tümüne gönder' kullanın.")
+        sub_query["organization_id"] = {"$in": org_ids}
+
+    subscriptions = await db.push_subscriptions.find(sub_query).to_list(None)
+    if not subscriptions:
+        raise HTTPException(status_code=404, detail="Gönderilecek push aboneliği bulunamadı.")
+
+    # data payload — action verilirse mağaza yönlendirme bilgisi de ekle
+    data = {}
+    if payload.action:
+        data["action"] = payload.action
+        if payload.action == "OPEN_STORE":
+            data["store_url_ios"] = "itms-apps://apps.apple.com/app/id6759719891"
+            data["store_url_android"] = "market://details?id=co.plannapp.app"
+
+    stats = await _deliver_push_to_subscriptions(db, subscriptions, payload.title.strip(), payload.body.strip(), data or None)
+
+    logging.info(
+        f"🔔 [SUPERADMIN BROADCAST PUSH] '{payload.title}' — hedef={'tümü' if payload.send_to_all else payload.organization_ids} "
+        f"abonelik={len(subscriptions)} native={stats['native_sent']} web={stats['web_sent']} "
+        f"hata={stats['failed']} (by {current_user.username})"
+    )
+    return {
+        "success": True,
+        "subscriptions": len(subscriptions),
+        "native_sent": stats["native_sent"],
+        "web_sent": stats["web_sent"],
+        "failed": stats["failed"],
+        "removed": stats["removed"],
     }
 
 

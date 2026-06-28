@@ -54,6 +54,50 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { PushNotifications } from '@capacitor/push-notifications';
+import { openExternalUrl } from "@/lib/openExternalUrl";
+
+// Mağaza yönlendirme hedefleri (push action: OPEN_STORE)
+const STORE_LINKS = {
+  ios: {
+    native: 'itms-apps://apps.apple.com/app/id6759719891',
+    web: 'https://apps.apple.com/app/id6759719891',
+  },
+  android: {
+    native: 'market://details?id=co.plannapp.app',
+    web: 'https://play.google.com/store/apps/details?id=co.plannapp.app',
+  },
+};
+
+/**
+ * Push bildirimindeki action === 'OPEN_STORE' için kullanıcıyı işletim
+ * sistemine göre native mağaza uygulamasına yönlendirir; native şema
+ * açılamazsa web mağaza linkine fallback yapar.
+ *
+ * Backend payload'u platforma özel anahtarlarla (store_url_ios /
+ * store_url_android) veya genel store_url_native ile hedefleri override
+ * edebilir (esneklik için).
+ */
+function openAppStore(data = {}) {
+  const platform = Capacitor.getPlatform(); // 'ios' | 'android' | 'web'
+  const conf = STORE_LINKS[platform] || STORE_LINKS.android;
+  // Platforma özel override > genel native override > yerel varsayılan
+  const nativeUrl = data[`store_url_${platform}`] || data.store_url_native || conf.native;
+  const webUrl = data.store_url_web || conf.web;
+
+  // Web (PWA): doğrudan web mağaza linki
+  if (platform === 'web') {
+    return openExternalUrl(webUrl);
+  }
+
+  // Native: önce native şema (itms-apps:// / market://), olmazsa web fallback
+  try {
+    const ok = openExternalUrl(nativeUrl);
+    if (ok) return true;
+  } catch (e) {
+    console.warn('openAppStore native scheme failed, falling back to web', e);
+  }
+  return openExternalUrl(webUrl);
+}
 
 const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
   ? registerPlugin('FCMTokenPlugin')
@@ -694,9 +738,16 @@ function App() {
              toast.info(`${notification.title}: ${notification.body}`);
           });
 
-          // Bildirime tıklandığında
-          PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-             console.log('👆 Notification clicked:', notification);
+          // Bildirime tıklandığında — Capacitor bu event'i hem background'da
+          // hem de uygulama kapalıyken (quit state) bildirime dokunup açılınca
+          // tetikler. Yani RN'deki getInitialNotification + onNotificationOpenedApp
+          // karşılığını tek listener kapsar.
+          PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+             console.log('👆 Notification clicked:', action);
+             const data = action?.notification?.data || {};
+             if (data.action === 'OPEN_STORE') {
+               openAppStore(data);
+             }
           });
         } else {
           await debugPush('permission_denied', { receive: permissionStatus.receive });
