@@ -393,7 +393,8 @@
       "title": "Tomorrow's Summary"
     },
     "upcomingAppointments": {
-      "title": "Upcoming Appointments"
+      "title": "Upcoming Appointments",
+      "unnamedCustomer": "Unnamed"
     },
     "breaks": {
       "title": "Availability",

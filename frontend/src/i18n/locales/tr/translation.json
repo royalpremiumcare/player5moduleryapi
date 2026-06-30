@@ -393,7 +393,8 @@
       "title": "Yarının Özeti"
     },
     "upcomingAppointments": {
-      "title": "Gelecek Randevular"
+      "title": "Gelecek Randevular",
+      "unnamedCustomer": "İsimsiz"
     },
     "breaks": {
       "myBreaks": "Molalarım",
