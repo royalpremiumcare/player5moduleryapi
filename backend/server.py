@@ -8403,6 +8403,62 @@ def _stripe_line_items_data(obj):
     return []
 
 
+def _stripe_invoice_lines(inv):
+    """Invoice lines.data listesi (StripeObject/dict uyumlu)."""
+    lines = _stripe_obj_get(inv, "lines", None)
+    data = _stripe_obj_get(lines, "data", None) if lines is not None else None
+    return data if isinstance(data, list) else []
+
+
+def _stripe_invoice_subscription_id(inv):
+    """invoice → subscription id.
+
+    Stripe eski API'de `invoice.subscription` (top-level) vardı. 2025-11 sonrası
+    API sürümlerinde bu alan KALDIRILDI; subscription bilgisi artık
+    `parent.subscription_details.subscription` veya
+    `lines.data[].parent.subscription_item_details.subscription` altında.
+    Tüm sürümlerle uyum için sırayla dener.
+    """
+    sub_id = _stripe_obj_get(inv, "subscription", None)
+    if sub_id:
+        return sub_id
+    parent = _stripe_obj_get(inv, "parent", None)
+    if parent is not None:
+        sd = _stripe_obj_get(parent, "subscription_details", None)
+        sub_id = _stripe_obj_get(sd, "subscription", None) if sd is not None else None
+        if sub_id:
+            return sub_id
+    for ln in _stripe_invoice_lines(inv):
+        lp = _stripe_obj_get(ln, "parent", None)
+        sid = _stripe_obj_get(lp, "subscription_item_details", None) if lp is not None else None
+        sub_id = _stripe_obj_get(sid, "subscription", None) if sid is not None else None
+        if sub_id:
+            return sub_id
+    return None
+
+
+def _stripe_invoice_period_end(inv):
+    """invoice → yeni dönem sonu (unix ts).
+
+    Yeni API'de güvenilir dönem sonu `lines.data[].period.end` içinde; birden
+    fazla satır varsa (proration vb.) en ileri tarih alınır. Bulunamazsa
+    top-level `period_end` (eski API) fallback.
+    """
+    best = None
+    for ln in _stripe_invoice_lines(inv):
+        per = _stripe_obj_get(ln, "period", None)
+        end = _stripe_obj_get(per, "end", None) if per is not None else None
+        if end:
+            try:
+                end_int = int(end)
+                best = end_int if best is None else max(best, end_int)
+            except (TypeError, ValueError):
+                pass
+    if best is not None:
+        return best
+    return _stripe_obj_get(inv, "period_end", None)
+
+
 class StripeConfirmCheckoutRequest(BaseModel):
     session_id: str
 
@@ -8882,12 +8938,14 @@ async def handle_stripe_webhook(request: Request):
         elif event['type'] == 'invoice.paid':
             inv = event['data']['object']
             inv_id = _stripe_obj_get(inv, 'id')
-            sub_id = _stripe_obj_get(inv, 'subscription')
+            # NOT: Stripe 2025-11+ API'de invoice.subscription/period_end alanları
+            # taşındı; helper'lar hem eski hem yeni yapıyı okur.
+            sub_id = _stripe_invoice_subscription_id(inv)
             if sub_id and inv_id:
                 plan_doc = await db.organization_plans.find_one({"stripe_subscription_id": sub_id})
                 if plan_doc:
                     org_id = plan_doc.get('organization_id')
-                    period_end = _stripe_obj_get(inv, 'period_end')
+                    period_end = _stripe_invoice_period_end(inv)
                     if period_end:
                         ned = datetime.fromtimestamp(int(period_end), tz=timezone.utc)
                         await db.organization_plans.update_one(
