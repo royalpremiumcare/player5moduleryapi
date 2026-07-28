@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Calendar, Check, Menu, X, Clock, Users, Smartphone, BarChart3, Bell, Shield, Zap, TrendingUp, Star, MessageSquare, FileText, UserCheck, CircleDollarSign, ChevronDown, Phone, Mail, Globe, MapPin, CreditCard, Layers } from "lucide-react";
+import { Calendar, Check, Menu, X, Clock, Users, Smartphone, BarChart3, Bell, Shield, Zap, TrendingUp, Star, MessageSquare, FileText, UserCheck, CircleDollarSign, ChevronDown, Phone, Mail, Globe, MapPin, CreditCard, Layers, Sparkles, CalendarCheck, MessageCircle, Navigation, Bot, CalendarDays, Wallet, LineChart, MonitorSmartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -228,6 +228,9 @@ const LandingPage = () => {
       // Session packages
       'Seans Paketi Yönetimi': t('landing.pricing.features.sessionPackages'),
       'Session Package Management': t('landing.pricing.features.sessionPackages'),
+      // Marketing autopilot
+      'Akıllı Pazarlama Otopilotu': t('landing.pricing.features.marketingAutopilot'),
+      'Smart Marketing Autopilot': t('landing.pricing.features.marketingAutopilot'),
     };
 
     // Büyük/küçük harf farkı için lowercase fallback
@@ -334,62 +337,37 @@ const LandingPage = () => {
     };
   }, []);
 
-  const features = [
+  // Özellikler 3 tematik bölüme ayrıldı; her bölüm kendi başlığı ve ayırıcısıyla
+  // gelir, böylece uzun bir metin yığını yerine okunabilir bir akış oluşur.
+  const featureGroups = [
     {
-      icon: MessageSquare,
-      title: t('landing.features.autoSms.title'),
-      description: t('landing.features.autoSms.description')
+      id: 'trust',
+      items: [
+        { icon: CalendarCheck, key: 'onlineBooking' },
+        { icon: MessageCircle, key: 'autoSms' },
+        { icon: CreditCard, key: 'onlinePayment' },
+      ],
     },
     {
-      icon: Calendar,
-      title: t('landing.features.onlineBooking.title'),
-      description: t('landing.features.onlineBooking.description')
+      id: 'experience',
+      items: [
+        { icon: Navigation, key: 'location' },
+        { icon: Bot, key: 'aiAssistant' },
+        { icon: Sparkles, key: 'marketingAutopilot' },
+        { icon: Layers, key: 'sessionPackages' },
+        { icon: Users, key: 'customerManagement' },
+        { icon: CalendarDays, key: 'calendarManagement' },
+      ],
     },
     {
-      icon: MapPin,
-      title: t('landing.features.location.title'),
-      description: t('landing.features.location.description')
+      id: 'operations',
+      items: [
+        { icon: UserCheck, key: 'staffManagement' },
+        { icon: Wallet, key: 'financeManagement' },
+        { icon: LineChart, key: 'reporting' },
+        { icon: MonitorSmartphone, key: 'multiDevice' },
+      ],
     },
-    {
-      icon: Users,
-      title: t('landing.features.customerManagement.title'),
-      description: t('landing.features.customerManagement.description')
-    },
-    {
-      icon: Calendar,
-      title: t('landing.features.calendarManagement.title'),
-      description: t('landing.features.calendarManagement.description')
-    },
-    {
-      icon: UserCheck,
-      title: t('landing.features.staffManagement.title'),
-      description: t('landing.features.staffManagement.description')
-    },
-    {
-      icon: Smartphone,
-      title: t('landing.features.multiDevice.title'),
-      description: t('landing.features.multiDevice.description')
-    },
-    {
-      icon: CreditCard,
-      title: t('landing.features.onlinePayment.title'),
-      description: t('landing.features.onlinePayment.description')
-    },
-    {
-      icon: Layers,
-      title: t('landing.features.sessionPackages.title'),
-      description: t('landing.features.sessionPackages.description')
-    },
-    {
-      icon: CircleDollarSign,
-      title: t('landing.features.financeManagement.title'),
-      description: t('landing.features.financeManagement.description')
-    },
-    {
-      icon: BarChart3,
-      title: t('landing.features.reporting.title'),
-      description: t('landing.features.reporting.description')
-    }
   ];
 
   const testimonials = i18n.language === 'tr' ? [
@@ -761,26 +739,52 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* Features Section */}
+      {/* Features Section — 3 tematik bölüm, premium monokrom ikonlar */}
       <section id="features" className="py-20 bg-[#fafafa] border-t border-gray-200 scroll-mt-24">
         <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">{t('landing.features.title')}</h2>
+          <div className="text-center mb-14">
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900">{t('landing.features.title')}</h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {features.map((feature, index) => {
-              const Icon = feature.icon;
-              return (
-                <Card key={index} className="p-6 hover:shadow-xl transition-all duration-300 border hover:border-blue-300 bg-white">
-                  <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-                    <Icon className="w-7 h-7 text-white" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-3">{feature.title}</h3>
-                  <p className="text-gray-600 leading-relaxed">{feature.description}</p>
-                </Card>
-              );
-            })}
+          <div className="max-w-6xl mx-auto space-y-16">
+            {featureGroups.map((group, gi) => (
+              <div key={group.id}>
+                {/* Bölümler arası ince ayırıcı */}
+                {gi > 0 && (
+                  <div className="mx-auto mb-16 h-px w-24 bg-gradient-to-r from-transparent via-zinc-300 to-transparent" />
+                )}
+
+                {/* Bölüm başlığı */}
+                <div className="text-center mb-9">
+                  <h3 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900">
+                    {t(`landing.features.groups.${group.id}.title`)}
+                  </h3>
+                  <p className="mt-3 text-[15px] md:text-base text-zinc-500 leading-relaxed max-w-2xl mx-auto">
+                    {t(`landing.features.groups.${group.id}.subtitle`)}
+                  </p>
+                </div>
+
+                {/* Kartlar */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
+                  {group.items.map(({ icon: Icon, key }) => (
+                    <div
+                      key={key}
+                      className="group relative bg-white rounded-2xl border border-zinc-100 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-[0_18px_40px_-12px_rgba(0,0,0,0.18)] hover:-translate-y-1 transition-all duration-300"
+                    >
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-zinc-800 to-zinc-950 flex items-center justify-center mb-5 shadow-md shadow-zinc-900/15 ring-1 ring-inset ring-white/10 transition-transform duration-300 group-hover:scale-[1.06]">
+                        <Icon className="w-[22px] h-[22px] text-white" strokeWidth={1.75} />
+                      </div>
+                      <h4 className="text-lg font-bold text-zinc-900 mb-2 tracking-tight">
+                        {t(`landing.features.${key}.title`)}
+                      </h4>
+                      <p className="text-[14.5px] text-zinc-600 leading-relaxed">
+                        {t(`landing.features.${key}.description`)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>

@@ -392,7 +392,16 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
 
                 const localeCode = i18n.language === 'tr' ? 'tr-TR' : 'en-GB';
                 const isProcessing = processingPlanId === plan.id;
-                const isCurrentPlan = currentPlan && currentPlan.plan_id === plan.id;
+                // "Mevcut abonelik" yalnızca AYNI plan VE aynı faturalama döngüsü ise.
+                // Aylık Standart kullanıcısı yıllık'ı seçtiğinde buton tıklanabilir olmalı.
+                const currentCycle = currentPlan?.is_yearly ? 'yearly' : 'monthly';
+                const isCurrentPlan = !!currentPlan
+                  && currentPlan.plan_id === plan.id
+                  && billingCycle === currentCycle;
+                // Aynı plan ama farklı döngü → döngü değiştirme (upgrade/downgrade cycle)
+                const isCycleSwitch = !!currentPlan
+                  && currentPlan.plan_id === plan.id
+                  && billingCycle !== currentCycle;
 
                 return (
                   <div
@@ -486,7 +495,11 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
                         ? t('settings.subscribePage.currentSubscription')
                         : isProcessing
                           ? t('settings.subscribePage.processing')
-                          : t('settings.subscribePage.startSubscription')}
+                          : isCycleSwitch
+                            ? (billingCycle === 'yearly'
+                                ? t('settings.subscribePage.switchToYearly')
+                                : t('settings.subscribePage.switchToMonthly'))
+                            : t('settings.subscribePage.startSubscription')}
                     </button>
 
                     {/* Divider */}

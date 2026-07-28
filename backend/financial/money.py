@@ -230,8 +230,17 @@ def bps_to_rate(bps: int) -> Decimal:
 
 
 def apply_bps(amount_minor: int, bps: int) -> int:
-    """Apply basis points to an amount. e.g. 100000 kuruş at 700bps → 7000 kuruş"""
-    return (amount_minor * bps + 5_000) // 10_000
+    """
+    Apply basis points to an amount using Decimal + ROUND_HALF_UP.
+    e.g. 100000 kuruş at 700bps → 7000 kuruş
+
+    Finansal hesaplarda standart yuvarlama (ROUND_HALF_UP). Negatif olmayan
+    girdiler için eski tamsayı formülüyle ((x*bps+5000)//10000) birebir aynıdır.
+    """
+    result = (Decimal(amount_minor) * Decimal(bps) / Decimal(10_000)).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    return int(result)
 
 
 # ---------------------------------------------------------------------------

@@ -73,13 +73,27 @@ def create_checkout_session(user_id: str, plan_id: str, price_amount: int, plan_
             metadata={
                 'user_id': user_id,
                 'plan_id': plan_id,
-                'organization_id': user_id  # Geçici olarak user_id kullanıyoruz
+                'organization_id': user_id,  # Geçici olarak user_id kullanıyoruz
+                # PLANN SaaS abonelik geliri — GBP kalır, ASLA convert edilmez.
+                # (business müşteri ödemelerinden net ayrım: payment_type=subscription)
+                'payment_type': 'subscription',
+            },
+            # subscription objesine de payment_type ekle (invoice/PI metadata'sına iner —
+            # payout reconciliation aşamasında subscription tespiti kolaylaşır).
+            subscription_data={
+                'metadata': {
+                    'payment_type': 'subscription',
+                    'user_id': user_id,
+                    'plan_id': plan_id,
+                },
             },
             success_url=PAYMENT_SUCCESS_URL + f'?session_id={{CHECKOUT_SESSION_ID}}',
             cancel_url=PAYMENT_CANCEL_URL,
             allow_promotion_codes=True,  # Promosyon kodlarına izin ver
             billing_address_collection='required',  # Fatura adresi zorunlu
-            automatic_tax={'enabled': True},  # Otomatik vergi hesaplama
+            # Stripe Tax kaydı yok → otomatik vergi KAPALI (aksi halde checkout hata verir).
+            # Vergi kaydı/origin adresi eklenince tekrar {'enabled': True} yapılabilir.
+            automatic_tax={'enabled': False},
         )
         
         logger.info(f"Stripe checkout session oluşturuldu: {session.id} for user: {user_id}")

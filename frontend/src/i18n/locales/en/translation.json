@@ -111,54 +111,76 @@
     },
     "features": {
       "title": "What Does PLANN Offer?",
+      "groups": {
+        "trust": {
+          "title": "Features That Put Your Mind at Ease",
+          "subtitle": "The essentials that end the phone tag, prevent forgotten appointments and secure your revenue."
+        },
+        "experience": {
+          "title": "Tools That Attract Customers Like a Magnet",
+          "subtitle": "Smart tools that bring customers to your door and grow your business in the background with AI and automation."
+        },
+        "operations": {
+          "title": "You're Fully in the Driver's Seat",
+          "subtitle": "Management power that brings your team, pre-accounting and reporting onto one screen and keeps your business in your pocket at all times."
+        }
+      },
+      "marketingAutopilot": {
+        "title": "Smart Marketing Autopilot",
+        "description": "While you focus on your work, PLANN quietly keeps track of customers who haven't been back. It sends smart, perfectly-timed WhatsApp messages to those who are due or overdue, winning them back effortlessly."
+      },
+      "aiAssistant": {
+        "title": "Smart AI Assistant",
+        "description": "Create appointments in seconds just by typing, instantly request even your most complex revenue statistics as a report, or ask it anything about the app as if consulting a live expert. Your 24/7 digital right hand — with you always in control."
+      },
       "autoSms": {
-        "title": "Automatic WhatsApp & Reminders",
-        "description": "Send automatic WhatsApp reminders before appointments, eliminate forgotten appointments."
+        "title": "Automatic Appointment Reminders",
+        "description": "Put an end to empty chairs caused by forgotten appointments. Lower your cancellation rates with automatic WhatsApp reminders sent before appointments and protect your shop's time."
       },
       "onlineBooking": {
         "title": "Online Booking System",
-        "description": "Create a booking page tailored to your business. Share your link on WhatsApp or Instagram so customers can see live availability and book 24/7 without the back-and-forth."
+        "description": "Create a sleek booking link tailored to your business. Share it on Instagram and WhatsApp so your customers can see your availability and book 24/7 — without a single phone call."
       },
       "location": {
         "title": "Location & Directions",
-        "description": "Show your business address on a map and automatically send it to customers via WhatsApp, so they can get directions in one tap."
+        "description": "Bury the \"where was your address again?\" questions for good. Once an appointment is confirmed, location and directions are sent automatically via WhatsApp, bringing customers right to your door in one tap."
       },
       "customerManagement": {
         "title": "Customer Management",
-        "description": "Add unlimited customers, easily create and manage their next appointments."
+        "description": "Your customers' entire history on a single digital card. Create unlimited customer records; see who received which service, how much they paid and their next plans in one tap."
       },
       "calendarManagement": {
         "title": "Detailed Calendar Management",
-        "description": "Track and manage your appointments daily, weekly, monthly on the calendar."
+        "description": "Throw away the messy paper notebooks. Organise your daily, weekly and monthly appointment flow, cancellations and reschedules in seconds with drag-and-drop ease."
       },
       "staffManagement": {
         "title": "Staff Management",
-        "description": "Add unlimited staff and easily track their appointments and statistics."
+        "description": "Never leave your team's performance to guesswork. Easily manage your staff's working hours, appointment occupancy and commission statistics from a single screen."
       },
       "multiDevice": {
         "title": "Multi-Device Support",
-        "description": "Access all your appointments from anywhere on computer, phone and tablet."
+        "description": "Your shop in your pocket at all times. Access all your data in real time from computer, phone or tablet; your salon keeps running smoothly even while you're out."
       },
       "financeManagement": {
         "title": "Income & Expense Management",
-        "description": "Track your business income and expenses with the pre-accounting system."
+        "description": "Say goodbye to end-of-month surprises. Keep your pre-accounting effortless by gathering all your product sales, overheads and net profitability on a single platform."
       },
       "onlinePayment": {
         "title": "Online Payment System",
-        "description": "Set up online payment or deposit rules for your services. Customers pay securely when booking; choose full payment or percentage-based deposit."
+        "description": "Safeguard your business against last-minute cancellations. Set a full-amount or percentage-based deposit rule at booking; payments land securely straight into your account."
       },
       "sessionPackages": {
         "title": "Session Package Management",
-        "description": "Create multi-session services, plan sessions in bulk and track them. Session plans are automatically sent to your customers via WhatsApp."
+        "description": "Track package sales with ease. Create multi-session plans and automatically monitor remaining sessions; the updated session card reaches your customer instantly via WhatsApp."
       },
       "reporting": {
         "title": "Reporting & Statistics",
-        "description": "View customer, staff and service statistics. Track income and expenses."
+        "description": "Get an X-ray of your business growth. See your most profitable services, most active staff and revenue trends in smart charts to make the right decisions for the future."
       }
     },
     "pricing": {
       "title": "Transparent pricing for businesses of every size.",
-      "eyebrow": "Plans",
+      "eyebrow": "Packages",
       "subtitle": "Try all features with no restrictions and no credit card for 7 days — completely free.",
       "monthly": "Monthly",
       "yearly": "Yearly",
@@ -229,7 +251,8 @@
         "appointmentReminder": "Automatic Appointment Reminders",
         "unlimitedAppointments": "Unlimited Appointments",
         "onlinePayment": "Online Payment & Deposit Infrastructure",
-        "sessionPackages": "Session & Package Management"
+        "sessionPackages": "Session & Package Management",
+        "marketingAutopilot": "Smart Marketing Autopilot"
       }
     },
     "testimonials": {
@@ -847,6 +870,45 @@
     },
     "staffManagementSubtitle": "Add, edit, or authorize staff",
     "serviceManagementSubtitle": "Manage your services and pricing",
+    "marketingAssistant": {
+      "title": "Marketing Autopilot 🚀",
+      "subtitle": "Wake up your sleeping customers with automatic WhatsApp messages and effortlessly get them back in the chair.",
+      "pageTitle": "Smart Marketing Autopilot",
+      "pageSubtitle": "While you focus on your work inside, PLANN tracks your sleeping customers in the background. People who haven't visited within the period you set receive an elegant \"We've missed you\" message from our official WhatsApp line. Effortless revenue, it's that simple.",
+      "masterTitle": "Activate Autopilot",
+      "masterSubtitle": "Automatic re-engagement messages start running in the background. You can stop it anytime.",
+      "turnedOn": "Marketing Autopilot turned on",
+      "turnedOff": "Marketing Autopilot turned off",
+      "yourBusiness": "Your Business",
+      "loadError": "Failed to load settings",
+      "saveError": "Failed to save",
+      "saved": "Durations saved",
+      "saveDays": "Save Durations",
+      "noSlugWarning": "Your online booking page isn't ready yet. Set up your business name/online page first so the button in the message works.",
+      "queued": "In queue",
+      "monthlyUsage": "Sent this month",
+      "previewTitle": "Live WhatsApp Preview",
+      "previewMessages": {
+        "kuafor": "It's time, *{{1}}* 👋🏻\n\nIt's time to relive that flawless feeling when you look in the mirror. Tap the button below to refresh your style before our diary gets fully booked. 👇🏻",
+        "guzellik": "It's time, *{{1}}* 💫\n\nWe wanted to send you a gentle reminder to keep up with your beauty and self-care routine to maintain those flawless results. Tap the button below to secure your spot before our peak hours get fully booked. 👇🏻",
+        "spa": "Time for a well-deserved break, *{{1}}* 🌿\n\nIt's time to step away from the daily rush and let your body truly unwind. Tap the button below to book your next peaceful session before our diary gets fully booked. 👇🏻",
+        "diyetisyen": "Hello *{{1}}* 👋🏻\n\nIt's time to book your next consultation to keep your nutrition plan up to date and ensure we're on the right track towards your goals. Tap the button below to quickly choose a day and time that suits you best.",
+        "psikolog": "Hello *{{1}}* 👋🏻\n\nAs you navigate this process at your own pace, we wanted to leave a gentle reminder to schedule our next session. Whenever you feel ready to take the next step, you can easily book your appointment using the button below.",
+        "dis": "Hello {{1}} 🦷\n\nFollowing your last treatment at our practice, it's time to ensure your healthy, happy smile stays that way. To refresh your routine care and secure a time before our peak slots get fully booked, feel free to check our diary below: 👇🏻",
+        "genel": "Hello {{1}} ⚡\n\nFollowing our last session, we wanted to give you priority booking for your next appointment. To secure your spot before our prime slots get fully booked, feel free to check our diary below: 👇🏻"
+      },
+      "exampleName": "Sarah",
+      "online": "online",
+      "ctaButton": "Book Online",
+      "timingTitle": "Service & Timing Rules",
+      "timingHelp": "After which service, how long without a visit counts as \"sleeping\"? For example, you can set a 30-day threshold for a haircut and 45 days for laser hair removal.",
+      "timingAccordionTitle": "Configure Service Timings",
+      "timingAccordionSubtitle": "{{count}} services active · tap to change",
+      "daysShort": "days",
+      "noServices": "No services added yet. Add services from Service Management first.",
+      "infoJit": "🛡️ Smart Shield: If the customer books a new appointment on their own within the wait period, the system notices and cancels the task to avoid sending an unnecessary message.",
+      "infoBudget": "💰 Budget Protection: The maximum number of messages sent in a month never exceeds your current plan's limit. No surprise costs, ever."
+    },
     "financeManagementSubtitle": "Track cash, income and expenses",
     "locationSubtitle": "Address and location information",
     "notificationsOn": "Notifications on",
@@ -939,6 +1001,8 @@
       "currentSubscription": "Current Subscription",
       "processing": "Redirecting to browser...",
       "startSubscription": "Start Subscription",
+      "switchToYearly": "Switch to Yearly",
+      "switchToMonthly": "Switch to Monthly",
       "paymentSuccess": "🎉 Payment successful! Your plan has been updated.",
       "plansLoadError": "Could not load plans",
       "paymentPageError": "Could not create payment page",
@@ -1080,7 +1144,7 @@
       "subtitle": "Manage the appointment page your customers see.",
       "bookingLinkTitle": "Appointment Link",
       "openLink": "Open",
-      "linkNote": "Copy this link and add it to your Instagram bio or WhatsApp profile — so customers can book appointments directly with you online.",
+      "linkNote": "Add this link to your Instagram, WhatsApp or website so your customers can book an appointment in a single tap.",
       "noLink": "No appointment link created yet. Save your business name.",
       "galleryCount": "{{count}} images",
       "galleryEmpty": "No images yet",
@@ -1273,27 +1337,27 @@
   },
   "aha": {
     "spotlight": {
-      "badge": "First step",
-      "title": "Let's create your first appointment",
-      "tooltip": "Tap the highlighted + button. A confirmation will land on your phone in seconds — the same one your customers will receive.",
-      "loading": "Your message is on its way — just a moment…",
+      "badge": "First Step",
+      "title": "Let's set up your first appointment!",
+      "tooltip": "Tap the + button below. The same sleek WhatsApp confirmation your customers will get is about to land on your phone!",
+      "loading": "Your message is on its way... Keep an eye on your phone! 👀",
       "tapTarget": "Create your first appointment"
     },
     "celebration": {
-      "deliveredBadge": "Message delivered",
-      "title": "It just arrived on your phone 🎉",
-      "body": "Your customers will hear from you exactly this fast. Let's take a 60-second walkthrough — the rest is even easier.",
-      "cta": "Start the tour",
-      "autoHint": "Continuing on its own in a moment"
+      "deliveredBadge": "Message Delivered ✅",
+      "title": "And it's on your phone! 🎉",
+      "body": "Your customers will be notified exactly this fast! Now let's take a quick 60-second tour to show you how easy the rest is.",
+      "cta": "Start the 60-Second Tour 🚀",
+      "autoHint": "Starting automatically in a few seconds..."
     },
     "error": {
-      "title": "Couldn't deliver right now",
-      "body": "Looks like a brief WhatsApp hiccup. Try again in a few seconds; if it persists, switching to the classic tour is a quick way forward.",
-      "retry": "Try again",
-      "retrying": "Trying again…",
-      "skip": "Skip to classic tour",
-      "skipping": "Switching to classic tour…",
-      "nudge": "The issue persists; switching to the classic tour is a fast way out."
+      "title": "A slight hiccup 🛑",
+      "body": "Looks like a momentary glitch on WhatsApp's end. You can try again or skip straight to the tour without losing any time.",
+      "retry": "Try Again 🔄",
+      "retrying": "Trying again...",
+      "skip": "Skip to the Tour ⏩",
+      "skipping": "Switching to the tour...",
+      "nudge": "WhatsApp is being a bit stubborn. You can skip straight to the classic tour to start exploring the system right away."
     }
   },
   "tour": {

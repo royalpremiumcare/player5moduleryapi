@@ -111,54 +111,76 @@
     },
     "features": {
       "title": "PLANN Neler Sunar?",
+      "groups": {
+        "trust": {
+          "title": "Kafanızı Rahatlatan Özellikler",
+          "subtitle": "Telefon trafiğini bitiren, unutulan randevuların önüne geçen ve gelirinizi güvence altına alan temel özellikler."
+        },
+        "experience": {
+          "title": "Müşteriyi Mıknatıs Gibi Çeken Araçlar",
+          "subtitle": "Müşterinizi kapıya kadar getiren; yapay zekâ ve otomasyonla işinizi arka planda büyüten akıllı araçlar."
+        },
+        "operations": {
+          "title": "İşletmenin Direksiyonu Tamamen Sizde",
+          "subtitle": "Ekip, ön muhasebe ve raporlamayı tek ekranda toplayan; dükkânınızı her an cebinizde tutan yönetim gücü."
+        }
+      },
+      "marketingAutopilot": {
+        "title": "Akıllı Pazarlama Otopilotu",
+        "description": "Siz işinize odaklanırken, PLANN arka planda uğramayan müşterilerinizi takip eder. Zamanı gelen veya randevusunu geciktiren kişilere tam zamanında akıllı WhatsApp mesajları atarak onları zahmetsizce geri kazanır."
+      },
+      "aiAssistant": {
+        "title": "Akıllı Yapay Zeka Asistanı",
+        "description": "Sadece yazarak saniyeler içinde randevu oluşturun, en karmaşık ciro istatistiklerini anında rapor olarak isteyin ya da uygulamaya dair takıldığınız her şeyi canlı bir uzmana sorar gibi ona danışın. Kontrolün her an sizde olduğu 7/24 aktif dijital sağ kolunuz."
+      },
       "autoSms": {
-        "title": "Otomatik WhatsApp ve Hatırlatma",
-        "description": "Randevu öncesi otomatik WhatsApp ile hatırlatma gönderin, unutulan randevulara son verin."
+        "title": "Otomatik Randevu Hatırlatma",
+        "description": "Unutulan randevular yüzünden boş kalan koltuklara son. Randevu öncesi giden otomatik WhatsApp hatırlatmalarıyla iptal oranlarını düşürün, dükkanın vaktini koruyun."
       },
       "onlineBooking": {
         "title": "Online Randevu Sistemi",
-        "description": "İşletmenize özel online randevu sayfanızı oluşturun. Linkinizi WhatsApp/Instagram’dan paylaşın; müşteriler uygun saatleri görüp 7/24 kendi randevusunu alsın."
+        "description": "İşletmenize özel şık bir randevu linki oluşturun. Instagram ve WhatsApp'tan paylaşın; müşterileriniz uygun saatlerinizi görerek telefon trafiğine girmeden 7/24 randevu alabilsin."
       },
       "location": {
         "title": "Konum ve Yol Tarifi",
-        "description": "İşletmenizin adresini haritada gösterin; konum müşterinize WhatsApp’tan otomatik gitsin ve tek tıkla yol tarifi alabilsin."
+        "description": "\"Adresiniz neredeydi?\" sorularını tarihe gömün. Randevusu kesinleşen müşterinize konum ve yol tarifi WhatsApp üzerinden otomatik gitsin, tek tıkla kapınıza kadar gelsin."
       },
       "customerManagement": {
         "title": "Müşteri Yönetimi",
-        "description": "Sınırsız sayıda müşteri ekleyip sonraki randevularını kolayca oluşturun ve yönetin."
+        "description": "Müşterilerinizin tüm geçmişi tek bir dijital kartta. Sınırsız müşteri kaydı oluşturun; kimin hangi hizmeti aldığını, ne kadar ödediğini ve sonraki planlarını tek tıkla görün."
       },
       "calendarManagement": {
         "title": "Detaylı Takvim Yönetimi",
-        "description": "Randevularınızı günlük, haftalık, aylık olarak takvim üzerinden detaylı takip edip yönetin."
+        "description": "Karışık kağıt defterleri çöpe atın. Günlük, haftalık ve aylık randevu trafiğinizi, iptalleri ve yer değiştirmeleri sürükle-bırak kolaylığıyla saniyeler içinde organize edin."
       },
       "staffManagement": {
         "title": "Personel Yönetimi",
-        "description": "Sınırsız sayıda personel ekleyip randevularını ve istatistiklerini kolayca takip edin."
+        "description": "Ekibinizin performansını havada bırakmayın. Personellerinizin çalışma saatlerini, randevu doluluklarını ve prim istatistiklerini tek bir ekrandan kolayca yönetin."
       },
       "multiDevice": {
         "title": "Çoklu Cihaz Desteği",
-        "description": "Bilgisayar, telefon ve tablet üzerinden tüm randevularınıza her yerden erişin."
+        "description": "Dükkanınız her an cebinizde. Bilgisayar, telefon veya tabletten tüm verilerinize eş zamanlı erişin; siz dışarıdayken de salonunuz tıkır tıkır işlesin."
       },
       "financeManagement": {
         "title": "Gelir Gider Yönetimi",
-        "description": "İşletmenize ait gelir giderleri takip edip ön muhasebe sisteminden faydalanın."
+        "description": "Ay sonu sürprizlerine son verin. İşletmenizin tüm ürün satışlarını, genel giderlerini ve net kârlılığını tek platformda toplayarak ön muhasebenizi zahmetsizce tutun."
       },
       "onlinePayment": {
         "title": "Online Ödeme Sistemi",
-        "description": "Hizmetlerinize online ödeme veya kapora kuralı tanımlayın. Müşteriler randevu alırken güvenli şekilde ödeme yapsın; tam tutar veya yüzde bazlı kapora seçeneğiyle."
+        "description": "Son dakika iptallerine karşı işletmenizi güvenceye alın. Randevu esnasında tam tutar veya yüzde bazlı kapora kuralı tanımlayın; ödemeler doğrudan hesabınıza güvenle geçsin."
       },
       "sessionPackages": {
         "title": "Seans Paketi Yönetimi",
-        "description": "Çoklu seans hizmetleri oluşturun, seansları toplu planlayın ve takip edin. Müşterilerinize WhatsApp ile seans planı otomatik gönderilsin."
+        "description": "Paket satışlarını kolayca takip edin. Çoklu seans planları oluşturup kalan seans sayılarını otomatik izleyin; güncellenen seans kartı müşterinize WhatsApp'tan anında ulaşsın."
       },
       "reporting": {
         "title": "Raporlama & İstatistikler",
-        "description": "Müşteri, personel ve hizmet istatistiklerinizi görüntüleyin. Gelir giderlerinizi takip edin."
+        "description": "İşletmenizin büyüme röntgenini çekin. En çok kazandıran hizmetleri, en aktif personelleri ve ciro trendlerini akıllı grafiklerle görerek geleceğe yönelik doğru kararlar alın."
       }
     },
     "pricing": {
       "title": "Her ölçekten işletme için şeffaf fiyatlar.",
-      "eyebrow": "Planlar",
+      "eyebrow": "Paketler",
       "subtitle": "Tüm özellikleri kısıtlama olmadan, kredi kartı girmeden 7 gün boyunca ücretsiz keşfedin.",
       "monthly": "Aylık",
       "yearly": "Yıllık",
@@ -229,7 +251,8 @@
         "appointmentReminder": "Otomatik Randevu Hatırlatmaları",
         "unlimitedAppointments": "Sınırsız Randevu",
         "onlinePayment": "Online Ödeme ve Kapora Altyapısı",
-        "sessionPackages": "Seans ve Paket Yönetimi"
+        "sessionPackages": "Seans ve Paket Yönetimi",
+        "marketingAutopilot": "Akıllı Pazarlama Otopilotu"
       }
     },
     "testimonials": {
@@ -849,6 +872,45 @@
     },
     "staffManagementSubtitle": "Personel ekle, düzenle veya yetkilendir",
     "serviceManagementSubtitle": "Hizmetlerinizi ve fiyatları yönetin",
+    "marketingAssistant": {
+      "title": "Pazarlama Otopilotu 🚀",
+      "subtitle": "Uyuyan müşterilerinizi otomatik WhatsApp mesajlarıyla uyandırın ve zahmetsizce tekrar koltuğa oturtun.",
+      "pageTitle": "Akıllı Pazarlama Otopilotu",
+      "pageSubtitle": "Siz içeride işinize odaklanırken, PLANN arka planda uyuyan müşterilerinizi takip eder. Belirlediğiniz süre boyunca uğramayan kişilere resmi WhatsApp hattımızdan şık bir \"Özlettiniz\" mesajı gider. Zahmetsiz ciro, işte bu kadar basit.",
+      "masterTitle": "Otopilotu Devreye Al",
+      "masterSubtitle": "Arka planda otomatik geri kazanım mesajları çalışmaya başlar. İstediğiniz an durdurabilirsiniz.",
+      "turnedOn": "Pazarlama Otopilotu açıldı",
+      "turnedOff": "Pazarlama Otopilotu kapatıldı",
+      "yourBusiness": "İşletmeniz",
+      "loadError": "Ayarlar yüklenemedi",
+      "saveError": "Kaydedilemedi",
+      "saved": "Süreler kaydedildi",
+      "saveDays": "Süreleri Kaydet",
+      "noSlugWarning": "Online randevu sayfanız henüz hazır değil. Mesajdaki butonun çalışması için önce işletme adınızı/online sayfanızı ayarlayın.",
+      "queued": "Sırada bekleyen",
+      "monthlyUsage": "Bu ay gönderilen",
+      "previewTitle": "Canlı WhatsApp Önizlemesi",
+      "previewMessages": {
+        "kuafor": "Zamanı geldi *{{1}}* 👋🏻\n\nAynaya baktığında o ilk günkü kusursuz hissi tekrar yaşama zamanı geldi. Takvimimiz dolmadan hemen aşağıdaki butona tıklayarak stiline taze bir dokunuş yapabilirsin. 👇🏻",
+        "guzellik": "Zamanı geldi *{{1}}* 💫\nHarika sonuçlar elde ettiğin o güzellik ve bakım rutinini aksatmamak için sana tatlı bir hatırlatma yapmak istedik.\n\nYoğun saatler başlamadan önce yerini garantiye almak için tek tıkla sana en uygun zamanı *seçebilirsin*. 👇🏻",
+        "spa": "Kendine bir mola verme zamanı *{{1}}* 🌿\n\nGünün koşturmacasından ve stresinden uzaklaşıp bedenini dinlendirme vakti geldi. Takvimimiz dolmadan aşağıdaki butona tıklayarak huzur dolu yeni seansını hızlıca planlayabilirsin. 👇🏻",
+        "diyetisyen": "Selam *{{1}}* 👋🏻\nBeslenme programını güncel tutmak ve hedeflerine giden yolda adımlarımızı netleştirmek için yeni bir seans planlama zamanı.\n\nAşağıdaki butona tıklayarak senin için en uygun gün ve saati hızlıca seçebilirsin.",
+        "psikolog": "Selam *{{1}}* 👋🏻\n\nKendi hızında ilerlediğin bu süreçte, bir sonraki adımı atmak ve görüşmemizi planlamak için sana küçük bir hatırlatma bırakmak istedik. Ne zaman hazır hissedersen, aşağıdaki butondan randevunu kolayca oluşturabilirsin.",
+        "dis": "Merhaba *{{1}}*\n🦷 Ağız ve diş sağlığını korumanın en etkili yolu, rutin kontrolleri aksatmamaktır. Gülüşünü güvenle korumak ve genel kontrol seansını planlamak istersen, aşağıdaki butondan senin için en uygun günü hızlıca seçebilirsin. 👇🏻",
+        "genel": "Selam *{{1}}* 👋🏻\nSon gerçekleştirdiğimiz işlemin ardından yeni planlamanı yapmak için sana öncelik tanımak istedik.\nTakvimimizdeki popüler saatler dolmadan önce, aşağıdaki butondan yerini hemen garantiye alabilirsin. 👇🏻"
+      },
+      "exampleName": "Ayşe",
+      "online": "çevrimiçi",
+      "ctaButton": "Online Randevu Al",
+      "timingTitle": "Hizmet ve Zamanlama Kuralları",
+      "timingHelp": "Hangi hizmetten sonra müşteri ne kadar süre gelmezse \"uyuyan\" kabul edilsin? Örneğin; saç kesimi için 30 gün, lazer epilasyon için 45 gün eşiği belirleyebilirsiniz.",
+      "timingAccordionTitle": "Hizmet Sürelerini Yapılandır",
+      "timingAccordionSubtitle": "{{count}} hizmet devrede · Değiştirmek için dokunun",
+      "daysShort": "gün",
+      "noServices": "Henüz hizmet eklenmemiş. Önce Hizmet Yönetimi'nden hizmet ekleyin.",
+      "infoJit": "🛡️ Akıllı Kalkan: Müşteri bekleme süresi içinde kendi kendine yeni bir randevu alırsa, sistem bunu fark eder ve gereksiz mesaj atmamak için görevi iptal eder.",
+      "infoBudget": "💰 Bütçe Koruması: Bir ay içinde atılacak maksimum mesaj sayısı, mevcut paketinizin limitini aşmaz. Size asla sürpriz bir maliyet çıkarmaz."
+    },
     "financeManagementSubtitle": "Kasa, gelir ve gider takibi",
     "locationSubtitle": "Adres ve konum bilgileri",
     "notificationsOn": "Bildirimler açık",
@@ -941,6 +1003,8 @@
       "currentSubscription": "Mevcut Abonelik",
       "processing": "Tarayıcıya yönlendiriliyor...",
       "startSubscription": "Aboneliği Başlat",
+      "switchToYearly": "Yıllığa Geç",
+      "switchToMonthly": "Aylığa Geç",
       "paymentSuccess": "Ödeme başarılı! Planınız güncellendi.",
       "plansLoadError": "Planlar yüklenemedi",
       "paymentPageError": "Ödeme sayfası oluşturulamadı",
@@ -1082,7 +1146,7 @@
       "subtitle": "Müşterilerin gördüğü randevu sayfanızı yönetin.",
       "bookingLinkTitle": "Randevu Linki",
       "openLink": "Aç",
-      "linkNote": "Bu linki kopyalayıp Instagram biyografinize veya WhatsApp profilinize ekleyin — müşterileriniz doğrudan sizden online randevu alabilsin.",
+      "linkNote": "Müşterilerinizin tek tıkla randevu oluşturabilmesi için bu bağlantıyı Instagram, WhatsApp veya web sitenize ekleyin.",
       "noLink": "Henüz randevu linki oluşturulmamış. İşletme adını kaydedin.",
       "galleryCount": "{{count}} görsel",
       "galleryEmpty": "Henüz görsel yok",
@@ -1275,27 +1339,27 @@
   },
   "aha": {
     "spotlight": {
-      "badge": "İlk adım",
-      "title": "İlk randevunu birlikte oluşturalım",
-      "tooltip": "Vurgulanan + butonuna dokun. Telefonuna saniyeler içinde bir doğrulama mesajı düşecek — müşterilerinin alacağı onayın aynısı.",
-      "loading": "Mesajın hazırlanıyor — birkaç saniye…",
+      "badge": "İlk Adım",
+      "title": "Hadi, ilk randevunu birlikte oluşturalım!",
+      "tooltip": "Aşağıdaki + butonuna dokun. Müşterilerinin alacağı o şık WhatsApp onayı saniyeler içinde senin cebine gelsin!",
+      "loading": "Mesajın yola çıkıyor... Gözün telefonda olsun! 👀",
       "tapTarget": "İlk randevunu oluştur"
     },
     "celebration": {
-      "deliveredBadge": "Mesaj iletildi",
-      "title": "Mesaj telefonunda 🎉",
-      "body": "Müşterilerin tam bu hızda haber alacak. Şimdi seni 60 saniyelik kısa bir gezintiye çıkaralım — gerisi çok daha kolay.",
-      "cta": "Hadi turu başlatalım",
-      "autoHint": "Birazdan kendiliğinden devam edecek"
+      "deliveredBadge": "Mesaj İletildi ✅",
+      "title": "Ve mesaj telefonunda! 🎉",
+      "body": "Müşterilerin de tam olarak bu hızda bilgilendirilecek! Şimdi seni kısa bir tura çıkaralım, sistemin kalanı çok daha kolay.",
+      "cta": "60 Saniyelik Turu Başlat 🚀",
+      "autoHint": "Birkaç saniye içinde tur otomatik başlayacak..."
     },
     "error": {
-      "title": "Mesaj şu an iletilemedi",
-      "body": "WhatsApp tarafında geçici bir aksaklık olmuş gibi. Birkaç saniye içinde yeniden dene; sorun devam ederse klasik tura kayabilirsin.",
-      "retry": "Yeniden dene",
-      "retrying": "Yeniden deneniyor…",
-      "skip": "Klasik tura geç",
-      "skipping": "Klasik tura geçiliyor…",
-      "nudge": "Sorun devam ediyor; klasik tura geçmek hızlı bir çıkış yolu."
+      "title": "Ufak bir takılma oldu 🛑",
+      "body": "WhatsApp sunucularında anlık bir aksaklık yaşanıyor gibi. Tekrar deneyebilir veya hiç vakit kaybetmeden doğrudan tura geçebilirsin.",
+      "retry": "Tekrar Dene 🔄",
+      "retrying": "Tekrar deneniyor...",
+      "skip": "Vakit Kaybetme, Tura Geç ⏩",
+      "skipping": "Hızlı tura yönlendiriliyorsun...",
+      "nudge": "WhatsApp hala biraz inatçı. Hiç vakit kaybetmeden klasik tura geçerek sistemi keşfetmeye başlayabilirsin."
     }
   },
   "tour": {

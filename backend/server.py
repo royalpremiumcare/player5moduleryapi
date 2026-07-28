@@ -475,8 +475,17 @@ async def _send_subscription_email_once(
 scheduler = AsyncIOScheduler()
 _app_instance = None  # Global app instance for scheduler
 
+# Hatırlatma poll aralığı (saniye). Küçük değer = daha hassas zamanlama.
+REMINDER_POLL_SECONDS = int(os.getenv("REMINDER_POLL_SECONDS", "60"))
+
+
 async def check_and_send_reminders():
-    """Her 5 dakikada bir yaklaşan randevuları kontrol et ve WhatsApp hatırlatması gönder"""
+    """Yaklaşan randevuları kontrol edip WhatsApp hatırlatması gönderir.
+
+    Zamanlama: her REMINDER_POLL_SECONDS sn'de bir çalışır; bir randevu için
+    (apt_time - reminder_hours) anına ULAŞILDIĞINDA ilk turda gönderir → poll
+    aralığı kadar hassas. Kaçan turlar 'due/overdue' mantığıyla telafi edilir
+    (randevu henüz geçmediyse geç de olsa gönderilir)."""
     try:
         logging.info("=== WhatsApp Reminder Check Started ===")
         # Global app instance'ından db'yi al
@@ -494,14 +503,17 @@ async def check_and_send_reminders():
         now = datetime.now(turkey_tz)
 
         # DISTRIBUTED LOCK: multi-worker duplicate send prevention
+        # Kova poll aralığına göre (saniye hassasiyetli). Dakika bazlı eski kova
+        # 30 sn poll'da aynı dakikadaki 2. turu yanlışlıkla atlatıyordu.
         redis_client = getattr(_app_instance, 'redis_client', None)
         if redis_client:
             try:
-                lock_key = f"reminder_lock:{now.strftime('%Y%m%d%H%M')}"
-                if not await redis_client.set(lock_key, "1", nx=True, ex=300):
-                    logging.info("Reminder check skipped - another worker holds the lock")
+                _bucket = int(now.timestamp() // REMINDER_POLL_SECONDS)
+                lock_key = f"reminder_lock:{_bucket}"
+                if not await redis_client.set(lock_key, "1", nx=True, ex=REMINDER_POLL_SECONDS + 10):
+                    logging.debug("Reminder check skipped - another worker holds the lock")
                     return
-                logging.info(f"Distributed lock acquired: {lock_key}")
+                logging.debug(f"Distributed lock acquired: {lock_key}")
             except Exception as lock_err:
                 logging.warning(f"Redis lock unavailable, proceeding without lock: {lock_err}")
 
@@ -519,17 +531,17 @@ async def check_and_send_reminders():
             
             logging.info(f"Checking org {org_id}: reminder_hours={reminder_hours}, company={company_name}")
             
-            # Hatırlatma zaman aralığını hesapla
-            reminder_time_start = now + timedelta(hours=reminder_hours - 0.1)  # 6 dakika tolerance
-            reminder_time_end = now + timedelta(hours=reminder_hours + 0.1)
-            
-            logging.info(f"  Reminder window: {reminder_time_start.strftime('%Y-%m-%d %H:%M:%S')} to {reminder_time_end.strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            # Bu zaman aralığındaki randevuları bul
+            # Yakın ufuk: bugünden itibaren 3 gün (reminder_hours büyük olsa bile kapsar).
+            # 30 sn'de bir tarama yaptığımız için sorguyu dar tutuyoruz.
+            _today = now.strftime("%Y-%m-%d")
+            _horizon = (now + timedelta(days=3)).strftime("%Y-%m-%d")
+
+            # Bekleyen, hatırlatması gitmemiş, yakın tarihli randevular
             appointments = await db.appointments.find({
                 "organization_id": org_id,
                 "status": "Bekliyor",
-                "reminder_sent": {"$ne": True}  # Daha önce hatırlatma gönderilmemiş
+                "reminder_sent": {"$ne": True},
+                "appointment_date": {"$gte": _today, "$lte": _horizon},
             }, {"_id": 0}).to_list(1000)
             
             logging.info(f"  Found {len(appointments)} pending appointments without reminder")
@@ -542,8 +554,11 @@ async def check_and_send_reminders():
                     
                     logging.debug(f"  Appointment {apt.get('id')}: {apt_datetime_str} (parsed: {apt_datetime.strftime('%Y-%m-%d %H:%M:%S')})")
                     
-                    # Hatırlatma zamanı geldi mi?
-                    if reminder_time_start <= apt_datetime <= reminder_time_end:
+                    # Hatırlatma zamanı: apt_time - reminder_hours. Bu ana ULAŞILDIYSA
+                    # ve randevu henüz geçmediyse gönder → poll aralığı kadar hassas,
+                    # kaçırılan turlarda bile 'geç ama gönderilmiş' garantisi.
+                    remind_at = apt_datetime - timedelta(hours=reminder_hours)
+                    if remind_at <= now < apt_datetime:
                         # Atomic claim: only one worker can proceed (race condition fix)
                         claimed = await db.appointments.find_one_and_update(
                             {"id": apt['id'], "reminder_sent": {"$ne": True}},
@@ -830,12 +845,12 @@ async def lifespan(app: FastAPI):
         # NOT: Bu job WhatsApp gönderiyor, SMS değil. SMS_ENABLED kontrolü yapılmıyor.
         scheduler.add_job(
             check_and_send_reminders, 
-            IntervalTrigger(minutes=5), 
+            IntervalTrigger(seconds=REMINDER_POLL_SECONDS), 
             id='whatsapp_reminder_job',
             replace_existing=True,
             max_instances=1  # Aynı anda sadece bir instance çalışsın
         )
-        logging.info("  - WhatsApp Reminder: Enabled (Every 5 minutes)")
+        logging.info(f"  - WhatsApp Reminder: Enabled (Every {REMINDER_POLL_SECONDS}s, hassas zamanlama)")
         
         # Recurring Payment Job - Her gün saat 02:00'de (UTC)
         from apscheduler.triggers.cron import CronTrigger
@@ -957,6 +972,27 @@ async def lifespan(app: FastAPI):
             except Exception as cron_err:
                 logging.warning(f"PLANN v2 cron registration failed: {cron_err}")
 
+            # Step 4d: PLANN Asistan — zeka motoru cron işleri (08:30 / 22:00 / Pazar 22:00)
+            try:
+                from assistant import register_assistant_jobs
+                register_assistant_jobs(
+                    scheduler, app.db,
+                    redis_client=getattr(app, "redis_client", None),
+                    push_fn=send_push_notification,
+                )
+            except Exception as asst_err:
+                logging.warning(f"PLANN Asistan cron registration failed: {asst_err}")
+
+            # Step 4e: Pazarlama Otopilotu — WhatsApp geri-kazanım (enqueue + dispatch)
+            try:
+                from marketing_autopilot import register_autopilot_jobs
+                register_autopilot_jobs(
+                    scheduler, app.db,
+                    redis_client=getattr(app, "redis_client", None),
+                )
+            except Exception as autopilot_err:
+                logging.warning(f"Pazarlama Otopilotu cron registration failed: {autopilot_err}")
+
         scheduler.start()
         logging.info("Step 4 SUCCESS: Schedulers started")
         logging.info("  - Recurring Payments: Daily at 02:00 UTC")
@@ -995,6 +1031,13 @@ async def lifespan(app: FastAPI):
             # Contact requests indexes
             await app.db.contact_requests.create_index([("created_at", -1)])
             await app.db.contact_requests.create_index([("status", 1)])
+
+            # Pazarlama Otopilotu — görev kuyruğu indeksleri
+            try:
+                from marketing_autopilot import ensure_indexes as _ensure_autopilot_indexes
+                await _ensure_autopilot_indexes(app.db)
+            except Exception as _ap_idx_err:
+                logging.debug(f"autopilot index creation skipped: {_ap_idx_err}")
 
             # Funnel events ledger (activation + dropoff + subscription funnel)
             try:
@@ -1052,6 +1095,24 @@ async def lifespan(app: FastAPI):
                 )
             except Exception as idx_leads:
                 logging.debug(f"leads indexes skipped: {idx_leads}")
+
+            # PLANN Asistan — mesaj havuzu index'leri + idempotent seed + bildirim/snapshot index'leri
+            try:
+                from assistant.seed_messages import ensure_indexes as _asst_ensure_idx, seed_messages as _asst_seed
+                await _asst_ensure_idx(app.db)
+                await app.db.assistant_notifications.create_index(
+                    [("organization_id", 1), ("scenario", 1), ("sent_at", -1)]
+                )
+                await app.db.assistant_notifications.create_index(
+                    [("organization_id", 1), ("sent_at", -1)]
+                )
+                await app.db.assistant_daily_snapshots.create_index(
+                    [("organization_id", 1), ("date", -1)]
+                )
+                _asst_seed_res = await _asst_seed(app.db)
+                logging.info(f"  - PLANN Asistan: mesaj havuzu seed edildi ({_asst_seed_res.get('total')} metin)")
+            except Exception as idx_asst:
+                logging.warning(f"PLANN Asistan index/seed skipped: {idx_asst}")
 
             logging.info("Step 5 SUCCESS: Database indexes created")
         else:
@@ -2270,6 +2331,13 @@ class Settings(BaseModel):
     show_service_duration_on_public: bool = True; show_service_price_on_public: bool = True
     multi_service_enabled: bool = False
     break_limit_minutes: int = 60; break_limit_count: int = 2
+    # Pazarlama Otopilotu (WhatsApp geri-kazanım): varsayılan KAPALI.
+    # marketing_autopilot_days: {service_id: gün}. Haritada olmayan hizmet için
+    # varsayılan 21 gün uygulanır. enabled_at, otopilot AÇILDIĞI an set edilir ve
+    # yalnızca o andan SONRA tamamlanan randevular kuyruğa alınır (geçmiş patlaması yok).
+    marketing_autopilot_enabled: bool = False
+    marketing_autopilot_days: dict = Field(default_factory=dict)
+    marketing_autopilot_enabled_at: Optional[str] = None
     location: Optional[BusinessLocation] = None
     business_hours: Optional[dict] = Field(default_factory=lambda: {
         "monday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
@@ -2436,7 +2504,8 @@ PLANS = [
             "Online Ödeme Alın (Kapora veya Tam Ödeme)",
             "Seans Paketi Yönetimi",
             "İstatistikler",
-            "Yapay Zeka Akıllı Asistan (500 Mesaj/Ay)"
+            "Yapay Zeka Akıllı Asistan (500 Mesaj/Ay)",
+            "Akıllı Pazarlama Otopilotu"
         ],
         "target_audience_tr": "Yeni başlayanlar, tek kişilik veya butik işletmeler için ideal başlangıç paketi."
     },
@@ -2456,7 +2525,8 @@ PLANS = [
             "Online Ödeme Alın (Kapora veya Tam Ödeme)",
             "Seans Paketi Yönetimi",
             "İstatistikler",
-            "Yapay Zeka Akıllı Asistan (3.000 Mesaj/Ay)"
+            "Yapay Zeka Akıllı Asistan (3.000 Mesaj/Ay)",
+            "Akıllı Pazarlama Otopilotu"
         ],
         "target_audience_tr": "Büyümekte olan ve müşteri kitlesini oturtmaya başlamış salonlar için."
     },
@@ -2476,7 +2546,8 @@ PLANS = [
             "Online Ödeme Alın (Kapora veya Tam Ödeme)",
             "Seans Paketi Yönetimi",
             "İstatistikler",
-            "Yapay Zeka Akıllı Asistan (10.000 Mesaj/Ay)"
+            "Yapay Zeka Akıllı Asistan (10.000 Mesaj/Ay)",
+            "Akıllı Pazarlama Otopilotu"
         ],
         "target_audience_tr": "Düzenli ve sabit bir müşteri hacmine sahip, yerleşik işletmeler için."
     },
@@ -2496,7 +2567,8 @@ PLANS = [
             "Online Ödeme Alın (Kapora veya Tam Ödeme)",
             "Seans Paketi Yönetimi",
             "İstatistikler",
-            "Yapay Zeka Akıllı Asistan (Limitsiz)"
+            "Yapay Zeka Akıllı Asistan (Limitsiz)",
+            "Akıllı Pazarlama Otopilotu"
         ],
         "target_audience_tr": "Yoğun tempolu, orta ölçekli salonlar ve merkezler için en popüler seçim."
     },
@@ -2516,7 +2588,8 @@ PLANS = [
             "Online Ödeme Alın (Kapora veya Tam Ödeme)",
             "Seans Paketi Yönetimi",
             "İstatistikler",
-            "Yapay Zeka Akıllı Asistan (Limitsiz)"
+            "Yapay Zeka Akıllı Asistan (Limitsiz)",
+            "Akıllı Pazarlama Otopilotu"
         ],
         "target_audience_tr": "Yüksek hacimli, birden fazla uzman/personel çalıştıran salonlar ve klinikler için."
     },
@@ -2536,7 +2609,8 @@ PLANS = [
             "Online Ödeme Alın (Kapora veya Tam Ödeme)",
             "Seans Paketi Yönetimi",
             "İstatistikler",
-            "Yapay Zeka Akıllı Asistan (Limitsiz)"
+            "Yapay Zeka Akıllı Asistan (Limitsiz)",
+            "Akıllı Pazarlama Otopilotu"
         ],
         "target_audience_tr": "Sektörün en yoğun klinikleri, poliklinikler ve büyük ölçekli işletmeler için tam çözüm."
     }
@@ -7611,6 +7685,7 @@ async def get_plans(request: Request):
             'Yapay Zeka Akıllı Asistan (Standart Kullanım)': 'Yapay Zeka Akıllı Asistan (Standart Kullanım)',
             'Yapay Zeka Akıllı Asistan (Gelişmiş Kullanım)': 'Yapay Zeka Akıllı Asistan (Gelişmiş Kullanım)',
             'Yapay Zeka Akıllı Asistan (Limitsiz)': 'Yapay Zeka Akıllı Asistan (Limitsiz)',
+            'Akıllı Pazarlama Otopilotu': 'Akıllı Pazarlama Otopilotu',
         },
         'en': {
             '50 Randevu veya 7 Gün (Hangisi önce)': '50 Appointments or 7 Days (Whichever comes first)',
@@ -7629,6 +7704,7 @@ async def get_plans(request: Request):
             'Yapay Zeka Akıllı Asistan (Standart Kullanım)': 'AI Smart Assistant (Standard Use)',
             'Yapay Zeka Akıllı Asistan (Gelişmiş Kullanım)': 'AI Smart Assistant (Advanced Use)',
             'Yapay Zeka Akıllı Asistan (Limitsiz)': 'AI Smart Assistant (Unlimited)',
+            'Akıllı Pazarlama Otopilotu': 'Smart Marketing Autopilot',
         }
     }
     
@@ -8691,8 +8767,15 @@ async def handle_stripe_webhook(request: Request):
             session_id = session['id']
             
             logger.info(f"💳 Ödeme başarılı: session_id={session_id}")
-            # SaaS aboneliği değil; merchant ödemesi ayrı webhook'ta işlenir
-            if _stripe_metadata_dict(session).get("is_merchant_payment") == "true" or _stripe_obj_get(session, "mode") == "payment":
+            # SaaS aboneliği değil; business (merchant) ödemesi ayrı webhook'ta işlenir.
+            # payment_type=business VEYA legacy is_merchant_payment VEYA mode==payment → atla.
+            # (Abonelik akışı mode==subscription + payment_type=subscription ile buradan devam eder.)
+            _sess_meta = _stripe_metadata_dict(session)
+            if (
+                _sess_meta.get("payment_type") == "business"
+                or _sess_meta.get("is_merchant_payment") == "true"
+                or _stripe_obj_get(session, "mode") == "payment"
+            ):
                 return Response(content="OK", status_code=200)
             
             # Payment log'u bul
@@ -15441,6 +15524,22 @@ try:
     logging.info("✅ Financial Engine router registered")
 except Exception as fin_import_err:
     logging.warning(f"⚠️ Financial Engine router import failed: {fin_import_err}")
+
+# --- PLANN Asistan Router (zeka motoru: geçmiş + superadmin önizleme/test/seed) ---
+try:
+    from assistant.endpoints import router as assistant_router
+    app.include_router(assistant_router)
+    logging.info("✅ PLANN Asistan router registered")
+except Exception as asst_import_err:
+    logging.warning(f"⚠️ PLANN Asistan router import failed: {asst_import_err}")
+
+# --- Pazarlama Otopilotu Router (WhatsApp geri-kazanım ayarları) ---
+try:
+    from marketing_autopilot_endpoints import router as autopilot_router
+    app.include_router(autopilot_router)
+    logging.info("✅ Pazarlama Otopilotu router registered")
+except Exception as autopilot_import_err:
+    logging.warning(f"⚠️ Pazarlama Otopilotu router import failed: {autopilot_import_err}")
 
 # --- Meta Conversions API Router (Pixel + CAPI hybrid tracking) ---
 try:

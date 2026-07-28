@@ -17,7 +17,7 @@ import requests
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
-from fastapi import APIRouter, Request, HTTPException, Depends, Query
+from fastapi import APIRouter, Request, HTTPException, Depends, Query, BackgroundTasks
 from fastapi.responses import Response
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -403,6 +403,7 @@ class PaymentLinkCreate(BaseModel):
     customer_phone: str
     description: str
     amount: float  # major units (ör. 1250.00)
+    email: Optional[str] = None  # opsiyonel — Stripe Radar risk skorunu düşürür
 
 
 @router.post("/api/merchant/payment-links", dependencies=[Depends(_require_admin)])
@@ -421,6 +422,7 @@ async def create_payment_link(request: Request, body: PaymentLinkCreate):
     customer_name = (body.customer_name or "").strip()
     customer_phone = (body.customer_phone or "").strip()
     description = (body.description or "").strip()
+    customer_email = (body.email or "").strip().lower() or None
 
     if not customer_phone:
         raise HTTPException(status_code=400, detail="Müşteri telefonu zorunludur")
@@ -428,6 +430,8 @@ async def create_payment_link(request: Request, body: PaymentLinkCreate):
         raise HTTPException(status_code=400, detail="Açıklama zorunludur")
     if body.amount is None or body.amount <= 0:
         raise HTTPException(status_code=400, detail="Geçerli bir tutar giriniz")
+    if customer_email and "@" not in customer_email:
+        raise HTTPException(status_code=400, detail="Geçersiz e-posta adresi")
 
     base_amount_minor = int(round(body.amount * 100))
 
@@ -439,6 +443,7 @@ async def create_payment_link(request: Request, body: PaymentLinkCreate):
             customer_phone=customer_phone,
             description=description,
             base_amount_minor=base_amount_minor,
+            customer_email=customer_email,
         )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1085,8 +1090,8 @@ async def wise_webhook_verify():
 
 
 @router.post("/api/webhooks/wise")
-async def wise_webhook(request: Request):
-    """Wise webhook endpoint for transfer status updates."""
+async def wise_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Wise webhook: transfer status updates + GBP balance credit auto-conversion."""
     # Wise sends a test POST with X-Test-Notification header when creating subscriptions
     if request.headers.get("X-Test-Notification") == "true":
         return Response(content="ok", status_code=200, media_type="text/plain")
@@ -1106,9 +1111,17 @@ async def wise_webhook(request: Request):
 
     db = _get_db(request)
     sig_header = request.headers.get("X-Signature-SHA256", "")
+    redis_client = (
+        getattr(getattr(request.app, "state", None), "redis_client", None)
+        or getattr(request.app, "redis_client", None)
+    )
 
     try:
-        result = await handle_wise_webhook(db, payload, sig_header)
+        result = await handle_wise_webhook(
+            db, payload, sig_header,
+            redis_client=redis_client,
+            background_tasks=background_tasks,
+        )
     except Exception as e:
         logging.error(f"Wise webhook handler error: {e}", exc_info=True)
         return {"status": "error", "detail": str(e)}
@@ -1117,6 +1130,343 @@ async def wise_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     return result
+
+
+@router.post("/api/superadmin/financial/wise/convert-pending",
+             dependencies=[Depends(_require_superadmin)])
+async def sa_wise_convert_pending(request: Request):
+    """
+    Manuel fallback: bekleyen (mutabakat görmüş) BUSINESS ödemelerini GBP→TRY çevir.
+
+    Webhook (balances#credit) otomatik tetikleyicinin manuel eşdeğeri. Idempotent —
+    zaten convert edilmiş tx'ler atlanır. WISE_AUTO_CONVERT_ENABLED kapalıysa Noop.
+    """
+    db = _get_db(request)
+    redis_client = (
+        getattr(getattr(request.app, "state", None), "redis_client", None)
+        or getattr(request.app, "redis_client", None)
+    )
+    from .wise_conversion_service import run_auto_conversion_on_credit
+    result = await run_auto_conversion_on_credit(db, redis_client=redis_client, limit=500)
+    return {"status": "ok", "result": result}
+
+
+@router.get("/api/superadmin/financial/wise/conversions/needs-manual",
+            dependencies=[Depends(_require_superadmin)])
+async def sa_wise_conversions_needs_manual(request: Request):
+    """Retry eşiğini aşıp manuel müdahale bekleyen conversion'ları listeler."""
+    db = _get_db(request)
+    cursor = db.conversions.find(
+        {"status": "needs_manual"}, {"_id": 0}
+    ).sort("updated_at", -1).limit(200)
+    items = await cursor.to_list(200)
+    return {"count": len(items), "items": items}
+
+
+@router.post("/api/superadmin/financial/wise/conversions/{conversion_id}/retry",
+             dependencies=[Depends(_require_superadmin)])
+async def sa_wise_conversion_manual_retry(request: Request, conversion_id: str):
+    """
+    Manuel müdahale: needs_manual bir conversion'ın retry sayacını sıfırlar ve
+    hemen yeniden dener (idempotent — zaten çevrilmişse dokunmaz).
+    """
+    db = _get_db(request)
+    conv = await db.conversions.find_one({"id": conversion_id})
+    if not conv:
+        raise HTTPException(status_code=404, detail="conversion not found")
+    if conv.get("status") == "converted":
+        return {"status": "already_converted", "conversion_id": conversion_id}
+
+    await db.conversions.update_one(
+        {"id": conversion_id},
+        {"$set": {"status": "failed", "retry_count": 0, "last_retry_at": None,
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+
+    tx = await db.merchant_transactions.find_one({"id": conv.get("merchant_transaction_id")})
+    if not tx:
+        raise HTTPException(status_code=404, detail="merchant_transaction not found")
+
+    redis_client = (
+        getattr(getattr(request.app, "state", None), "redis_client", None)
+        or getattr(request.app, "redis_client", None)
+    )
+    from .wise_conversion_service import get_wise_conversion_service
+    svc = get_wise_conversion_service()
+    if not getattr(svc, "performs_real_conversion", False):
+        return {"status": "reset_only", "reason": "noop_service", "conversion_id": conversion_id}
+    result = await svc.convert_transaction(db, tx, redis_client=redis_client)
+    return {"status": "ok", "conversion_id": conversion_id, "result": result}
+
+
+# ---------------------------------------------------------------------------
+# 3f-2. Financial Audit Center (tek doğruluk kaynağı)
+# Her ödemenin checkout → business → payout tüm yaşam döngüsü, komisyon snapshot'u,
+# Stripe/Wise maliyetleri, conversion ve batch durumu tek yerden.
+# ---------------------------------------------------------------------------
+
+def _audit_row(tx: Dict[str, Any], org: Dict[str, Any]) -> Dict[str, Any]:
+    """Liste satırı — denetim için özet alanlar + efektif komisyon."""
+    customer_price = int(tx.get("customer_price_minor") or 0)
+    platform_fee = int(tx.get("platform_fee_minor") or tx.get("fee_amount_minor") or 0)
+    eff_pct = round(platform_fee / customer_price * 100, 2) if customer_price else None
+    return {
+        "id": tx.get("id"),
+        "created_at": tx.get("created_at"),
+        "organization_id": tx.get("organization_id"),
+        "company_name": org.get("company_name") or "",
+        "customer_name": tx.get("customer_name") or "",
+        "customer_phone": tx.get("customer_phone") or "",
+        "base_currency": tx.get("base_currency"),
+        "state": tx.get("state"),
+        "type": tx.get("type"),
+        "payment_type": tx.get("payment_type"),
+        "payment_channel": tx.get("payment_channel"),
+        "fee_preference": tx.get("fee_preference"),
+        "commission_tier": tx.get("commission_tier"),
+        "fee_rate_bps": tx.get("fee_rate_bps"),
+        "commission_fixed_fee_minor": tx.get("commission_fixed_fee_minor"),
+        "service_price_minor": tx.get("service_price_minor"),
+        "customer_price_minor": customer_price,
+        "merchant_net_minor": tx.get("merchant_net_minor"),
+        "platform_fee_minor": platform_fee,
+        "effective_commission_pct": eff_pct,
+        "stripe_fee_minor": tx.get("stripe_fee_minor"),
+        "stripe_fee_gbp_minor": tx.get("stripe_fee_gbp_minor"),
+        "amount_settled_gbp_minor": tx.get("amount_settled_gbp_minor"),
+        "gross_up_applied": tx.get("gross_up_applied"),
+        "converted": tx.get("converted", False),
+        "amount_settled_try_minor": tx.get("amount_settled_try_minor"),
+        "stripe_charge_id": tx.get("stripe_charge_id"),
+        "stripe_payout_id": tx.get("stripe_payout_id"),
+        "payout_batch_id": tx.get("payout_batch_id"),
+        "wise_transfer_id": tx.get("wise_transfer_id"),
+    }
+
+
+# Checkout oluşup TAMAMLANMAYAN / para tahsil edilmeyen durumlar.
+# Varsayılan denetim görünümü bunları gizler (abandoned checkout gürültüsü).
+_INCOMPLETE_STATES = ["pending", "created", "expired", "cancelled", "canceled", "failed"]
+
+
+def _build_audit_query(
+    org_id, state, payment_type, market, converted, q, start_iso, end_iso,
+) -> Dict[str, Any]:
+    query: Dict[str, Any] = {}
+    if org_id:
+        query["organization_id"] = org_id
+    # Tamamlanmamış/başarısız checkout'lar HİÇBİR ZAMAN gösterilmez (sadece
+    # gerçek tahsilatlar). Belirli bir tamamlanmış durum seçilirse ona filtrele.
+    if state and state not in _INCOMPLETE_STATES:
+        query["state"] = state
+    else:
+        query["state"] = {"$nin": _INCOMPLETE_STATES}
+    if payment_type:
+        query["payment_type"] = payment_type
+    if market:
+        query["base_currency"] = market
+    if converted in ("true", "false"):
+        query["converted"] = (converted == "true")
+    if start_iso or end_iso:
+        rng: Dict[str, Any] = {}
+        if start_iso:
+            rng["$gte"] = start_iso
+        if end_iso:
+            rng["$lte"] = end_iso
+        query["created_at"] = rng
+    if q:
+        q = q.strip()
+        query["$or"] = [
+            {"id": q},
+            {"stripe_charge_id": q},
+            {"stripe_payment_intent_id": q},
+            {"stripe_payout_id": q},
+            {"stripe_checkout_session_id": q},
+            {"wise_transfer_id": q},
+            {"customer_phone": q},
+            {"appointment_id": q},
+        ]
+    return query
+
+
+@router.get("/api/superadmin/financial/audit/transactions",
+            dependencies=[Depends(_require_superadmin)])
+async def sa_audit_transactions(
+    request: Request,
+    org_id: Optional[str] = None,
+    state: Optional[str] = None,
+    payment_type: Optional[str] = None,
+    market: Optional[str] = None,
+    converted: Optional[str] = None,
+    q: Optional[str] = None,
+    start_iso: Optional[str] = None,
+    end_iso: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+):
+    """Denetim merkezi — filtrelenebilir işlem listesi (yaşam döngüsü özeti)."""
+    db = _get_db(request)
+    query = _build_audit_query(
+        org_id, state, payment_type, market, converted, q, start_iso, end_iso,
+    )
+
+    total = await db.merchant_transactions.count_documents(query)
+    cursor = (
+        db.merchant_transactions.find(query, {"_id": 0})
+        .sort("created_at", -1)
+        .skip((page - 1) * per_page)
+        .limit(per_page)
+    )
+    rows = await cursor.to_list(per_page)
+
+    org_ids = list({r.get("organization_id") for r in rows if r.get("organization_id")})
+    settings_map: Dict[str, Any] = {}
+    if org_ids:
+        async for s in db.settings.find(
+            {"organization_id": {"$in": org_ids}},
+            {"_id": 0, "organization_id": 1, "company_name": 1},
+        ):
+            settings_map[s["organization_id"]] = s
+
+    items = [_audit_row(r, settings_map.get(r.get("organization_id"), {})) for r in rows]
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
+
+
+@router.get("/api/superadmin/financial/audit/summary",
+            dependencies=[Depends(_require_superadmin)])
+async def sa_audit_summary(
+    request: Request,
+    org_id: Optional[str] = None,
+    state: Optional[str] = None,
+    payment_type: Optional[str] = None,
+    market: Optional[str] = None,
+    converted: Optional[str] = None,
+    q: Optional[str] = None,
+    start_iso: Optional[str] = None,
+    end_iso: Optional[str] = None,
+):
+    """Filtreye göre toplu metrikler (başlık kartları için)."""
+    db = _get_db(request)
+    query = _build_audit_query(
+        org_id, state, payment_type, market, converted, q, start_iso, end_iso,
+    )
+
+    pipeline = [
+        {"$match": query},
+        {"$group": {
+            "_id": "$base_currency",
+            "count": {"$sum": 1},
+            "customer_total": {"$sum": {"$ifNull": ["$customer_price_minor", 0]}},
+            "merchant_net_total": {"$sum": {"$ifNull": ["$merchant_net_minor", 0]}},
+            "platform_fee_total": {"$sum": {"$ifNull": ["$platform_fee_minor", 0]}},
+            "settled_gbp_total": {"$sum": {"$ifNull": ["$amount_settled_gbp_minor", 0]}},
+            "converted_count": {"$sum": {"$cond": [{"$eq": ["$converted", True]}, 1, 0]}},
+        }},
+    ]
+    agg = await db.merchant_transactions.aggregate(pipeline).to_list(20)
+    by_currency = {row["_id"] or "?": {k: v for k, v in row.items() if k != "_id"} for row in agg}
+
+    # State dağılımı
+    state_pipeline = [
+        {"$match": query},
+        {"$group": {"_id": "$state", "count": {"$sum": 1}}},
+    ]
+    state_agg = await db.merchant_transactions.aggregate(state_pipeline).to_list(50)
+    by_state = {row["_id"] or "?": row["count"] for row in state_agg}
+
+    total = sum(v["count"] for v in by_currency.values())
+
+    return {
+        "total": total,
+        "by_currency": by_currency,
+        "by_state": by_state,
+    }
+
+
+@router.get("/api/superadmin/financial/audit/transaction/{tx_id}",
+            dependencies=[Depends(_require_superadmin)])
+async def sa_audit_transaction_detail(request: Request, tx_id: str):
+    """
+    Tek işlemin TAM yaşam döngüsü: komisyon snapshot, Stripe/Wise maliyetleri,
+    conversion, payout reconciliation ve batch durumu — tek doğruluk kaynağı.
+    """
+    db = _get_db(request)
+    tx = await db.merchant_transactions.find_one({"id": tx_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="transaction not found")
+
+    org_id = tx.get("organization_id")
+    settings = await db.settings.find_one({"organization_id": org_id}, {"_id": 0}) or {}
+    wallet = await db.merchant_wallets.find_one({"organization_id": org_id}, {"_id": 0}) or {}
+
+    conversion = await db.conversions.find_one(
+        {"merchant_transaction_id": tx_id}, {"_id": 0}
+    )
+
+    recon = None
+    if tx.get("stripe_payout_id"):
+        recon = await db.stripe_payout_reconciliations.find_one(
+            {"_id": tx["stripe_payout_id"]}, {"_id": 0}
+        )
+
+    batch = None
+    if tx.get("payout_batch_id"):
+        batch = await db.payout_batches.find_one({"id": tx["payout_batch_id"]}, {"_id": 0})
+    if not batch:
+        batch = await db.payout_batches.find_one({"item_transaction_ids": tx_id}, {"_id": 0})
+
+    wise_quote = None
+    if batch and batch.get("id"):
+        wise_quote = await db.wise_quotes.find_one({"payout_batch_id": batch["id"]}, {"_id": 0})
+
+    # İşlemdeki snapshot vs GÜNCEL ayarlar (değişiklik denetimi için)
+    current_settings = {
+        "tier": settings.get("payout_tier"),
+        "fee_preference": settings.get("fee_preference"),
+        "base_currency": settings.get("base_currency"),
+        "wise_recipient_id": settings.get("wise_recipient_id"),
+    }
+    snap = tx.get("pricing_snapshot") or {}
+    settings_drift = {
+        "tier_changed": bool(snap.get("tier") and current_settings["tier"] and snap["tier"] != current_settings["tier"]),
+        "fee_preference_changed": bool(snap.get("fee_preference") and current_settings["fee_preference"] and snap["fee_preference"] != current_settings["fee_preference"]),
+    }
+
+    customer_price = int(tx.get("customer_price_minor") or 0)
+    platform_fee = int(tx.get("platform_fee_minor") or tx.get("fee_amount_minor") or 0)
+    computed = {
+        "effective_commission_pct_on_customer": round(platform_fee / customer_price * 100, 4) if customer_price else None,
+        "effective_commission_pct_on_service": (
+            round(platform_fee / int(tx["service_price_minor"]) * 100, 4)
+            if tx.get("service_price_minor") else None
+        ),
+    }
+
+    return {
+        "transaction": tx,
+        "organization": {"id": org_id, "company_name": settings.get("company_name") or ""},
+        "state_history": tx.get("state_history", []),
+        "pricing_snapshot": snap,
+        "current_settings": current_settings,
+        "settings_drift": settings_drift,
+        "computed": computed,
+        "conversion": conversion,
+        "stripe_payout_reconciliation": recon,
+        "payout_batch": batch,
+        "wise_quote": wise_quote,
+        "wallet": {
+            "base_currency": wallet.get("base_currency"),
+            "pending_balance_minor": wallet.get("pending_balance_minor"),
+            "available_balance_minor": wallet.get("available_balance_minor"),
+            "pool_balance_gbp_minor": wallet.get("pool_balance_gbp_minor"),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------

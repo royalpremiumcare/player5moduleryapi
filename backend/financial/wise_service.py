@@ -8,6 +8,7 @@ Wise batch groups: create → add transfers → complete → fund
 Max 1000 transfers per batch group — chunking handled by payout_service.
 """
 
+import asyncio
 import os
 import base64
 import hashlib
@@ -15,7 +16,7 @@ import hmac
 import logging
 import uuid
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Dict, Any, List
 
 import requests
@@ -244,6 +245,121 @@ async def create_quote(
     except Exception as e:
         logger.error("Failed to create Wise quote: %s", e)
         raise
+
+
+# ---------------------------------------------------------------------------
+# Balance-to-Balance Conversion (GBP → TRY, PLANN treasury)
+#
+# İki adım:
+#   1) Quote oluştur (payIn=BALANCE, payOut=BALANCE) → rate + quoteId.
+#   2) balance-movements ile çalıştır (X-idempotence-uuid ile idempotent).
+# Bu, transfer DEĞİLDİR — PLANN'ın kendi Wise hesabında GBP balance'ından
+# TRY balance'ına para çevirir. İşletmeye ödeme Çarşamba batch'i ile ayrı yapılır.
+# ---------------------------------------------------------------------------
+
+async def create_balance_conversion_quote(
+    source_currency: str,
+    target_currency: str,
+    source_amount_minor: int,
+) -> Dict[str, Any]:
+    """
+    Balance-to-balance conversion için quote oluştur (payOut=BALANCE).
+
+    Returns: {"id": quoteId, "rate": Decimal, "rate_micro": int,
+              "target_minor": int, "fee_minor": int}
+    """
+    if source_amount_minor <= 0:
+        raise ValueError("source_amount_minor must be > 0")
+
+    payload = {
+        "sourceCurrency": source_currency,
+        "targetCurrency": target_currency,
+        "sourceAmount": source_amount_minor / 100,
+        "payOut": "BALANCE",
+        "preferredPayIn": "BALANCE",
+        "profile": _profile_id(),
+    }
+
+    def _do_post():
+        return requests.post(
+            f"{_api_base()}/v3/profiles/{_profile_id()}/quotes",
+            json=payload,
+            headers=_headers(),
+            timeout=20,
+        )
+
+    resp = await asyncio.to_thread(_do_post)
+    if resp.status_code >= 400:
+        body_preview = (resp.text or "")[:2000]
+        logger.error("Wise conversion quote %s: body=%s payload=%s",
+                     resp.status_code, body_preview, payload)
+        raise RuntimeError(f"wise_conversion_quote_{resp.status_code}: {body_preview}")
+
+    data = resp.json()
+    rate = Decimal(str(data.get("rate", 0)))
+    rate_micro = rate_to_micro(rate)
+
+    # BALANCE→BALANCE payment option'ından target + fee al (yoksa top-level'a düş).
+    target_minor = 0
+    fee_minor = 0
+    for opt in data.get("paymentOptions", []) or []:
+        if opt.get("payIn") == "BALANCE" and opt.get("payOut") == "BALANCE":
+            ta = opt.get("targetAmount")
+            if ta is not None:
+                target_minor = int((Decimal(str(ta)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            fee_obj = opt.get("fee", {}) or {}
+            fee_val = fee_obj.get("total", fee_obj.get("transferwise", 0)) or 0
+            fee_minor = int((Decimal(str(fee_val)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            break
+    if not target_minor:
+        ta = data.get("targetAmount", 0) or 0
+        target_minor = int((Decimal(str(ta)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    return {
+        "id": data.get("id", ""),
+        "rate": rate,
+        "rate_micro": rate_micro,
+        "target_minor": target_minor,
+        "fee_minor": fee_minor,
+    }
+
+
+async def execute_balance_conversion(
+    quote_id: str,
+    idempotence_uuid: str,
+) -> Dict[str, Any]:
+    """
+    Quote'u çalıştırıp GBP balance → TRY balance conversion'ı gerçekleştirir.
+
+    `X-idempotence-uuid` deterministik verilir → retry'da Wise aynı hareketi döner,
+    çift conversion oluşmaz. Returns: balance-movement response (id, state,
+    sourceAmount, targetAmount, rate, feeAmounts).
+    """
+    if not quote_id:
+        raise ValueError("quote_id required")
+
+    headers = _headers()
+    headers["X-idempotence-uuid"] = idempotence_uuid
+
+    def _do_post():
+        return requests.post(
+            f"{_api_base()}/v2/profiles/{_profile_id()}/balance-movements",
+            json={"quoteId": quote_id},
+            headers=headers,
+            timeout=30,
+        )
+
+    resp = await asyncio.to_thread(_do_post)
+    if resp.status_code >= 400:
+        body_preview = (resp.text or "")[:2000]
+        logger.error("Wise balance-movement %s: body=%s quote=%s",
+                     resp.status_code, body_preview, quote_id)
+        raise RuntimeError(f"wise_balance_movement_{resp.status_code}: {body_preview}")
+
+    data = resp.json()
+    logger.info("Wise balance conversion executed: movement=%s state=%s quote=%s",
+                data.get("id"), data.get("state"), quote_id)
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -864,13 +980,15 @@ async def handle_wise_webhook(
     db,
     payload: bytes,
     signature_header: str,
+    *,
+    redis_client=None,
+    background_tasks=None,
 ) -> Dict[str, Any]:
     """
     Process a Wise webhook event.
     1. Verify signature
     2. Check idempotency
-    3. Map Wise status to state machine state
-    4. Execute transition
+    3. Route: balance credit → GBP→TRY auto-convert; transfer state → state machine
     """
     import json
 
@@ -884,6 +1002,14 @@ async def handle_wise_webhook(
         return {"status": "invalid_json"}
 
     event_type = event_data.get("event_type", "")
+
+    # Balance kredilendi → bekleyen BUSINESS ödemelerini GBP→TRY otomatik çevir.
+    if event_type in ("balances#credit", "balances#update"):
+        return await _handle_balance_credit_event(
+            db, event_data, payload,
+            redis_client=redis_client, background_tasks=background_tasks,
+        )
+
     resource = event_data.get("data", {}).get("resource", {})
     transfer_id = str(resource.get("id", ""))
     wise_status = resource.get("current_state", "")
@@ -971,6 +1097,80 @@ async def handle_wise_webhook(
             }},
         )
         return {"status": "failed", "error": str(e)}
+
+
+async def _handle_balance_credit_event(
+    db,
+    event_data: Dict[str, Any],
+    payload: bytes,
+    *,
+    redis_client=None,
+    background_tasks=None,
+) -> Dict[str, Any]:
+    """
+    `balances#credit` / `balances#update` işleyici.
+
+    GBP balance kredilendiğinde (Stripe payout Wise'a düştüğünde) bekleyen BUSINESS
+    ödemelerini GBP→TRY otomatik çevirir. SUBSCRIPTION gelirlerine DOKUNULMAZ.
+    Conversion, webhook yanıtını bloklamamak için background task'ta çalışır;
+    per-transaction idempotency çift conversion'ı engeller.
+    """
+    data = event_data.get("data", {}) or {}
+    currency = str(data.get("currency", "")).upper()
+    amount = data.get("amount", 0) or 0
+    txn_type = str(data.get("transaction_type", "credit")).lower()
+    occurred_at = data.get("occurred_at", "")
+    event_type = event_data.get("event_type", "")
+
+    # Yalnızca GBP kredisi ilgilendirir (GBP→TRY convert). Debit/diğer para birimi → ack.
+    is_credit = txn_type == "credit" or (event_type == "balances#credit")
+    if currency != "GBP" or not is_credit or float(amount) <= 0:
+        return {"status": "processed", "handled": False, "reason": "not_gbp_credit"}
+
+    event_id = f"wise_balcredit_GBP_{amount}_{occurred_at}"
+    body_sha256 = hashlib.sha256(payload).hexdigest()
+
+    existing = await db.webhook_events.find_one({"event_id": event_id})
+    if existing and existing.get("processing_status") == "processed":
+        return {"status": "skipped", "event_id": event_id}
+
+    if not existing:
+        await db.webhook_events.insert_one({
+            "id": str(uuid.uuid4()),
+            "source": "wise",
+            "event_id": event_id,
+            "event_type": event_type,
+            "payload": event_data,
+            "raw_body": payload.decode("utf-8", errors="replace"),
+            "body_sha256": body_sha256,
+            "signature_verified": True,
+            "processing_status": "processing",
+            "received_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    from .wise_conversion_service import run_auto_conversion_on_credit
+
+    if background_tasks is not None:
+        # Hızlı 200 dön; conversion arka planda çalışsın.
+        background_tasks.add_task(
+            run_auto_conversion_on_credit, db, redis_client=redis_client,
+        )
+        triggered = "scheduled"
+    else:
+        # Cron/senkron çağrı: inline çalıştır.
+        await run_auto_conversion_on_credit(db, redis_client=redis_client)
+        triggered = "inline"
+
+    await db.webhook_events.update_one(
+        {"event_id": event_id},
+        {"$set": {
+            "processing_status": "processed",
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+
+    logger.info("Wise GBP balance credit handled: amount=%s conversion=%s", amount, triggered)
+    return {"status": "processed", "handled": True, "conversion_trigger": triggered}
 
 
 async def _send_payout_email(db, tx: dict, new_state: str):

@@ -450,6 +450,111 @@ def send_payment_link_template(
 
 
 # ============================================================================
+# PAZARLAMA OTOPİLOTU — MÜŞTERİ GERİ-KAZANIM ("REACTIVATION") ŞABLONU
+# ============================================================================
+
+# Meta'da "Marketing" kategorisinde onaylatılacak şablon adları — HER SEKTÖR İÇİN AYRI.
+# Gövde parametreleri Meta kuralı gereği {{1}}'den başlar:
+#   {{1}} = Müşteri Adı, {{2}} = İşletme Adı, {{3}} = Bekleme Süresi
+# BUTTON (URL, index 0): dinamik suffix = public booking slug'ı.
+#   Şablonun buton base URL'i TR için "https://plannapp.co/", EN için
+#   "https://plannapp.co.uk/" olarak yapılandırılmalıdır → final: base + slug.
+#
+# Sektör → şablon anahtarı eşlemesi (settings.sector değerleriyle BİREBİR).
+SECTOR_TEMPLATE_KEY: Dict[str, str] = {
+    "Kuaför": "kuafor",
+    "Güzellik Salonu": "guzellik",
+    "Masaj / SPA": "spa",
+    "Diyetisyen": "diyetisyen",
+    "Psikolog / Danışmanlık": "psikolog",
+    "Diş Klinikleri": "dis",
+    "Diğer/Boş": "genel",
+}
+DEFAULT_TEMPLATE_KEY = "genel"
+
+# Her sektör anahtarı için TR/EN Meta şablon adları. Meta'da bu adlarla onay alınmalı.
+# (Adları Meta panelinde farklı verirseniz burada güncelleyin.)
+REACTIVATION_TEMPLATE_NAMES: Dict[str, Dict[str, str]] = {
+    "kuafor":     {"TR": "geri_kazanim_kuafor",     "EN": "reactivation_kuafor"},
+    "guzellik":   {"TR": "geri_kazanim_guzellik",   "EN": "reactivation_guzellik"},
+    "spa":        {"TR": "geri_kazanim_spa",        "EN": "reactivation_spa"},
+    "diyetisyen": {"TR": "geri_kazanim_diyetisyen", "EN": "reactivation_diyetisyen"},
+    "psikolog":   {"TR": "geri_kazanim_psikolog",   "EN": "reactivation_psikolog"},
+    "dis":        {"TR": "geri_kazanim_dis",        "EN": "reactivation_dis"},
+    "genel":      {"TR": "geri_kazanim_genel",      "EN": "reactivation_genel"},
+}
+REACTIVATION_LANG_CODE = {"TR": "tr", "EN": "en"}
+REACTIVATION_BASE_URL = {"TR": "https://plannapp.co/", "EN": "https://plannapp.co.uk/"}
+
+
+def sector_template_key(sector: Optional[str]) -> str:
+    """settings.sector → şablon anahtarı. Eşleşmeyen/boş → 'genel'."""
+    return SECTOR_TEMPLATE_KEY.get((sector or "").strip(), DEFAULT_TEMPLATE_KEY)
+
+
+def send_reactivation_template(
+    to_number: str,
+    customer_name: str,
+    company_name: str,
+    booking_slug: str,
+    sector: Optional[str] = None,
+) -> str:
+    """Randevu sonrası geri-kazanım (re-engagement) pazarlama şablonunu gönderir.
+
+    Şablon, işletmenin SEKTÖRÜNE göre seçilir (her sektörün ayrı Meta şablonu var).
+
+    Şablon yapısı (Meta "Marketing" kategorisi) — TÜM sektörlerde ortak:
+        HEADER (text): {{1}} = company_name (işletme adı) — SABİT, tüm şablonlarda aynı.
+        BODY:         {{1}} = customer_name (müşteri adı) — gövdedeki tek değişken.
+        BUTTON (URL, index 0): dinamik suffix = booking_slug (public booking / "Visit Website").
+            Buton base URL'i dil bazlıdır: TR şablon → https://plannapp.co/,
+            EN şablon → https://plannapp.co.uk/ (final = base + slug).
+
+    Dil, müşterinin telefon numarasından otomatik tespit edilir.
+    """
+    if not WHATSAPP_ENABLED:
+        return "disabled"
+    if not META_ACCESS_TOKEN or not META_PHONE_NUMBER_ID:
+        raise Exception("Meta WhatsApp credentials eksik.")
+
+    language = detect_language_from_phone(to_number)
+    key = sector_template_key(sector)
+    names = REACTIVATION_TEMPLATE_NAMES.get(key, REACTIVATION_TEMPLATE_NAMES[DEFAULT_TEMPLATE_KEY])
+    template_name = names.get(language, names["TR"])
+    lang_code = REACTIVATION_LANG_CODE.get(language, "tr")
+
+    components = [
+        {
+            "type": "header",
+            "parameters": [
+                {"type": "text", "text": _normalise_template_var(company_name)},
+            ],
+        },
+        {
+            "type": "body",
+            "parameters": [
+                {"type": "text", "text": _normalise_template_var(customer_name)},
+            ],
+        },
+        {
+            "type": "button",
+            "sub_type": "url",
+            "index": "0",
+            "parameters": [
+                {"type": "text", "text": str(booking_slug or "")},
+            ],
+        },
+    ]
+
+    return send_meta_whatsapp_template(
+        to_number=to_number,
+        template_name=template_name,
+        language_code=lang_code,
+        components=components,
+    )
+
+
+# ============================================================================
 # DÜZ METİN MESAJ GÖNDERİMİ (newline destekler)
 # ============================================================================
 

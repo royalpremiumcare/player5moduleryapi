@@ -29,6 +29,9 @@ PAYOUT_TIERS = {"fast", "standard", "vip"}
 FEE_PREFERENCES = {"seller_pays", "buyer_pays"}
 PAYMENT_RULES = {"on_site", "deposit", "full_online"}
 DEPOSIT_TYPES = {"fixed", "percentage"}
+PAYMENT_TYPES = {"business", "subscription"}
+PAYMENT_CHANNELS = {"appointment", "multi_service", "payment_link"}
+CONVERSION_STATUSES = {"pending", "converting", "converted", "failed"}
 
 TRANSACTION_TYPES = {
     "payment", "fee", "payout", "refund",
@@ -182,17 +185,46 @@ class MerchantTransaction(BaseModel):
     state: str = "pending"
     state_history: List[Dict[str, Any]] = Field(default_factory=lambda: [])
 
+    # Ödeme tipi sınıflandırması (business vs subscription ayrımı).
+    # NOT: SUBSCRIPTION gelirleri merchant_transactions'a girmez; bu alan pratikte
+    # her zaman "business" olur ama convert filtreleri için resmî tanımlanır.
+    payment_type: str = "business"
+    business_id: Optional[str] = None          # = organization_id
+    payment_channel: Optional[str] = None       # appointment | multi_service | payment_link
+
     amount_display_minor: int = 0
     amount_settled_gbp_minor: Optional[int] = None
+    amount_settled_try_minor: Optional[int] = None   # Wise conversion sonrası TRY karşılığı
 
     fee_amount_minor: int = 0
-    fee_rate_bps: int = 0
-    fee_preference: str = "seller_pays"
+    fee_rate_bps: int = 0                      # komisyon oranı snapshot (işlem anı)
+    fee_preference: str = "seller_pays"        # ödeme modu snapshot (buyer/seller pays)
+
+    # Komisyon AYAR SNAPSHOT'u — işlem anındaki değerler. Ayarlar (tier/oran/sabit
+    # ücret/mod) SONRADAN değişse bile bu işlemde sabit kalır (single source of truth).
+    commission_tier: Optional[str] = None                # tier adı (ör. standard)
+    commission_fixed_fee_minor: Optional[int] = None     # sabit ücret snapshot
+    pricing_snapshot: Optional[Dict[str, Any]] = None    # tam fiyatlama snapshot'u
+
+    # PLANN v2 canonical tutar alanları (önceden extra_fields ile sızıyordu — resmîleştirildi)
+    service_price_minor: Optional[int] = None
+    customer_price_minor: Optional[int] = None   # = gross_amount (müşterinin ödediği, işlem para birimi)
+    gross_amount_minor: Optional[int] = None      # işlem para biriminde brüt (genelde = customer_price)
+    merchant_net_minor: Optional[int] = None      # cüzdana yazılan net (işlem para birimi)
+    platform_fee_minor: Optional[int] = None      # PLANN komisyonu (tek merchant kesintisi, işlem para birimi)
+    stripe_fee_minor: Optional[int] = None        # TAHMİNİ Stripe maliyeti (işlem para birimi, kesinti değil)
+    wise_fee_minor: Optional[int] = None          # TAHMİNİ Wise maliyeti (işlem para birimi, kesinti değil)
+    # Stripe balance_transaction GERÇEK değerleri — her zaman SETTLE para biriminde (UK hesabı = GBP)
+    gross_amount_gbp_minor: Optional[int] = None  # bt.amount (GBP settle brüt)
+    stripe_fee_gbp_minor: Optional[int] = None    # bt.fee (GBP gerçek Stripe maliyeti)
+    gross_up_applied: Optional[bool] = None
 
     exchange_rate_at_time: int = 1_000_000
 
     stripe_payment_intent_id: Optional[str] = None
     stripe_charge_id: Optional[str] = None
+    stripe_balance_transaction_id: Optional[str] = None
+    stripe_payout_id: Optional[str] = None
     stripe_checkout_session_id: Optional[str] = None
     stripe_refund_id: Optional[str] = None
     stripe_dispute_id: Optional[str] = None
@@ -200,6 +232,11 @@ class MerchantTransaction(BaseModel):
     wise_transfer_id: Optional[str] = None
     wise_quote_id: Optional[str] = None
     payout_batch_id: Optional[str] = None
+
+    # GBP→TRY conversion durumu (Wise conversion extension point tarafından yönetilir).
+    converted: bool = False
+    converted_at: Optional[str] = None
+    conversion_reference: Optional[str] = None
 
     created_at: str = Field(default_factory=_utcnow)
     updated_at: str = Field(default_factory=_utcnow)
@@ -340,6 +377,71 @@ class WiseQuote(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 1h-2. Stripe Payout Reconciliation
+# Bir Stripe payout içindeki balance transaction'ların business/subscription
+# olarak ayrıştırılmasının özeti. _id = payout_id (idempotent re-run).
+# ---------------------------------------------------------------------------
+
+class StripePayoutReconciliation(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str  # = stripe_payout_id (unique — idempotency)
+    stripe_payout_id: str
+    currency: str = "GBP"
+    payout_amount_minor: int = 0
+
+    business_count: int = 0
+    business_total_minor: int = 0
+    subscription_count: int = 0
+    subscription_total_minor: int = 0
+    unmatched_count: int = 0
+    unmatched_total_minor: int = 0
+
+    matched_transaction_ids: List[str] = Field(default_factory=list)
+
+    created_at: str = Field(default_factory=_utcnow)
+
+
+# ---------------------------------------------------------------------------
+# 1h-3. Conversions (GBP→TRY) — idempotency kaydı
+# Aynı merchant_transaction / balance_transaction ASLA iki kez convert edilmez.
+# idempotency_key = sha256(f"{merchant_transaction_id}:{stripe_balance_transaction_id}")
+# ---------------------------------------------------------------------------
+
+class Conversion(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(default_factory=_uuid)
+    idempotency_key: str                      # unique index
+    merchant_transaction_id: str              # unique index
+    organization_id: str = ""
+    stripe_payout_id: Optional[str] = None
+    stripe_balance_transaction_id: Optional[str] = None  # unique + sparse
+
+    status: str = "pending"                   # pending|converting|converted|failed|needs_manual
+
+    source_currency: str = "GBP"
+    target_currency: str = "TRY"
+    source_gbp_minor: int = 0
+    target_try_minor: int = 0
+    rate_micro: int = 0
+
+    wise_quote_id: Optional[str] = None
+    wise_movement_id: Optional[str] = None
+    wise_fee_minor: int = 0
+    conversion_reference: Optional[str] = None
+    error_message: Optional[str] = None
+
+    # Retry / hata yönetimi (reliability)
+    retry_count: int = 0
+    last_retry_at: Optional[str] = None
+    last_error: Optional[str] = None
+
+    created_at: str = Field(default_factory=_utcnow)
+    updated_at: str = Field(default_factory=_utcnow)
+
+
+# ---------------------------------------------------------------------------
 # 1i. Session Credits
 # ---------------------------------------------------------------------------
 
@@ -460,6 +562,12 @@ FINANCIAL_INDEXES = {
         {"keys": [("state", 1)]},
         {"keys": [("payout_batch_id", 1)], "sparse": True},
         {"keys": [("organization_id", 1), ("state", 1)]},
+        {"keys": [("payment_type", 1)]},
+        {"keys": [("business_id", 1)]},
+        {"keys": [("stripe_payout_id", 1)], "sparse": True},
+        {"keys": [("stripe_balance_transaction_id", 1)], "sparse": True},
+        {"keys": [("converted", 1)]},
+        {"keys": [("payment_type", 1), ("converted", 1), ("state", 1)]},
     ],
     "payout_batches": [
         {"keys": [("status", 1)]},
@@ -484,8 +592,24 @@ FINANCIAL_INDEXES = {
         {"keys": [("organization_id", 1), ("customer_phone", 1), ("service_id", 1)]},
         {"keys": [("status", 1)]},
     ],
+    "stripe_customers": [
+        {"keys": [("organization_id", 1), ("customer_phone", 1)]},
+        {"keys": [("organization_id", 1), ("customer_email", 1)]},
+        {"keys": [("stripe_customer_id", 1)], "unique": True, "sparse": True},
+    ],
     "financial_audit_logs": [
         {"keys": [("organization_id", 1), ("created_at", -1)]},
         {"keys": [("action", 1)]},
+    ],
+    "stripe_payout_reconciliations": [
+        {"keys": [("stripe_payout_id", 1)], "unique": True},
+        {"keys": [("created_at", -1)]},
+    ],
+    "conversions": [
+        {"keys": [("idempotency_key", 1)], "unique": True},
+        {"keys": [("merchant_transaction_id", 1)], "unique": True},
+        {"keys": [("stripe_balance_transaction_id", 1)], "unique": True, "sparse": True},
+        {"keys": [("stripe_payout_id", 1)], "sparse": True},
+        {"keys": [("status", 1)]},
     ],
 }

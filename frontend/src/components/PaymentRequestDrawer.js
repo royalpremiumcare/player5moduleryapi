@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import api from "../api/api";
 import { toast } from "sonner";
-import { X, Search, Plus, Send, Loader2, User, Check, AlertCircle, Info } from "lucide-react";
+import { X, Search, Plus, Send, Loader2, User, Check, AlertCircle, Info, CreditCard } from "lucide-react";
 
 /**
  * Pay-by-Link ("Ödeme İste") drawer.
@@ -42,6 +42,7 @@ export default function PaymentRequestDrawer({
   const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [companyName, setCompanyName] = useState(""); // canlı önizleme {{2}} işletme adı
 
   // Minimum tahsilat tutarı (major birim) — backend MIN_ONLINE_PAYMENT_MINOR ile uyumlu
   const minMajor = baseCurrency === "GBP" ? 5 : 300;
@@ -61,12 +62,15 @@ export default function PaymentRequestDrawer({
     setDescription(""); setAmount(""); setError("");
   }, [open]);
 
-  // Load customers when opened
+  // Load customers + company name when opened
   useEffect(() => {
     if (!open) return;
     api.get("/customers")
       .then((res) => setCustomers(Array.isArray(res.data) ? res.data : []))
       .catch(() => setCustomers([]));
+    api.get("/settings")
+      .then((res) => setCompanyName(res.data?.company_name || ""))
+      .catch(() => {});
   }, [open]);
 
   // Close dropdown on outside click
@@ -96,6 +100,26 @@ export default function PaymentRequestDrawer({
     setQuery(c.name || c.phone || "");
     setDropdownOpen(false);
   };
+
+  // Canlı WhatsApp önizleme metni — işletme formu doldurdukça anlık güncellenir.
+  const previewText = useMemo(() => {
+    const name = (selected?.name || query || "").trim() || "Müşteri Adı";
+    const company = companyName || "İşletmeniz";
+    const desc = description.trim() || "Hizmet açıklaması";
+    const amt = parseFloat(String(amount).replace(",", "."));
+    const cur = baseCurrency === "GBP" ? "GBP" : "TL";
+    const amountText = (!amt || amt <= 0)
+      ? "—"
+      : `${amt.toLocaleString(baseCurrency === "GBP" ? "en-GB" : "tr-TR")} ${cur}`;
+    return (
+      `Merhaba ${name},\n` +
+      `${company} tarafından oluşturulan ödeme talebinizin detayları aşağıdadır:\n\n` +
+      `▫️ Açıklama: ${desc}\n` +
+      `▫️ Tutar: ${amountText}\n\n` +
+      `Ödemenizi aşağıdaki butona tıklayarak güvenle tamamlayabilirsiniz. Bizi tercih ettiğiniz için teşekkür ederiz.\n` +
+      `PLANNAPP LTD`
+    );
+  }, [selected, query, companyName, description, amount, baseCurrency]);
 
   const handleAddNew = async () => {
     const name = newName.trim();
@@ -185,14 +209,13 @@ export default function PaymentRequestDrawer({
         </div>
 
         {/* Body */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-4">
+        <div className="p-5 overflow-y-auto flex-1 min-h-0 space-y-4">
           {/* Nasıl çalışır bilgilendirmesi */}
-          <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 flex items-start gap-2">
-            <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-            <p className="text-[11px] leading-relaxed text-blue-800">
-              Müşteriye ödeme tutarını içeren bir <b>WhatsApp mesajı</b> gönderilir.
-              Müşteri linke tıklayıp kartıyla güvenli şekilde öder; ödeme onaylanınca
-              tutar otomatik olarak cüzdanınıza eklenir.
+          <div className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2.5 flex items-start gap-2">
+            <Info className="h-4 w-4 text-zinc-500 mt-0.5 shrink-0" />
+            <p className="text-[11px] leading-relaxed text-zinc-600">
+              Müşterinize güvenli bir ödeme bağlantısı gönderilir. Müşteri kartıyla
+              ödemeyi tamamladığında tutar anında hesabınıza aktarılır.
             </p>
           </div>
 
@@ -303,6 +326,36 @@ export default function PaymentRequestDrawer({
             </div>
             <p className="text-[11px] text-zinc-400 mt-1">Para birimi: {baseCurrency} · Minimum {minDisplay}</p>
           </label>
+
+          {/* Canlı WhatsApp önizlemesi — müşteriye gidecek mesajın birebir simülasyonu */}
+          <div>
+            <span className="text-sm text-zinc-700 font-medium">Canlı Önizleme</span>
+            <div className="mt-1.5 rounded-2xl overflow-hidden shadow-md border border-zinc-200">
+              {/* WhatsApp sohbet başlığı — gönderen daima PLANN resmi hesabıdır */}
+              <div className="bg-[#075E54] px-4 py-3 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-white">
+                  <img src="/plannlogo.png" alt="PLANN" className="w-full h-full object-cover" />
+                </div>
+                <div>
+                  <p className="text-white font-semibold text-sm leading-none">PLANN</p>
+                  <p className="text-white/70 text-[11px] mt-1">çevrimiçi</p>
+                </div>
+              </div>
+              {/* Sohbet zemini */}
+              <div className="bg-[#ECE5DD] p-4" style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><circle cx=\"2\" cy=\"2\" r=\"1\" fill=\"%23d9d2c8\"/></svg>')" }}>
+                <div className="bg-white rounded-xl rounded-tl-none shadow-sm p-3 max-w-[88%]">
+                  <p className="text-[13.5px] text-zinc-800 whitespace-pre-line leading-relaxed">{previewText}</p>
+                  <p className="text-[10px] text-zinc-400 text-right mt-1">10:24</p>
+                </div>
+                {/* URL butonu — mesajın altında ayrı kart */}
+                <div className="bg-white rounded-xl shadow-sm mt-1 max-w-[88%] overflow-hidden">
+                  <div className="flex items-center justify-center gap-2 text-[#00a5f4] text-sm font-semibold py-2.5">
+                    <CreditCard className="w-4 h-4" /> Ödemeyi Tamamla
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Footer action */}

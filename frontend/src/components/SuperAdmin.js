@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BarChart2, Building2, MessageSquare, MessageCircle, Target, Users, LogOut, Menu, X, Wallet, Shield, Mail, Bell } from "lucide-react";
+import { BarChart2, Building2, MessageSquare, MessageCircle, Target, Users, LogOut, Menu, X, Wallet, Shield, Mail, Bell, FileSearch } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import SAOverview from "./superadmin/SAOverview";
@@ -10,6 +10,7 @@ import SALeads from "./superadmin/SALeads";
 import SAUsers from "./superadmin/SAUsers";
 import SAFinancial from "./superadmin/SAFinancial";
 import SAFinancialV2 from "./superadmin/SAFinancialV2";
+import SAFinancialAudit from "./superadmin/SAFinancialAudit";
 import SAEmailBroadcast from "./superadmin/SAEmailBroadcast";
 import SAPushBroadcast from "./superadmin/SAPushBroadcast";
 
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { id: "users",          label: "Kullanıcılar",   icon: Users },
   { id: "financial",      label: "Finansal",       icon: Wallet },
   { id: "financial-v2",   label: "Finansal v2",    icon: Shield },
+  { id: "financial-audit", label: "Denetim Merkezi", icon: FileSearch },
   { id: "email",          label: "Mail Gönder",    icon: Mail },
   { id: "push",           label: "Push Bildirim",  icon: Bell },
 ];
@@ -41,6 +43,7 @@ const SuperAdmin = ({ onNavigate }) => {
       case "users":         return <SAUsers />;
       case "financial":     return <SAFinancial />;
       case "financial-v2":  return <SAFinancialV2 />;
+      case "financial-audit": return <SAFinancialAudit />;
       case "email":         return <SAEmailBroadcast />;
       case "push":          return <SAPushBroadcast />;
       default:              return <SAOverview />;

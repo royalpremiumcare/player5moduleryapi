@@ -18,6 +18,7 @@ import AppointmentFormWizard from "@/components/AppointmentFormWizard";
 import ServiceManagement from "@/components/ServiceManagement";
 import CashRegister from "@/components/CashRegister";
 import Settings from "@/components/Settings";
+import MarketingAssistant from "@/components/MarketingAssistant";
 import SettingsSubscription from "@/components/SettingsSubscription";
 import SettingsProfile from "@/components/SettingsProfile";
 import LocationSettings from "@/components/LocationSettings";
@@ -747,6 +748,9 @@ function App() {
              const data = action?.notification?.data || {};
              if (data.action === 'OPEN_STORE') {
                openAppStore(data);
+             } else if (data.action === 'OPEN_DASHBOARD') {
+               // PLANN Asistan bildirimi → Dashboard'a yönlendir
+               setCurrentView('dashboard');
              }
           });
         } else {
@@ -1532,7 +1536,7 @@ function App() {
         </header>
       )}
 
-      <main className={(currentView === "dashboard" || currentView === "sessions" || currentView === "settings" || currentView === "settings-subscription" || currentView === "settings-profile" || currentView === "settings-location" || currentView === "settings-online-booking" || currentView === "subscribe" || currentView === "staff" || currentView === "services" || currentView === "help-center") && !showForm ? "" : "container mx-auto px-4 py-6"}>
+      <main className={(currentView === "dashboard" || currentView === "sessions" || currentView === "settings" || currentView === "settings-subscription" || currentView === "settings-profile" || currentView === "settings-location" || currentView === "settings-online-booking" || currentView === "subscribe" || currentView === "staff" || currentView === "services" || currentView === "marketing-assistant" || currentView === "help-center") && !showForm ? "" : "container mx-auto px-4 py-6"}>
         {/* Ödeme Başarı Banner'ı */}
         {showPaymentSuccess && (
           <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-6 shadow-lg sticky top-0 z-50 animate-in slide-in-from-top">
@@ -1656,6 +1660,14 @@ function App() {
               setShowForm(false);
             }}
             currentUser={currentUser}
+          />
+        )}
+        {currentView === "marketing-assistant" && userRole === 'admin' && (
+          <MarketingAssistant
+            onNavigate={(view) => {
+              setCurrentView(view);
+              setShowForm(false);
+            }}
           />
         )}
         {currentView === "cash" && userRole === 'admin' && ( <CashRegister /> )}

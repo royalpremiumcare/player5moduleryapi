@@ -15,7 +15,7 @@ All scheduled financial jobs:
 import logging
 import stripe
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from .state_machine import StateMachine, TRANSITIONS
 from .currency_shield import fetch_current_rate, recalculate_try_tier_limits, check_rate_spike
@@ -35,6 +35,99 @@ import os
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://plann_redis:6379/0")
+
+
+# ---------------------------------------------------------------------------
+# Settlement timing helpers — Stripe iş günü (business day) mantığı
+# ---------------------------------------------------------------------------
+
+def _parse_iso(raw: Any) -> datetime:
+    """ISO string → timezone-aware datetime (naive ise UTC varsay)."""
+    s = raw.replace("Z", "+00:00") if isinstance(raw, str) else raw
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _fetch_bt_fields(tx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Stripe'tan balance_transaction'ı çekip denetim/settlement alanlarını döner.
+
+    Checkout anında balance_transaction bazen henüz 'null' olur; bu yüzden gerçek
+    Stripe ücreti/net/gross ve available_on capture'da yakalanamayabilir. Burada
+    ID zinciri (balance_tx → charge → payment_intent) ile sonradan güvenle çekilir.
+    Dönen dict: balance_tx_id, fee, net, gross, available_on(iso) — veya None.
+    available_on, işlem daha 'pending' iken bile Stripe tarafından verilir.
+    """
+    try:
+        bt_id = tx.get("stripe_balance_transaction_id")
+        if not bt_id:
+            cid = tx.get("stripe_charge_id")
+            if cid:
+                ch = stripe.Charge.retrieve(cid)
+                _bt = ch.balance_transaction
+                bt_id = _bt if isinstance(_bt, str) else getattr(_bt, "id", None)
+            else:
+                pi_id = tx.get("stripe_payment_intent_id")
+                if pi_id:
+                    pi = stripe.PaymentIntent.retrieve(pi_id, expand=["latest_charge"])
+                    lc = pi.latest_charge
+                    if lc and not isinstance(lc, str):
+                        _bt = lc.balance_transaction
+                        bt_id = _bt if isinstance(_bt, str) else getattr(_bt, "id", None)
+        if not bt_id:
+            return None
+        bt = stripe.BalanceTransaction.retrieve(bt_id)
+        ao = bt.available_on
+        return {
+            "stripe_balance_transaction_id": bt_id,
+            "stripe_fee_gbp_minor": bt.fee,        # gerçek Stripe ücreti (GBP)
+            "amount_settled_gbp_minor": bt.net,    # net (GBP)
+            "gross_amount_gbp_minor": bt.amount,   # brüt (GBP)
+            "stripe_available_on": (
+                datetime.fromtimestamp(int(ao), tz=timezone.utc).isoformat() if ao else None
+            ),
+        }
+    except Exception as e:
+        logger.warning("balance_transaction Stripe'tan çekilemedi tx=%s: %s", tx.get("id"), e)
+    return None
+
+
+async def _resolve_settlement_due(db, tx: Dict[str, Any]) -> Optional[datetime]:
+    """Bu işlem ne zaman 'settled' olabilir? (Stripe available_on = tek doğru kaynak)
+
+    1) Kayıtlı `stripe_available_on` varsa onu kullan.
+    2) Yoksa Stripe'tan balance_transaction'ı çek; available_on + gerçek ücret/net/
+       gross'u tx'e KALICI yaz (eksikse). Böylece denetim paneli de doğru dolar.
+    3) Stripe'tan da alınamazsa None → işlem 'captured' bırakılır, sonraki turda
+       tekrar denenir. Güvenli yön: parayı asla erken 'available' göstermeyiz.
+    """
+    raw = tx.get("stripe_available_on")
+    if raw:
+        try:
+            return _parse_iso(raw)
+        except Exception:
+            pass
+    fields = _fetch_bt_fields(tx)
+    if fields:
+        # Yalnızca eksik olanları yaz (mevcut değerleri ezme).
+        setd: Dict[str, Any] = {}
+        for k, v in fields.items():
+            if v is not None and not tx.get(k):
+                setd[k] = v
+        if setd:
+            await db.merchant_transactions.update_one({"id": tx["id"]}, {"$set": setd})
+        iso = fields.get("stripe_available_on")
+        if iso:
+            try:
+                return _parse_iso(iso)
+            except Exception:
+                pass
+    logger.warning(
+        "Settlement due tarihi belirlenemedi (Stripe erişilemedi) — tx captured "
+        "bırakılıyor, sonraki turda tekrar denenecek: %s", tx.get("id"),
+    )
+    return None
 
 async def _acquire_lock(lock_name: str, ttl: int = 300) -> bool:
     """Try to acquire a Redis-based distributed lock. Returns True if acquired."""
@@ -91,21 +184,26 @@ async def settlement_check_job(db) -> None:
     now = datetime.now(timezone.utc)
     is_sandbox = os.getenv("WISE_ENVIRONMENT", "sandbox") == "sandbox"
 
-    # captured → settled: T+2 in production, immediate in sandbox
-    if is_sandbox:
-        t2_cutoff = now.isoformat()
-    else:
-        t2_cutoff = (now - timedelta(days=2)).isoformat()
+    # captured → settled: Stripe'ın available_on'u (iş günü + tatil hesaplı).
+    # Statik takvim T+2 KULLANMA — Cuma alınan ödeme hafta sonu Stripe bakiyesine
+    # geçmezken sistemde 'settled/available' göstermek, esnaf o parayı çekmeye
+    # kalkınca kasadan sübvanse riskine yol açar. Her tx için gerçek settlement
+    # tarihine ulaşıldığında ilerlet (sandbox'ta anında).
     captured_txs = await db.merchant_transactions.find({
         "state": "captured",
-        "created_at": {"$lte": t2_cutoff},
-    }).to_list(length=500)
+    }).to_list(length=1000)
 
     settled_count = 0
     for tx in captured_txs:
         try:
-            await sm.transition(tx["id"], "settled", "settlement_check_job")
-            settled_count += 1
+            if is_sandbox:
+                due = True
+            else:
+                due_at = await _resolve_settlement_due(db, tx)
+                due = due_at is not None and now >= due_at
+            if due:
+                await sm.transition(tx["id"], "settled", "settlement_check_job")
+                settled_count += 1
         except Exception as e:
             logger.warning("Failed to settle tx %s: %s", tx["id"], e)
 
@@ -311,6 +409,12 @@ async def daily_reconciliation_job(db) -> None:
 
     1 kuruş/pence bile uyuşmazlık varsa fatihsenyuz12@gmail.com'a alert mail gönder.
     """
+    # KRİTİK: 17 uvicorn worker aynı anda bu job'ı çalıştırırsa aynı gece
+    # 17 kopya mutabakat maili gider. Dağıtık kilit ile tek worker çalışsın.
+    if not await _acquire_lock("daily_reconciliation", ttl=1800):
+        logger.debug("Daily reconciliation skipped — another worker holds the lock")
+        return
+
     now = datetime.now(timezone.utc)
     report_date = now.strftime("%Y-%m-%d")
     yesterday = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -319,11 +423,26 @@ async def daily_reconciliation_job(db) -> None:
     discrepancies: List[Dict[str, Any]] = []
 
     try:
+        # Mevcut (silinmemiş) işletmelerin org_id kümesi. İşletme silinince
+        # cüzdan DB'de kalabiliyor (orphan). Orphan cüzdanların beklenen bakiyesi
+        # 0 olur ama gerçek bakiye dolu kalırsa her gece YANLIŞ uyuşmazlık maili
+        # gider. Bu yüzden orphan cüzdanları mutabakattan hariç tutuyoruz.
+        existing_org_ids = set()
+        async for s in db.settings.find({}, {"_id": 0, "organization_id": 1}):
+            if s.get("organization_id"):
+                existing_org_ids.add(s["organization_id"])
+
         # --- Check 1: Wallet balance consistency ---
         wallets = await db.merchant_wallets.find({}).to_list(length=10000)
+        orphan_wallets = []
         for wallet in wallets:
             org_id = wallet.get("organization_id", "")
             bc = wallet.get("base_currency", "TRY")
+
+            # Silinmiş işletmenin cüzdanı → mutabakattan atla (mail gönderme).
+            if org_id and org_id not in existing_org_ids:
+                orphan_wallets.append(org_id)
+                continue
 
             # Sum of all non-terminal transaction amounts should match wallet totals
             pipeline = [
@@ -409,6 +528,12 @@ async def daily_reconciliation_job(db) -> None:
                     "diff_minor": diff,
                 })
 
+        if orphan_wallets:
+            logger.warning(
+                "Reconciliation: %d orphan wallet (silinmiş işletme) atlandı: %s",
+                len(orphan_wallets), orphan_wallets,
+            )
+
         # --- Send alert if any discrepancies ---
         if discrepancies:
             logger.warning(
@@ -429,6 +554,7 @@ async def daily_reconciliation_job(db) -> None:
             "details": {
                 "report_date": report_date,
                 "wallets_checked": len(wallets),
+                "orphan_wallets_skipped": len(orphan_wallets),
                 "batches_checked": len(completed_batches),
                 "discrepancy_count": len(discrepancies),
                 "discrepancies": discrepancies[:20],  # limit for storage

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { 
   Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, 
   ArrowLeft, DollarSign, Bell, BellOff, MapPin, Wrench, ShieldCheck, Globe,
-  Wallet, CreditCard, Phone, MessageCircle, Mail, Headphones
+  Wallet, CreditCard, Phone, MessageCircle, Mail, Headphones, Sparkles
 } from "lucide-react"; 
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -364,6 +364,13 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
                 title={t('settings.serviceManagement')}
                 subtitle={t('settings.serviceManagementSubtitle')}
                 onClick={() => onNavigate && onNavigate("services")}
+              />
+
+              <SettingItem 
+                icon={Sparkles} 
+                title={t('settings.marketingAssistant.title')}
+                subtitle={t('settings.marketingAssistant.subtitle')}
+                onClick={() => onNavigate && onNavigate("marketing-assistant")}
               />
 
               <SettingItem 

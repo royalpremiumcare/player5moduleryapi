@@ -1,24 +1,22 @@
 """
-Gross-Up Service — dynamic commission with buyer_pays / seller_pays modes.
+Gross-Up Service — ALL-IN komisyon (buyer_pays / seller_pays modları).
 
-Embeds Stripe processor fee + Wise payout fee + Platform fee into customer price.
-Fixed fees are added OUTSIDE the denominator (percentage-only in denominator).
+MİMARİ KURAL: İşletmeden düşülen TEK kesinti PLANN tier komisyonudur
+(tier %bps + sabit ücret). Stripe processor ücreti + Wise payout maliyeti bu
+komisyonun İÇİNDE eritilir — merchant_net'ten ASLA ikinci kez düşülmez.
+Arayüzde vaat edilen komisyon oranı ile cüzdana yansıyan net birebir uyuşur.
 
 Terminology (see terminology.py):
   - net_target: merchant wants this amount net (online portion)
   - customer_price: what the customer sees/pays on Stripe
-  - merchant_net: what lands in the wallet after all deductions
-  - platform_fee: PLANN's commission (tier)
-  - processor_fee: Stripe's cut (ENV: STRIPE_FEE_{CC}_BPS / FIXED)
-  - payout_fee: Wise cut (env or tier)
-
-See plan Bölüm 2.1.
+  - merchant_net: what lands in the wallet (net_target - commission, veya buyer_pays'te net_target)
+  - platform_fee: PLANN's commission (tier %bps + sabit) — TEK merchant kesintisi
+  - stripe_fee/wise_fee: PLANN'ın iç maliyet TAHMİNİ (yalnızca marj raporu; kesinti değil)
 """
 
 from __future__ import annotations
 
 import logging
-import math
 import os
 from dataclasses import dataclass
 from typing import Optional
@@ -85,9 +83,9 @@ class GrossUpResult:
     on_site_amount_minor: int       # cash/card at location
 
     # Fee breakdown
-    platform_fee_minor: int
-    stripe_fee_minor: int
-    wise_fee_minor: int
+    platform_fee_minor: int          # PLANN komisyonu — TEK merchant kesintisi
+    stripe_fee_minor: int            # PLANN iç maliyet tahmini (kesinti DEĞİL)
+    wise_fee_minor: int              # PLANN iç maliyet tahmini (kesinti DEĞİL)
 
     # Config used
     base_currency: str
@@ -133,10 +131,20 @@ def compute_customer_price(
     deposit_rule: Optional[DepositRule] = None,
 ) -> GrossUpResult:
     """
-    Main entry point — computes customer_price and merchant_net given
-    service price, commission preference, and tier config.
+    ALL-IN komisyon modeli (mimari kural).
 
-    Fixed fees are added OUTSIDE the denominator to avoid price explosion.
+    İşletmeden düşülen TEK kesinti PLANN tier komisyonudur (tier %bps + sabit ücret).
+    Stripe, Wise ve gelecekteki ödeme maliyetleri bu komisyonun İÇİNDE eritilir;
+    `merchant_net`'ten ASLA ikinci kez düşülmez. Böylece arayüzde vaat edilen oran ile
+    cüzdana yansıyan net tutar matematiksel olarak birebir uyuşur.
+
+      seller_pays: müşteri `net_target` öder; komisyon işletmeden düşülür.
+                   merchant_net = net_target - commission
+      buyer_pays : müşteri `net_target + commission` öder; işletme tam `net_target` alır.
+                   merchant_net = net_target
+
+    `stripe_fee_minor` / `wise_fee_minor`: yalnızca PLANN iç marj raporu için TAHMİN.
+    merchant_net'e veya customer_price'a ETKİ ETMEZ (çift sayım yasak).
     """
     if service_price_minor <= 0:
         raise GrossUpError(f"service_price must be positive, got {service_price_minor}")
@@ -177,42 +185,28 @@ def compute_customer_price(
 
     net_target = online_amount
 
+    # TEK işletme kesintisi: PLANN tier komisyonu (all-in). Stripe/Wise DAHİL DEĞİL.
+    platform_fee = apply_bps(net_target, tier_bps) + tier_fixed
+
     if fee_preference == "seller_pays":
-        # Customer pays net_target; fees come out of merchant's share
         customer_price = net_target
-        platform_fee = apply_bps(net_target, tier_bps) + tier_fixed
-        stripe_fee = apply_bps(net_target, stripe_bps) + stripe_fixed
-        wise_fee = apply_bps(net_target, wise_bps) + wise_fixed
-        merchant_net = net_target - platform_fee - stripe_fee - wise_fee
+        merchant_net = net_target - platform_fee
         gross_up = False
-    else:
-        # buyer_pays: gross-up so merchant receives net_target
-        # Percentage-only in denominator; fixed fees added outside.
-        percentage_sum_bps = tier_bps + stripe_bps + wise_bps
-        if percentage_sum_bps >= 9500:  # 95%+ would explode
-            raise GrossUpError(
-                f"percentage fees too high ({percentage_sum_bps} bps), cannot gross-up"
-            )
-
-        denominator_bps = 10_000 - percentage_sum_bps
-        # Ceiling division: (a * 10000 + (denom - 1)) // denom
-        variable_gross = math.ceil((net_target * 10_000) / denominator_bps)
-        fixed_total = tier_fixed + stripe_fixed + wise_fixed
-        customer_price = variable_gross + fixed_total
-
-        # Sanity: fee amounts on the actual customer_price (so they sum correctly)
-        platform_fee = apply_bps(variable_gross, tier_bps) + tier_fixed
-        stripe_fee = apply_bps(variable_gross, stripe_bps) + stripe_fixed
-        wise_fee = apply_bps(variable_gross, wise_bps) + wise_fixed
+    else:  # buyer_pays — komisyon müşteriye eklenir, işletme net_target'ı tam alır
+        customer_price = net_target + platform_fee
         merchant_net = net_target
         gross_up = True
 
-        # Price-explosion guard
-        if customer_price >= net_target * 2:
-            raise GrossUpError(
-                f"gross-up explosion: customer_price={customer_price} "
-                f"vs net_target={net_target}"
-            )
+    # Sanity: komisyon net_target'ı aşarsa (küçük tutar + sabit ücret) net negatif olur.
+    if merchant_net < 0:
+        raise GrossUpError(
+            f"commission ({platform_fee}) exceeds net_target ({net_target}); "
+            f"amount too small for tier fixed fee"
+        )
+
+    # PLANN iç maliyet TAHMİNLERİ (bilgilendirme/marj raporu; kesinti DEĞİL).
+    stripe_fee = apply_bps(customer_price, stripe_bps) + stripe_fixed
+    wise_fee = apply_bps(net_target, wise_bps) + wise_fixed
 
     return GrossUpResult(
         customer_price_minor=int(customer_price),

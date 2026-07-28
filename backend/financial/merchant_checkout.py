@@ -19,8 +19,69 @@ from .state_machine import StateMachine, create_transaction
 from .schemas import WebhookEvent
 from .feature_flags import is_env_flag_enabled
 from .gross_up_service import compute_customer_price, GrossUpError
+from .payment_types import (
+    PaymentType,
+    PaymentChannel,
+    META_PAYMENT_TYPE,
+    META_PAYMENT_CHANNEL,
+    META_BUSINESS_ID,
+    META_IS_MERCHANT_PAYMENT,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _sobj(obj: Any, key: str, default: Any = None) -> Any:
+    """
+    Stripe nesnesinden (StripeObject) veya dict'ten güvenli alan okuma.
+
+    stripe-python v15'te API'den dönen nesneler artık dict değildir ve `.get()`
+    metodu yoktur (`.get` erişimi AttributeError fırlatır). Bu helper hem
+    StripeObject hem dict için çalışır; alan yoksa default döner.
+    """
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    try:
+        val = obj[key]
+        return val if val is not None else default
+    except Exception:
+        return getattr(obj, key, default)
+
+
+def _build_pricing_snapshot(
+    base_currency: str,
+    tier: str,
+    fee_preference: str,
+    gross_up_applied: bool,
+) -> Dict[str, Any]:
+    """
+    İşlem anındaki komisyon ayarlarının SNAPSHOT'unu üretir.
+
+    Ayarlar (tier / oran / sabit ücret / mod) SONRADAN değişse bile bu snapshot
+    işlemin üzerinde sabit kalır → muhasebe/denetim için single source of truth.
+    """
+    from .money import get_tier_config
+    from datetime import datetime, timezone
+    tier_bps = 0
+    tier_fixed = 0
+    try:
+        cfg = get_tier_config(base_currency, tier)
+        tier_bps = cfg.fee_rate_bps
+        tier_fixed = cfg.fixed_fee_minor
+    except Exception:
+        pass
+    return {
+        "tier": tier,
+        "commission_rate_bps": tier_bps,
+        "commission_fixed_fee_minor": tier_fixed,
+        "fee_preference": fee_preference,
+        "base_currency": base_currency,
+        "gross_up_applied": bool(gross_up_applied),
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+    }
+
 
 PAYMENT_SUCCESS_URL = os.getenv("PAYMENT_SUCCESS_URL", "https://plannapp.co/#/payment-success")
 PAYMENT_CANCEL_URL = os.getenv("PAYMENT_CANCEL_URL", "https://plannapp.co/#/payment-cancelled")
@@ -186,7 +247,11 @@ async def create_customer_checkout_session(
             "gross_up_applied": "true" if gross_up_result is not None else "false",
             "session_count": str(session_count),
             "payment_rule": deposit_rule.payment_rule if deposit_rule else "full_online",
-            "is_merchant_payment": "true",
+            # Business/Subscription ayrımı (resmî) + geri-uyumlu is_merchant_payment
+            META_PAYMENT_TYPE: PaymentType.BUSINESS.value,
+            META_BUSINESS_ID: organization_id,
+            META_PAYMENT_CHANNEL: PaymentChannel.APPOINTMENT.value,
+            META_IS_MERCHANT_PAYMENT: "true",
         },
         success_url=f"https://plannapp.co/{merchant_slug}?payment=success&session_id={{CHECKOUT_SESSION_ID}}" if merchant_slug else PAYMENT_SUCCESS_URL + "?session_id={CHECKOUT_SESSION_ID}",
         cancel_url=f"https://plannapp.co/{merchant_slug}?payment=cancelled" if merchant_slug else PAYMENT_CANCEL_URL,
@@ -203,6 +268,7 @@ async def create_customer_checkout_session(
         if apt:
             session_group_id = apt.get("session_group_id")
 
+    _pricing_snap = _build_pricing_snapshot(base_currency, tier, fee_preference, gross_up_result is not None)
     tx_doc = await create_transaction(
         db=db,
         organization_id=organization_id,
@@ -217,6 +283,10 @@ async def create_customer_checkout_session(
         stripe_checkout_session_id=stripe_session.id,
         customer_name=customer_name,
         session_group_id=session_group_id,
+        # Business/Subscription ayrımı
+        payment_type=PaymentType.BUSINESS.value,
+        business_id=organization_id,
+        payment_channel=PaymentChannel.APPOINTMENT.value,
         # PLANN v2 canonical fields
         customer_price_minor=customer_price_minor,
         merchant_net_minor=merchant_net_minor,
@@ -225,6 +295,10 @@ async def create_customer_checkout_session(
         wise_fee_minor=payout_fee_minor,
         gross_up_applied=bool(gross_up_result is not None),
         service_price_minor=service_price_minor,
+        # Komisyon snapshot (işlem anı — sonradan değişse de sabit)
+        commission_tier=tier,
+        commission_fixed_fee_minor=_pricing_snap["commission_fixed_fee_minor"],
+        pricing_snapshot=_pricing_snap,
     )
 
     logger.info(
@@ -438,7 +512,10 @@ async def create_multi_service_checkout_session(
             "gross_up_applied": "true" if any_gross_up else "false",
             "session_count": "1",
             "payment_rule": "deposit",
-            "is_merchant_payment": "true",
+            META_PAYMENT_TYPE: PaymentType.BUSINESS.value,
+            META_BUSINESS_ID: organization_id,
+            META_PAYMENT_CHANNEL: PaymentChannel.MULTI_SERVICE.value,
+            META_IS_MERCHANT_PAYMENT: "true",
             "is_multi_service": "true",
         },
         success_url=f"https://plannapp.co/{merchant_slug}?payment=success&session_id={{CHECKOUT_SESSION_ID}}" if merchant_slug else PAYMENT_SUCCESS_URL + "?session_id={CHECKOUT_SESSION_ID}",
@@ -452,6 +529,7 @@ async def create_multi_service_checkout_session(
         if apt:
             session_group_id = apt.get("session_group_id")
 
+    _pricing_snap = _build_pricing_snapshot(base_currency, tier, fee_preference, any_gross_up)
     tx_doc = await create_transaction(
         db=db,
         organization_id=organization_id,
@@ -466,6 +544,9 @@ async def create_multi_service_checkout_session(
         stripe_checkout_session_id=stripe_session.id,
         customer_name=customer_name,
         session_group_id=session_group_id,
+        payment_type=PaymentType.BUSINESS.value,
+        business_id=organization_id,
+        payment_channel=PaymentChannel.MULTI_SERVICE.value,
         customer_price_minor=total_customer,
         merchant_net_minor=total_net,
         platform_fee_minor=total_platform,
@@ -473,6 +554,9 @@ async def create_multi_service_checkout_session(
         wise_fee_minor=total_payout,
         gross_up_applied=any_gross_up,
         service_price_minor=total_service_price,
+        commission_tier=tier,
+        commission_fixed_fee_minor=_pricing_snap["commission_fixed_fee_minor"],
+        pricing_snapshot=_pricing_snap,
     )
 
     logger.info(
@@ -505,6 +589,7 @@ async def create_payment_link_session(
     customer_phone: str,
     description: str,
     base_amount_minor: int,
+    customer_email: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create a standalone "Pay-by-Link" (Ödeme İste) Stripe Checkout Session.
@@ -527,6 +612,7 @@ async def create_payment_link_session(
     fee_preference = settings.get("fee_preference", "seller_pays")
     merchant_slug = settings.get("slug", "")
     company_name = settings.get("company_name", "İşletme")
+    normalized_email = (customer_email or "").strip().lower() or None
 
     if base_amount_minor <= 0:
         raise ValueError(f"Amount must be positive: {base_amount_minor}")
@@ -582,6 +668,7 @@ async def create_payment_link_session(
         raise ValueError("Computed customer price is zero; cannot create payment link")
 
     # 1) Önce pending transaction oluştur — tx_id, Stripe client_reference_id için gerekli.
+    _pricing_snap = _build_pricing_snapshot(base_currency, tier, fee_preference, gross_up_result is not None)
     tx_doc = await create_transaction(
         db=db,
         organization_id=organization_id,
@@ -595,7 +682,9 @@ async def create_payment_link_session(
         customer_phone=customer_phone,
         customer_name=customer_name,
         description=description,
-        payment_type="payment_link",
+        payment_type=PaymentType.BUSINESS.value,
+        business_id=organization_id,
+        payment_channel=PaymentChannel.PAYMENT_LINK.value,
         customer_price_minor=customer_price_minor,
         merchant_net_minor=merchant_net_minor,
         platform_fee_minor=platform_fee_minor,
@@ -603,6 +692,9 @@ async def create_payment_link_session(
         wise_fee_minor=payout_fee_minor,
         gross_up_applied=bool(gross_up_result is not None),
         service_price_minor=base_amount_minor,
+        commission_tier=tier,
+        commission_fixed_fee_minor=_pricing_snap["commission_fixed_fee_minor"],
+        pricing_snapshot=_pricing_snap,
     )
     tx_id = tx_doc["id"]
 
@@ -624,11 +716,21 @@ async def create_payment_link_session(
     else:
         product_data["images"] = ["https://plannapp.co/api/static/logo.png"]
 
-    stripe_session = stripe.checkout.Session.create(
-        payment_method_types=["card"],
-        mode="payment",
-        client_reference_id=tx_id,
-        line_items=[{
+    # Stripe Radar risk azaltma: işlemi 'guest' bırakmak yerine gerçek Customer'a
+    # bağla (mükerrer önlenir). Hata durumunda None döner, tahsilat bloklanmaz.
+    stripe_customer_id = await _get_or_create_stripe_customer(
+        db,
+        organization_id=organization_id,
+        name=customer_name,
+        phone=customer_phone,
+        email=normalized_email,
+    )
+
+    session_kwargs: Dict[str, Any] = {
+        "payment_method_types": ["card"],
+        "mode": "payment",
+        "client_reference_id": tx_id,
+        "line_items": [{
             "price_data": {
                 "currency": fee_result.stripe_currency,
                 "unit_amount": customer_price_minor,
@@ -636,11 +738,14 @@ async def create_payment_link_session(
             },
             "quantity": 1,
         }],
-        custom_text={"submit": {"message": custom_text_note}},
-        metadata={
+        "custom_text": {"submit": {"message": custom_text_note}},
+        # 3DS zorunlu (yüksek tutarlı işlemlerde Radar risk skorunu düşürür).
+        "payment_method_options": {"card": {"request_three_d_secure": "any"}},
+        "metadata": {
             "organization_id": organization_id,
             "customer_phone": customer_phone,
             "customer_name": customer_name,
+            "customer_email": normalized_email or "",
             "description": description,
             "base_currency": base_currency,
             "fee_preference": fee_preference,
@@ -655,19 +760,33 @@ async def create_payment_link_session(
             "wise_fee_minor": str(payout_fee_minor),
             "gross_up_applied": "true" if gross_up_result is not None else "false",
             "payment_rule": "full_online",
-            "is_merchant_payment": "true",
+            META_PAYMENT_TYPE: PaymentType.BUSINESS.value,
+            META_BUSINESS_ID: organization_id,
+            META_PAYMENT_CHANNEL: PaymentChannel.PAYMENT_LINK.value,
+            META_IS_MERCHANT_PAYMENT: "true",
             "transaction_id": tx_id,
         },
-        success_url=(
+        "success_url": (
             f"https://plannapp.co/{merchant_slug}?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
             if merchant_slug else PAYMENT_SUCCESS_URL + "?session_id={CHECKOUT_SESSION_ID}"
         ),
-        cancel_url=(
+        "cancel_url": (
             f"https://plannapp.co/{merchant_slug}?payment=cancelled"
             if merchant_slug else PAYMENT_CANCEL_URL
         ),
-        allow_promotion_codes=True,
-    )
+        "allow_promotion_codes": True,
+    }
+
+    # Customer bağla. customer verildiğinde Stripe customer_email/customer_creation
+    # kabul etmez; Customer oluşturulamadıysa fallback olarak email + creation kullan.
+    if stripe_customer_id:
+        session_kwargs["customer"] = stripe_customer_id
+    else:
+        session_kwargs["customer_creation"] = "always"
+        if normalized_email:
+            session_kwargs["customer_email"] = normalized_email
+
+    stripe_session = stripe.checkout.Session.create(**session_kwargs)
 
     # 2) Session id'yi tx'e bağla — webhook eşleşmesi bunun üzerinden yapılır.
     await db.merchant_transactions.update_one(
@@ -826,6 +945,11 @@ async def _route_event(
 
     elif event_type == "charge.refunded":
         return await _handle_refund(db, sm, data_object)
+
+    elif event_type == "payout.paid":
+        # Payout içindeki balance txn'leri business/subscription olarak ayır + etiketle.
+        from .payout_reconciliation import handle_payout_paid
+        return await handle_payout_paid(db, data_object)
 
     else:
         logger.info("Unhandled webhook event type: %s", event_type)
@@ -988,27 +1112,66 @@ async def _handle_checkout_completed(
     payment_intent_id = session.get("payment_intent", "")
     charge_id = ""
     settled_gbp_minor = 0
+    balance_tx_id = ""
+    actual_stripe_fee_minor = None
+    gross_amount_minor = None
+    available_on_iso = None
 
     if payment_intent_id:
         try:
             pi = stripe.PaymentIntent.retrieve(payment_intent_id, expand=["latest_charge"])
-            charge_id = pi.get("latest_charge", {}).get("id", "") if isinstance(pi.get("latest_charge"), dict) else str(pi.get("latest_charge", ""))
-            balance_tx_id = pi.get("latest_charge", {}).get("balance_transaction", "") if isinstance(pi.get("latest_charge"), dict) else ""
+            # latest_charge: expand ile Charge nesnesi; expand yoksa str id.
+            latest_charge = _sobj(pi, "latest_charge")
+            if isinstance(latest_charge, str):
+                charge_id = latest_charge
+            elif latest_charge is not None:
+                charge_id = _sobj(latest_charge, "id", "") or ""
+                balance_tx_id = _sobj(latest_charge, "balance_transaction", "") or ""
+                # balance_transaction bazen str id, bazen genişletilmiş nesne olabilir.
+                if not isinstance(balance_tx_id, str):
+                    balance_tx_id = _sobj(balance_tx_id, "id", "") or ""
             if balance_tx_id:
                 bt = stripe.BalanceTransaction.retrieve(balance_tx_id)
-                settled_gbp_minor = bt.get("net", 0)
+                settled_gbp_minor = _sobj(bt, "net", 0) or 0
+                # Gerçek Stripe maliyeti + brüt (yalnızca PLANN raporu; merchant_net'e etkisiz).
+                actual_stripe_fee_minor = _sobj(bt, "fee", None)
+                gross_amount_minor = _sobj(bt, "amount", None)
+                # KRİTİK: Paranın Stripe bakiyesine ne zaman geçeceğinin KESİN tarihi.
+                # Stripe bunu iş günü + resmi tatil hesabıyla verir → settlement
+                # zamanlamasında statik T+2 yerine bunu kullanacağız (hafta sonu sapması yok).
+                available_on_ts = _sobj(bt, "available_on", None)
+                if available_on_ts:
+                    available_on_iso = datetime.fromtimestamp(
+                        int(available_on_ts), tz=timezone.utc
+                    ).isoformat()
         except Exception as e:
             logger.warning("Failed to retrieve PI details: %s", e)
+
+    # Payout reconciliation'ın charge/balance_transaction üzerinden eşleştirme
+    # yapabilmesi için bu ID'leri tx'e yaz (business/subscription ayrımı).
+    # NOT: balance_transaction her zaman SETTLE para biriminde (UK hesabı = GBP).
+    # TRY merchant'ta müşteri TRY öder ama net/fee/gross GBP olur → GBP alanlarına yaz.
+    # TRY estimate olan stripe_fee_minor'a DOKUNMA (para birimi karışmasın).
+    transition_meta: Dict[str, Any] = {
+        "stripe_payment_intent_id": payment_intent_id,
+        "stripe_charge_id": charge_id,
+        "amount_settled_gbp_minor": settled_gbp_minor,   # bt.net (GBP)
+    }
+    if balance_tx_id:
+        transition_meta["stripe_balance_transaction_id"] = balance_tx_id
+    if actual_stripe_fee_minor is not None:
+        transition_meta["stripe_fee_gbp_minor"] = actual_stripe_fee_minor  # bt.fee (GBP)
+    if gross_amount_minor is not None:
+        transition_meta["gross_amount_gbp_minor"] = gross_amount_minor      # bt.amount (GBP)
+    if available_on_iso:
+        # Settlement cron bunu okuyup captured→settled'ı gerçek iş gününde yapar.
+        transition_meta["stripe_available_on"] = available_on_iso
 
     wallet_inc = await sm.transition(
         tx_id=tx["id"],
         new_state="captured",
         trigger="checkout.session.completed",
-        metadata={
-            "stripe_payment_intent_id": payment_intent_id,
-            "stripe_charge_id": charge_id,
-            "amount_settled_gbp_minor": settled_gbp_minor,
-        },
+        metadata=transition_meta,
     )
 
     if int(metadata.get("session_count", "1")) > 1:
@@ -1286,6 +1449,78 @@ async def _handle_refund(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+async def _get_or_create_stripe_customer(
+    db,
+    organization_id: str,
+    name: str,
+    phone: str,
+    email: Optional[str] = None,
+) -> Optional[str]:
+    """Pay-by-Link için Stripe Customer bul/oluştur (mükerrer önlenir).
+
+    Radar risk skorunu düşürmek için işlemi 'guest' yerine gerçek bir Customer'a
+    bağlar. Aynı organizasyon + telefon (veya email) için mevcut Customer yeniden
+    kullanılır. Herhangi bir Stripe/DB hatasında None döner; çağıran taraf
+    Customer olmadan (fallback) devam eder, tahsilat bloklanmaz.
+    """
+    normalized_phone = (phone or "").replace(" ", "").strip()
+    normalized_email = (email or "").strip().lower() or None
+
+    # 1) Mevcut Customer'ı yeniden kullan (mükerrer önleme)
+    try:
+        or_clauses: list = []
+        if normalized_phone:
+            or_clauses.append({"customer_phone": normalized_phone})
+        if normalized_email:
+            or_clauses.append({"customer_email": normalized_email})
+        if or_clauses:
+            existing = await db.stripe_customers.find_one({
+                "organization_id": organization_id,
+                "$or": or_clauses,
+            })
+            if existing and existing.get("stripe_customer_id"):
+                return existing["stripe_customer_id"]
+    except Exception as e:
+        logger.warning("stripe_customers lookup failed (non-fatal): %s", e)
+
+    # 2) Yeni Customer oluştur (boş alanları Stripe'a gönderme)
+    create_kwargs: Dict[str, Any] = {
+        "metadata": {"organization_id": organization_id, "source": "pay_by_link"},
+    }
+    if name and name.strip():
+        create_kwargs["name"] = name.strip()
+    if normalized_phone:
+        create_kwargs["phone"] = normalized_phone
+    if normalized_email:
+        create_kwargs["email"] = normalized_email
+
+    try:
+        customer = stripe.Customer.create(**create_kwargs)
+        cus_id = customer.get("id") if isinstance(customer, dict) else customer.id
+    except Exception as e:
+        logger.error("stripe.Customer.create failed (non-fatal): %s", e)
+        return None
+
+    if not cus_id:
+        return None
+
+    # 3) Yeniden kullanım için DB'ye kaydet
+    try:
+        await db.stripe_customers.insert_one({
+            "stripe_customer_id": cus_id,
+            "organization_id": organization_id,
+            "customer_name": (name or "").strip(),
+            "customer_phone": normalized_phone,
+            "customer_email": normalized_email,
+            "source": "pay_by_link",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:
+        logger.warning("stripe_customers insert failed (non-fatal): %s", e)
+
+    return cus_id
+
 
 def _build_deposit_rule(service: Dict[str, Any]) -> Optional[DepositRule]:
     payment_rule = service.get("payment_rule", "on_site")

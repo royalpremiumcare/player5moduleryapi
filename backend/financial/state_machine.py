@@ -321,11 +321,16 @@ class StateMachine:
                     tx_update["$set"][key] = value
 
         # 5. Calculate wallet updates
+        # amount_settled_gbp_minor capture anında metadata ile gelir; eski (stale)
+        # tx dokümanı 0 tutar → metadata'daki güncel değeri önceliklendir.
+        effective_settled_gbp = tx.get("amount_settled_gbp_minor", 0) or 0
+        if metadata and metadata.get("amount_settled_gbp_minor") is not None:
+            effective_settled_gbp = metadata["amount_settled_gbp_minor"]
         wallet_inc = get_wallet_updates(
             old_state=current_state,
             new_state=new_state,
             amount_display_minor=tx.get("amount_display_minor", 0),
-            amount_settled_gbp_minor=tx.get("amount_settled_gbp_minor", 0),
+            amount_settled_gbp_minor=effective_settled_gbp,
             base_currency=tx.get("base_currency", "TRY"),
         )
 
@@ -418,6 +423,7 @@ async def create_transaction(
     # indexes skip this document instead of rejecting duplicate nulls.
     for sparse_key in (
         "stripe_payment_intent_id", "stripe_charge_id",
+        "stripe_balance_transaction_id", "stripe_payout_id",
         "stripe_checkout_session_id", "stripe_refund_id",
         "stripe_dispute_id", "wise_transfer_id", "wise_quote_id",
         "payout_batch_id",

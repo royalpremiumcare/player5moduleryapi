@@ -1,16 +1,18 @@
 """
-Tests for financial.gross_up_service — dynamic commission calculation.
+Tests for financial.gross_up_service — ALL-IN komisyon modeli.
+
+MİMARİ KURAL: İşletmeden düşülen TEK kesinti PLANN tier komisyonudur.
+Stripe/Wise maliyeti merchant_net'ten ASLA düşülmez (yalnızca bilgilendirme).
 
 Covers:
-  - seller_pays mode (fees deducted from merchant)
-  - buyer_pays mode (gross-up with fixed fees OUTSIDE denominator)
-  - TRY and GBP currencies
-  - Deposit vs full_online vs on_site
-  - Explosion guard (percentage > 95%)
-  - Roundtrip: merchant_net + fees == customer_price (seller), merchant_net == net_target (buyer)
+  - seller_pays: merchant_net == net_target - platform_fee (stripe/wise ETKİSİZ)
+  - buyer_pays : merchant_net == net_target, customer_price == net_target + platform_fee
+  - TRY ve GBP
+  - Deposit / full_online / on_site
+  - Komisyon net_target'ı aşarsa GrossUpError
+  - stripe_fee/wise_fee yalnızca bilgilendirme (merchant'a yansımaz)
 """
 
-import os
 import pytest
 
 from financial.fee_calculator import DepositRule
@@ -21,23 +23,19 @@ from financial.gross_up_service import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 @pytest.fixture(autouse=True)
 def _env_fixed_processor_fees(monkeypatch):
-    """Deterministic Stripe fee values for reproducible assertions."""
+    """Deterministic Stripe/Wise fee values for reproducible assertions."""
     monkeypatch.setenv("STRIPE_FEE_UK_BPS", "150")   # 1.5%
     monkeypatch.setenv("STRIPE_FEE_UK_FIXED", "25")  # £0.25
     monkeypatch.setenv("STRIPE_FEE_TR_BPS", "250")   # 2.5%
-    monkeypatch.setenv("STRIPE_FEE_TR_FIXED", "150") # ₺1.50
+    monkeypatch.setenv("STRIPE_FEE_TR_FIXED", "150")  # ₺1.50
     monkeypatch.setenv("WISE_PAYOUT_BPS", "0")
-    monkeypatch.setenv("WISE_PAYOUT_FIXED_MINOR", "200")  # 2 minor units (2₺ / £2)
+    monkeypatch.setenv("WISE_PAYOUT_FIXED_MINOR", "200")
 
 
 # ---------------------------------------------------------------------------
-# Basic behaviour
+# seller_pays — merchant_net = net_target - platform_fee (SADECE komisyon)
 # ---------------------------------------------------------------------------
 
 def test_gbp_seller_pays_full_online():
@@ -50,47 +48,37 @@ def test_gbp_seller_pays_full_online():
     )
     assert r.customer_price_minor == 5000
     assert r.net_target_minor == 5000
-    assert r.merchant_net_minor < 5000
-    # GBP standard: tier 300 bps + 0 fixed, stripe 150 bps + 25 fixed, wise 0 bps + 200 fixed
-    # platform = 5000*0.03 = 150, stripe = 5000*0.015 + 25 = 75+25 = 100, wise = 0 + 200 = 200
+    # GBP standard: tier 300 bps + 0 fixed → platform_fee = 150
     assert r.platform_fee_minor == 150
-    assert r.stripe_fee_minor == 100
-    assert r.wise_fee_minor == 200
-    assert r.merchant_net_minor == 5000 - 150 - 100 - 200
+    # ALL-IN: merchant_net = net_target - platform_fee (stripe/wise düşülmez)
+    assert r.merchant_net_minor == 5000 - 150
     assert r.gross_up_applied is False
+    # stripe/wise yalnızca bilgilendirme
+    assert r.stripe_fee_minor == 100   # 5000*0.015 + 25
+    assert r.wise_fee_minor == 200     # 0 + 200
 
 
-def test_gbp_buyer_pays_grossup_reaches_net_target():
+def test_stripe_wise_fee_does_not_affect_merchant_net(monkeypatch):
+    """Stripe bps aşırı yüksek olsa bile merchant_net yalnızca komisyona bağlı."""
+    monkeypatch.setenv("STRIPE_FEE_UK_BPS", "9500")  # %95 (absürt)
+    monkeypatch.setenv("WISE_PAYOUT_FIXED_MINOR", "999999")
     r = compute_customer_price(
         base_currency="GBP",
         service_price_minor=5000,
-        fee_preference="buyer_pays",
+        fee_preference="seller_pays",
         tier="standard",
         deposit_rule=DepositRule(payment_rule="full_online"),
     )
-    # Merchant must still end up with net_target (5000)
-    assert r.merchant_net_minor == 5000
-    assert r.net_target_minor == 5000
-    # Customer pays more than net_target
-    assert r.customer_price_minor > 5000
-    assert r.gross_up_applied is True
-    # Should not explode (> 2x)
-    assert r.customer_price_minor < 10000
+    # platform_fee tier'a bağlı (300 bps) — stripe/wise'tan bağımsız
+    assert r.platform_fee_minor == 150
+    assert r.merchant_net_minor == 5000 - 150   # değişmedi!
 
 
-def test_gbp_buyer_pays_fixed_fees_outside_denominator():
-    """
-    Critical invariant: fixed fees are NOT marked up.
-    If net_target = 100, and only fixed fees existed, customer_price should be
-    100 + sum(fixed). The denominator uses only percentage bps.
-    """
-    os_fixed = os.environ
-    # Temporarily zero-out percentages
-    os_fixed["STRIPE_FEE_UK_BPS"] = "0"
-    os_fixed["WISE_PAYOUT_BPS"] = "0"
-    # tier_bps for GBP standard is 300; override by using 'fast' (500)? No, use pure test
-    # We'll assert via buyer_pays with only our non-zero percentages being tier.
-    # Easier: just confirm fixed fees ARE included in customer_price, not scaled by percentage.
+# ---------------------------------------------------------------------------
+# buyer_pays — merchant_net = net_target, customer_price = net_target + komisyon
+# ---------------------------------------------------------------------------
+
+def test_gbp_buyer_pays_only_commission_added():
     r = compute_customer_price(
         base_currency="GBP",
         service_price_minor=10000,
@@ -98,35 +86,11 @@ def test_gbp_buyer_pays_fixed_fees_outside_denominator():
         tier="standard",
         deposit_rule=DepositRule(payment_rule="full_online"),
     )
-    # tier_bps=300 for standard GBP, stripe_bps=0 (overridden), wise_bps=0
-    # percentage_sum = 300
-    # variable_gross = ceil(10000 * 10000 / 9700) = ceil(103092.78) = 10310
-    # fixed = tier(0 for GBP) + stripe(25) + wise(200) = 225
-    # customer_price = 10310 + 225 = 10535
-    assert r.customer_price_minor == 10310 + 0 + 25 + 200
+    # tier standard GBP = 300 bps + 0 fixed → platform_fee = 300
+    assert r.platform_fee_minor == 300
+    assert r.customer_price_minor == 10000 + 300   # yalnızca komisyon eklenir
     assert r.merchant_net_minor == 10000
-
-
-def test_try_seller_pays_deposit_percentage():
-    r = compute_customer_price(
-        base_currency="TRY",
-        service_price_minor=20000,   # ₺200.00
-        fee_preference="seller_pays",
-        tier="standard",
-        deposit_rule=DepositRule(payment_rule="deposit", deposit_type="percentage", deposit_value=2500),  # 25%
-    )
-    # deposit = 25% of 20000 = 5000 (₺50)
-    assert r.net_target_minor == 5000
-    assert r.deposit_applied is True
-    assert r.deposit_minor == 5000
-    assert r.on_site_amount_minor == 15000  # remainder
-    assert r.customer_price_minor == 5000
-    # TRY standard: tier 800 bps + 1500 fixed, stripe 250 bps + 150 fixed, wise 0 + 200 fixed
-    assert r.platform_fee_minor == 400 + 1500   # 5000*0.08 + 1500
-    assert r.stripe_fee_minor == 125 + 150      # 5000*0.025 + 150
-    assert r.wise_fee_minor == 0 + 200
-    expected_net = 5000 - (400+1500) - (125+150) - 200
-    assert r.merchant_net_minor == expected_net
+    assert r.gross_up_applied is True
 
 
 def test_try_buyer_pays_merchant_net_equals_net_target():
@@ -137,15 +101,33 @@ def test_try_buyer_pays_merchant_net_equals_net_target():
         tier="standard",
         deposit_rule=DepositRule(payment_rule="full_online"),
     )
+    # TRY standard: 800 bps + 1500 fixed → platform_fee = 800 + 1500 = 2300
+    assert r.platform_fee_minor == 2300
+    assert r.customer_price_minor == 10000 + 2300
     assert r.merchant_net_minor == 10000
-    assert r.customer_price_minor > 10000
-    # Percentage sum: tier 800 + stripe 250 + wise 0 = 1050 bps = 10.5%
-    # variable_gross = ceil(10000 * 10000 / (10000 - 1050)) = ceil(10000*10000/8950) = ceil(11173.18) = 11174
-    # fixed_total = 1500 + 150 + 200 = 1850
-    # customer_price = 11174 + 1850 = 13024
-    assert r.customer_price_minor == 11174 + 1850
     assert r.gross_up_applied is True
 
+
+def test_try_seller_pays_deposit_percentage():
+    r = compute_customer_price(
+        base_currency="TRY",
+        service_price_minor=20000,   # ₺200.00
+        fee_preference="seller_pays",
+        tier="standard",
+        deposit_rule=DepositRule(payment_rule="deposit", deposit_type="percentage", deposit_value=2500),
+    )
+    assert r.net_target_minor == 5000       # 25% of 20000
+    assert r.deposit_applied is True
+    assert r.on_site_amount_minor == 15000
+    assert r.customer_price_minor == 5000
+    # platform_fee = 5000*0.08 + 1500 = 1900
+    assert r.platform_fee_minor == 400 + 1500
+    assert r.merchant_net_minor == 5000 - 1900
+
+
+# ---------------------------------------------------------------------------
+# Edge cases
+# ---------------------------------------------------------------------------
 
 def test_on_site_zero_online():
     r = compute_customer_price(
@@ -158,7 +140,18 @@ def test_on_site_zero_online():
     assert r.customer_price_minor == 0
     assert r.merchant_net_minor == 0
     assert r.on_site_amount_minor == 5000
-    assert r.gross_up_applied is False
+
+
+def test_commission_exceeding_net_raises():
+    """Küçük tutar + sabit ücret komisyonu net'i aşarsa GrossUpError."""
+    with pytest.raises(GrossUpError):
+        compute_customer_price(
+            base_currency="TRY",
+            service_price_minor=1000,   # ₺10 → komisyon 80+1500=1580 > 1000
+            fee_preference="seller_pays",
+            tier="standard",
+            deposit_rule=DepositRule(payment_rule="full_online"),
+        )
 
 
 def test_invalid_fee_preference_raises():
@@ -181,20 +174,8 @@ def test_zero_service_price_raises():
         )
 
 
-def test_explosion_guard(monkeypatch):
-    monkeypatch.setenv("STRIPE_FEE_UK_BPS", "9500")
-    with pytest.raises(GrossUpError):
-        compute_customer_price(
-            base_currency="GBP",
-            service_price_minor=5000,
-            fee_preference="buyer_pays",
-            tier="standard",
-            deposit_rule=DepositRule(payment_rule="full_online"),
-        )
-
-
 # ---------------------------------------------------------------------------
-# Preview both modes
+# Preview both modes — merchant'a yalnızca komisyon görünür (1:1 garantisi)
 # ---------------------------------------------------------------------------
 
 def test_preview_both_modes_returns_both():
