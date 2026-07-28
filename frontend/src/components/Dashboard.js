@@ -141,6 +141,9 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
   // --- TOUR GUIDE STATE ---
   const [runTour, setRunTour] = useState(false);
+  // Tur bu mount'ta yalnızca bir kez planlansın: forceStartTour consumed olunca
+  // effect tekrar çalışıp localStorage yolundan ikinci kez tetiklemesin.
+  const tourScheduledRef = useRef(false);
 
   const dashboardTourStorageKey = useMemo(() => {
     if (!token) return null;
@@ -292,8 +295,12 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     // turu başlatmıyoruz — yoksa welcome dialog Aha celebration üstüne biner.
     if (ahaOverlayActive) return;
 
+    // Tur bu mount'ta zaten planlandıysa tekrar planlama (çift render/çift tur önlemi)
+    if (tourScheduledRef.current) return;
+
     // forceStartTour=true → localStorage flag'ine bakmadan turu zorla başlat (Aha akışı sonrası)
     if (forceStartTour && tourEligible) {
+      tourScheduledRef.current = true;
       setTimeout(() => setRunTour(true), 400);
       if (onForceStartTourConsumed) onForceStartTourConsumed();
       return;
@@ -305,6 +312,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       !localStorage.getItem(dashboardTourStorageKey)
     ) {
       // Sayfa tam yüklensin diye azıcık beklet
+      tourScheduledRef.current = true;
       setTimeout(() => setRunTour(true), 1000);
     }
   }, [userRole, loadPersonnelStats, dashboardTourStorageKey, activationState, forceStartTour, onForceStartTourConsumed, ahaOverlayActive]);
