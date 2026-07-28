@@ -209,7 +209,7 @@ export default function PaymentRequestDrawer({
         </div>
 
         {/* Body */}
-        <div className="p-5 overflow-y-auto flex-1 min-h-0 space-y-4">
+        <div className="p-5 overflow-y-auto flex-1 space-y-4">
           {/* Nasıl çalışır bilgilendirmesi */}
           <div className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2.5 flex items-start gap-2">
             <Info className="h-4 w-4 text-zinc-500 mt-0.5 shrink-0" />
