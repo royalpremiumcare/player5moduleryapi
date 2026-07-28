@@ -37,6 +37,7 @@ const LandingPage = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState(null); // tam ekran dashboard önizleme
 
   useEffect(() => {
     document.title = i18n.language?.toLowerCase().startsWith('tr')
@@ -74,6 +75,8 @@ const LandingPage = () => {
   const dashboardImageSrc = i18n.language?.toLowerCase().startsWith('tr')
     ? `${dashboardAssetBase}/screenshots/landing-dashboard-tr.png?v=${dashboardAssetVersion}`
     : `${dashboardAssetBase}/screenshots/landing-dashboard-en.png?v=${dashboardAssetVersion}`;
+  // Mobilde okunması güç olan geniş dashboard yerine gösterilen dikey mobil önizleme
+  const dashboardMobileImageSrc = `${dashboardAssetBase}/screenshots/landing-dashboard-mobile.png?v=m2`;
   // M9: PRICING tablosu artık tek kaynak (frontend/src/lib/pricing.js).
   // Subscribe.js ve LandingPage burada aynı sayılardan beslenir — drift önleme.
   // PRICING.try/gbp.{plan}.{original,discounted}; yearly = original * 10.
@@ -602,16 +605,38 @@ const LandingPage = () => {
                 <MessageSquare className="w-5 h-5 text-green-500" />
                 <span className="text-sm font-semibold text-gray-700">{t('landing.hero.newAppointments')}</span>
               </div>
-              <div className="bg-white rounded-2xl shadow-[0_4px_30px_rgba(0,0,0,0.12)] border border-gray-900/20 p-2 md:p-2.5 hover:shadow-[0_8px_40px_rgba(0,0,0,0.18)] transition-shadow duration-300">
-                <img 
-                  src={dashboardImageSrc}
-                  alt={i18n.language?.toLowerCase().startsWith('tr') ? 'PLANN Dashboard Önizleme' : 'PLANN Dashboard Preview'}
-                  className="w-full h-auto rounded-xl"
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = 'https://customer-assets.emergentagent.com/job_16055e0a-771d-4ca0-9203-6958116f17b9/artifacts/1spiinqz_IMG_6383.jpeg';
-                  }}
-                />
+
+              {/* Masaüstü: geniş dashboard önizlemesi */}
+              <button
+                type="button"
+                onClick={() => setLightboxSrc(dashboardImageSrc)}
+                className="hidden md:block w-full text-left cursor-zoom-in group"
+                aria-label={i18n.language?.toLowerCase().startsWith('tr') ? 'Önizlemeyi büyüt' : 'Enlarge preview'}
+              >
+                <div className="bg-white rounded-2xl shadow-[0_4px_30px_rgba(0,0,0,0.12)] border border-gray-900/20 p-2.5 group-hover:shadow-[0_8px_40px_rgba(0,0,0,0.18)] transition-shadow duration-300">
+                  <img
+                    src={dashboardImageSrc}
+                    alt={i18n.language?.toLowerCase().startsWith('tr') ? 'PLANN Dashboard Önizleme' : 'PLANN Dashboard Preview'}
+                    className="w-full h-auto rounded-xl"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = 'https://customer-assets.emergentagent.com/job_16055e0a-771d-4ca0-9203-6958116f17b9/artifacts/1spiinqz_IMG_6383.jpeg';
+                    }}
+                  />
+                </div>
+              </button>
+
+              {/* Mobil: dikey, telefon çerçeveli önizleme (yalnızca < md) */}
+              <div className="md:hidden mx-auto block w-[80%] max-w-[320px]">
+                <div className="relative rounded-[2.2rem] bg-zinc-900 p-2 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.45)] ring-1 ring-black/10">
+                  {/* Telefon üst çentiği (dynamic island) */}
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 h-4 w-20 bg-zinc-900 rounded-b-2xl z-10" />
+                  <img
+                    src={dashboardMobileImageSrc}
+                    alt={i18n.language?.toLowerCase().startsWith('tr') ? 'PLANN Mobil Önizleme' : 'PLANN Mobile Preview'}
+                    className="w-full h-auto rounded-[1.6rem] bg-white"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -694,20 +719,20 @@ const LandingPage = () => {
             {/* Güven Göstergeleri */}
             <div className="flex flex-wrap items-center justify-center gap-6 md:gap-8 pt-8 border-t border-gray-200">
               <div className="flex items-center gap-2">
-                <Shield className="w-6 h-6 text-green-500" />
+                <Shield className="w-6 h-6 text-zinc-900" strokeWidth={1.75} />
                 <span className="text-gray-700 font-medium">{t('landing.trust.sslSecure')}</span>
               </div>
               <div className="flex items-center gap-2">
-                <Check className="w-6 h-6 text-green-500" />
-                <span className="text-gray-700 font-medium">{t('landing.trust.gdprCompliant')}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-6 h-6 text-blue-500" />
+                <MessageCircle className="w-6 h-6 text-zinc-900" strokeWidth={1.75} />
                 <span className="text-gray-700 font-medium">{t('landing.trust.support247')}</span>
               </div>
               <div className="flex items-center gap-2">
-                <Zap className="w-6 h-6 text-yellow-500" />
+                <Zap className="w-6 h-6 text-zinc-900" strokeWidth={1.75} />
                 <span className="text-gray-700 font-medium">{t('landing.trust.uptime')}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Wallet className="w-6 h-6 text-zinc-900" strokeWidth={1.75} />
+                <span className="text-gray-700 font-medium">{t('landing.trust.noHiddenFees')}</span>
               </div>
             </div>
 
@@ -1105,6 +1130,31 @@ const LandingPage = () => {
           </Button>
         </div>
       </section>
+
+      {/* Tam ekran görsel önizleme (lightbox) */}
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setLightboxSrc(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxSrc(null)}
+            aria-label={i18n.language?.toLowerCase().startsWith('tr') ? 'Kapat' : 'Close'}
+            className="absolute top-4 right-4 h-11 w-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={lightboxSrc}
+            alt="PLANN"
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-[92vh] w-auto h-auto object-contain rounded-2xl shadow-2xl"
+          />
+        </div>
+      )}
 
       {/* Contact Modal */}
       <Dialog open={contactModalOpen} onOpenChange={setContactModalOpen}>

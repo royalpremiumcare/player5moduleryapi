@@ -97,10 +97,11 @@
       "satisfaction": "Memnuniyet"
     },
     "trust": {
-      "sslSecure": "SSL Güvenli",
+      "sslSecure": "Üst Düzey Veri Güvenliği",
       "gdprCompliant": "KVKK Uyumlu",
-      "support247": "7/24 Destek",
-      "uptime": "99.9% Uptime",
+      "support247": "7/24 Canlı Destek",
+      "uptime": "Sıfır Kesinti, Hızlı Altyapı",
+      "noHiddenFees": "Gizli Ücret Yok",
       "trustedBy": "Bize Güvenen İşletmeler",
       "hairSalons": "Kuaför Salonları",
       "beautySalons": "Güzellik Salonları",
