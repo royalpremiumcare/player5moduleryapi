@@ -866,14 +866,15 @@
     "sections": {
       "accountPlan": "Account & Plan",
       "businessManagement": "Business Management",
+      "marketing": "Marketing",
       "appPreferences": "App Preferences",
       "other": "Other"
     },
     "staffManagementSubtitle": "Add, edit, or authorize staff",
     "serviceManagementSubtitle": "Manage your services and pricing",
     "marketingAssistant": {
-      "title": "Marketing Autopilot 🚀",
-      "subtitle": "Wake up your sleeping customers with automatic WhatsApp messages and effortlessly get them back in the chair.",
+      "title": "Marketing Autopilot",
+      "subtitle": "Focus on your work; let the autopilot win back the customers who stopped coming.",
       "pageTitle": "Smart Marketing Autopilot",
       "pageSubtitle": "While you focus on your work inside, PLANN tracks your sleeping customers in the background. People who haven't visited within the period you set receive an elegant \"We've missed you\" message from our official WhatsApp line. Effortless revenue, it's that simple.",
       "masterTitle": "Activate Autopilot",

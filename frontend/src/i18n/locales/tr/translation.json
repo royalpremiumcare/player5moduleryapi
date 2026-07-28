@@ -868,14 +868,15 @@
     "sections": {
       "accountPlan": "Hesap ve Plan",
       "businessManagement": "İşletme Yönetimi",
+      "marketing": "Pazarlama",
       "appPreferences": "Uygulama Tercihleri",
       "other": "Diğer"
     },
     "staffManagementSubtitle": "Personel ekle, düzenle veya yetkilendir",
     "serviceManagementSubtitle": "Hizmetlerinizi ve fiyatları yönetin",
     "marketingAssistant": {
-      "title": "Pazarlama Otopilotu 🚀",
-      "subtitle": "Uyuyan müşterilerinizi otomatik WhatsApp mesajlarıyla uyandırın ve zahmetsizce tekrar koltuğa oturtun.",
+      "title": "Pazarlama Otopilotu",
+      "subtitle": "Siz işinize odaklanın, otopilot gelmeyen müşterileri geri kazandırsın.",
       "pageTitle": "Akıllı Pazarlama Otopilotu",
       "pageSubtitle": "Siz içeride işinize odaklanırken, PLANN arka planda uyuyan müşterilerinizi takip eder. Belirlediğiniz süre boyunca uğramayan kişilere resmi WhatsApp hattımızdan şık bir \"Özlettiniz\" mesajı gider. Zahmetsiz ciro, işte bu kadar basit.",
       "masterTitle": "Otopilotu Devreye Al",

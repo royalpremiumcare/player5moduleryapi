@@ -568,19 +568,6 @@ const LandingPage = () => {
               <Button 
                 variant="outline"
                 onClick={() => {
-                  // Mobil Chrome için sayfayı en üste scroll et
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                  setTimeout(() => {
-                    setContactModalOpen(true);
-                  }, 150);
-                }}
-                className="bg-transparent border-2 border-gray-900 text-gray-900 hover:bg-gray-100 px-10 py-6 text-lg font-semibold rounded-full"
-              >
-                {t('landing.hero.callButton')}
-              </Button>
-              <Button 
-                variant="outline"
-                onClick={() => {
                   // Meta: Lead — WhatsApp/Demo butonu tıklaması
                   try {
                     metaPixel.track('Lead', {
@@ -713,26 +700,6 @@ const LandingPage = () => {
               <div className="text-center">
                 <div className="text-4xl md:text-5xl font-bold text-gray-900 mb-2">%98</div>
                 <div className="text-gray-600 font-medium">{t('landing.stats.satisfaction')}</div>
-              </div>
-            </div>
-
-            {/* Güven Göstergeleri */}
-            <div className="flex flex-wrap items-center justify-center gap-6 md:gap-8 pt-8 border-t border-gray-200">
-              <div className="flex items-center gap-2">
-                <Shield className="w-6 h-6 text-zinc-900" strokeWidth={1.75} />
-                <span className="text-gray-700 font-medium">{t('landing.trust.sslSecure')}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <MessageCircle className="w-6 h-6 text-zinc-900" strokeWidth={1.75} />
-                <span className="text-gray-700 font-medium">{t('landing.trust.support247')}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Zap className="w-6 h-6 text-zinc-900" strokeWidth={1.75} />
-                <span className="text-gray-700 font-medium">{t('landing.trust.uptime')}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Wallet className="w-6 h-6 text-zinc-900" strokeWidth={1.75} />
-                <span className="text-gray-700 font-medium">{t('landing.trust.noHiddenFees')}</span>
               </div>
             </div>
 

@@ -367,17 +367,21 @@ const Settings = ({ onNavigate, userRole, onLogout }) => {
               />
 
               <SettingItem 
-                icon={Sparkles} 
-                title={t('settings.marketingAssistant.title')}
-                subtitle={t('settings.marketingAssistant.subtitle')}
-                onClick={() => onNavigate && onNavigate("marketing-assistant")}
-              />
-
-              <SettingItem 
                 icon={DollarSign} 
                 title={t('settings.financeManagement')}
                 subtitle={t('settings.financeManagementSubtitle')}
                 onClick={() => onNavigate && onNavigate("settings-finance")}
+              />
+            </div>
+
+            {/* PAZARLAMA */}
+            <SectionTitle title={t('settings.sections.marketing')} />
+            <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
+              <SettingItem 
+                icon={Sparkles} 
+                title={t('settings.marketingAssistant.title')}
+                subtitle={t('settings.marketingAssistant.subtitle')}
+                onClick={() => onNavigate && onNavigate("marketing-assistant")}
               />
             </div>
 
