@@ -62,6 +62,25 @@ export default function PaymentRequestDrawer({
     setDescription(""); setAmount(""); setError("");
   }, [open]);
 
+  // Modal açıkken arka plan (cüzdan sayfası) scroll'unu kilitle. Aksi halde
+  // mobilde modal içi kaydırma arka sayfaya "sızıyor" (scroll chaining) ve iOS
+  // rubber-band bounce'u status bar altındaki beyaz sayfayı gösteriyordu.
+  useEffect(() => {
+    if (!open) return;
+    const { body, documentElement: html } = document;
+    const prevBodyOverflow = body.style.overflow;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevOverscroll = body.style.overscrollBehavior;
+    body.style.overflow = "hidden";
+    html.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    return () => {
+      body.style.overflow = prevBodyOverflow;
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overscrollBehavior = prevOverscroll;
+    };
+  }, [open]);
+
   // Load customers + company name when opened
   useEffect(() => {
     if (!open) return;
@@ -182,7 +201,7 @@ export default function PaymentRequestDrawer({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-50 overscroll-none">
       {/* Backdrop */}
       <div
         className={`absolute inset-0 bg-black/50 transition-opacity duration-300 ${show ? "opacity-100" : "opacity-0"}`}
@@ -192,8 +211,8 @@ export default function PaymentRequestDrawer({
       {/* Panel — mobile bottom-sheet / desktop right drawer */}
       <div
         className={`absolute bg-white shadow-xl flex flex-col
-          inset-x-0 bottom-0 rounded-t-2xl max-h-[90vh]
-          md:inset-y-0 md:right-0 md:left-auto md:bottom-auto md:h-full md:w-full md:max-w-md md:rounded-t-none md:rounded-l-2xl
+          inset-x-0 bottom-0 rounded-t-2xl max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_12px)]
+          md:inset-y-0 md:right-0 md:left-auto md:bottom-auto md:h-full md:w-full md:max-w-md md:max-h-none md:rounded-t-none md:rounded-l-2xl
           transition-transform duration-300 ease-out
           ${show ? "translate-y-0 md:translate-x-0" : "translate-y-full md:translate-y-0 md:translate-x-full"}`}
       >
@@ -209,7 +228,7 @@ export default function PaymentRequestDrawer({
         </div>
 
         {/* Body */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-4">
+        <div className="p-5 overflow-y-auto overscroll-contain flex-1 space-y-4">
           {/* Nasıl çalışır bilgilendirmesi */}
           <div className="rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2.5 flex items-start gap-2">
             <Info className="h-4 w-4 text-zinc-500 mt-0.5 shrink-0" />
@@ -359,7 +378,7 @@ export default function PaymentRequestDrawer({
         </div>
 
         {/* Footer action */}
-        <div className="p-4 border-t border-zinc-100">
+        <div className="px-4 pt-4 pb-[calc(1rem_+_env(safe-area-inset-bottom))] border-t border-zinc-100">
           {error && (
             <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 flex items-start gap-2">
               <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />

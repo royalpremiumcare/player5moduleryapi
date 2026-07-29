@@ -505,7 +505,7 @@ async def check_and_send_reminders():
         # DISTRIBUTED LOCK: multi-worker duplicate send prevention
         # Kova poll aralığına göre (saniye hassasiyetli). Dakika bazlı eski kova
         # 30 sn poll'da aynı dakikadaki 2. turu yanlışlıkla atlatıyordu.
-        redis_client = getattr(_app_instance, 'redis_client', None)
+        redis_client = getattr(getattr(_app_instance, 'state', None), 'redis_client', None)
         if redis_client:
             try:
                 _bucket = int(now.timestamp() // REMINDER_POLL_SECONDS)
@@ -977,7 +977,7 @@ async def lifespan(app: FastAPI):
                 from assistant import register_assistant_jobs
                 register_assistant_jobs(
                     scheduler, app.db,
-                    redis_client=getattr(app, "redis_client", None),
+                    redis_client=getattr(app.state, "redis_client", None),
                     push_fn=send_push_notification,
                 )
             except Exception as asst_err:
@@ -988,7 +988,7 @@ async def lifespan(app: FastAPI):
                 from marketing_autopilot import register_autopilot_jobs
                 register_autopilot_jobs(
                     scheduler, app.db,
-                    redis_client=getattr(app, "redis_client", None),
+                    redis_client=getattr(app.state, "redis_client", None),
                 )
             except Exception as autopilot_err:
                 logging.warning(f"Pazarlama Otopilotu cron registration failed: {autopilot_err}")

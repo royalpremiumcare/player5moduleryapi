@@ -567,6 +567,46 @@ async def daily_reconciliation_job(db) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Wise Auto-Convert Job — GÜVENLİK AĞI (webhook fallback), interval 1 saat
+# ---------------------------------------------------------------------------
+
+async def wise_auto_convert_job(db) -> None:
+    """
+    GBP→TRY otomatik çevrimin güvenlik ağı.
+
+    Birincil tetikleyici Wise `balances#credit` webhook'udur; ancak webhook
+    kaçarsa/gecikirse (ör. Wise tarafında abonelik/teslimat sorunu) mutabakat
+    görmüş BUSINESS ödemeleri hiç çevrilmeden kalabilir. Bu cron, uygun (settle
+    olmuş, payout mutabık) ödemeleri periyodik olarak tarar ve çevirir.
+
+    Idempotency çift çevrimi engeller: dağıtık job kilidi (tek worker) +
+    per-tx conversion lock + `conversions` unique constraint. Noop servis
+    aktifse (WISE_AUTO_CONVERT_ENABLED kapalı) hiçbir şey yapmaz.
+    """
+    if not await _acquire_lock("wise_auto_convert", ttl=600):
+        logger.debug("Wise auto-convert job skipped — another worker holds the lock")
+        return
+
+    r = None
+    try:
+        from .wise_conversion_service import run_auto_conversion_on_credit
+        try:
+            r = aioredis.from_url(REDIS_URL)
+        except Exception:
+            r = None
+        res = await run_auto_conversion_on_credit(db, redis_client=r, limit=500)
+        logger.info("Wise auto-convert job (fallback sweep): %s", res)
+    except Exception as e:
+        logger.exception("Wise auto-convert job failed: %s", e)
+    finally:
+        if r is not None:
+            try:
+                await r.aclose()
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
 # Refund reconciliation — Stripe iade sonrası iç DB kuyruğu
 # ---------------------------------------------------------------------------
 
@@ -664,4 +704,12 @@ def register_financial_cron_jobs(scheduler, db) -> None:
         replace_existing=True,
     )
 
-    logger.info("Financial cron jobs registered: 9 jobs")
+    # GBP→TRY otomatik çevrim güvenlik ağı: webhook kaçsa bile saatlik süpürme.
+    scheduler.add_job(
+        wise_auto_convert_job, "interval",
+        args=[db], hours=1,
+        id="wise_auto_convert_job",
+        replace_existing=True,
+    )
+
+    logger.info("Financial cron jobs registered: 10 jobs")

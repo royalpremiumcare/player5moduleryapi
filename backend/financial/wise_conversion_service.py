@@ -17,6 +17,7 @@ idempotency/lock/guard çatısı değişmeden çalışır.
 from __future__ import annotations
 
 import abc
+import hashlib
 import json
 import logging
 import os
@@ -304,8 +305,18 @@ class WiseConversionService(BaseWiseConversionService):
             )
 
         # Deterministik idempotence uuid → Wise seviyesinde de çift conversion engeli.
+        # KRİTİK: Wise, X-idempotenceUuid'in RFC 4122 v4 (rastgele) FORMATINDA olmasını
+        # şart koşar (aksi halde "non.idempotent.transaction: UUID must be randomly
+        # generated (version 4)" 400 döner). uuid5 (v5) reddedilir. Bu yüzden idem_key'den
+        # türettiğimiz 16 baytın version/variant bitlerini v4'e sabitliyoruz: değer aynı tx
+        # için DETERMİNİSTİK kalır (retry idempotent) ama Wise'ın v4 format kontrolünü geçer.
         idem_key = build_idempotency_key(tx["id"], tx.get("stripe_balance_transaction_id"))
-        idem_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"plann-wise-convert:{idem_key}"))
+        _digest = bytearray(
+            hashlib.sha256(f"plann-wise-convert:{idem_key}".encode("utf-8")).digest()[:16]
+        )
+        _digest[6] = (_digest[6] & 0x0F) | 0x40  # version = 4
+        _digest[8] = (_digest[8] & 0x3F) | 0x80  # variant = RFC 4122
+        idem_uuid = str(uuid.UUID(bytes=bytes(_digest)))
 
         # KRİTİK: Wise quote yalnızca ~30 dk geçerlidir. Bu nedenle quote oluşturma ve
         # balance-movement AYNI çağrı içinde, ARDA ARDA (bekleme olmadan) yapılır.
