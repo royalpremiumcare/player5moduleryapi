@@ -211,7 +211,7 @@ export default function PaymentRequestDrawer({
       {/* Panel — mobile bottom-sheet / desktop right drawer */}
       <div
         className={`absolute bg-white shadow-xl flex flex-col
-          inset-x-0 bottom-0 rounded-t-2xl max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_12px)]
+          inset-x-0 bottom-0 rounded-t-2xl max-h-[calc(100vh_-_max(env(safe-area-inset-top)_,_24px)_-_12px)]
           md:inset-y-0 md:right-0 md:left-auto md:bottom-auto md:h-full md:w-full md:max-w-md md:max-h-none md:rounded-t-none md:rounded-l-2xl
           transition-transform duration-300 ease-out
           ${show ? "translate-y-0 md:translate-x-0" : "translate-y-full md:translate-y-0 md:translate-x-full"}`}
