@@ -131,7 +131,7 @@ export const faqData = {
       {
         id: "admin-20",
         question: "📞 Destek ekibine nasıl ulaşabilirim?",
-        answer: "Bize iki yoldan ulaşabilirsiniz:<br/><br/>• <strong>Telefon:</strong> +90 543 511 3250<br/>• <strong>WhatsApp:</strong> +90 543 511 3250 numarasından bize yazabilirsiniz.<br/><br/>Ayrıca <strong>Ayarlar > Diğer > İletişim</strong> veya <strong>WhatsApp Destek</strong> butonlarını kullanarak doğrudan bize ulaşabilirsiniz."
+        answer: "<strong>Ayarlar > Diğer > İletişim</strong> bölümünden <strong>Canlı Destek</strong>, <strong>WhatsApp</strong> veya <strong>E-posta</strong> ile bize ulaşabilirsiniz."
       }
     ],
 
@@ -182,7 +182,7 @@ export const faqData = {
       {
         id: "personnel-9",
         question: "📞 Sorun yaşıyorum, destek ekibine nasıl ulaşırım?",
-        answer: "<strong>Ayarlar > Diğer</strong> bölümündeki <strong>İletişim</strong> veya <strong>WhatsApp Destek</strong> butonlarını kullanarak bize ulaşabilirsiniz. Telefon: <strong>+90 543 511 3250</strong>"
+        answer: "<strong>Ayarlar > Diğer > İletişim</strong> bölümünden <strong>Canlı Destek</strong>, <strong>WhatsApp</strong> veya <strong>E-posta</strong> ile bize ulaşabilirsiniz."
       }
     ]
   },
@@ -289,7 +289,7 @@ export const faqData = {
       {
         id: "admin-20",
         question: "📞 How can I contact the support team?",
-        answer: "You can reach us in two ways:<br/><br/>• <strong>Phone:</strong> +90 543 511 3250<br/>• <strong>WhatsApp:</strong> Message us at +90 543 511 3250<br/><br/>You can also use the <strong>Contact</strong> or <strong>WhatsApp Support</strong> buttons in <strong>Settings > Other</strong>."
+        answer: "Go to <strong>Settings > Other > Contact</strong> and reach us via <strong>Live Chat</strong>, <strong>WhatsApp</strong> or <strong>Email</strong>."
       }
     ],
 
@@ -340,7 +340,7 @@ export const faqData = {
       {
         id: "personnel-9",
         question: "📞 I'm having issues, how do I contact support?",
-        answer: "Use the <strong>Contact</strong> or <strong>WhatsApp Support</strong> buttons in <strong>Settings > Other</strong>. Phone: <strong>+90 543 511 3250</strong>"
+        answer: "Go to <strong>Settings > Other > Contact</strong> and reach us via <strong>Live Chat</strong>, <strong>WhatsApp</strong> or <strong>Email</strong>."
       }
     ]
   }

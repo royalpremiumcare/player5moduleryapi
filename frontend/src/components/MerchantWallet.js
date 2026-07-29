@@ -455,7 +455,7 @@ function UnifiedBalanceCard({ wallet, v2Status, currency, payoutLoading, onReque
   // Durum paleti — sadece alt mesaj şeridinin rengini belirler
   const palettes = {
     under_threshold: { strip: "bg-zinc-50 border-zinc-200 text-zinc-700",    icon: Clock,        label: "Eşiğe ulaşılmadı" },
-    threshold_met:   { strip: "bg-emerald-50 border-emerald-200 text-emerald-800", icon: TrendingUp, label: "Eşik aşıldı, ödeme için hazır" },
+    threshold_met:   { strip: "bg-emerald-50 border-emerald-200 text-emerald-800", icon: TrendingUp, label: "Ödemeniz Hazır" },
     queued:          { strip: "bg-amber-50 border-amber-200 text-amber-900", icon: Send,         label: "Ödeme havuzuna alındı" },
     wise_pending:    { strip: "bg-blue-50 border-blue-200 text-blue-900",    icon: Clock,        label: "Banka onayı bekleniyor" },
     payout_stopped:  { strip: "bg-red-50 border-red-200 text-red-900",       icon: AlertTriangle, label: "Ödemeler durduruldu" },
@@ -474,7 +474,7 @@ function UnifiedBalanceCard({ wallet, v2Status, currency, payoutLoading, onReque
       return (y && m && d) ? `${d}.${m}.${y}` : iso;
     };
     const dateStr = formatTR(v2?.next_batch_date);
-    contextMsg = <>Eşiği aştınız — bir sonraki Çarşamba{dateStr ? ` (${dateStr})` : ""} hesabınıza aktarılacak.</>;
+    contextMsg = <>Gerekli limit başarıyla sağlandı. Ödemeniz bir sonraki Çarşamba günü{dateStr ? ` (${dateStr})` : ""} banka hesabınıza aktarılacak.</>;
   } else if (kind === "queued") {
     contextMsg = <><b>{fmt(v2?.active_batch?.total_amount_minor)}</b> bu Çarşamba hesabınıza aktarılmak üzere hazırlandı.</>;
   } else if (kind === "wise_pending") {

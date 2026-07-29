@@ -201,23 +201,23 @@ export default function PaymentRequestDrawer({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overscroll-none">
-      {/* Backdrop */}
-      <div
-        className={`absolute inset-0 bg-black/50 transition-opacity duration-300 ${show ? "opacity-100" : "opacity-0"}`}
-        onClick={onClose}
-      />
+    // Kök overlay: tam viewport koyu kaplar. Panel top-0; safe-area header padding'te.
+    <div
+      className={`fixed inset-0 z-50 overscroll-none bg-black/50 transition-opacity duration-300 ${show ? "opacity-100" : "opacity-0"}`}
+    >
+      {/* Backdrop tıklama alanı */}
+      <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
 
-      {/* Panel — mobile bottom-sheet / desktop right drawer */}
+      {/* Panel — mobile: full height (top-0); desktop: sağ drawer */}
       <div
-        className={`absolute bg-white shadow-xl flex flex-col
-          inset-x-0 bottom-0 rounded-t-2xl max-h-[calc(100vh_-_max(env(safe-area-inset-top)_,_24px)_-_12px)]
-          md:inset-y-0 md:right-0 md:left-auto md:bottom-auto md:h-full md:w-full md:max-w-md md:max-h-none md:rounded-t-none md:rounded-l-2xl
+        className={`absolute bg-white shadow-xl flex flex-col min-h-0
+          inset-x-0 bottom-0 top-0 rounded-t-2xl
+          md:inset-y-0 md:right-0 md:left-auto md:bottom-auto md:h-full md:w-full md:max-w-md md:rounded-t-none md:rounded-l-2xl
           transition-transform duration-300 ease-out
           ${show ? "translate-y-0 md:translate-x-0" : "translate-y-full md:translate-y-0 md:translate-x-full"}`}
       >
-        {/* Header */}
-        <div className="p-5 border-b border-zinc-100 flex items-center justify-between">
+        {/* Header — mobilde safe-area üst padding ile saat/başlık çakışmasını önler */}
+        <div className="px-5 pb-5 pt-[calc(1.25rem_+_env(safe-area-inset-top,0px))] md:pt-5 border-b border-zinc-100 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold text-zinc-900">Ödeme İste</h2>
             <p className="text-xs text-zinc-500 mt-0.5">Müşteriye WhatsApp ile tahsilat linki gönderin</p>
