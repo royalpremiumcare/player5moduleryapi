@@ -69,14 +69,29 @@ export async function init(options = {}) {
   try {
     const mod = await import('posthog-js');
     _posthog = mod.default || mod;
+    // Capacitor (iOS/Android WebView) tespiti — origin `capacitor://localhost` olduğunda
+    // sendBeacon büyük session replay paketlerini WKWebView tarafından bloklanabilir.
+    // Bu durumda `fetch` transport zorunlu (aksi halde replay parçaları yolda kaybolur).
+    const isCapacitor = typeof window !== 'undefined' && (
+      window.Capacitor?.isNativePlatform?.() === true ||
+      /^capacitor:|^ionic:/i.test(window.location?.protocol || '')
+    );
+
     _posthog.init(apiKey, {
       api_host: host,
       capture_pageview: true,
+      capture_pageleave: true,
       autocapture: true,
       persistence: 'localStorage',
+      // Capacitor'da sendBeacon güvenilir değil → fetch zorla
+      api_transport: isCapacitor ? 'fetch' : undefined,
+      disable_session_recording: false,
       session_recording: {
         maskAllInputs: true,
         maskTextSelector: '.ph-mask',
+        // Kısa oturumların "bounce" filtresine takılmaması için minimum süreyi düşür
+        // (PostHog varsayılan olarak <10sn oturumları listeden gizleyebilir)
+        recordCrossOriginIframes: false,
       },
       // Privacy: GeoIP'i serverda enrich etmesin (KVKK)
       property_blacklist: [],
