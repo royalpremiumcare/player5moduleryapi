@@ -85,12 +85,17 @@ export async function init(options = {}) {
       persistence: 'localStorage',
       // Capacitor'da sendBeacon güvenilir değil → fetch zorla
       api_transport: isCapacitor ? 'fetch' : undefined,
+      // Capacitor `capacitor://localhost` origin'inde cookie mantığını kapat,
+      // localStorage kullan. Aksi halde iOS WKWebView cookie doğrulaması SecurityError verir.
+      cross_subdomain_cookie: false,
+      secure_cookie: false,
       disable_session_recording: false,
       session_recording: {
         maskAllInputs: true,
         maskTextSelector: '.ph-mask',
-        // Kısa oturumların "bounce" filtresine takılmaması için minimum süreyi düşür
-        // (PostHog varsayılan olarak <10sn oturumları listeden gizleyebilir)
+        // iOS WKWebView'da canvas kaydı ilk snapshot'ta SecurityError'a yol açıp
+        // rrweb'in ölmesine sebep oluyor → Capacitor'da kapat.
+        recordCanvas: !isCapacitor,
         recordCrossOriginIframes: false,
       },
       // Privacy: GeoIP'i serverda enrich etmesin (KVKK)
