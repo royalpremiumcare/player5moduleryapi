@@ -106,8 +106,10 @@ export function identifyUser(user) {
   try {
     _posthog.identify(user.user_id, {
       $email: user.username || undefined,
-      $name: user.full_name || undefined,
+      $name: user.company_name || user.full_name || undefined,
+      full_name: user.full_name || undefined,
       organization_id: user.organization_id || undefined,
+      company_name: user.company_name || undefined,
       role: user.role || undefined,
       sector: user.sector || undefined,
       activation_state: user.activation_state || undefined,

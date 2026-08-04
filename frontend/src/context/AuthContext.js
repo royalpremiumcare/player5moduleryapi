@@ -31,6 +31,7 @@ export const AuthProvider = ({ children }) => {
             username: payload.sub,
             full_name: payload.full_name,
             organization_id: payload.org_id,
+            company_name: payload.company_name,
             role: payload.role || storedRole,
             sector: payload.sector,
           });
@@ -75,6 +76,7 @@ export const AuthProvider = ({ children }) => {
           username: tokenPayload.sub,
           full_name: tokenPayload.full_name,
           organization_id: tokenPayload.org_id,
+          company_name: tokenPayload.company_name,
           role,
           sector: tokenPayload.sector,
         });
@@ -176,6 +178,7 @@ export const AuthProvider = ({ children }) => {
             username: tokenPayload.sub,
             full_name: tokenPayload.full_name,
             organization_id: tokenPayload.org_id,
+            company_name: tokenPayload.company_name,
             role,
             sector,
           });

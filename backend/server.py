@@ -3423,10 +3423,14 @@ async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequ
         remember_me = "remember_me" in (form_data.scopes or [])
         expire_minutes = ACCESS_TOKEN_EXPIRE_MINUTES_REMEMBER if remember_me else ACCESS_TOKEN_EXPIRE_MINUTES
         access_token_expires = timedelta(minutes=expire_minutes)
+        settings = await db.settings.find_one({"organization_id": user.organization_id})
+        company_name = settings.get("company_name", "") if settings else ""
+        
         token_data = {
             "sub": user.username, 
             "user_id": user.user_id,
             "org_id": user.organization_id, 
+            "company_name": company_name,
             "role": user.role, 
             "onboarding_completed": user.onboarding_completed,
             "activation_state": user.activation_state,
@@ -3510,11 +3514,15 @@ async def exchange_sso_code(request: Request, body: SsoExchangeRequest, db = Dep
         if user.status == "pending":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Hesabınız henüz aktif değil.")
 
+        settings = await db.settings.find_one({"organization_id": user.organization_id})
+        company_name = settings.get("company_name", "") if settings else ""
+        
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         token_data = {
             "sub": user.username,
             "user_id": user.user_id,
             "org_id": user.organization_id,
+            "company_name": company_name,
             "role": user.role,
             "onboarding_completed": user.onboarding_completed,
             "activation_state": user.activation_state,
