@@ -13,6 +13,48 @@
     <meta property="og:image" content="%PUBLIC_URL%/plannlogo.png" />
     <meta property="og:image:alt" content="PLANN" />
     <title>PLANN</title>
+    <script>
+      // iOS Capacitor WKWebView için PostHog Session Replay CSS koruması.
+      // Capacitor `capacitor://localhost` origin'inde stylesheet.cssRules cross-origin
+      // sayılıp SecurityError fırlatıyor → rrweb ilk snapshot'ta çöküyor, video 1 sn'de kesiliyor.
+      // PostHog'un resmi önerisi: link[rel=stylesheet] elementlerine crossorigin=anonymous eklemek.
+      (function () {
+        try {
+          var applyCors = function (link) {
+            if (link && link.rel === 'stylesheet' && !link.crossOrigin) {
+              link.crossOrigin = 'anonymous';
+            }
+          };
+          document.querySelectorAll('link[rel="stylesheet"]').forEach(applyCors);
+          if (typeof MutationObserver !== 'undefined') {
+            var mo = new MutationObserver(function (mutations) {
+              for (var i = 0; i < mutations.length; i++) {
+                var added = mutations[i].addedNodes;
+                for (var j = 0; j < added.length; j++) {
+                  var node = added[j];
+                  if (node && node.tagName === 'LINK') applyCors(node);
+                }
+              }
+            });
+            mo.observe(document.documentElement, { childList: true, subtree: true });
+          }
+          // Fallback: inline <style> veya CSS-in-JS için cssRules çağrısı SecurityError
+          // fırlatırsa boş liste dön (rrweb'in çökmesini engelle).
+          ['cssRules', 'rules'].forEach(function (prop) {
+            var desc = Object.getOwnPropertyDescriptor(CSSStyleSheet.prototype, prop);
+            if (desc && desc.get) {
+              Object.defineProperty(CSSStyleSheet.prototype, prop, {
+                configurable: true,
+                get: function () {
+                  try { return desc.get.call(this); }
+                  catch (e) { return []; }
+                }
+              });
+            }
+          });
+        } catch (_) { /* no-op */ }
+      })();
+    </script>
     <style>
       /* Zoom engelleme - Touch event'leri engelle */
       * {
