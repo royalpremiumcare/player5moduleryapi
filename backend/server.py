@@ -1011,7 +1011,45 @@ async def lifespan(app: FastAPI):
             await app.db.appointments.create_index([("organization_id", 1), ("staff_member_id", 1)])
             await app.db.appointments.create_index([("organization_id", 1), ("phone", 1)])
             await app.db.appointments.create_index([("organization_id", 1), ("status", 1)])
+            # Dashboard aggregate'leri (org + status + appointment_date) filtreliyor → compound index.
+            await app.db.appointments.create_index([("organization_id", 1), ("status", 1), ("appointment_date", 1)])
             
+            # Customers indexes — cursor pagination + Türkçe collation ile arama
+            try:
+                await app.db.customers.create_index(
+                    [("organization_id", 1), ("phone", 1)],
+                    unique=True,
+                    name="customers_org_phone_unique",
+                )
+            except Exception as idx_err:
+                # Duplicate phone kayıtları varsa unique index kurulamaz;
+                # backfill script duplike'leri temizler, sonraki restart'ta kurulur.
+                logging.warning(
+                    f"customers unique (org_id, phone) index skipped (duplicate phone kayıtları olabilir): {idx_err}"
+                )
+                try:
+                    await app.db.customers.create_index(
+                        [("organization_id", 1), ("phone", 1)],
+                        name="customers_org_phone_nonunique",
+                    )
+                except Exception:
+                    pass
+            try:
+                await app.db.customers.create_index(
+                    [("organization_id", 1), ("name", 1), ("_id", 1)],
+                    collation={"locale": "tr", "strength": 2},
+                    name="customers_org_name_id_tr",
+                )
+            except Exception as idx_err:
+                logging.debug(f"customers (org_id, name, _id) tr collation index skipped: {idx_err}")
+            try:
+                await app.db.customers.create_index(
+                    [("organization_id", 1), ("last_appointment_at", -1)],
+                    name="customers_org_last_appt_desc",
+                )
+            except Exception as idx_err:
+                logging.debug(f"customers (org_id, last_appointment_at) index skipped: {idx_err}")
+
             # Users indexes
             await app.db.users.create_index([("organization_id", 1), ("role", 1)])
             try:
@@ -2108,6 +2146,28 @@ async def get_plan_info(plan_id: str) -> Optional[dict]:
     """Plan bilgisini getir"""
     return next((p for p in PLANS if p['id'] == plan_id), None)
 
+# --- TÜRKÇE TARİH FORMATI (push bildirimleri için) ---
+_TR_MONTHS = {
+    1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+    7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık",
+}
+_TR_WEEKDAYS = {
+    0: "Pazartesi", 1: "Salı", 2: "Çarşamba", 3: "Perşembe",
+    4: "Cuma", 5: "Cumartesi", 6: "Pazar",
+}
+
+def format_date_tr(date_str: str) -> str:
+    """'YYYY-MM-DD' -> '14 Mayıs Çarşamba' (Türkçe gün/ay adlarıyla).
+
+    locale bağımsız (container'da tr_TR yüklü olmayabilir) — manuel sözlük.
+    Parse edilemezse girdiyi olduğu gibi döndürür.
+    """
+    try:
+        d = datetime.strptime(str(date_str), "%Y-%m-%d")
+        return f"{d.day} {_TR_MONTHS[d.month]} {_TR_WEEKDAYS[d.weekday()]}"
+    except (ValueError, TypeError, KeyError):
+        return str(date_str)
+
 # --- SMS FONKSİYONU ---
 def build_sms_message(company_name: str, customer_name: str, date: str, time: str, service: str, support_phone: str, hours_until: Optional[float] = None, sms_type: str = "confirmation") -> str:
     """SMS mesajı oluşturur. Template desteği kaldırıldı, sadece default format kullanılıyor."""
@@ -2368,6 +2428,10 @@ async def _deliver_push_to_subscriptions(db, subscriptions, title: str, body: st
         "body": body,
         "icon": "https://plannapp.co/icons/icon-192x192.png",
         "badge": "https://plannapp.co/icons/badge-mono-96x96.png",
+        # ÜST SEVİYE url: eski service worker sürümleri notification'ı üst seviye
+        # data.url'den kurar (nested data'yı okumaz). Böylece SW güncellenmemiş
+        # tarayıcılarda bile derin bağlantı (ör. /?randevu=<id>) çalışır.
+        "url": (data or {}).get("url", "/"),
         "data": data or {},
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
@@ -3271,6 +3335,21 @@ async def aha_test_appointment(
         }
         await db.appointments.insert_one(dict(apt_doc))
         # Not: check_quota_and_increment burada ÇAĞRILMAZ — demo randevusu quota'ya yansımaz.
+
+        # Denormalize sayaç — aha demo randevusu da müşteri sayaçlarına yansısın.
+        try:
+            await _apply_customer_delta(
+                db,
+                organization_id=current_user.organization_id,
+                phone=apt_doc.get("phone") or "",
+                name=apt_doc.get("customer_name"),
+                delta_total=1,
+                delta_completed=0,
+                appointment_date=apt_doc.get("appointment_date"),
+                appointment_time=apt_doc.get("appointment_time"),
+            )
+        except Exception as _delta_err:
+            logging.warning(f"customer delta (aha_test_appointment) skipped: {_delta_err}")
 
     # WhatsApp gönderimi (retry'li)
     wa_ok, wa_msg_id, wa_err = await send_aha_whatsapp_with_retry(
@@ -4474,6 +4553,160 @@ async def reset_password(request: Request, reset_request: ResetPasswordRequest, 
             detail="Şifre sıfırlama sırasında bir hata oluştu. Lütfen tekrar deneyin."
         )
 
+# === CUSTOMERS DENORMALIZATION HELPERS ===
+# Randevu mutation'larında `customers` collection'daki denormalize sayaçları
+# (`total_appointments`, `completed_appointments`, `last_appointment_at`,
+# `first_appointment_at`) tutarlı tutmak için tek noktadan yönetilir.
+# GET /customers cursor pagination bu sayaçlara dayanır — full appointments
+# scan yerine sadece customers collection'ından okur → sub-100ms yanıt.
+
+
+def _appointment_datetime_iso(date_str: str, time_str: str) -> Optional[str]:
+    """`YYYY-MM-DD` + `HH:MM` → ISO datetime string (Europe/Istanbul).
+
+    Bozuk girdide None döner; çağıran taraf min/max operatörü ile atlayabilir.
+    """
+    try:
+        if not date_str:
+            return None
+        tstr = time_str or "00:00"
+        naive = datetime.strptime(f"{date_str} {tstr}", "%Y-%m-%d %H:%M")
+        return naive.replace(tzinfo=ZoneInfo("Europe/Istanbul")).isoformat()
+    except Exception:
+        return None
+
+
+# Türkçe karakter-tolerant case-insensitive regex builder.
+# MongoDB `$regex` + `$options: 'i'` sadece ASCII case-insensitive. Türkçe için
+# İ/i/ı/I, Ş/ş/S/s, Ç/ç/C/c, Ğ/ğ/G/g, Ü/ü/U/u, Ö/ö/O/o çiftleri arasında
+# match yapmaz. Bu helper girilen string'i karakter-bazlı bir char class'a
+# çevirir (örn. "şen" → "[şŞsS][eE][nN]"), böylece kullanıcı hangi harflerle
+# yazsa da isim doğru eşleşir.
+_TR_CASE_CLASS_MAP = {
+    'i': '[iıIİ]', 'ı': '[iıIİ]', 'I': '[iıIİ]', 'İ': '[iıIİ]',
+    's': '[sSşŞ]', 'S': '[sSşŞ]', 'ş': '[sSşŞ]', 'Ş': '[sSşŞ]',
+    'c': '[cCçÇ]', 'C': '[cCçÇ]', 'ç': '[cCçÇ]', 'Ç': '[cCçÇ]',
+    'g': '[gGğĞ]', 'G': '[gGğĞ]', 'ğ': '[gGğĞ]', 'Ğ': '[gGğĞ]',
+    'u': '[uUüÜ]', 'U': '[uUüÜ]', 'ü': '[uUüÜ]', 'Ü': '[uUüÜ]',
+    'o': '[oOöÖ]', 'O': '[oOöÖ]', 'ö': '[oOöÖ]', 'Ö': '[oOöÖ]',
+    'a': '[aAâÂ]', 'A': '[aAâÂ]', 'â': '[aAâÂ]', 'Â': '[aAâÂ]',
+    'e': '[eE]', 'E': '[eE]',
+    'b': '[bB]', 'B': '[bB]',
+    'd': '[dD]', 'D': '[dD]',
+    'f': '[fF]', 'F': '[fF]',
+    'h': '[hH]', 'H': '[hH]',
+    'j': '[jJ]', 'J': '[jJ]',
+    'k': '[kK]', 'K': '[kK]',
+    'l': '[lL]', 'L': '[lL]',
+    'm': '[mM]', 'M': '[mM]',
+    'n': '[nN]', 'N': '[nN]',
+    'p': '[pP]', 'P': '[pP]',
+    'r': '[rR]', 'R': '[rR]',
+    't': '[tT]', 'T': '[tT]',
+    'v': '[vV]', 'V': '[vV]',
+    'y': '[yY]', 'Y': '[yY]',
+    'z': '[zZ]', 'Z': '[zZ]',
+    'w': '[wW]', 'W': '[wW]',
+    'x': '[xX]', 'X': '[xX]',
+    'q': '[qQ]', 'Q': '[qQ]',
+}
+
+
+def build_turkish_case_insensitive_pattern(s: str) -> str:
+    parts = []
+    for ch in s:
+        klass = _TR_CASE_CLASS_MAP.get(ch)
+        if klass:
+            parts.append(klass)
+        else:
+            # Rakamlar, boşluk, tire vb. — regex için escape et.
+            parts.append(re.escape(ch))
+    return ''.join(parts)
+
+
+async def _apply_customer_delta(
+    db,
+    organization_id: str,
+    phone: str,
+    name: Optional[str] = None,
+    delta_total: int = 0,
+    delta_completed: int = 0,
+    appointment_date: Optional[str] = None,
+    appointment_time: Optional[str] = None,
+) -> None:
+    """`customers` collection'ında tek atomik upsert ile sayaçları günceller.
+
+    - `delta_total` / `delta_completed` sıfır dahi olsa çağrılabilir (isim/tarih
+      güncellemek için); bu durumda sadece `$max`/`$set` uygulanır.
+    - Doküman yoksa `$setOnInsert` ile bootstrap yapılır (id, created_at, notes).
+    - Sayaçlar sıfırın altına düşmez — geriye doğru inc'den sonra clamp yapılır.
+    - Hata loglanır ama swallow edilir (asıl mutation'ı bloklamamak için).
+    """
+    if not organization_id or not phone:
+        return
+
+    try:
+        query = {"organization_id": organization_id, "phone": phone}
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        set_on_insert = {
+            "id": str(uuid.uuid4()),
+            "organization_id": organization_id,
+            "phone": phone,
+            "created_at": now_iso,
+            "notes": "",
+        }
+        set_ops: dict = {"updated_at": now_iso}
+        if name and name.strip():
+            set_ops["name"] = name.strip()
+        else:
+            set_on_insert["name"] = ""
+
+        update_doc: dict = {"$setOnInsert": set_on_insert, "$set": set_ops}
+
+        inc_ops: dict = {}
+        if delta_total:
+            inc_ops["total_appointments"] = int(delta_total)
+        if delta_completed:
+            inc_ops["completed_appointments"] = int(delta_completed)
+        if inc_ops:
+            update_doc["$inc"] = inc_ops
+
+        apt_dt_iso = _appointment_datetime_iso(appointment_date or "", appointment_time or "")
+        max_ops: dict = {}
+        min_ops: dict = {}
+        if apt_dt_iso:
+            max_ops["last_appointment_at"] = apt_dt_iso
+            min_ops["first_appointment_at"] = apt_dt_iso
+        if max_ops:
+            update_doc["$max"] = max_ops
+        if min_ops:
+            update_doc["$min"] = min_ops
+
+        await db.customers.update_one(query, update_doc, upsert=True)
+
+        # Negatif sayaç clamp (delete edilen randevu customers'a hiç yansımadıysa
+        # inc -1 → -1'e düşebilir; kullanıcıya yanlış sayı göstermemek için 0'a çek).
+        if delta_total < 0 or delta_completed < 0:
+            fix: dict = {}
+            doc = await db.customers.find_one(
+                query,
+                {"_id": 0, "total_appointments": 1, "completed_appointments": 1},
+            )
+            if doc:
+                if (doc.get("total_appointments") or 0) < 0:
+                    fix["total_appointments"] = 0
+                if (doc.get("completed_appointments") or 0) < 0:
+                    fix["completed_appointments"] = 0
+                if fix:
+                    await db.customers.update_one(query, {"$set": fix})
+    except Exception as exc:
+        logging.warning(
+            f"_apply_customer_delta failed org={organization_id[:8] if organization_id else '?'} "
+            f"phone={phone} total={delta_total} completed={delta_completed}: {exc}"
+        )
+
+
 # === APPOINTMENTS ROUTES ===
 @api_router.delete("/appointments/groups/{session_group_id}")
 async def delete_session_group(
@@ -4535,6 +4768,39 @@ async def delete_session_group(
     except Exception as exc:
         logger.warning(f"emit failed for session_group_delete={session_group_id}: {exc}")
 
+    # 5) Denormalize sayaç güncellemesi — grup tek müşteriye ait olsa da
+    #    (phone,name) bazında agregasyon yap; auto-complete'li karma durumlarda güvenli.
+    try:
+        deltas: dict = {}
+        for _a in apts:
+            _ph = (_a.get("phone") or "").strip()
+            if not _ph:
+                continue
+            _key = (_ph, _a.get("customer_name") or "")
+            if _key not in deltas:
+                deltas[_key] = {"total": 0, "completed": 0}
+            deltas[_key]["total"] -= 1
+            if _a.get("status") == "Tamamlandı":
+                deltas[_key]["completed"] -= 1
+        for (_ph, _name), _d in deltas.items():
+            await _apply_customer_delta(
+                db,
+                organization_id=org_id,
+                phone=_ph,
+                name=_name,
+                delta_total=_d["total"],
+                delta_completed=_d["completed"],
+            )
+    except Exception as _delta_err:
+        logger.warning(f"customer delta (session_group_delete) skipped: {_delta_err}")
+
+    # 6) Cache invalidation — grup silme sonrası müşteri/dashboard listesi tazelensin
+    try:
+        await invalidate_cache(request, "dashboard_stats", current_user)
+        await invalidate_cache(request, "customers_list", current_user)
+    except Exception:
+        pass
+
     logger.info(
         f"Session group deleted: group={session_group_id} count={del_result.deleted_count} by={current_user.username}"
     )
@@ -4563,6 +4829,27 @@ async def delete_appointment(request: Request, appointment_id: str, current_user
             logger.info(f"Deleted {transaction_delete_result.deleted_count} transaction(s) for appointment {appointment_id}")
     except Exception as e:
         logger.error(f"Error deleting transactions for appointment {appointment_id}: {e}", exc_info=True)
+
+    # Denormalize sayaç güncellemesi: -1 total, was Tamamlandı ise -1 completed
+    try:
+        _was_completed = appointment.get("status") == "Tamamlandı"
+        await _apply_customer_delta(
+            db,
+            organization_id=current_user.organization_id,
+            phone=appointment.get("phone") or "",
+            name=appointment.get("customer_name"),
+            delta_total=-1,
+            delta_completed=-1 if _was_completed else 0,
+        )
+    except Exception as _delta_err:
+        logger.warning(f"customer delta (delete_appointment) skipped: {_delta_err}")
+
+    # Cache invalidation — mevcut mimariyle uyumlu (bkz. POST /appointments)
+    try:
+        await invalidate_cache(request, "dashboard_stats", current_user)
+        await invalidate_cache(request, "customers_list", current_user)
+    except Exception:
+        pass
     
     # Audit log
     await create_audit_log(
@@ -4747,6 +5034,39 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
     except Exception as emit_error:
         logger.error(f"Failed to emit appointment_updated: {emit_error}", exc_info=True)
     
+    # Denormalize sayaç güncellemesi + cache invalidation
+    try:
+        _phone = updated_appointment.get("phone") or appointment.get("phone") or ""
+        _name = updated_appointment.get("customer_name") or appointment.get("customer_name")
+        _old_st = appointment.get("status")
+        _new_st = updated_appointment.get("status")
+        _delta_completed = 0
+        if _old_st != "Tamamlandı" and _new_st == "Tamamlandı":
+            _delta_completed = 1
+        elif _old_st == "Tamamlandı" and _new_st != "Tamamlandı":
+            _delta_completed = -1
+        # Telefon nadiren değişir; buraya ekstra kompleksite eklemiyoruz — customer
+        # PUT endpoint'i zaten kendi delta'sını yönetir.
+        if _phone and (_delta_completed or _name):
+            await _apply_customer_delta(
+                db,
+                organization_id=current_user.organization_id,
+                phone=_phone,
+                name=_name,
+                delta_total=0,
+                delta_completed=_delta_completed,
+                appointment_date=updated_appointment.get("appointment_date"),
+                appointment_time=updated_appointment.get("appointment_time"),
+            )
+    except Exception as _delta_err:
+        logger.warning(f"customer delta (update_appointment) skipped: {_delta_err}")
+
+    try:
+        await invalidate_cache(request, "dashboard_stats", current_user)
+        await invalidate_cache(request, "customers_list", current_user)
+    except Exception:
+        pass
+
     # Tarih/saat değişince müşteriye geçici olarak CONFIRMATION şablonu gönderiliyor
     try:
         od, ot = appointment.get("appointment_date"), appointment.get("appointment_time")
@@ -4832,8 +5152,62 @@ async def check_break_conflict(db, staff_id: str, date: str, start_time: str, en
         logging.error(f"Error checking break conflict: {e}", exc_info=True)
         return False
 
+async def _send_appointment_confirmations(db, phone: str, sms_message: str, wa_params: dict, skip_whatsapp: bool):
+    """Randevu onay SMS + WhatsApp'ını response DÖNDÜKTEN sonra gönderir (BackgroundTasks).
+
+    send_sms / send_whatsapp_template SENKRON ağ çağrılarıdır; event loop'u bloklamamak
+    için asyncio.to_thread ile thread havuzunda çalıştırılır. Response gecikmesini (~1-1.5s)
+    ortadan kaldırır — randevu zaten DB'ye yazılmıştır, bu adımlar best-effort'tur.
+    """
+    import time as _time
+
+    try:
+        await asyncio.to_thread(send_sms, phone, sms_message)
+    except Exception as sms_err:
+        logger.warning(f"⚠️ SMS gönderilemedi (bg): {sms_err}")
+
+    if skip_whatsapp:
+        logging.info("WhatsApp CONFIRMATION skipped (skip_confirmation_whatsapp) — paket şablonu bekleniyor")
+        return
+
+    _phone = str(phone).lstrip('+')
+    try:
+        _wa_msg_id = await asyncio.to_thread(lambda: send_whatsapp_template(**wa_params))
+        try:
+            await db.whatsapp_message_logs.update_one(
+                {"message_id": _wa_msg_id},
+                {"$set": {
+                    "message_id": _wa_msg_id, "recipient": _phone, "status": "sent",
+                    "timestamp": int(_time.time()), "recorded_at": datetime.utcnow().isoformat(),
+                    "source": "admin_create",
+                }},
+                upsert=True,
+            )
+        except Exception:
+            pass
+    except Exception as whatsapp_error:
+        logger.warning(f"⚠️ WhatsApp mesajı gönderilemedi (bg): {whatsapp_error}")
+        try:
+            await db.whatsapp_message_logs.update_one(
+                {"message_id": f"fail_{_phone}_{int(_time.time())}"},
+                {"$set": {
+                    "recipient": _phone, "status": "failed", "timestamp": int(_time.time()),
+                    "recorded_at": datetime.utcnow().isoformat(),
+                    "errors": [{"code": "SEND_ERROR", "title": str(whatsapp_error)[:300]}],
+                    "source": "admin_create",
+                }},
+                upsert=True,
+            )
+        except Exception:
+            pass
+
+
+# ═══ CONTRACT: v1 (FROZEN / REQUEST) ════════════════════════════════════════
+# Donmuş mobil build sözleşmesi. AppointmentCreate body'sine YENİ ZORUNLU alan
+# EKLEME (eski client göndermez → 400). Yeni alan = Optional + default.
+# bkz. OPERATIONS.md §2.1 + .cursor/rules/api-contract.mdc
 @api_router.post("/appointments", response_model=Appointment)
-async def create_appointment(request: Request, appointment: AppointmentCreate, current_user: UserInDB = Depends(get_current_user)):
+async def create_appointment(request: Request, appointment: AppointmentCreate, background_tasks: BackgroundTasks, current_user: UserInDB = Depends(get_current_user)):
     db = await get_db_from_request(request)
 
     # Otomatik personel: boş / "auto" / "none" → None (tekli randevuda eligible personel döngüsü)
@@ -5297,7 +5671,23 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
                 logging.warning(f"Failed to emit customer_added event: {emit_error}")
     except Exception as e:
         logging.warning(f"Error adding customer to collection: {e}")
-    
+
+    # Denormalize sayaç güncellemesi — mevcut customer doc'a +1 total (+1 completed
+    # eğer randevu anında Tamamlandı geldiyse). Yeni customer'sa upsert oluşturur.
+    try:
+        await _apply_customer_delta(
+            db,
+            organization_id=current_user.organization_id,
+            phone=appointment.phone,
+            name=appointment.customer_name,
+            delta_total=1,
+            delta_completed=1 if appointment_obj.status == "Tamamlandı" else 0,
+            appointment_date=appointment.appointment_date,
+            appointment_time=appointment.appointment_time,
+        )
+    except Exception as _delta_err:
+        logger.warning(f"customer delta (create_appointment) skipped: {_delta_err}")
+
     if appointment_obj.status == 'Tamamlandı':
         transaction = Transaction(organization_id=current_user.organization_id, appointment_id=appointment_obj.id, customer_name=appointment_obj.customer_name, service_name=appointment_obj.service_name, amount=appointment_obj.service_price, date=appointment_obj.appointment_date)
         trans_doc = transaction.model_dump(); trans_doc['created_at'] = trans_doc['created_at'].isoformat()
@@ -5315,69 +5705,32 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, c
     lat = coordinates.get('lat')
     lng = coordinates.get('lng')
     
-    # SMS gönder - Default mesaj kullan
+    # SMS + WhatsApp ONAY — SENKRON AĞ ÇAĞRILARI RESPONSE'U BLOKLAMASIN.
+    # Randevu DB'ye yazıldı; onay mesajları BackgroundTasks ile response DÖNDÜKTEN
+    # sonra gönderilir (sync sender'lar to_thread ile) → "Oluştur" ~1-1.5s yerine anında yanıtlar.
     sms_message = build_sms_message(
         company_name, appointment.customer_name,
         appointment.appointment_date, appointment.appointment_time,
         service['name'], support_phone, sms_type="confirmation"
     )
-    
-    send_sms(appointment.phone, sms_message)
-    
-    # WhatsApp ONAY mesajı — paket akışında bulk sonrası SESSION_PACKAGE tek başına gidecek (çift mesaj önlemi)
-    if not getattr(appointment, "skip_confirmation_whatsapp", False):
-        try:
-            _wa_msg_id = send_whatsapp_template(
-                to_number=appointment.phone,
-                template_type="CONFIRMATION",
-                customer_name=appointment.customer_name,
-                company_name=company_name,
-                appointment_date=appointment.appointment_date,
-                appointment_time=appointment.appointment_time,
-                service_name=service['name'],
-                support_phone=support_phone or "Destek Hattı",
-                business_lat=lat,
-                business_lng=lng,
-                business_address=location.get('address'),
-            )
-            try:
-                import time as _time
-                _phone = str(appointment.phone).lstrip('+')
-                await db.whatsapp_message_logs.update_one(
-                    {"message_id": _wa_msg_id},
-                    {"$set": {
-                        "message_id": _wa_msg_id,
-                        "recipient": _phone,
-                        "status": "sent",
-                        "timestamp": int(_time.time()),
-                        "recorded_at": datetime.utcnow().isoformat(),
-                        "source": "admin_create"
-                    }},
-                    upsert=True
-                )
-            except Exception:
-                pass
-        except Exception as whatsapp_error:
-            logger.warning(f"⚠️ WhatsApp mesajı gönderilemedi: {whatsapp_error}")
-            try:
-                import time as _time
-                _phone = str(appointment.phone).lstrip('+')
-                await db.whatsapp_message_logs.update_one(
-                    {"message_id": f"fail_{_phone}_{int(_time.time())}"},
-                    {"$set": {
-                        "recipient": _phone,
-                        "status": "failed",
-                        "timestamp": int(_time.time()),
-                        "recorded_at": datetime.utcnow().isoformat(),
-                        "errors": [{"code": "SEND_ERROR", "title": str(whatsapp_error)[:300]}],
-                        "source": "admin_create"
-                    }},
-                    upsert=True
-                )
-            except Exception:
-                pass
-    else:
-        logging.info("WhatsApp CONFIRMATION skipped (skip_confirmation_whatsapp) — paket şablonu bekleniyor")
+    wa_params = {
+        "to_number": appointment.phone,
+        "template_type": "CONFIRMATION",
+        "customer_name": appointment.customer_name,
+        "company_name": company_name,
+        "appointment_date": appointment.appointment_date,
+        "appointment_time": appointment.appointment_time,
+        "service_name": service['name'],
+        "support_phone": support_phone or "Destek Hattı",
+        "business_lat": lat,
+        "business_lng": lng,
+        "business_address": location.get('address'),
+    }
+    background_tasks.add_task(
+        _send_appointment_confirmations,
+        db, appointment.phone, sms_message, wa_params,
+        bool(getattr(appointment, "skip_confirmation_whatsapp", False)),
+    )
     
     # Audit log
     await create_audit_log(
@@ -5456,7 +5809,16 @@ async def resolve_services(db, organization_id: str, appointment, *, multi_enabl
     sid_list = getattr(appointment, "service_ids", None)
 
     if sid_single and sid_list:
-        raise HTTPException(status_code=400, detail="service_id ve service_ids aynı anda gönderilemez")
+        # İç replay (public booking pending payload → /public/verify-code) hem
+        # service_id hem service_ids gönderir; tekil hizmette bile service_ids=[id]
+        # + service_id=id birlikte gelir. Bu ambiguity DEĞİL — tutarlıysa
+        # (service_id, service_ids içinde) service_ids'i otoritatif kabul edip
+        # service_id'yi yok say. Yalnızca GERÇEKTEN çelişen girdide (service_id
+        # listede yok) 400 dön.
+        if sid_single in sid_list:
+            sid_single = None
+        else:
+            raise HTTPException(status_code=400, detail="service_id ve service_ids aynı anda gönderilemez")
 
     if sid_list is not None:
         if not multi_enabled:
@@ -5951,6 +6313,26 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                 })
         except Exception as e:
             logging.warning(f"Customer upsert error in bulk-session: {e}")
+
+        # Denormalize sayaç: her bir seans için +1 total ve auto-Tamamlandı gelenler
+        # için +1 completed. Tek müşteri (bulk.phone) — birleştirilmiş delta uygula.
+        try:
+            _bulk_total = len(created_appointments)
+            _bulk_completed = sum(1 for a in created_appointments if a.get("status") == "Tamamlandı")
+            if _bulk_total:
+                _first = created_appointments[0]
+                await _apply_customer_delta(
+                    db,
+                    organization_id=current_user.organization_id,
+                    phone=bulk.phone,
+                    name=bulk.customer_name,
+                    delta_total=_bulk_total,
+                    delta_completed=_bulk_completed,
+                    appointment_date=_first.get("appointment_date"),
+                    appointment_time=_first.get("appointment_time"),
+                )
+        except Exception as _delta_err:
+            logging.warning(f"customer delta (bulk-session) skipped: {_delta_err}")
         
         # Cache invalidation
         try:
@@ -7181,6 +7563,10 @@ async def cancel_selected_appointments(
     }
 
 
+# ═══ CONTRACT: v1 (FROZEN / RESPONSE) ═══════════════════════════════════════
+# Donmuş mobil build sözleşmesi. response_model=List[Appointment] — alan
+# ekleme/çıkarma/rename YASAK; yeni davranış yalnızca YENİ query parametresi
+# arkasında. bkz. OPERATIONS.md §2 + .cursor/rules/api-contract.mdc
 @api_router.get("/appointments", response_model=List[Appointment])
 async def get_appointments(
     request: Request, 
@@ -9293,94 +9679,153 @@ async def process_recurring_payment(request: Request, organization_id: str, curr
         logger.error(f"Recurring payment işleme hatası: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
-@api_router.get("/stats/dashboard")
-async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends(get_current_user)):
-    # 1. Yetki Kontrolü
-    if current_user.role not in ["admin", "superadmin"]:
-        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
-    
-    # 2. SuperAdmin için sabit response
-    if current_user.role == "superadmin":
-        return {
-            "today_appointments": 0, "today_completed": 0, "today_income": 0,
-            "bugunku_toplam_hizmet_tutari": 0, "month_income": 0, "quota": None
-        }
-    
-    logger.info(f"📊 Stats endpoint çağrıldı - Organization: {current_user.organization_id}")
+async def _auto_complete_pending_for_org(db, organization_id: str) -> bool:
+    """Bugünkü süresi geçmiş `Bekliyor` randevuları toplu `Tamamlandı`ya alır.
+
+    Dashboard endpoint her çağrıda cache'in DIŞINDA bu helper'ı çağırır; yan etki
+    tespit edilirse dashboard cache invalidate edilir → HIT'ler stale kalmaz.
+    Denormalize edilen `customers.completed_appointments` sayaçları da burada
+    güncellenir (delta_completed=+1 per (phone,name)).
+
+    Return: True → en az bir randevu tamamlandı; False → değişiklik yok.
+    """
+    turkey_tz = ZoneInfo("Europe/Istanbul")
+    now = datetime.now(turkey_tz)
+    today = now.date().isoformat()
+    base_query = {"organization_id": organization_id}
+
+    today_waiting_appointments = await db.appointments.find(
+        {**base_query, "appointment_date": today, "status": "Bekliyor"},
+        {"_id": 0, "id": 1, "appointment_date": 1, "appointment_time": 1, "service_price": 1, "customer_name": 1, "service_name": 1, "service_id": 1, "service_duration": 1, "staff_member_id": 1, "phone": 1}
+    ).to_list(1000)
+
+    if not today_waiting_appointments:
+        return False
+
+    service_ids = list({appt.get('service_id') for appt in today_waiting_appointments if appt.get('service_id')})
+    services_dict: dict = {}
+    if service_ids:
+        services = await db.services.find(
+            {"id": {"$in": service_ids}, "organization_id": organization_id},
+            {"_id": 0, "id": 1, "duration": 1}
+        ).to_list(100)
+        services_dict = {s['id']: s.get('duration', 30) for s in services}
+
+    ids_to_update: list = []
+    transactions_to_create: list = []
+    completed_deltas: list = []
+    for appt in today_waiting_appointments:
+        try:
+            dt_str = f"{appt['appointment_date']} {appt['appointment_time']}"
+            appointment_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M").replace(tzinfo=turkey_tz)
+            duration = appt.get('service_duration') or services_dict.get(appt.get('service_id'), 30)
+            if now >= (appointment_dt + timedelta(minutes=duration)):
+                ids_to_update.append(appt['id'])
+                transactions_to_create.append(Transaction(
+                    organization_id=organization_id,
+                    appointment_id=appt['id'],
+                    customer_name=appt['customer_name'],
+                    service_name=appt['service_name'],
+                    amount=appt.get('service_price', 0) or 0,
+                    date=appt['appointment_date'],
+                    staff_member_id=appt.get('staff_member_id')
+                ).model_dump(mode='json'))
+                if appt.get('phone'):
+                    completed_deltas.append({
+                        "phone": appt['phone'],
+                        "name": appt.get('customer_name') or "",
+                        "appointment_date": appt.get('appointment_date'),
+                        "appointment_time": appt.get('appointment_time'),
+                    })
+        except Exception as e:
+            logging.warning(f"Randevu {appt.get('id')} işlenirken hata: {e}")
+
+    if not ids_to_update:
+        return False
+
+    await db.appointments.update_many(
+        {"organization_id": organization_id, "id": {"$in": ids_to_update}},
+        {"$set": {"status": "Tamamlandı", "completed_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if transactions_to_create:
+        for t in transactions_to_create:
+            if 'created_at' not in t:
+                t['created_at'] = datetime.now(timezone.utc).isoformat()
+        await db.transactions.insert_many(transactions_to_create)
+
+    # Denormalize sayaçları güncelle (async'te sırayla — hata tek customer'ı atlar)
+    for d in completed_deltas:
+        try:
+            await _apply_customer_delta(
+                db,
+                organization_id=organization_id,
+                phone=d["phone"],
+                name=d["name"],
+                delta_total=0,
+                delta_completed=1,
+                appointment_date=d.get("appointment_date"),
+                appointment_time=d.get("appointment_time"),
+            )
+        except Exception:
+            pass
+
+    logger.info(f"⏱️ auto-complete: {len(ids_to_update)} randevu Tamamlandı'ya alındı (org={organization_id[:8]})")
+    return True
+
+
+@cache_result(prefix="dashboard_stats", ttl=60)
+async def _compute_dashboard_stats(request: Request, current_user: UserInDB):
+    """Cache'lenebilir saf dashboard hesaplaması — yan etki YOK.
+
+    Auto-complete side-effect'i dışarıda `_auto_complete_pending_for_org` ile
+    çalıştırılır; bu fonksiyon sadece MongoDB read'lerini yapar.
+    """
     db = await get_db_from_request(request)
     turkey_tz = ZoneInfo("Europe/Istanbul")
     now = datetime.now(turkey_tz)
     today = now.date().isoformat()
-    base_query = {"organization_id": current_user.organization_id}
-    
-    # --- OTOMATİK TAMAMLAMA MANTIĞI ---
-    # Süresi geçen "Bekliyor" randevuları bul
-    today_waiting_appointments = await db.appointments.find(
-        {**base_query, "appointment_date": today, "status": "Bekliyor"},
-        {"_id": 0, "id": 1, "appointment_date": 1, "appointment_time": 1, "service_price": 1, "customer_name": 1, "service_name": 1, "service_id": 1, "service_duration": 1, "staff_member_id": 1}
-    ).to_list(1000)
-
-    if today_waiting_appointments:
-        # Servis sürelerini toplu çek
-        service_ids = list(set(appt.get('service_id') for appt in today_waiting_appointments if appt.get('service_id')))
-        services_dict = {}
-        if service_ids:
-            services = await db.services.find(
-                {"id": {"$in": service_ids}, "organization_id": current_user.organization_id},
-                {"_id": 0, "id": 1, "duration": 1}
-            ).to_list(100)
-            services_dict = {s['id']: s.get('duration', 30) for s in services}
-
-        ids_to_update = []
-        transactions_to_create = []
-        for appt in today_waiting_appointments:
-            try:
-                dt_str = f"{appt['appointment_date']} {appt['appointment_time']}"
-                appointment_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M").replace(tzinfo=turkey_tz)
-                # Çoklu hizmette saklı toplam süreyi tercih et; yoksa canlı tek-hizmet süresi
-                duration = appt.get('service_duration') or services_dict.get(appt.get('service_id'), 30)
-                if now >= (appointment_dt + timedelta(minutes=duration)):
-                    ids_to_update.append(appt['id'])
-                    transactions_to_create.append(Transaction(
-                        organization_id=current_user.organization_id,
-                        appointment_id=appt['id'],
-                        customer_name=appt['customer_name'],
-                        service_name=appt['service_name'],
-                        amount=appt.get('service_price', 0) or 0,
-                        date=appt['appointment_date'],
-                        staff_member_id=appt.get('staff_member_id')
-                    ).model_dump(mode='json'))
-            except Exception as e:
-                logging.warning(f"Randevu {appt['id']} işlenirken hata: {e}")
-
-        if ids_to_update:
-            await db.appointments.update_many(
-                {"organization_id": current_user.organization_id, "id": {"$in": ids_to_update}},
-                {"$set": {"status": "Tamamlandı", "completed_at": datetime.now(timezone.utc).isoformat()}}
-            )
-        if transactions_to_create:
-            for t in transactions_to_create: t['created_at'] = datetime.now(timezone.utc).isoformat() if 'created_at' not in t else t['created_at']
-            await db.transactions.insert_many(transactions_to_create)
-
-    # --- İSTATİSTİK HESAPLAMA ---
-    today_appointments = await db.appointments.count_documents({**base_query, "appointment_date": today, "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}})
-    today_completed_list = await db.appointments.find(
-        {**base_query, "appointment_date": today, "status": "Tamamlandı"},
-        {"service_price": 1}
-    ).to_list(1000)
-    
-    today_completed = len(today_completed_list)
-    bugunku_toplam_hizmet_tutari = sum(apt.get('service_price', 0) or 0 for apt in today_completed_list)
-    
-    today_transactions = await db.transactions.find({**base_query, "date": today}).to_list(1000)
-    today_income = sum(t.get('amount', 0) or 0 for t in today_transactions)
-    
     month_start = now.date().replace(day=1).isoformat()
-    month_transactions = await db.transactions.find({**base_query, "date": {"$gte": month_start}}).to_list(2000)
-    month_income = sum(t.get('amount', 0) or 0 for t in month_transactions)
+    org = current_user.organization_id
+    base_query = {"organization_id": org}
 
-    # --- KOTA BİLGİSİ ---
-    plan_doc = await get_organization_plan(db, current_user.organization_id)
+    # Bağımsız read'ler PARALEL + sunucu-taraflı $group toplama (doc transferi yerine).
+    # Response şekli DEĞİŞMEZ; sadece I/O ve ağ yükü düşer (cache-miss ~3-4s → ~sub-sn hedef).
+    async def _count_today_appts():
+        return await db.appointments.count_documents(
+            {**base_query, "appointment_date": today, "status": {"$nin": ["İptal", "İptal Edildi", "Ödeme Bekleniyor"]}}
+        )
+
+    async def _today_completed_agg():
+        cur = db.appointments.aggregate([
+            {"$match": {**base_query, "appointment_date": today, "status": "Tamamlandı"}},
+            {"$group": {"_id": None, "count": {"$sum": 1}, "total": {"$sum": {"$ifNull": ["$service_price", 0]}}}},
+        ])
+        docs = await cur.to_list(1)
+        if docs:
+            return int(docs[0].get("count", 0) or 0), (docs[0].get("total", 0) or 0)
+        return 0, 0
+
+    async def _sum_income(date_filter: dict):
+        cur = db.transactions.aggregate([
+            {"$match": {**base_query, **date_filter}},
+            {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}},
+        ])
+        docs = await cur.to_list(1)
+        return (docs[0].get("total", 0) or 0) if docs else 0
+
+    (
+        today_appointments,
+        (today_completed, bugunku_toplam_hizmet_tutari),
+        today_income,
+        month_income,
+    ) = await asyncio.gather(
+        _count_today_appts(),
+        _today_completed_agg(),
+        _sum_income({"date": today}),
+        _sum_income({"date": {"$gte": month_start}}),
+    )
+
+    plan_doc = await get_organization_plan(db, org)
     quota_info = None
     if plan_doc:
         plan_id = plan_doc.get('plan_id', 'tier_trial')
@@ -9390,7 +9835,6 @@ async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends
             quota_limit = plan_doc.get('quota_limit') or plan_info.get('quota_monthly_appointments', 50)
             quota_remaining = -1 if quota_limit == -1 else max(0, quota_limit - quota_usage)
             quota_percentage = (quota_usage / quota_limit * 100) if quota_limit > 0 else 0
-            
             quota_info = {
                 "plan_id": plan_id, "plan_name": plan_info.get('name'),
                 "quota_usage": quota_usage, "quota_limit": quota_limit,
@@ -9406,6 +9850,38 @@ async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends
         "month_income": month_income,
         "quota": quota_info
     }
+
+
+@api_router.get("/stats/dashboard")
+async def get_dashboard_stats(request: Request, current_user: UserInDB = Depends(get_current_user)):
+    if current_user.role not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+
+    if current_user.role == "superadmin":
+        return {
+            "today_appointments": 0, "today_completed": 0, "today_income": 0,
+            "bugunku_toplam_hizmet_tutari": 0, "month_income": 0, "quota": None
+        }
+
+    logger.info(f"📊 Stats endpoint çağrıldı - Organization: {current_user.organization_id}")
+    db = await get_db_from_request(request)
+
+    # 1) Yan etkiyi cache'in DIŞINDA çalıştır → cache'i asla kirletmez
+    try:
+        did_change = await _auto_complete_pending_for_org(db, current_user.organization_id)
+    except Exception as exc:
+        logger.warning(f"auto-complete pending atlandı: {exc}")
+        did_change = False
+
+    # 2) Auto-complete yeni Tamamlandı yarattıysa cache'i uçur → fresh hesap
+    if did_change:
+        try:
+            await invalidate_cache(request, "dashboard_stats", current_user)
+        except Exception:
+            pass
+
+    # 3) Cache'li hesabı çağır (HIT → milisaniye, MISS → hesapla + Redis'e yaz)
+    return await _compute_dashboard_stats(request=request, current_user=current_user)
 
 @api_router.get("/stats/personnel")
 async def get_personnel_stats(request: Request, current_user: UserInDB = Depends(get_current_user)):
@@ -10831,61 +11307,191 @@ async def admin_delete_staff_break(
     return {"message": "Mola silindi"}
 
 # === CUSTOMERS ROUTES ===
+# ═══ CONTRACT: v1 (FROZEN / RESPONSE) — legacy path (limit YOK) ══════════════
+# limit YOKKEN flat array döner; randevusuz müşteri is_pending:true, randevulu
+# müşteri is_pending İÇERMEZ. Bu şekli değiştirme (donmuş build parse ediyor).
+# Yeni davranış = ?limit=&cursor= (paginated) arkasında. bkz. OPERATIONS.md §2.
 @api_router.get("/customers")
-@cache_result(prefix="customers_list", ttl=120)
-async def get_customers(request: Request, current_user: UserInDB = Depends(get_current_user)):
-    """Tüm unique müşterileri listele (organization bazlı)"""
+async def get_customers(
+    request: Request,
+    limit: Optional[int] = Query(None, ge=1, le=100),
+    cursor: Optional[str] = None,
+    search: Optional[str] = None,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Müşteri listesi.
+
+    Backward-compat kritik: mobil iOS build'ler ve diğer eski client'lar
+    `limit` param'ı GÖNDERMEZ → BİREBİR eski shape (appointments+customers
+    merge, is_pending sadece randevusuz için) döner. Ekstra alan (`id`,
+    `notes`, `last_appointment_at`, `first_appointment_at`) EKLENMEZ →
+    eski client hâlâ doğru davranır.
+
+    Yeni web (Customers.js) ise `limit` gönderirse cursor pagination
+    aktif olur — `{items, next_cursor, has_more}` formatı döner.
+    """
     db = await get_db_from_request(request)
-    
-    # Tüm randevuları çek
-    appointments = await db.appointments.find(
-        {"organization_id": current_user.organization_id},
-        {"_id": 0}
-    ).to_list(10000)
-    
-    # Unique müşterileri grupla
-    customer_map = {}
-    for apt in appointments:
-        phone = apt.get('phone')
-        if phone and phone not in customer_map:
-            customer_map[phone] = {
-                "name": apt.get('customer_name', ''),
-                "phone": phone,
-                "total_appointments": 0,
-                "completed_appointments": 0
-            }
-        
-        if phone:
-            customer_map[phone]['total_appointments'] += 1
-            if apt.get('status') == 'Tamamlandı':
-                customer_map[phone]['completed_appointments'] += 1
-    
-    # Veritabanından kayıtlı müşterileri de ekle (randevusu olmayan müşteriler)
-    try:
-        db_customers = await db.customers.find(
-            {"organization_id": current_user.organization_id},
-            {"_id": 0, "name": 1, "phone": 1}
-        ).to_list(50000)
-        
-        for db_customer in db_customers:
-            phone = db_customer.get('phone')
-            if phone and phone not in customer_map:
+    org_id = current_user.organization_id
+    use_pagination = limit is not None
+
+    # ------------------------------------------------------------------
+    # BACKWARD-COMPAT PATH (limit YOK) — ESKİ BUILD'LERİN ÇALIŞTIĞI VERSİYON
+    # ------------------------------------------------------------------
+    # ÖNEMLİ: Bu path DELİBERATLY appointments + customers MERGE yapıyor.
+    # Denormalize-only optimizasyonu (appointments taramasını atlamak) mobil
+    # eski build'lerde müşteri detay ekranında hatalı liste render'ına yol
+    # açtı → geri alındı. Eski build'lerin beklediği birebir shape:
+    #   - Randevusu OLAN müşteri: {name(customer_name), phone, total, completed}
+    #     → `is_pending` ANAHTARI YOK
+    #   - Randevusu OLMAYAN (manuel eklenmiş) müşteri: yukarıdakiler + is_pending:True
+    # App Store onayı ~2 gün sürdüğü için bu geriye-uyum kritik; performans
+    # (yeni web zaten limit=30 paginated path'i kullanıyor) ikincil.
+    if not use_pagination:
+        try:
+            appointments = await db.appointments.find(
+                {"organization_id": org_id},
+                {"_id": 0, "phone": 1, "customer_name": 1, "status": 1}
+            ).to_list(10000)
+        except Exception as exc:
+            logging.error(f"GET /customers (legacy) appointments query failed: {exc}", exc_info=True)
+            appointments = []
+
+        customer_map: dict = {}
+        for apt in appointments:
+            phone = apt.get('phone')
+            if not phone:
+                continue
+            if phone not in customer_map:
                 customer_map[phone] = {
-                    "name": db_customer.get('name', ''),
+                    "name": apt.get('customer_name', ''),
                     "phone": phone,
                     "total_appointments": 0,
                     "completed_appointments": 0,
-                    "is_pending": True  # Randevusu olmayan müşteri
                 }
-    except Exception as e:
-        logging.warning(f"Error loading customers from database: {e}")
-    
-    # Liste olarak döndür
-    customers = list(customer_map.values())
-    customers.sort(key=lambda x: (x.get('name') or '').lower())
-    
-    logging.info(f"📋 GET /customers: {len(customers)} müşteri döndürülüyor (org: {current_user.organization_id[:8]})")
-    return customers
+            customer_map[phone]['total_appointments'] += 1
+            if apt.get('status') == 'Tamamlandı':
+                customer_map[phone]['completed_appointments'] += 1
+
+        try:
+            db_customers = await db.customers.find(
+                {"organization_id": org_id},
+                {"_id": 0, "name": 1, "phone": 1}
+            ).to_list(50000)
+            for dc in db_customers:
+                ph = dc.get('phone')
+                if ph and ph not in customer_map:
+                    customer_map[ph] = {
+                        "name": dc.get('name', ''),
+                        "phone": ph,
+                        "total_appointments": 0,
+                        "completed_appointments": 0,
+                        "is_pending": True,  # SADECE randevusuz — eski client anlaşması
+                    }
+        except Exception as exc:
+            logging.warning(f"GET /customers (legacy) customers collection query failed: {exc}")
+
+        result = list(customer_map.values())
+        result.sort(key=lambda x: (x.get('name') or '').lower())
+        logging.info(f"📋 GET /customers (legacy merge): {len(result)} müşteri (org={org_id[:8]})")
+        return result
+
+    # ------------------------------------------------------------------
+    # NEW CURSOR PAGINATION PATH (limit VAR) — yeni web Customers.js için
+    # ------------------------------------------------------------------
+    query: dict = {"organization_id": org_id}
+    effective_limit = int(limit)
+
+    if search and search.strip():
+        _s = search.strip()
+        # Türkçe karakter-tolerant SUBSTRING match — kullanıcı "şenyüz" veya
+        # "senyuz" ya da "Şen" yazsın, "Fatih Şenyüz" bulunur.
+        name_pattern = build_turkish_case_insensitive_pattern(_s)
+        # Phone tarafı: rakam-only karşılaştırma; escape ile substring.
+        phone_pattern = re.escape(_s)
+        query["$or"] = [
+            {"name": {"$regex": name_pattern}},
+            {"phone": {"$regex": phone_pattern}},
+        ]
+
+    cursor_name: Optional[str] = None
+    cursor_id: Optional[str] = None
+    if cursor:
+        try:
+            raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+            cursor_name, cursor_id = raw.split("|", 1)
+        except Exception:
+            logging.warning(f"Bozuk cursor atlandı: {cursor}")
+
+    if cursor_name is not None and cursor_id is not None:
+        try:
+            from bson import ObjectId
+            _cid: object = ObjectId(cursor_id)
+        except Exception:
+            _cid = cursor_id
+        tie_break = {
+            "$or": [
+                {"name": {"$gt": cursor_name}},
+                {"name": cursor_name, "_id": {"$gt": _cid}},
+            ]
+        }
+        existing = {k: v for k, v in query.items() if k != "organization_id"}
+        new_q: dict = {"organization_id": org_id, "$and": [tie_break]}
+        if existing:
+            new_q["$and"].append(existing)
+        query = new_q
+
+    projection = {
+        "_id": 1, "id": 1, "name": 1, "phone": 1, "notes": 1,
+        "total_appointments": 1, "completed_appointments": 1,
+        "last_appointment_at": 1, "first_appointment_at": 1,
+    }
+
+    try:
+        docs = await (
+            db.customers.find(query, projection)
+            .collation({"locale": "tr", "strength": 2})
+            .sort([("name", 1), ("_id", 1)])
+            .limit(effective_limit + 1)
+        ).to_list(effective_limit + 1)
+    except Exception as exc:
+        logging.error(f"GET /customers (paginated) query failed: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Müşteri listesi getirilemedi")
+
+    has_more = len(docs) > effective_limit
+    if has_more:
+        docs = docs[:effective_limit]
+
+    items = []
+    for d in docs:
+        total = int(d.get("total_appointments") or 0)
+        completed = int(d.get("completed_appointments") or 0)
+        items.append({
+            "id": d.get("id") or (str(d.get("_id")) if d.get("_id") else None),
+            "name": d.get("name") or "",
+            "phone": d.get("phone") or "",
+            "notes": d.get("notes") or "",
+            "total_appointments": total,
+            "completed_appointments": completed,
+            "last_appointment_at": d.get("last_appointment_at"),
+            "first_appointment_at": d.get("first_appointment_at"),
+            "is_pending": total == 0,
+        })
+
+    next_cursor: Optional[str] = None
+    if has_more and docs:
+        last_doc = docs[-1]
+        try:
+            raw = f"{last_doc.get('name') or ''}|{str(last_doc.get('_id'))}"
+            next_cursor = base64.urlsafe_b64encode(raw.encode()).decode()
+        except Exception:
+            next_cursor = None
+
+    logging.info(
+        f"📋 GET /customers (paginated): {len(items)} müşteri (org={org_id[:8]}, "
+        f"cursor={'✓' if cursor else '✗'}, search={'✓' if search else '✗'}, has_more={has_more})"
+    )
+
+    return {"items": items, "next_cursor": next_cursor, "has_more": has_more}
 
 class CustomerCreate(BaseModel):
     name: str = Field(..., min_length=1, description="Müşteri adı")
@@ -12896,6 +13502,9 @@ async def create_pending_verification(redis_client, phone: str, org_id: str, app
     return code
 
 
+# ═══ CONTRACT: v1 (FROZEN / REQUEST) — public booking ═══════════════════════
+# Donmuş mobil + web public build'ler bu body'yi gönderir. AppointmentCreate'e
+# YENİ ZORUNLU alan EKLEME (eski client 400 alır). bkz. OPERATIONS.md §2.1
 @api_router.post("/public/appointments")
 async def create_public_appointment(request: Request, appointment: AppointmentCreate, organization_id: str):
     """Model D: Public randevu oluştur — 5 Katmanlı Güvenlik + Akıllı personel atama"""
@@ -13490,7 +14099,27 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
                 logging.warning(f"Failed to emit customer_added event: {emit_error}")
     except Exception as e:
         logging.warning(f"Error adding customer to collection: {e}")
-    
+
+    # Denormalize sayaç: public randevu → +1 total (+1 completed nadiren; genellikle Bekliyor).
+    # Ödeme bekleyen (pending_payment) randevu ise atla — sayaç ödeme onaylanınca
+    # `_send_post_payment_notifications` içinde artırılıyor.
+    try:
+        _is_pending_payment_local = (appointment_data.get('payment_status') == 'pending_payment')
+        if not _is_pending_payment_local:
+            _apt_status = appointment_data.get('status', 'Bekliyor')
+            await _apply_customer_delta(
+                db,
+                organization_id=organization_id,
+                phone=appointment.phone,
+                name=appointment.customer_name,
+                delta_total=1,
+                delta_completed=1 if _apt_status == "Tamamlandı" else 0,
+                appointment_date=appointment.appointment_date,
+                appointment_time=appointment.appointment_time,
+            )
+    except Exception as _delta_err:
+        logging.warning(f"customer delta (public/appointments) skipped: {_delta_err}")
+
     # WhatsApp ve Push Notification'ları background'da gönder (kullanıcıyı bekletmemek için)
     settings_data = await db.settings.find_one({"organization_id": organization_id})
     
@@ -13564,19 +14193,21 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             # Push notification gönder (admin ve ilgili personele)
             try:
                 service_info = service.get('name', 'Randevu')
+                _apt_id_push = appointment_for_emit.get('id')
                 notification_data = {
                     "type": "new_appointment",
-                    "appointment_id": appointment_for_emit.get('id'),
-                    "source": "public_booking"
+                    "appointment_id": _apt_id_push,
+                    "source": "public_booking",
+                    # Web push (service worker) derin bağlantısı — tıklayınca randevu detayı açılır
+                    "url": f"/?randevu={_apt_id_push}" if _apt_id_push else "/",
                 }
-                # Tarih formatını dd.mm.yyyy olarak ayarla
-                try:
-                    date_parts = appointment.appointment_date.split('-')
-                    formatted_date = f"{date_parts[2]}.{date_parts[1]}.{date_parts[0]}"
-                except:
-                    formatted_date = appointment.appointment_date
-                    
-                notification_body = f"{appointment.customer_name} - {service_info} ({formatted_date} {appointment.appointment_time})"
+                # Bildirim metni: Müşteri / Hizmet / Tarih (7 Ağustos Cuma 09:45) alt alta
+                _date_tr = format_date_tr(appointment.appointment_date)
+                notification_body = (
+                    f"Müşteri: {appointment.customer_name}\n"
+                    f"Hizmet: {service_info}\n"
+                    f"Tarih: {_date_tr} {appointment.appointment_time}"
+                )
                 
                 # Admin'lere bildirim gönder
                 admins = await db.users.find({"organization_id": organization_id, "role": "admin"}).to_list(100)
@@ -13741,6 +14372,22 @@ async def verify_code_and_create_appointment(request: Request):
         upsert=True,
     )
 
+    # Denormalize sayaç — pending_payment değilse +1 total (+1 completed nadiren).
+    try:
+        if apt_payment_status != "pending_payment":
+            await _apply_customer_delta(
+                db,
+                organization_id=org_id,
+                phone=stored_phone,
+                name=apt_dict.get("customer_name"),
+                delta_total=1,
+                delta_completed=1 if apt_status == "Tamamlandı" else 0,
+                appointment_date=apt_dict.get("appointment_date"),
+                appointment_time=apt_dict.get("appointment_time"),
+            )
+    except Exception as _delta_err:
+        logging.warning(f"customer delta (verify-code) skipped: {_delta_err}")
+
     # Redis temizle
     phone_map_key = f"plann:pending:phone:{stored_phone}:{org_id}"
     await redis_client.delete(pending_key)
@@ -13761,6 +14408,44 @@ async def verify_code_and_create_appointment(request: Request):
         await invalidate_cache(request, "customers_list", mock_user)
     except Exception:
         pass
+
+    # ── Push notifications → admin + personel ────────────────────────────
+    # ÖNEMLİ: Telefon doğrulaması AÇIK işletmelerde public randevular bu yoldan
+    # (verify-code) oluşur. Eskiden burada push GÖNDERİLMİYORDU → işletme sahibi
+    # public randevu bildirimi alamıyordu. Diğer public yollarla aynı metin/data.
+    try:
+        _date_tr_vc = format_date_tr(apt_dict.get("appointment_date", ""))
+        vc_body = (
+            f"Müşteri: {apt_dict.get('customer_name', '')}\n"
+            f"Hizmet: {service.get('name', '')}\n"
+            f"Tarih: {_date_tr_vc} {apt_dict.get('appointment_time', '')}"
+        )
+        _apt_id_vc = doc.get("id")
+        vc_data = {
+            "type": "new_appointment",
+            "appointment_id": _apt_id_vc,
+            "source": "public_booking_code_verified",
+            "url": f"/?randevu={_apt_id_vc}" if _apt_id_vc else "/",
+        }
+        _admins_vc = await db.users.find({"organization_id": org_id, "role": "admin"}).to_list(100)
+        for _admin_vc in _admins_vc:
+            await send_push_notification(
+                db=db, organization_id=org_id,
+                title="🔔 Yeni Online Randevu!",
+                body=vc_body, data=vc_data, user_id=_admin_vc["username"],
+            )
+        _assigned_vc = apt_dict.get("staff_member_id")
+        if _assigned_vc:
+            _staff_vc = await db.users.find_one({"username": _assigned_vc, "organization_id": org_id})
+            if _staff_vc and _staff_vc.get("role") != "admin":
+                await send_push_notification(
+                    db=db, organization_id=org_id,
+                    title="🔔 Yeni Randevu Atandı!",
+                    body=vc_body, data=vc_data, user_id=_assigned_vc,
+                )
+        logging.info(f"✓ Push (verify-code) sent for appointment {_apt_id_vc}")
+    except Exception as _push_vc_err:
+        logging.error(f"⚠️ Push (verify-code) failed: {_push_vc_err}", exc_info=True)
 
     logging.info(f"✅ Doğrulama kodu ile randevu oluşturuldu: {code} → {stored_phone}")
 
@@ -15664,16 +16349,36 @@ async def _process_whatsapp_verification(db, redis_client, from_wa_number: str, 
         if not quota_ok:
             return {"reply": f"❌ {quota_error}"}
 
-        service = await db.services.find_one({"id": apt_dict.get("service_id")}, {"_id": 0})
-        if not service:
+        # Çoklu hizmet çözümleme — /public/verify-code ile AYNI mantık.
+        # Eskiden burada yalnızca apt_dict.service_id (ilk hizmet) okunuyordu ve
+        # çoklu hizmet seçili randevularda diğer hizmetler + toplam süre/fiyat
+        # KAYBOLUYORDU. Artık resolve_services ile snapshot + birleşik toplam üretilir.
+        # (Tekil hizmette de sorunsuz çalışır.) Webhook 200+reply döndürmeli, bu
+        # yüzden resolve_services'in HTTPException'ını yakalayıp kotayı geri alıp
+        # dostça bir mesaj dönüyoruz (raise ETMİYORUZ).
+        try:
+            _apt_in = AppointmentCreate(**apt_dict)
+            _settings_flag = await db.settings.find_one(
+                {"organization_id": org_id}, {"_id": 0, "multi_service_enabled": 1}
+            )
+            _multi_enabled = bool((_settings_flag or {}).get("multi_service_enabled", False))
+            snapshot_lines, total_duration, total_price, service, resolved_service_ids = await resolve_services(
+                db, org_id, _apt_in, multi_enabled=_multi_enabled
+            )
+        except HTTPException as _svc_err:
             await db.organization_plans.update_one(
                 {"organization_id": org_id}, {"$inc": {"quota_usage": -1}}
             )
-            return {"reply": "❌ Hizmet bulunamadı. Lütfen tekrar randevu alın."}
+            _detail = getattr(_svc_err, "detail", "") or ""
+            if detect_language_from_phone(from_wa_number) == "TR":
+                return {"reply": f"❌ {_detail or 'Hizmet bulunamadı. Lütfen tekrar randevu alın.'}"}
+            return {"reply": f"❌ {_detail or 'Service not found. Please book again.'}"}
 
         apt_obj = Appointment(**{
             **apt_dict,
             "organization_id": org_id,
+            "service_id": resolved_service_ids[0],
+            "services": snapshot_lines,
             "service_name": service.get("name", ""),
             "service_price": service.get("price", 0),
             "service_duration": service.get("duration", 30),
@@ -15716,19 +16421,19 @@ async def _process_whatsapp_verification(db, redis_client, from_wa_number: str, 
         # ── Push notifications → admin + personel ───────────────────
         try:
             apt_date_raw = apt_dict.get("appointment_date", "")
-            try:
-                _d = apt_date_raw.split("-")
-                apt_date_fmt_push = f"{_d[2]}.{_d[1]}.{_d[0]}"
-            except Exception:
-                apt_date_fmt_push = apt_date_raw
+            _date_tr_push = format_date_tr(apt_date_raw)
+            # Bildirim metni: Müşteri / Hizmet / Tarih (7 Ağustos Cuma 09:45) alt alta
             notif_body = (
-                f"{apt_dict.get('customer_name', '')} - {service.get('name', '')} "
-                f"({apt_date_fmt_push} {apt_dict.get('appointment_time', '')})"
+                f"Müşteri: {apt_dict.get('customer_name', '')}\n"
+                f"Hizmet: {service.get('name', '')}\n"
+                f"Tarih: {_date_tr_push} {apt_dict.get('appointment_time', '')}"
             )
+            _apt_id_wa = doc.get("id")
             notif_data = {
                 "type": "new_appointment",
-                "appointment_id": doc.get("id"),
+                "appointment_id": _apt_id_wa,
                 "source": "public_booking_wa_verified",
+                "url": f"/?randevu={_apt_id_wa}" if _apt_id_wa else "/",
             }
             admins = await db.users.find({"organization_id": org_id, "role": "admin"}).to_list(100)
             for admin in admins:

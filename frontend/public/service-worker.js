@@ -1,5 +1,5 @@
 // PLANN PWA Service Worker
-const CACHE_NAME = 'plann-cache-v19';
+const CACHE_NAME = 'plann-cache-v21';
 const OFFLINE_URL = '/offline.html';
 
 // Önbelleğe alınacak statik kaynaklar
@@ -187,13 +187,20 @@ self.addEventListener('push', (event) => {
     }
   }
 
+  // Backend payload'unda derin bağlantı bilgisi nested `data` objesindedir
+  // (ör. { data: { url: '/?randevu=<id>', appointment_id, type } }).
+  const payloadData = data.data || {};
+  const targetUrl = payloadData.url || data.url || '/';
+
   const options = {
     body: data.body,
     icon: data.icon || 'https://plannapp.co/icons/icon-192x192.png',
     badge: data.badge || 'https://plannapp.co/icons/badge-mono-96x96.png',
     vibrate: [100, 50, 100],
     data: {
-      url: data.url,
+      url: targetUrl,
+      appointmentId: payloadData.appointment_id,
+      type: payloadData.type,
       timestamp: Date.now()
     },
     requireInteraction: true, // Kullanıcı müdahale edene kadar ekranda kalsın
@@ -217,23 +224,46 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
-  const urlToOpen = event.notification.data?.url || '/';
+  const nd = event.notification.data || {};
+  const urlToOpen = nd.url || '/';
+  const aptId = nd.appointmentId;
 
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clientList) => {
-        // Zaten açık bir pencere varsa onu kullan
-        for (const client of clientList) {
-          if (client.url === urlToOpen && 'focus' in client) {
-            return client.focus();
-          }
-        }
-        // Yoksa yeni pencere aç
-        if (clients.openWindow) {
-          return clients.openWindow(urlToOpen);
-        }
-      })
-  );
+  event.waitUntil((async () => {
+    // 1) Randevu id'sini Cache'e yaz. iOS bildirime dokununca kurulu PWA'yı
+    //    zaten öne getirir; PWA görünür olunca (visibilitychange) bunu okuyup
+    //    detayı açar. Böylece Safari'ye kaçış ve postMessage zamanlama yarışı
+    //    ortadan kalkar (iOS PWA için en güvenilir yol).
+    if (aptId) {
+      try {
+        const cache = await caches.open('plann-pending');
+        await cache.put(
+          '/__pending_appointment',
+          new Response(JSON.stringify({ appointmentId: aptId, ts: Date.now() }), {
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      } catch (e) { /* cache yoksa yoksay */ }
+    }
+
+    // 2) Açık bir uygulama penceresi varsa odakla + postMessage (sıcak durum,
+    //    reload olmadan anında açılır). navigate/openWindow İLE Safari'ye
+    //    kaçmamak için burada YALNIZCA focus + mesaj kullanıyoruz.
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const client = clientList.find((c) => 'focus' in c);
+    if (client) {
+      try { await client.focus(); } catch (e) { /* yoksay */ }
+      if (aptId) {
+        try { client.postMessage({ type: 'OPEN_APPOINTMENT', appointmentId: aptId }); } catch (e) { /* yoksay */ }
+      }
+      return;
+    }
+
+    // 3) Hiç açık pencere yoksa (uygulama kapalı) yeni pencere aç.
+    //    Soğuk başlangıç → ?randevu param'ı VEYA pending cache okunur.
+    if (clients.openWindow) {
+      await clients.openWindow(urlToOpen);
+    }
+  })());
 });
 
 // Background Sync Event

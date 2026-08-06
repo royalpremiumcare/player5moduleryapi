@@ -348,6 +348,43 @@ const PublicBookingPage = () => {
     };
   }, []);
 
+  // --- WHATSAPP'TAN KOD ONAYI: DOĞRULAMA EKRANI POLLING'İ ---
+  // Müşteri, kodu UYGULAMAYA girmek yerine WhatsApp mesajına yazarsa, webhook
+  // randevuyu oluşturur ve plann:verified:{code} flag'ini set eder. Bu effect
+  // doğrulama ekranındayken /public/verify-status'ü 3sn'de bir yoklar; "verified"
+  // dönerse ekranı otomatik başarıya geçirir. Aksi halde randevu oluşsa bile
+  // ekran "Numaranızı Doğrulayın" adımında takılı kalıyordu.
+  // Not: online/kapora randevular doğrulamayı zaten atlar (skip_verification),
+  // bu yüzden bu yol yalnızca ödemesiz randevulardır → checkout redirect gerekmez.
+  useEffect(() => {
+    if (!verificationPending || !verificationCode) return undefined;
+    let stopped = false;
+    let iv = null;
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const res = await publicApi.get('/public/verify-status', { params: { code: verificationCode } });
+        if (!stopped && res.data?.status === 'verified') {
+          stopped = true;
+          if (iv) clearInterval(iv);
+          setVerificationPending(false);
+          setVerificationStatus('verified');
+          if (rememberMe) {
+            localStorage.setItem('plann_user', JSON.stringify({ fullName: customerFullName.trim(), phone: phone.trim() }));
+          }
+          toast.success(currentLang === 'en' ? 'Verified! Appointment created.' : 'Doğrulandı! Randevunuz oluşturuldu.');
+          setSuccess(true);
+          triggerSuccessReset();
+        }
+      } catch (_) {
+        // Sessiz geç — bir sonraki poll tekrar dener.
+      }
+    };
+    iv = setInterval(poll, 3000);
+    poll(); // İlk kontrolü hemen yap
+    return () => { stopped = true; if (iv) clearInterval(iv); };
+  }, [verificationPending, verificationCode]);
+
   // --- HELPER: GÖRÜNEN ADIM HESAPLAMA ---
   // Eğer personel seçimi kapalıysa toplam adım 3, açıksa 4 olmalı.
   const showStaffStep = settings?.customer_can_choose_staff ?? true; // Varsayılan true

@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import io from "socket.io-client";
 import {
   Calendar, Clock, Phone, Edit, Trash2, Check, X,
-  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee, TrendingUp, CalendarDays, Sparkles, ChevronDown, Layers
+  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee, TrendingUp, CalendarDays, ChevronDown, Layers
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
@@ -659,7 +659,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl bg-white/80 backdrop-blur-xl border border-gray-200/70 shadow-md shadow-black/8 hover:shadow-lg hover:bg-white active:scale-95 transition-all duration-200 group"
             >
               <div className="w-6 h-6 md:w-9 md:h-9 rounded-lg md:rounded-xl bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shrink-0">
-                <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-white group-hover:rotate-12 transition-transform duration-200" />
+                <span className="text-white font-black text-[10px] md:text-[13px] leading-none tracking-tight group-hover:scale-110 transition-transform duration-200">Aİ</span>
               </div>
               <div className="text-left hidden sm:block">
                 <p className="text-[11px] md:text-sm font-bold text-gray-800 leading-none">AI Asistan</p>

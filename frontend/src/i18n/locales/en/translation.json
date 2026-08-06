@@ -597,6 +597,15 @@
     },
     "deleteConfirm": "Are you sure you want to delete customer {{name}}?"
   },
+  "appointmentDetail": {
+    "title": "Appointment Details",
+    "onlineBadge": "New Online Booking",
+    "customer": "Customer",
+    "phone": "Phone",
+    "notFound": "Appointment not found",
+    "notFoundDesc": "This appointment has been deleted or no longer exists.",
+    "backToDashboard": "Back to Dashboard"
+  },
   "appointments": {
     "title": "Appointments",
     "addAppointment": "New Appointment",

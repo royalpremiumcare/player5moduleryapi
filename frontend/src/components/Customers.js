@@ -4,6 +4,7 @@ import { Search, Phone, MessageSquare, ChevronRight, Plus, ArrowLeft, Trash2, Im
 import { toast } from "sonner";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
+import useDebounce from "../hooks/useDebounce";
 
 // --- HİBRİT YAPI İÇİN GEREKLİ IMPORTLAR ---
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -47,7 +48,11 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
   const [currentStaffUsername, setCurrentStaffUsername] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 300);
   const [loading, setLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerHistory, setCustomerHistory] = useState(null);
   const [customerNotes, setCustomerNotes] = useState("");
@@ -78,6 +83,12 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
   // ---------------------------------------
 
   const socketRef = useRef(null);
+  const sentinelRef = useRef(null);
+  // Race guard: eş zamanlı istekler arasından en yenisini tut, eskilerin cevabını at.
+  const requestSeqRef = useRef(0);
+  // Socket handler'ları ve infinite scroll güncel arama filtresini görsün.
+  const searchRef = useRef("");
+  useEffect(() => { searchRef.current = debouncedSearch || ""; }, [debouncedSearch]);
 
   const loadSettings = async () => {
     try {
@@ -87,20 +98,18 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
   };
 
   useEffect(() => {
-    const initialize = async () => {
-      await loadSettings();
-      if (userRole === 'staff') {
-        await loadCurrentStaffUsername();
-      }
-      await loadCustomers();
-    };
-    initialize();
-    
+    // Not: loadCustomers burada tetiklenmez. Aşağıdaki [debouncedSearch] useEffect'i
+    // mount'ta bir kez (search="") çalışıp ilk sayfayı çeker → çift çağrı olmaz.
+    loadSettings();
+    if (userRole === 'staff') {
+      loadCurrentStaffUsername();
+    }
+
     if (!socketRef.current) {
       const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
       const socketUrl = BACKEND_URL || window.location.origin;
       const authToken = token || localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-      
+
       const socket = io(socketUrl, {
         path: '/api/socket.io',
         transports: ['websocket', 'polling'],
@@ -108,9 +117,9 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
         reconnectionDelayMax: 5000,
         auth: { token: authToken || '' }
       });
-      
+
       socketRef.current = socket;
-      
+
       socket.on('connect', () => {
         const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
         if (token) {
@@ -123,24 +132,43 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
           } catch (error) { console.error('Error parsing token:', error); }
         }
       });
-      
-      socket.on('appointment_created', () => { loadCustomers(); if (selectedCustomer) loadCustomerHistory(selectedCustomer.phone); });
-      socket.on('appointment_updated', () => { loadCustomers(); if (selectedCustomer) loadCustomerHistory(selectedCustomer.phone); });
-      socket.on('appointment_deleted', () => { loadCustomers(); if (selectedCustomer) loadCustomerHistory(selectedCustomer.phone); });
-      socket.on('customer_added', () => { loadCustomers(); });
+
+      // Cursor pagination — event geldiğinde ilk sayfayı mevcut arama filtresi
+      // ile yeniden çek. Etkilenen kayıtlar genelde en üstte olduğundan pratik
+      // regresyon minimal (kaydırılan alt sayfalar sıfırlanır).
+      const refetchFirstPage = () => {
+        fetchCustomersRef.current({ search: searchRef.current });
+      };
+
+      socket.on('appointment_created', () => { refetchFirstPage(); if (selectedCustomer) loadCustomerHistory(selectedCustomer.phone); });
+      socket.on('appointment_updated', () => { refetchFirstPage(); if (selectedCustomer) loadCustomerHistory(selectedCustomer.phone); });
+      socket.on('appointment_deleted', () => { refetchFirstPage(); if (selectedCustomer) loadCustomerHistory(selectedCustomer.phone); });
+      socket.on('customer_added', () => { refetchFirstPage(); });
+      socket.on('customer_updated', () => { refetchFirstPage(); });
       socket.on('customer_deleted', (data) => {
-        loadCustomers();
+        refetchFirstPage();
         if (selectedCustomer && data?.phone && selectedCustomer.phone === data.phone) {
           setSelectedCustomer(null); setCustomerHistory(null); setCustomerNotes("");
         }
       });
     }
     return () => {};
-  }, []); 
+  }, []);
 
   useEffect(() => {
     if (selectedCustomer) {
       loadCustomerHistory(selectedCustomer.phone);
+      // Detay ekranı açılırken en üste scroll. PLANN panel mimarisinde ana
+      // scroll body/window'da DEĞİL `#app-wrapper` üzerindedir; ayrıca iOS
+      // Safari/WKWebView için body/documentElement scrollTop'u da sıfırlanır.
+      try {
+        const wrapper = document.getElementById('app-wrapper');
+        if (wrapper) wrapper.scrollTop = 0;
+        if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+        if (document.documentElement) document.documentElement.scrollTop = 0;
+        if (document.body) document.body.scrollTop = 0;
+        window.scrollTo(0, 0);
+      } catch (_) { /* noop */ }
     } else {
       setCustomerHistory(null);
       setCustomerNotes("");
@@ -156,25 +184,79 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
     } catch (error) { console.error("Kullanıcı bilgisi alınamadı:", error); }
   };
 
-  const loadCustomers = async () => {
+  const mapCustomer = (c) => ({
+    id: c.id,
+    name: c.name || "",
+    phone: c.phone || "",
+    totalAppointments: c.total_appointments || 0,
+    isPending: (c.total_appointments || 0) === 0,
+  });
+
+  // Cursor pagination + server-side search. `cursor` yoksa ilk sayfa (reset).
+  const fetchCustomers = async ({ cursor = null, search = "" } = {}) => {
+    const isFirstPage = !cursor;
+    const seq = ++requestSeqRef.current;
+    if (isFirstPage) setLoading(true);
+    else setIsFetchingMore(true);
     try {
-      setLoading(true);
-      const response = await api.get("/customers");
-      const customerList = (response.data || []).map(customer => ({
-        name: customer.name,
-        phone: customer.phone,
-        totalAppointments: customer.total_appointments || 0,
-        isPending: customer.is_pending || false
-      }));
-      setCustomers(customerList);
+      const params = { limit: 30 };
+      if (cursor) params.cursor = cursor;
+      const trimmed = (search || "").trim();
+      if (trimmed) params.search = trimmed;
+
+      const res = await api.get("/customers", { params });
+      // Stale response — daha yeni bir istek başladıysa yanıtı at.
+      if (seq !== requestSeqRef.current) return;
+
+      const data = res.data || {};
+      const items = Array.isArray(data.items) ? data.items.map(mapCustomer) : [];
+      setCustomers((prev) => isFirstPage ? items : [...prev, ...items]);
+      setNextCursor(data.next_cursor || null);
+      setHasMore(Boolean(data.has_more));
     } catch (error) {
       if (error.response && error.response.status !== 401) {
         toast.error(t('customers.loadingError'));
       }
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) {
+        setLoading(false);
+        setIsFetchingMore(false);
+      }
     }
   };
+
+  // Socket handler'ları ve infinite scroll observer'ının stale closure yakalamaması için
+  // fetchCustomers referansını ref'te güncel tut.
+  const fetchCustomersRef = useRef(fetchCustomers);
+  useEffect(() => { fetchCustomersRef.current = fetchCustomers; });
+
+  // Backward-compat alias: mevcut CRUD handler'ları optimistik güncellemeden sonra
+  // "arka planda listeyi yenile" niyetiyle bu fonksiyonu çağırıyor.
+  const loadCustomers = () => fetchCustomersRef.current({ search: searchRef.current });
+
+  // Tek arama-tetikleyici useEffect: mount'ta bir kez ("" ile) ve debouncedSearch
+  // değiştiğinde tetiklenir. Bu, mount'ta çift `loadCustomers` çağrısı önleyerek
+  // önceki refactor'daki race guard takılmasını ortadan kaldırır.
+  useEffect(() => {
+    fetchCustomersRef.current({ search: debouncedSearch });
+  }, [debouncedSearch]);
+
+  // IntersectionObserver — sentinel görünür olunca sonraki cursor sayfasını çek.
+  useEffect(() => {
+    if (!sentinelRef.current || !hasMore || isFetchingMore || loading) return;
+    const el = sentinelRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry && entry.isIntersecting && nextCursor && hasMore && !isFetchingMore) {
+          fetchCustomersRef.current({ cursor: nextCursor, search: searchRef.current });
+        }
+      },
+      { rootMargin: "200px 0px", threshold: 0.01 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, isFetchingMore, loading, nextCursor]);
 
   const loadCustomerHistory = async (phone) => {
     try {
@@ -536,10 +618,15 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
     }
   };
 
-  const filteredCustomers = customers.filter(customer =>
-    customer.name.toLocaleLowerCase('tr').includes(searchTerm.toLocaleLowerCase('tr')) ||
-    customer.phone.includes(searchTerm)
-  );
+  // Server-side arama aktif (debounced + cursor pagination) — client-side filter kaldırıldı.
+  // Yalnızca kullanıcı yazarken (debounce dolmadan önce) anlık local filtre uygular ki
+  // ekran boş kalmasın; sunucudan yeni sayfa gelince zaten items yenilenir.
+  const filteredCustomers = searchTerm && searchTerm !== debouncedSearch
+    ? customers.filter(c =>
+        (c.name || '').toLocaleLowerCase('tr').includes(searchTerm.toLocaleLowerCase('tr')) ||
+        (c.phone || '').includes(searchTerm)
+      )
+    : customers;
 
   if (selectedCustomer) {
     return (
@@ -810,27 +897,37 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
               <p className="text-zinc-600 font-medium">{t('customers.noResults')}</p>
             </div>
           ) : (
-            filteredCustomers.map((customer) => (
-              <div key={customer.phone} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:bg-white/50 transition-all duration-300">
-                <div className="flex items-center gap-4">
-                  <div onClick={() => handleCustomerClick(customer)} className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl flex items-center justify-center font-black flex-shrink-0 cursor-pointer shadow-md">
-                    {getInitials(customer.name)}
-                  </div>
-                  <div onClick={() => handleCustomerClick(customer)} className="flex-1 min-w-0 cursor-pointer">
-                    <h3 className="text-zinc-900 font-black text-base truncate">{customer.name}</h3>
-                    <p className="text-zinc-600 text-sm truncate font-medium">{customer.phone}</p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {userRole === 'admin' && (
-                      <button onClick={(e) => { e.stopPropagation(); setCustomerToDelete(customer); setDeleteDialogOpen(true); }} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-colors">
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    )}
-                    <ChevronRight onClick={() => handleCustomerClick(customer)} className="w-5 h-5 text-zinc-400 cursor-pointer" />
+            <>
+              {filteredCustomers.map((customer) => (
+                <div key={customer.phone} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:bg-white/50 transition-all duration-300">
+                  <div className="flex items-center gap-4">
+                    <div onClick={() => handleCustomerClick(customer)} className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl flex items-center justify-center font-black flex-shrink-0 cursor-pointer shadow-md">
+                      {getInitials(customer.name)}
+                    </div>
+                    <div onClick={() => handleCustomerClick(customer)} className="flex-1 min-w-0 cursor-pointer">
+                      <h3 className="text-zinc-900 font-black text-base truncate">{customer.name}</h3>
+                      <p className="text-zinc-600 text-sm truncate font-medium">{customer.phone}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {userRole === 'admin' && (
+                        <button onClick={(e) => { e.stopPropagation(); setCustomerToDelete(customer); setDeleteDialogOpen(true); }} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-colors">
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                      <ChevronRight onClick={() => handleCustomerClick(customer)} className="w-5 h-5 text-zinc-400 cursor-pointer" />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              ))}
+              {/* Infinite scroll sentinel — görünür olunca sonraki cursor sayfası çekilir */}
+              {hasMore && (
+                <div ref={sentinelRef} className="py-4 flex items-center justify-center">
+                  {isFetchingMore && (
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-zinc-900" />
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

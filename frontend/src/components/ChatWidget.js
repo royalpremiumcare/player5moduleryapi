@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Sparkles, X, Send, Loader2, Mic, MicOff } from 'lucide-react';
+import { X, Send, Loader2, Mic, MicOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api from '@/api/api';
 
@@ -123,12 +123,32 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
       : ["Bugün kaç randevum var?", "Bu ay ne kadar kazandım? 💸", "Yarınki randevularımı göster", "Sistem nasıl kullanılır?"];
   }, [i18n.language, user?.role]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
   };
 
+  // Mesaj eklendiğinde akıllı scroll:
+  //  - Kullanıcı mesajı → dibe scroll (kullanıcı kendi mesajını görsün + cevabı bekleyeceği alan).
+  //  - AI cevabı → mesajın BAŞINA scroll. Uzun cevaplarda kullanıcı en aşağıya değil
+  //    mesajın en tepesine götürülür; okuma yukarıdan aşağıya akar, geri kaydırma
+  //    gerekmez.
   useEffect(() => {
-    scrollToBottom();
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg) return;
+
+    if (lastMsg.role === 'user') {
+      scrollToBottom(true);
+      return;
+    }
+    // AI/assistant mesajı — son mesaj kartına attribute ile eriş.
+    const lastMsgEl = container.querySelector(`[data-msg-index="${messages.length - 1}"]`);
+    if (lastMsgEl) {
+      lastMsgEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      scrollToBottom(true);
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -138,6 +158,13 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         role: 'assistant',
         content: t('chat.welcome', { name: user?.full_name || user?.username })
       }]);
+    }
+    // Widget her açıldığında mesaj konteyneri üstten başlasın.
+    if (isOpen) {
+      requestAnimationFrame(() => {
+        const container = messagesContainerRef.current;
+        if (container) container.scrollTop = 0;
+      });
     }
   }, [isOpen, messages.length, user]);
 
@@ -341,7 +368,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-gray-900 to-gray-700 flex items-center justify-center shadow-sm shrink-0">
-              <Sparkles className="w-4 h-4 text-white" />
+              <span className="text-white font-black text-[13px] tracking-tight leading-none">Aİ</span>
             </div>
             <div>
               <h3 className="text-sm font-bold text-gray-900">{t('chat.title')}</h3>
@@ -375,7 +402,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         {/* Quota Gösterimi */}
         {usageInfo.limit === -1 ? (
           <div className="mt-2 text-xs bg-amber-50 text-amber-700 border border-amber-100 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-            <Sparkles className="w-3 h-3" />
+            <span className="font-black text-[10px] leading-none">Aİ</span>
             <span>{t('chat.unlimitedAccess')}</span>
           </div>
         ) : usageInfo.current >= usageInfo.limit * 0.9 ? (
@@ -393,6 +420,7 @@ const ChatWidget = ({ user, externalOpen, onExternalClose }) => {
         {messages.map((msg, idx) => (
           <div
             key={idx}
+            data-msg-index={idx}
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div

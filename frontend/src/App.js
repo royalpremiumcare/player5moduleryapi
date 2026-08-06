@@ -11,6 +11,7 @@ import { App as CapacitorApp } from "@capacitor/app";
 import { StatusBar, Style } from '@capacitor/status-bar';
 
 import Dashboard from "@/components/Dashboard";
+import AppointmentDetail from "@/components/AppointmentDetail";
 import CalendarView from "@/components/Calendar";
 import SessionsHub from "@/components/SessionsHub";
 import AppointmentForm from "@/components/AppointmentForm";
@@ -121,6 +122,8 @@ function App() {
   const [services, setServices] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [stats, setStats] = useState(null);
+  // Bildirime tıklayınca açılan premium randevu detay sayfası (id tutulur)
+  const [detailAppointmentId, setDetailAppointmentId] = useState(null);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -366,6 +369,67 @@ function App() {
       localStorage.setItem('is_app_mode', 'true');
     }
   }, []);
+
+  // Web push tıklaması → service worker /?randevu=<id> açar. Kullanıcı giriş
+  // yapmışsa premium randevu detay sayfasını aç ve URL'i temizle.
+  useEffect(() => {
+    if (!token || !currentUser) return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const aptId = params.get('randevu');
+      if (aptId) {
+        setCurrentView('dashboard');
+        setDetailAppointmentId(String(aptId));
+        params.delete('randevu');
+        const clean = window.location.pathname + (params.toString() ? `?${params.toString()}` : '');
+        window.history.replaceState({}, '', clean);
+      }
+    } catch (_) { /* URL parse hatası önemsiz */ }
+  }, [token, currentUser]);
+
+  // Web push bildirimi tıklandığında service worker'dan gelen mesajı dinle
+  // (iOS PWA'da en güvenilir yol — reload gerekmeden randevu detayını açar).
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const handler = (event) => {
+      const d = event.data || {};
+      if (d.type === 'OPEN_APPOINTMENT' && d.appointmentId) {
+        setCurrentView('dashboard');
+        setShowForm(false);
+        setDetailAppointmentId(String(d.appointmentId));
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handler);
+    return () => navigator.serviceWorker.removeEventListener('message', handler);
+  }, []);
+
+  // iOS PWA: bildirime dokununca SW randevu id'sini 'plann-pending' cache'ine
+  // yazar. PWA öne gelince (mount + visibilitychange) burada okunup detay açılır.
+  // Safari'ye kaçış / postMessage zamanlama sorunlarını atlayan en güvenilir yol.
+  useEffect(() => {
+    if (!token || !currentUser) return;
+    let cancelled = false;
+    const consumePending = async () => {
+      try {
+        if (!('caches' in window)) return;
+        const cache = await caches.open('plann-pending');
+        const res = await cache.match('/__pending_appointment');
+        if (!res) return;
+        const d = await res.json().catch(() => null);
+        await cache.delete('/__pending_appointment');
+        // 2 dk'dan eski pending'i yok say (alakasız focus'ta açılmasın)
+        if (!cancelled && d && d.appointmentId && (Date.now() - (d.ts || 0)) < 120000) {
+          setCurrentView('dashboard');
+          setShowForm(false);
+          setDetailAppointmentId(String(d.appointmentId));
+        }
+      } catch (_) { /* cache yoksa yoksay */ }
+    };
+    consumePending();
+    const onVis = () => { if (document.visibilityState === 'visible') consumePending(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { cancelled = true; document.removeEventListener('visibilitychange', onVis); };
+  }, [token, currentUser]);
 
   // Deep link handling for native apps (Stripe payment success/cancel)
   useEffect(() => {
@@ -751,6 +815,11 @@ function App() {
              } else if (data.action === 'OPEN_DASHBOARD') {
                // PLANN Asistan bildirimi → Dashboard'a yönlendir
                setCurrentView('dashboard');
+             } else if (data.type === 'new_appointment' && data.appointment_id) {
+               // Public randevu bildirimi → premium randevu detay sayfası
+               // (kapatınca dashboard'a döner). FCM data string olarak gelir.
+               setCurrentView('dashboard');
+               setDetailAppointmentId(String(data.appointment_id));
              }
           });
         } else {
@@ -1875,6 +1944,20 @@ function App() {
           }}
           externalOpen={chatOpen}
           onExternalClose={() => setChatOpen(false)}
+        />
+      )}
+
+      {/* Bildirime tıklayınca açılan premium randevu detay sayfası (kapatınca dashboard) */}
+      {token && currentUser && detailAppointmentId && (
+        <AppointmentDetail
+          appointmentId={detailAppointmentId}
+          userRole={userRole}
+          canViewAll={currentUser?.can_view_all_appointments}
+          onClose={() => {
+            setDetailAppointmentId(null);
+            setShowForm(false);
+            setCurrentView('dashboard');
+          }}
         />
       )}
 

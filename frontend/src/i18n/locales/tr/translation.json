@@ -599,6 +599,15 @@
     },
     "deleteConfirm": "{{name}} müşterisini silmek istediğinizden emin misiniz?"
   },
+  "appointmentDetail": {
+    "title": "Randevu Detayı",
+    "onlineBadge": "Yeni Online Randevu",
+    "customer": "Müşteri",
+    "phone": "Telefon",
+    "notFound": "Randevu bulunamadı",
+    "notFoundDesc": "Bu randevu silinmiş veya artık mevcut değil.",
+    "backToDashboard": "Panele Dön"
+  },
   "appointments": {
     "title": "Randevular",
     "addAppointment": "Yeni Randevu",
