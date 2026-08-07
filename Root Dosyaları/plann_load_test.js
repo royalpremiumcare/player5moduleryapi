@@ -27,8 +27,11 @@ export let options = {
   },
 };
 
-const BASE_URL = 'http://127.0.0.1:8002/api';
-const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb3lhbHByZW1pdW1jYXJlQGdtYWlsLmNvbSIsInVzZXJfaWQiOiJlNzg2Yzk1Yi1hODIwLTRjYmUtYjgwNS1hOTZmMDdkMGY2ZDgiLCJvcmdfaWQiOiJiZDIxNWRiMC1jZDdkLTQ2YmItYTA5MS1hMjA1YTYyNGI0NWIiLCJyb2xlIjoiYWRtaW4iLCJjb21wYW55X25hbWUiOiJSb3lhbCBQcmVtaXVtIENhcmUiLCJmdWxsX25hbWUiOiJGYXRpaCBcdTAxNWVlbnlcdTAwZmN6IiwiY2FuX3ZpZXdfYWxsX2FwcG9pbnRtZW50cyI6ZmFsc2UsIm9uYm9hcmRpbmdfY29tcGxldGVkIjp0cnVlLCJleHAiOjE3ODY2Njk3NTN9.szKwjGy32QyuSmt1pmLEUDVAERugTr4jwLXPdTpLIMc';
+const BASE_URL = __ENV.BASE_URL || 'http://127.0.0.1:8002/api';
+// GÜVENLİK: Token ASLA hardcode edilmez — env'den okunur.
+//   k6 run -e TOKEN="$(docker exec plann_backend python -c \"...jwt.encode...\")" plann_load_test.js
+// (Token mint için bkz. run_profiles.sh mint_token fonksiyonu.)
+const TOKEN = __ENV.TOKEN || '';
 
 const params = {
   headers: {
