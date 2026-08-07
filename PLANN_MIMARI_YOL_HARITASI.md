@@ -57,13 +57,13 @@ Kök sebep: Web sürekli deploy (prod'da düzenle -> nginx anında servis), mobi
 
 ## 4. Yol Haritası (sıralı, risk-etiketli)
 
-### Faz 0 — Bugün: Güvenlik ağı (SIFIR risk, diğer her şeyin ön koşulu)
+### Faz 0 — Bugün: Güvenlik ağı (SIFIR risk, diğer her şeyin ön koşulu) — ✅ TAMAMLANDI
 
 - **Golden snapshot al (ŞU AN, bilinen-iyi referans):** Eski build'in çağırdığı `GET /customers` (parametresiz) ve `GET /appointments` (parametresiz) response'larının örnek JSON'larını `backend/tests/contracts/` altına kaydet. Yarın refactor yapmadan önce "doğru" fotoğraf elde. Not: dinamik alanlar (tarih, `_id`) için birebir değer değil, **şema/alan-tipi** seviyesinde assert.
 - **Contract test yaz:** Legacy endpoint response'unun anahtar seti + tipleri golden'a uymazsa CI'da patlasın (field silme / tip değişimi / array->obje dönüşümü yakalanır).
 - **`OPERATIONS.md` iskeleti oluştur** (içerik için bkz. Bölüm 6).
 
-### Faz 0.5 — Sözleşme güvenlik ağını GENELLEŞTİR (tamamlandı)
+### Faz 0.5 — Sözleşme güvenlik ağını GENELLEŞTİR — ✅ TAMAMLANDI
 
 Faz 0 reaktifti (2 kırılan endpoint donduruldu). Gerçek koruma = korunan şeyin endpoint değil
 **response modeli** olduğunu kavrayıp tüm modelleri kilitlemek. 3 katman + kalıcı AI kuralı:
@@ -81,17 +81,17 @@ Faz 0 reaktifti (2 kırılan endpoint donduruldu). Gerçek koruma = korunan şey
   otomatik okunur; endpoint/model'e dokunmadan önce surface + golden kontrolü + additive-only + test.
 - Sınır: şema testleri davranış (anlam/birim) değişimini yakalamaz → kritikler için golden JSON kalır.
 
-### Faz 1 — Sıfır risk performans (eski build'e tamamen şeffaf)
+### Faz 1 — Sıfır risk performans (eski build'e tamamen şeffaf) — ✅ TAMAMLANDI
 
 - **Nginx gzip aç:** `gzip on; gzip_comp_level 5; gzip_min_length 1024; gzip_vary on; gzip_types application/json ...`. ~150 KB legacy customers response'unu ~15-30 KB'a indirir. HTTP istemcileri (WKWebView/axios) otomatik açar; byte-identik. Doğrulama: `curl -I -H "Accept-Encoding: gzip" https://plannapp.co/api/customers` -> `Content-Encoding: gzip` görülmeli. Konum: `system_configs/` nginx conf.
 - **Mongo index ekle:** `appointments` için `(organization_id, status, appointment_date)` compound index (dashboard aggregate'lerinin çoğu bu alanları filtreliyor). Konum: `backend/server.py` lifespan index bloğu.
 - **Dashboard aggregate optimizasyonu:** cache-miss senaryosu 3-4s. Pipeline'ı incele; gerekirse bazı sayaçları (customers gibi) denormalize et veya `$facet` yerine `asyncio.gather`. Response şekli değişmez, parametre yok -> eski build etkilenmez.
 
-### Faz 2 — Parametre-versiyonlu (legacy şekle DOKUNMA)
+### Faz 2 — Parametre-versiyonlu (legacy şekle DOKUNMA) — ✅ TAMAMLANDI (backend; frontend geçişi bilinçli ertelendi)
 
 - **`/appointments` cursor pagination:** `/customers`'ta kanıtlanmış deseni uygula: parametresiz / eski parametrelerle (`date`, `start_date`, `status`...) -> **eskisi gibi tam array** (eski build bunu kullanır); yeni `?limit=&cursor=` gönderilince -> yeni paginated şekil. Konum: `backend/server.py` ~7512 (`response_model=List[Appointment]`). Web tarafı yeni parametreye geçer.
 
-### Faz 3 — Force-update (legacy borcunun KAPATMA VANASI)
+### Faz 3 — Force-update (legacy borcunun KAPATMA VANASI) — ✅ TAMAMLANDI (etki için yeni native build gerekir — "sıfırıncı build")
 
 Stratejik çerçeve: Force-update "geleceği koruma" değil, **legacy contract'ı bir gün silebilmeni sağlayan mekanizma**. Ama mevcut sahadaki build'de version-check kodu YOK -> bu "sıfırıncı build"tir; sadece bundan sonraki build'leri kontrol eder. Legacy freeze, mevcut popülasyon güncelleyene kadar kalır.
 
@@ -99,7 +99,7 @@ Stratejik çerçeve: Force-update "geleceği koruma" değil, **legacy contract'�
 - **Frontend (saf JS, yeni native plugin YOK — `@capacitor/app` zaten kurulu):** Açılışta ve mevcut `appStateChange` listener'ında (`frontend/src/App.js` ~914) `CapacitorApp.getInfo()` ile sürümü oku, semver karşılaştır. İki katman: `min_supported` altı -> **kapatılamayan tam ekran modal** + platforma göre store linki; `latest` altı -> kapatılabilir yumuşak uyarı. **Fail-open:** version-check isteği başarısızsa kullanıcıyı ASLA kilitleme.
 - **Avantaj:** Tamamen JS olduğu için mevcut pipeline'dan (Codemagic / Android) sıfır sürtünmeyle geçer, bir sonraki normal build'e sığar.
 
-### Faz 4 — Altyapı (senin yöneteceğin, paralel yürür)
+### Faz 4 — Altyapı (senin yöneteceğin, paralel yürür) — ✅ TAMAMLANDI (PostHog ayrıştırma + Android SSOT; Codemagic Android workflow opsiyonel, bekliyor)
 
 - **PostHog'u ayrı sunucuya taşı:** ~14 EUR Hetzner (8 GB RAM, CX32/CPX31). Ana sunucudaki 12 GB swap baskısını kaldırır; API p95/cache/Mongo I/O kaynağa dokunmadan rahatlar. Capgo'dan bağımsız, tek başına haklı hamle. UYARI: bu kutuya full-Capgo (Supabase) KURMA -> aynı RAM problemini oraya taşırsın.
 - **Android sürümünü tek kaynağa (git) çek:**
@@ -107,7 +107,7 @@ Stratejik çerçeve: Force-update "geleceği koruma" değil, **legacy contract'�
   2. Kural: Android sürüm bump'ı bundan sonra **git'te** yapılır; PC yalnızca temiz `git pull`'dan build alır.
   3. İdeal: Android'i de **Codemagic Android workflow**'una taşı (AAB + Play Store publish). Manuel PC adımı ve divergence riski kökten biter; her iki platform git'ten build alınır.
 
-### Faz 5 — OTA (EN SON, bilinçli)
+### Faz 5 — OTA (EN SON, bilinçli) — ⬜ BEKLİYOR (ota-decision; ön koşullar force-update + PostHog ayrıştırması bitti, karar verilebilir)
 
 Senin için ortalamadan daha değerli: manuel Android akışını (JS-only'de) ortadan kaldırır, tek bundle iki platforma gider, Codemagic upload'ı otomatikleştirebilir. Ama native plugin ekler -> "sıfırıncı build" kuralı geçerli; ve rollback/imzalama riskini getirir.
 
@@ -157,9 +157,9 @@ En yüksek kalıcı getiri: **PostHog ayrıştırması + force-update (sürüm y
 - [x] **nginx-gzip:** `/etc/nginx/nginx.conf` http bloğunda `gzip_proxied any` + `gzip_types application/json` + `gzip_comp_level 5` + `gzip_min_length 1024` aktif edildi. Doğrulama: `/api/appointments` **261 KB → 26 KB (~%90)**, `content-encoding: gzip` + `vary: Accept-Encoding`. (Not: değişiklik global nginx.conf'ta, git dışı; yedek `/etc/nginx/nginx.conf.bak.*`.)
 - [x] **mongo-index:** `appointments`'a `(organization_id, status, appointment_date)` compound index eklendi (server.py lifespan ~1014); deploy sonrası Mongo'da doğrulandı.
 - [x] **dashboard-aggregate:** `_compute_dashboard_stats` paralelleştirildi (`asyncio.gather`) + `find+python sum` yerine sunucu-taraflı `$group` aggregation. Gerçek DB'de eski==yeni denkliği doğrulandı (20 org). Response şekli değişmedi.
-- [ ] **force-update-backend:** DB-driven, platform bazlı `min_supported_version` + `latest_version`'ı login/app-config response'una ekle (sadece sinyal, hard-reject yok).
-- [ ] **force-update-frontend:** `CapacitorApp.getInfo()` ile açılış + `appStateChange` sürüm kontrolü, iki katmanlı modal (zorunlu/yumuşak), fail-open güvenlik kilidi, platforma göre store linki.
-- [ ] **posthog-split:** PostHog'u ayrı ~14EUR Hetzner (8GB) sunucuya taşı; ana sunucudaki 12GB swap baskısını kaldır (full-Capgo bu kutuya kurulmayacak).
-- [ ] **android-ssot:** Android sürüm SSOT: git `build.gradle`'ı gerçek Play Store sürümüyle güncelle, bump'ı git'te yapma kuralını uygula; ideal olarak Codemagic Android workflow'a taşı.
+- [x] **force-update-backend:** `GET /api/app/config` (public, auth'suz) + `PUT /api/superadmin/app-config` (superadmin) eklendi. `min_supported_version`/`latest_version`/`store_urls` DB'de (`app_config` collection, `_id="global"`), platform bazlı (`{ios, android}`), deploy'suz bumplanır. Config yoksa fail-open default (`min=0.0.0`). Sadece sinyal; hard-reject yok.
+- [x] **force-update-frontend:** `versionCheck.js` (semver parse/compare/evaluate) + `ForceUpdateModal.js` (iki katman: kapatılamayan tam-ekran / kapatılabilir banner) + `App.js`'e entegre (`CapacitorApp.getInfo()` açılışta + `appStateChange`, sadece native, fail-open). i18n (tr/en) eklendi. **Süper Admin → Sürüm Yönetimi** (`SAAppVersion.js`) paneliyle görsel yönetim + her release'de yapılacaklar kontrol listesi.
+- [x] **posthog-split:** PostHog ayrı sunucuya TAŞINDI; bu sunucudaki tüm PostHog docker servisleri (container/volume/network/image) + nginx `posthog` conf + `/root/posthog-analiz` compose klasörü SİLİNDİ. Kazanım: ~34GB disk boşaldı, swap kullanımı 6.6GB→1.7GB düştü, RAM available 8.4GB'a çıktı; ana sunucudaki analitik kaynak baskısı tamamen kalktı. Yeni proje token'ı frontend `.env.production` + backend `.env`'e yazıldı (`phc_Bp7...`). Ana sunucuda kalan tek entegrasyon: `posthog-js` (session replay + funnel event + ekran/screen takibi) uzaktaki PostHog'a gönderim. (full-Capgo yeni kutuya KURULMADI — kural korundu.)
+- [x] **android-ssot:** PC'deki canlı Android projesi git'e senkronlandı (Ağu 2026). git artık gerçekle uyumlu: canlı Play Store `3.1/31` → git bir sonraki release için `versionCode 32 / versionName "3.2"`. Sürüm dışında yakalanan drift'ler de git'e alındı: `variables.gradle` compile/target SDK `35→36`, `build.gradle` AGP `8.2.1→8.13.2`, gradle wrapper `8.2.1→8.13`, `AndroidManifest.xml` izinleri (READ/WRITE_CONTACTS, VIBRATE, RECORD_AUDIO), capacitor plugin include'ları (contacts, speech-recognition, text-to-speech, haptics, status-bar). PC dosyaları CRLF olduğu için sadece 8 gerçek içerik farkı LF ile alındı (satır-sonu gürültüsü elendi). 751MB'lık transfer klasörü `.gitignore`'a eklendi. Kural: bump bundan sonra **git'te** yapılır, PC yalnız `git pull` + AAB. **KALAN (opsiyonel):** Codemagic Android workflow'a taşıma (AAB + Play publish) — hâlâ manuel.
 - [x] **appointments-pagination (Faz 2):** `/appointments`'a parametre-versiyonlu cursor pagination eklendi (server.py ~7570). limit YOK → legacy tam array (donmuş build); `?limit=&cursor=` → `{items, next_cursor, has_more}` (JSONResponse ile response_model baypas, item şekli birebir `Appointment`). Cursor: base64(`appointment_date|appointment_time|id`), sıra artan. Doğrulandı: legacy 87 kayıt/23 alan, paginated item 23 alan (missing/extra=0), cursor çakışmasız; 4 contract test geçti. **Frontend geçişi bilinçli olarak YAPILMADI:** `Calendar.js` zaten tarih-aralığı filtreli (payload sınırlı), `App.js` global `appointments` store'u tam-array ister (infinite-scroll değil) → mevcut tüketiciler legacy array'de kalır; backend yeteneği ileride ayrı "tüm randevular" ekranı için hazır.
 - [ ] **ota-decision:** OTA kararı: Capgo Cloud vs ince self-host (R2); rollback+imzalama+Apple uyumu ile en son faz olarak değerlendir.

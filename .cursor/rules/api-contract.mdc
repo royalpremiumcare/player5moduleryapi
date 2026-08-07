@@ -1,0 +1,53 @@
+---
+description: PLANN API sözleşme disiplini — donmuş mobil build'leri kırmama kuralları (ZORUNLU)
+alwaysApply: true
+---
+
+# API SÖZLEŞMESİ = DONMUŞ VARLIK
+
+App Store / Play Store'daki mobil build'ler DONMUŞ'tur: JS bundle uygulamaya build
+anında gömülür (`capacitor.config.json`'da `server.url` YOK). Müşteri telefonundaki
+uygulama, backend'in BUGÜNKÜ response şekline bağlıdır ve güncellenene kadar öyle kalır.
+**Bir endpoint'in response şeklini değiştirmek = sahadaki binlerce uygulamayla yapılmış
+bir sözleşmeyi bozmaktır.** Endpoint değiştirmek "sadece kod değişikliği" DEĞİLDİR.
+
+## Bir endpoint / response_model / Pydantic model'e dokunmadan ÖNCE
+
+1. `OPERATIONS.md` → "MOBİL API SURFACE" listesine bak. Dokunduğun endpoint orada mı?
+2. `backend/tests/contracts/` altındaki golden dosyalara bak. İlgili endpoint donmuş mu?
+3. **RESPONSE:** bir response modelinden alan **SİLME / RENAME / tip değiştirme** → YASAK.
+   (Alan EKLEMEK güvenlidir; eski client bilmediği alanı yok sayar.)
+4. **REQUEST:** bir POST/PUT body'sine **YENİ ZORUNLU alan EKLEME** → YASAK (response hiç
+   değişmese bile eski client o alanı göndermez → 400). Yeni alan = **Optional + default**.
+5. Yeni davranış GEREKİYORSA: mevcut şekli koru, yeniyi **yeni query parametresi** arkasına al
+   (ör. `?limit=&cursor=`). Parametresiz çağrı eski şekli dönmeye devam etmeli.
+6. Bir alanın ADI aynı kalıp **ANLAMINI/birimini** değiştirme (ör. `price` TL→kuruş,
+   `status` değer seti). Testler bunu yakalamaz; sahadaki uygulamayı sessizce bozar.
+7. Kodda `# ═══ CONTRACT: v1 (FROZEN ...) ═══` marker'ı gördüysen: o endpoint bilinçli olarak
+   dondurulmuştur, "garip" görünse de refactor ETME. Yeni endpoint dondurursan aynı marker'ı ekle.
+
+## Değişiklikten SONRA (zorunlu)
+
+Her backend değişikliğinde contract testlerini çalıştır:
+
+```bash
+docker cp backend/server.py plann_backend:/app/server.py
+docker exec -w /app plann_backend python -m pytest tests/integration/ -q
+```
+
+- `test_model_fieldset_contract` patladıysa: bir response modelinden alan sildin/rename ettin.
+  Alanı geri koy. Bilinçli+güvenli bir EKLEME yaptıysan golden'ı güncelle:
+  `UPDATE_CONTRACTS=1 python -m pytest tests/integration/test_model_fieldset_contract.py`
+- `test_request_contract` patladıysa: bir body'ye yeni ZORUNLU alan ekledin. Optional+default yap.
+  Bilinçliyse: `UPDATE_CONTRACTS=1 python -m pytest tests/integration/test_request_contract.py`
+- `test_legacy_contracts` patladıysa: donmuş bir endpoint'in şeklini bozdun → geri al.
+- Golden'ı testi "geçirmek için" DÜŞÜNMEDEN güncelleme; donmuş build hâlâ eski şekli bekliyor.
+
+## Deploy (restart ≠ deploy — kod image'a gömülür, volume mount YOK)
+
+```bash
+docker compose build backend && docker compose up -d backend   # backend
+docker compose build frontend && docker compose up -d frontend # web (8081)
+```
+
+Detay: `OPERATIONS.md`.

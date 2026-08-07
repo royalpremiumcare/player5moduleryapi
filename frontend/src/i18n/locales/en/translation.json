@@ -606,6 +606,15 @@
     "notFoundDesc": "This appointment has been deleted or no longer exists.",
     "backToDashboard": "Back to Dashboard"
   },
+  "forceUpdate": {
+    "blockTitle": "Update Required",
+    "blockBody": "This version of the app is no longer supported. Please update to the latest version to continue.",
+    "updateNow": "Update Now",
+    "softTitle": "New version available",
+    "softBody": "Update for a better experience.",
+    "update": "Update",
+    "later": "Later"
+  },
   "appointments": {
     "title": "Appointments",
     "addAppointment": "New Appointment",

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BarChart2, Building2, MessageSquare, MessageCircle, Target, Users, LogOut, Menu, X, Wallet, Shield, Mail, Bell, FileSearch } from "lucide-react";
+import { BarChart2, Building2, MessageSquare, MessageCircle, Target, Users, LogOut, Menu, X, Wallet, Shield, Mail, Bell, FileSearch, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import SAOverview from "./superadmin/SAOverview";
@@ -13,6 +13,7 @@ import SAFinancialV2 from "./superadmin/SAFinancialV2";
 import SAFinancialAudit from "./superadmin/SAFinancialAudit";
 import SAEmailBroadcast from "./superadmin/SAEmailBroadcast";
 import SAPushBroadcast from "./superadmin/SAPushBroadcast";
+import SAAppVersion from "./superadmin/SAAppVersion";
 
 const NAV_ITEMS = [
   { id: "overview",       label: "Genel Bakış",    icon: BarChart2 },
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { id: "financial-audit", label: "Denetim Merkezi", icon: FileSearch },
   { id: "email",          label: "Mail Gönder",    icon: Mail },
   { id: "push",           label: "Push Bildirim",  icon: Bell },
+  { id: "app-version",    label: "Sürüm Yönetimi", icon: Smartphone },
 ];
 
 const SuperAdmin = ({ onNavigate }) => {
@@ -46,6 +48,7 @@ const SuperAdmin = ({ onNavigate }) => {
       case "financial-audit": return <SAFinancialAudit />;
       case "email":         return <SAEmailBroadcast />;
       case "push":          return <SAPushBroadcast />;
+      case "app-version":   return <SAAppVersion />;
       default:              return <SAOverview />;
     }
   };

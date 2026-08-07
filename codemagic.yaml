@@ -23,6 +23,11 @@ workflows:
           cd frontend
           echo "REACT_APP_BACKEND_URL=https://plannapp.co" > .env.production
           echo "REACT_APP_GOOGLE_MAPS_API_KEY=$REACT_APP_GOOGLE_MAPS_API_KEY" >> .env.production
+          echo "REACT_APP_POSTHOG_KEY=$REACT_APP_POSTHOG_KEY" >> .env.production
+          echo "REACT_APP_POSTHOG_HOST=$REACT_APP_POSTHOG_HOST" >> .env.production
+          echo "REACT_APP_META_PIXEL_ID=$REACT_APP_META_PIXEL_ID" >> .env.production
+          echo "REACT_APP_CHATWOOT_BASE_URL=$REACT_APP_CHATWOOT_BASE_URL" >> .env.production
+          echo "REACT_APP_CHATWOOT_WEBSITE_TOKEN=$REACT_APP_CHATWOOT_WEBSITE_TOKEN" >> .env.production
           echo "--- .env.production content ---"
           cat .env.production
           echo "--- end ---"
@@ -50,3 +55,55 @@ workflows:
         auth: integration
         submit_to_testflight: true
         submit_to_app_store: false
+
+  android-capacitor-workflow:
+    name: PLANN Android Build
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+    environment:
+      groups:
+        - env.production
+        - android_secrets
+      node: latest
+    scripts:
+      - name: Install dependencies
+        script: |
+          cd frontend
+          npm install --legacy-peer-deps
+      - name: Create env and build
+        script: |
+          cd frontend
+          echo "REACT_APP_BACKEND_URL=https://plannapp.co" > .env.production
+          echo "REACT_APP_GOOGLE_MAPS_API_KEY=$REACT_APP_GOOGLE_MAPS_API_KEY" >> .env.production
+          echo "REACT_APP_POSTHOG_KEY=$REACT_APP_POSTHOG_KEY" >> .env.production
+          echo "REACT_APP_POSTHOG_HOST=$REACT_APP_POSTHOG_HOST" >> .env.production
+          echo "REACT_APP_META_PIXEL_ID=$REACT_APP_META_PIXEL_ID" >> .env.production
+          echo "REACT_APP_CHATWOOT_BASE_URL=$REACT_APP_CHATWOOT_BASE_URL" >> .env.production
+          echo "REACT_APP_CHATWOOT_WEBSITE_TOKEN=$REACT_APP_CHATWOOT_WEBSITE_TOKEN" >> .env.production
+          echo "--- .env.production content ---"
+          cat .env.production
+          echo "--- end ---"
+          REACT_APP_BACKEND_URL=https://plannapp.co npm run build
+      - name: Sync Capacitor
+        script: |
+          cd frontend
+          npx cap sync android
+      - name: Android Keystore Hazirla
+        script: |
+          echo $CM_KEYSTORE | base64 --decode > /tmp/keystore.keystore
+          {
+            echo "releaseKeystore=/tmp/keystore.keystore"
+            echo "releaseKeystorePassword=$CM_KEYSTORE_PASSWORD"
+            echo "releaseKeyAlias=$CM_KEY_ALIAS"
+            echo "releaseKeyPassword=$CM_KEY_PASSWORD"
+          } >> frontend/android/local.properties
+      - name: Android Uygulamasini (AAB) Derle
+        script: |
+          cd frontend/android
+          ./gradlew bundleRelease
+    artifacts:
+      - frontend/android/app/build/outputs/bundle/release/*.aab
+    publishing:
+      email:
+        recipients:
+          - fatihsenyuz12@gmail.com

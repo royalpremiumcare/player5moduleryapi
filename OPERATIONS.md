@@ -143,13 +143,44 @@ endpoint'i eklerken, hangi cache prefix'lerini invalidate etmesi gerektiğini BU
 
 ## 4. Sürüm Politikası (Force-Update)
 
-- `min_supported_version` ve `latest_version` DB'de (settings) tutulur; **platform bazlı**:
-  `{ "ios": "x.y.z", "android": "x.y.z" }`. Deploy'suz bumplanabilir.
-- Backend sadece SİNYAL verir (login / `/api/app/config` response'unda). İsteği HARD-REJECT ETME
+- `min_supported_version` ve `latest_version` DB'de (`app_config` koleksiyonu, `_id="global"`) tutulur;
+  **platform bazlı**: `{ "ios": "x.y.z", "android": "x.y.z" }`. Deploy'suz bumplanabilir.
+- Backend sadece SİNYAL verir (`GET /api/app/config`, PUBLIC/auth'suz). İsteği HARD-REJECT ETME
   (yoksa korumaya çalıştığımız eski build'i kırarsın). Kilidi UX katmanı (frontend modal) uygular.
-- Frontend: `CapacitorApp.getInfo()` + `appStateChange` ile açılışta kontrol. `min_supported` altı ->
-  kapatılamayan modal + store linki; `latest` altı -> kapatılabilir uyarı. **Fail-open**: version-check
-  isteği başarısızsa kullanıcıyı ASLA kilitleme.
+- Frontend: `CapacitorApp.getInfo()` + `appStateChange` ile açılışta + öne gelince kontrol
+  (`frontend/src/App.js` `checkAppVersion`, util `frontend/src/lib/versionCheck.js`, UI
+  `components/ForceUpdateModal.js`). `min_supported` altı -> kapatılamayan modal + store linki;
+  `latest` altı -> kapatılabilir uyarı (oturum içi 1 kez). Yalnız native'de çalışır (web hep günceldir).
+  **Fail-open**: config/getInfo/parse başarısızsa kullanıcıyı ASLA kilitleme (kapı açılmaz).
+
+### Force-update endpoint'i (`GET /api/app/config`) — DONMUŞ (v1)
+
+```bash
+# Oku (public):
+curl -s https://plannapp.co/api/app/config
+# → {"min_supported_version":{"ios","android"},"latest_version":{...},"store_urls":{...}}
+```
+
+Doküman yoksa güvenli defaults döner (`min_supported=0.0.0` → kimseyi kilitleme). Contract v1:
+alan SİLME/RENAME yasak, EKLEME güvenli. Kaynak: `backend/server.py` (`get_app_config`).
+
+**Deploy'suz sürüm bump — birincil yöntem: Süper Admin paneli.**
+`Süper Admin → Sürüm Yönetimi` (`components/superadmin/SAAppVersion.js`) sekmesinden iOS/Android için
+`min_supported` + `latest` + store linki görünür şekilde düzenlenir, "Kaydet" ile anında geçerli olur.
+Kritik uyarı kartı panelde de var (min_supported'ı yükseltmenin sahadaki eski kullanıcıları kilitlediği).
+Bu, "curl'de unutulan komut" riskini ortadan kaldırır. Alternatif (curl):
+
+```bash
+curl -X PUT https://plannapp.co/api/superadmin/app-config \
+  -H "Authorization: Bearer <SUPERADMIN_TOKEN>" -H "Content-Type: application/json" \
+  -d '{"min_supported_version":{"ios":"6.0"},"latest_version":{"ios":"6.1"}}'
+```
+
+Kısmi güncelleme: yalnız gönderilen platform alanları yazılır (dot-path `$set`, upsert). Store URL'leri
+de aynı endpoint'ten `store_urls:{ios,android}` ile güncellenebilir. **"Sıfırıncı build" uyarısı:**
+sahadaki mevcut build'lerde version-check kodu YOK → force-update yalnız bundan SONRAKİ (v6.1+) build'leri
+etkiler; `min_supported`'ı bu build'lerden ÖNCEKİ bir sürüme set etme (kimse güncelleyemez, ama modal da
+göremez → etkisiz). Doğru kullanım: v6.1 popülasyona yayıldıktan sonra `min_supported.ios` yavaşça yükselt.
 
 ### Her mobil release'de sürüm bump ZORUNLU
 
@@ -157,8 +188,14 @@ endpoint'i eklerken, hangi cache prefix'lerini invalidate etmesi gerektiğini BU
 - Android: `frontend/android/app/build.gradle` -> `versionName` + `versionCode`.
 - **Android bump GİT'te yapılır** (PC'de değil). Aksi halde git'teki sürüm ile Play Store'daki
   sürüm drift eder ve force-update politikası yanlış kullanıcıyı kilitler.
-  (Bilinen durum: git'teki Android build.gradle Mart 2026'dan beri `2.0/20`'de donmuş; gerçek Play
-  Store sürümü PC'de bumplanıyor. Bu SENKRONİZE EDİLMELİ — bkz. yol haritası android-ssot.)
+  - **SSOT senkronu yapıldı (Ağu 2026):** PC'deki canlı Android projesi git'e alındı. Git artık
+    gerçekle uyumlu — canlı Play Store sürümü `3.1/31`, git bir sonraki release için `3.2/32`.
+    Ayrıca senkronda git'e taşınanlar: `variables.gradle` compile/target SDK `35→36`,
+    `build.gradle` AGP `8.2.1→8.13.2`, gradle wrapper `8.2.1→8.13`, `AndroidManifest.xml`
+    izinleri (READ/WRITE_CONTACTS, VIBRATE, RECORD_AUDIO), ve capacitor plugin include'ları
+    (contacts, speech-recognition, text-to-speech, haptics, status-bar).
+  - Bundan sonra her Android release'inde `versionCode`/`versionName` git'te bir artırılır;
+    PC yalnızca `git pull` + AAB alır (build.gradle'a PC'de DOKUNULMAZ).
 
 ---
 

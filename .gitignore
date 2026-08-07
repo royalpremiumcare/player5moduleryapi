@@ -12,3 +12,11 @@ backend/.testvenv/
 # frontend/android/
 # frontend/ios/
 backend/firebase-admin-key.json
+
+# PC'den geçici Android aktarım klasörü (SSOT senkronu için, commit edilmez)
+ANDROİD PCDEN AKTARIM/
+
+# Android imza keystore'ları — ASLA commit edilmez (Codemagic env'de base64 olarak durur)
+frontend/android/app/upload
+*.keystore
+*.jks

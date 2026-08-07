@@ -12486,6 +12486,89 @@ async def make_payroll_payment(request: Request, payment_data: PayrollPaymentReq
         raise HTTPException(status_code=500, detail=f"Ödeme kaydedilirken bir hata oluştu: {error_message}")
 
 # === PUBLIC API ROUTES (TOKEN GEREKTİRMEZ) ===
+
+# ═══ CONTRACT: v1 (FROZEN / RESPONSE) — GET /api/app/config ═══
+# Mobil force-update SİNYAL kaynağı. Backend YALNIZ sinyal verir; isteği ASLA
+# hard-reject etmez (kilidi frontend UX katmanı uygular — fail-open felsefesi).
+# Response alanı SİLME/RENAME yasak; EKLEME güvenli. Değerler DB'den okunur
+# (app_config koleksiyonu, _id="global") → deploy'suz bumplanabilir. Doküman
+# yoksa güvenli defaults döner (min_supported=0.0.0 → hiç kimseyi kilitleme).
+APP_CONFIG_DEFAULTS = {
+    "min_supported_version": {"ios": "0.0.0", "android": "0.0.0"},
+    "latest_version": {"ios": "6.1", "android": "2.0"},
+    "store_urls": {
+        "ios": "https://apps.apple.com/app/id6759719891",
+        "android": "https://play.google.com/store/apps/details?id=co.plannapp.app",
+    },
+}
+
+
+def _merge_app_config(doc):
+    """DB dokümanını defaults ile birleştirir (eksik/bozuk alanlar için güvenli fallback)."""
+    cfg = {
+        "min_supported_version": dict(APP_CONFIG_DEFAULTS["min_supported_version"]),
+        "latest_version": dict(APP_CONFIG_DEFAULTS["latest_version"]),
+        "store_urls": dict(APP_CONFIG_DEFAULTS["store_urls"]),
+    }
+    if isinstance(doc, dict):
+        for key in ("min_supported_version", "latest_version", "store_urls"):
+            val = doc.get(key)
+            if isinstance(val, dict):
+                for plat in ("ios", "android"):
+                    pv = val.get(plat)
+                    if isinstance(pv, str) and pv:
+                        cfg[key][plat] = pv
+    return cfg
+
+
+@api_router.get("/app/config")
+async def get_app_config(request: Request):
+    """
+    Mobil uygulama config'i (force-update sinyali). PUBLIC — auth gerektirmez ki
+    login öncesi de kontrol edilebilsin. DB'den okunur; yoksa güvenli defaults.
+    Fail-open: her durumda 200 + geçerli config döner, ASLA kullanıcıyı kilitlemez.
+    """
+    doc = None
+    try:
+        db = await get_db_from_request(request)
+        doc = await db.app_config.find_one({"_id": "global"}, {"_id": 0})
+    except Exception as e:
+        logging.warning(f"/app/config okunamadı, defaults dönülüyor: {e}")
+    return _merge_app_config(doc)
+
+
+@api_router.put("/superadmin/app-config")
+async def update_app_config(request: Request, current_user: UserInDB = Depends(get_superadmin_user)):
+    """
+    Force-update eşiklerini deploy'suz güncelle (superadmin). Kısmi güncelleme:
+    yalnız gönderilen platform alanları yazılır. Body örneği:
+      { "min_supported_version": {"ios": "6.0"}, "latest_version": {"ios": "6.1"} }
+    """
+    db = await get_db_from_request(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Geçersiz JSON body")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body bir obje olmalı")
+
+    update = {}
+    for key in ("min_supported_version", "latest_version", "store_urls"):
+        val = body.get(key)
+        if isinstance(val, dict):
+            for plat in ("ios", "android"):
+                pv = val.get(plat)
+                if isinstance(pv, str) and pv:
+                    update[f"{key}.{plat}"] = pv
+    if not update:
+        raise HTTPException(status_code=400, detail="Güncellenecek geçerli alan yok")
+    update["updated_at"] = datetime.utcnow()
+    update["updated_by"] = current_user.username
+    await db.app_config.update_one({"_id": "global"}, {"$set": update}, upsert=True)
+    doc = await db.app_config.find_one({"_id": "global"}, {"_id": 0})
+    return _merge_app_config(doc)
+
+
 @api_router.get("/public/business/{slug}")
 async def get_public_business(request: Request, slug: str):
     """Slug ile işletme bilgilerini, hizmetlerini, personellerini ve ayarlarını getir (Model D)"""

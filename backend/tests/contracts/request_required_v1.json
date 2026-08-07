@@ -1,0 +1,200 @@
+{
+  "_doc": "DONMUS request contract. Her POST/PUT body modelinin ZORUNLU alan seti. Bir alan ZORUNLU hale gelirse (required set BUYURSE) eski client o alani gondermedigi icin 400 alir -> test_request_contract patlar. Opsiyonel alan eklemek veya zorunlu bir alani kaldirmak GUVENLIDIR (test patlamaz). Yeni bir zorunlu alan GERCEKTEN gerekiyorsa: alani Optional yap + default ver VEYA yeni endpoint/surum ac. Bilincli degisiklikte golden guncelle: UPDATE_CONTRACTS=1 pytest .../test_request_contract.py",
+  "frozen": true,
+  "request_required": {
+    "bulk_package:BulkPackageCreate": [
+      "customer_name",
+      "phone",
+      "service_id",
+      "sessions"
+    ],
+    "bulk_session_idempotency:BulkSessionCreate": [
+      "customer_name",
+      "phone",
+      "service_id",
+      "sessions"
+    ],
+    "financial.financial_endpoints:BatchFailMark": [
+      "reason"
+    ],
+    "financial.financial_endpoints:BatchFundConfirm": [],
+    "financial.financial_endpoints:BulkFundConfirm": [],
+    "financial.financial_endpoints:BulkPrepareBody": [],
+    "financial.financial_endpoints:DLQResolve": [
+      "note"
+    ],
+    "financial.financial_endpoints:FlagGlobalSet": [
+      "value"
+    ],
+    "financial.financial_endpoints:FlagKillSwitch": [
+      "disabled"
+    ],
+    "financial.financial_endpoints:FlagOrgSet": [
+      "organization_id"
+    ],
+    "financial.financial_endpoints:MerchantRefundRequest": [
+      "transaction_id"
+    ],
+    "financial.financial_endpoints:PaymentLinkCreate": [
+      "amount",
+      "customer_name",
+      "customer_phone",
+      "description"
+    ],
+    "financial.financial_endpoints:PublicCheckoutRequest": [
+      "appointment_id",
+      "customer_phone",
+      "organization_id"
+    ],
+    "financial.financial_endpoints:RefundRequestCreate": [
+      "merchant_transaction_id",
+      "reason",
+      "refund_amount_minor"
+    ],
+    "financial.financial_endpoints:RefundRequestDecision": [],
+    "financial.schemas:MerchantPayoutSettingsUpdate": [],
+    "marketing_autopilot_endpoints:AutopilotUpdate": [
+      "enabled"
+    ],
+    "meta_capi_endpoints:MetaEventRequest": [
+      "event_name"
+    ],
+    "server:AIChatRequest": [
+      "message"
+    ],
+    "server:AhaSkipRequest": [],
+    "server:AppointmentCreate": [
+      "appointment_date",
+      "appointment_time",
+      "customer_name",
+      "phone"
+    ],
+    "server:AppointmentUpdate": [],
+    "server:BreakCreate": [
+      "date",
+      "end_time",
+      "start_time"
+    ],
+    "server:BulkCheckRequest": [
+      "service_id",
+      "slots"
+    ],
+    "server:CancelSelectedRequest": [
+      "appointment_ids"
+    ],
+    "server:CategoryCreate": [
+      "name"
+    ],
+    "server:CategoryUpdate": [],
+    "server:ContactRequest": [
+      "name",
+      "phone"
+    ],
+    "server:ContactStatusUpdate": [
+      "status"
+    ],
+    "server:CustomerCreate": [
+      "name",
+      "phone"
+    ],
+    "server:CustomerUpdate": [],
+    "server:ExpenseCreate": [
+      "amount",
+      "category",
+      "date",
+      "title"
+    ],
+    "server:ExpenseUpdate": [],
+    "server:ForgotPasswordRequest": [
+      "username"
+    ],
+    "server:FunnelEventIn": [
+      "event_name",
+      "insert_id"
+    ],
+    "server:MarketingUserCreate": [
+      "password",
+      "username"
+    ],
+    "server:OnboardingComplete": [],
+    "server:OnboardingHoursUpdate": [
+      "business_hours"
+    ],
+    "server:OnboardingNewService": [
+      "duration",
+      "name",
+      "price"
+    ],
+    "server:OnboardingServiceUpdate": [
+      "services"
+    ],
+    "server:PaymentUpdate": [
+      "payment_type"
+    ],
+    "server:PayrollPaymentRequest": [
+      "amount",
+      "staff_username"
+    ],
+    "server:PlanUpdateRequest": [
+      "plan_id"
+    ],
+    "server:PushSubscriptionCreate": [
+      "subscription"
+    ],
+    "server:RegisterVerifyRequest": [
+      "code",
+      "phone"
+    ],
+    "server:ResetPasswordRequest": [
+      "new_password",
+      "token"
+    ],
+    "server:ServiceCreate": [
+      "name",
+      "price"
+    ],
+    "server:ServiceUpdate": [],
+    "server:Settings": [
+      "organization_id"
+    ],
+    "server:SettingsLocationUpdate": [
+      "address",
+      "coordinates"
+    ],
+    "server:SetupPasswordRequest": [
+      "new_password",
+      "token"
+    ],
+    "server:SsoExchangeRequest": [
+      "code"
+    ],
+    "server:StaffCreate": [
+      "username"
+    ],
+    "server:StripeConfirmCheckoutRequest": [
+      "session_id"
+    ],
+    "server:SuperAdminBroadcastEmail": [
+      "message",
+      "subject"
+    ],
+    "server:SuperAdminBroadcastPush": [
+      "body",
+      "title"
+    ],
+    "server:TransactionUpdate": [
+      "amount"
+    ],
+    "server:UserCreate": [
+      "password",
+      "username"
+    ],
+    "server:UserUpdate": [],
+    "server:WavePlanRequest": [
+      "first_session_date",
+      "first_session_time",
+      "remaining_count",
+      "service_id"
+    ]
+  }
+}

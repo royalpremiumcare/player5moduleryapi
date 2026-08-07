@@ -608,6 +608,15 @@
     "notFoundDesc": "Bu randevu silinmiş veya artık mevcut değil.",
     "backToDashboard": "Panele Dön"
   },
+  "forceUpdate": {
+    "blockTitle": "Güncelleme Gerekli",
+    "blockBody": "Uygulamanın bu sürümü artık desteklenmiyor. Devam etmek için lütfen en son sürüme güncelleyin.",
+    "updateNow": "Şimdi Güncelle",
+    "softTitle": "Yeni sürüm mevcut",
+    "softBody": "Daha iyi bir deneyim için güncelleyin.",
+    "update": "Güncelle",
+    "later": "Daha sonra"
+  },
   "appointments": {
     "title": "Randevular",
     "addAppointment": "Yeni Randevu",

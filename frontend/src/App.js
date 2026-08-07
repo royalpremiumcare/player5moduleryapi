@@ -42,6 +42,8 @@ import ChatWidget from "@/components/ChatWidget";
 import AhaSpotlight from "@/components/AhaSpotlight";
 import AhaCelebration from "@/components/AhaCelebration";
 import AhaErrorScreen from "@/components/AhaErrorScreen";
+import ForceUpdateModal from "@/components/ForceUpdateModal";
+import { evaluateUpdate } from "@/lib/versionCheck";
 import posthog from "@/lib/posthog";
 import metaPixel from "@/lib/metaPixel";
 import { loadChatwoot, setChatwootUser } from "@/lib/chatwoot";
@@ -124,6 +126,10 @@ function App() {
   const [stats, setStats] = useState(null);
   // Bildirime tıklayınca açılan premium randevu detay sayfası (id tutulur)
   const [detailAppointmentId, setDetailAppointmentId] = useState(null);
+  // Force-update kapısı: { level: 'block'|'soft', storeUrl } | null. FAIL-OPEN.
+  const [updateGate, setUpdateGate] = useState(null);
+  // Yumuşak (soft) uyarı bu oturumda kapatıldıysa tekrar gösterme.
+  const softUpdateDismissedRef = useRef(false);
   // Bildirim TAP listener'ı yalnız BİR kez bağlansın (subscribeToPush birden çok
   // kez çağrılabilir → çift handler = detay 2 kez açılır). Ref ile tek sefer garanti.
   const pushActionListenerBound = useRef(false);
@@ -183,6 +189,37 @@ function App() {
       posthog.trackScreen(currentView);
     }
   }, [currentView]);
+
+  // ===== FORCE-UPDATE SÜRÜM KONTROLÜ (yalnız native, FAIL-OPEN) =====
+  // Backend YALNIZ sinyal verir; burada UX kilidi uygulanır. Herhangi bir hata
+  // (config alınamadı, getInfo patladı, semver parse edilemedi) → kapı AÇILMAZ
+  // (kullanıcı asla kilitlenmez). Web'de hiç çalışmaz (zaten hep günceldir).
+  const checkAppVersion = useCallback(async () => {
+    try {
+      if (!Capacitor.isNativePlatform()) return;
+      const platform = Capacitor.getPlatform();
+      const info = await CapacitorApp.getInfo();
+      const currentVersion = info?.version;
+      if (!currentVersion) return;
+      const { data: config } = await api.get('/app/config');
+      const result = evaluateUpdate({ currentVersion, platform, config });
+      if (result.level === 'block') {
+        setUpdateGate({ level: 'block', storeUrl: result.storeUrl });
+      } else if (result.level === 'soft') {
+        if (softUpdateDismissedRef.current) return; // bu oturumda kapatıldıysa gösterme
+        setUpdateGate({ level: 'soft', storeUrl: result.storeUrl });
+      } else {
+        setUpdateGate(null);
+      }
+    } catch (_) {
+      // FAIL-OPEN: sessizce yut, kullanıcıyı kilitleme
+    }
+  }, []);
+
+  // Açılışta bir kez kontrol et.
+  useEffect(() => {
+    checkAppVersion();
+  }, [checkAppVersion]);
 
   const goBack = useCallback(() => {
     // 1) Açık form/modal varsa önce onu kapat
@@ -1002,7 +1039,7 @@ function App() {
     let appListener;
     if (Capacitor.isNativePlatform()) {
       CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) resync();
+        if (isActive) { resync(); checkAppVersion(); }
       }).then((l) => { appListener = l; });
     }
 
@@ -1016,7 +1053,7 @@ function App() {
       appListener?.remove();
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [token, subscribeToPush]);
+  }, [token, subscribeToPush, checkAppVersion]);
 
   // WebSocket setup for real-time updates
   const socketRef = useRef(null);
@@ -1978,6 +2015,18 @@ function App() {
             setDetailAppointmentId(null);
             setShowForm(false);
             setCurrentView('dashboard');
+          }}
+        />
+      )}
+
+      {/* ===== FORCE-UPDATE KAPISI (native, en üst z-index) ===== */}
+      {updateGate && (
+        <ForceUpdateModal
+          level={updateGate.level}
+          onUpdate={() => openAppStore({ store_url_web: updateGate.storeUrl })}
+          onDismiss={() => {
+            softUpdateDismissedRef.current = true;
+            setUpdateGate(null);
           }}
         />
       )}

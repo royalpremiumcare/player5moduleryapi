@@ -1,0 +1,32 @@
+{
+  "contract": "LEGACY",
+  "endpoint": "GET /api/customers (limit parametresi YOK)",
+  "frozen": true,
+  "description": "DONMUŞ CONTRACT. limit gönderilmeyince flat array döner (eski mobil build'ler böyle bekler). Randevusu OLAN müşteri is_pending anahtarı İÇERMEZ; randevusu OLMAYAN (manuel/customers-only) müşteri is_pending:true içerir. Bu şekle App Store'daki donmuş build'ler bağlı — DEĞİŞTİRME. limit verilince yeni cursor pagination formatı ({items,next_cursor,has_more}) döner, o ayrı bir contract'tır. Kaynak: backend/server.py get_customers legacy path (~11265).",
+  "shape": "array",
+  "required_keys": [
+    "name",
+    "phone",
+    "total_appointments",
+    "completed_appointments"
+  ],
+  "optional_keys": [
+    "is_pending"
+  ],
+  "invariant": "is_pending alanı bir item'da SADECE ve HER ZAMAN total_appointments == 0 ise bulunur (randevusuz müşteri).",
+  "examples": [
+    {
+      "name": "Randevulu Kişi",
+      "phone": "905551112233",
+      "total_appointments": 2,
+      "completed_appointments": 1
+    },
+    {
+      "name": "Randevusuz Kişi",
+      "phone": "905559998877",
+      "total_appointments": 0,
+      "completed_appointments": 0,
+      "is_pending": true
+    }
+  ]
+}
