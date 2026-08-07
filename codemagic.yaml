@@ -88,6 +88,11 @@ workflows:
         script: |
           cd frontend
           npx cap sync android
+      - name: JDK 21 ayarla (Capacitor 7 gerektiriyor)
+        script: |
+          export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+          echo "JAVA_HOME=$JAVA_HOME" >> $CM_ENV
+          java -version
       - name: Android Keystore Hazirla
         script: |
           echo $CM_KEYSTORE | base64 --decode > /tmp/keystore.keystore
