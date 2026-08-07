@@ -161,7 +161,14 @@ function App() {
   const skipHistoryRef = useRef(false);
   const prevViewRef = useRef(currentView);
 
+  const screenInitRef = useRef(false);
   useEffect(() => {
+    // İlk ekran (mount): super property register + $pageview bir kez atılsın ki
+    // ilk navigasyondan ÖNCEki tıklamalar da `screen` taşısın (SCREEN kolonu boş kalmaz).
+    if (!screenInitRef.current) {
+      screenInitRef.current = true;
+      posthog.trackScreen(currentView);
+    }
     const prev = prevViewRef.current;
     if (prev !== currentView) {
       if (skipHistoryRef.current) {
@@ -171,6 +178,9 @@ function App() {
         if (viewHistoryRef.current.length > 50) viewHistoryRef.current.shift();
       }
       prevViewRef.current = currentView;
+      // Ekran görüntüleme → PostHog (batch'lenir, non-blocking, ledger POST yok).
+      // Yalnız gerçek görünüm değişiminde çalışır; her render'da değil.
+      posthog.trackScreen(currentView);
     }
   }, [currentView]);
 
