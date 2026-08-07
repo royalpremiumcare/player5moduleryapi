@@ -90,9 +90,12 @@ workflows:
           npx cap sync android
       - name: JDK 21 ayarla (Capacitor 7 gerektiriyor)
         script: |
+          echo "=== Makinedeki JDK'lar ==="
+          /usr/libexec/java_home -V || true
           export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+          echo "Seçilen JAVA_HOME=$JAVA_HOME"
           echo "JAVA_HOME=$JAVA_HOME" >> $CM_ENV
-          java -version
+          "$JAVA_HOME/bin/java" -version
       - name: Android Keystore Hazirla
         script: |
           echo $CM_KEYSTORE | base64 --decode > /tmp/keystore.keystore
@@ -105,7 +108,8 @@ workflows:
       - name: Android Uygulamasini (AAB) Derle
         script: |
           cd frontend/android
-          ./gradlew bundleRelease
+          export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+          ./gradlew bundleRelease -Dorg.gradle.java.home="$JAVA_HOME" --no-daemon
     artifacts:
       - frontend/android/app/build/outputs/bundle/release/*.aab
     publishing:
