@@ -124,6 +124,9 @@ function App() {
   const [stats, setStats] = useState(null);
   // Bildirime tıklayınca açılan premium randevu detay sayfası (id tutulur)
   const [detailAppointmentId, setDetailAppointmentId] = useState(null);
+  // Bildirim TAP listener'ı yalnız BİR kez bağlansın (subscribeToPush birden çok
+  // kez çağrılabilir → çift handler = detay 2 kez açılır). Ref ile tek sefer garanti.
+  const pushActionListenerBound = useRef(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -735,6 +738,30 @@ function App() {
       // Native (Android/iOS) Push Notification Logic
       const platform = Capacitor.getPlatform();
       await debugPush('start', { platform, isNative });
+
+      // ── Bildirim TAP listener'ını EN ERKEN bağla (permission/token AKIŞINI BEKLEME) ──
+      // Cold-start'ta (uygulama kapalıyken tap) Capacitor bu event'i listener
+      // eklenene kadar kuyrukta tutar. Eskiden listener token kaydından SONRA
+      // (fonksiyonun sonunda) bağlanıyordu → detay sayfası ~3-4sn gecikiyordu.
+      // Artık subscribeToPush başlar başlamaz bağlanır; token akışını beklemez.
+      if (!pushActionListenerBound.current) {
+        pushActionListenerBound.current = true;
+        try {
+          PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+            console.log('👆 Notification clicked:', action);
+            const data = action?.notification?.data || {};
+            if (data.action === 'OPEN_STORE') {
+              openAppStore(data);
+            } else if (data.action === 'OPEN_DASHBOARD') {
+              setCurrentView('dashboard');
+            } else if (data.type === 'new_appointment' && data.appointment_id) {
+              setCurrentView('dashboard');
+              setDetailAppointmentId(String(data.appointment_id));
+            }
+          });
+        } catch (_) { /* listener eklenemezse sessiz geç */ }
+      }
+
       try {
         const permissionStatus = await PushNotifications.requestPermissions();
         await debugPush('permission', { receive: permissionStatus.receive });
@@ -803,25 +830,9 @@ function App() {
              toast.info(`${notification.title}: ${notification.body}`);
           });
 
-          // Bildirime tıklandığında — Capacitor bu event'i hem background'da
-          // hem de uygulama kapalıyken (quit state) bildirime dokunup açılınca
-          // tetikler. Yani RN'deki getInitialNotification + onNotificationOpenedApp
-          // karşılığını tek listener kapsar.
-          PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-             console.log('👆 Notification clicked:', action);
-             const data = action?.notification?.data || {};
-             if (data.action === 'OPEN_STORE') {
-               openAppStore(data);
-             } else if (data.action === 'OPEN_DASHBOARD') {
-               // PLANN Asistan bildirimi → Dashboard'a yönlendir
-               setCurrentView('dashboard');
-             } else if (data.type === 'new_appointment' && data.appointment_id) {
-               // Public randevu bildirimi → premium randevu detay sayfası
-               // (kapatınca dashboard'a döner). FCM data string olarak gelir.
-               setCurrentView('dashboard');
-               setDetailAppointmentId(String(data.appointment_id));
-             }
-          });
+          // NOT: pushNotificationActionPerformed (tap) listener'ı artık bu bloğun
+          // EN BAŞINDA (permission/token'dan önce) bağlanıyor — cold-start detay
+          // gecikmesini önlemek için. Burada tekrar bağlanmıyor.
         } else {
           await debugPush('permission_denied', { receive: permissionStatus.receive });
         }

@@ -8,6 +8,8 @@ const dashboardDuration = new Trend('dashboard_duration');
 const appointmentsDuration = new Trend('appointments_duration');
 const servicesDuration = new Trend('services_duration');
 const customersDuration = new Trend('customers_duration');
+const customersPagedDuration = new Trend('customers_paginated_duration');
+const customersSearchDuration = new Trend('customers_search_duration');
 
 export let options = {
   stages: [
@@ -25,7 +27,7 @@ export let options = {
 };
 
 const BASE_URL = 'http://127.0.0.1:8002/api';
-const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb3lhbHByZW1pdW1jYXJlQGdtYWlsLmNvbSIsIm9yZ19pZCI6ImJkMjE1ZGIwLWNkN2QtNDZiYi1hMDkxLWEyMDVhNjI0YjQ1YiIsInJvbGUiOiJhZG1pbiIsIm9uYm9hcmRpbmdfY29tcGxldGVkIjp0cnVlLCJmdWxsX25hbWUiOiJGYXRpaCBcdTAxNWVlbnlcdTAwZmN6IiwiY2FuX3ZpZXdfYWxsX2FwcG9pbnRtZW50cyI6ZmFsc2UsImV4cCI6MTc3MjU5MDcyN30.I2y0byRmMkFnI6dO7y6A9G1962kCynlo-MbkGswenZA';
+const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb3lhbHByZW1pdW1jYXJlQGdtYWlsLmNvbSIsInVzZXJfaWQiOiJlNzg2Yzk1Yi1hODIwLTRjYmUtYjgwNS1hOTZmMDdkMGY2ZDgiLCJvcmdfaWQiOiJiZDIxNWRiMC1jZDdkLTQ2YmItYTA5MS1hMjA1YTYyNGI0NWIiLCJyb2xlIjoiYWRtaW4iLCJjb21wYW55X25hbWUiOiJSb3lhbCBQcmVtaXVtIENhcmUiLCJmdWxsX25hbWUiOiJGYXRpaCBcdTAxNWVlbnlcdTAwZmN6IiwiY2FuX3ZpZXdfYWxsX2FwcG9pbnRtZW50cyI6ZmFsc2UsIm9uYm9hcmRpbmdfY29tcGxldGVkIjp0cnVlLCJleHAiOjE3ODYwNTIwOTF9.E-FZ4VkEGRBIf0i5emBi3AxPPLk9d_Kh3KzfZHap9sM';
 
 const params = {
   headers: {
@@ -36,16 +38,18 @@ const params = {
 
 // Tüm GET endpoint'leri — iş mantığı hatası OLMAZ
 const endpoints = [
-  { name: 'Dashboard Stats',  url: '/stats/dashboard',           trend: 'dashboard' },
-  { name: 'Appointments',     url: '/appointments',              trend: 'appointments' },
-  { name: 'Services',         url: '/services',                  trend: 'services' },
-  { name: 'Customers',        url: '/customers',                 trend: 'customers' },
-  { name: 'Settings',         url: '/settings',                  trend: null },
-  { name: 'Users',            url: '/users',                     trend: null },
-  { name: 'Finance Summary',  url: '/finance/summary',           trend: null },
-  { name: 'Expenses',         url: '/expenses',                  trend: null },
-  { name: 'Payroll',          url: '/finance/payroll',           trend: null },
-  { name: 'Current Plan',     url: '/plan/current',             trend: null },
+  { name: 'Dashboard Stats',              url: '/stats/dashboard',           trend: 'dashboard' },
+  { name: 'Appointments',                 url: '/appointments',              trend: 'appointments' },
+  { name: 'Services',                     url: '/services',                  trend: 'services' },
+  { name: 'Customers (legacy flat)',      url: '/customers',                 trend: 'customers' },
+  { name: 'Customers (paginated 30)',     url: '/customers?limit=30',        trend: 'customers_paginated' },
+  { name: 'Customers (search)',           url: '/customers?limit=30&search=fatih', trend: 'customers_search' },
+  { name: 'Settings',                     url: '/settings',                  trend: null },
+  { name: 'Users',                        url: '/users',                     trend: null },
+  { name: 'Finance Summary',              url: '/finance/summary',           trend: null },
+  { name: 'Expenses',                     url: '/expenses',                  trend: null },
+  { name: 'Payroll',                      url: '/finance/payroll',           trend: null },
+  { name: 'Current Plan',                 url: '/plan/current',             trend: null },
 ];
 
 const trendMap = {
@@ -53,6 +57,8 @@ const trendMap = {
   appointments: appointmentsDuration,
   services: servicesDuration,
   customers: customersDuration,
+  customers_paginated: customersPagedDuration,
+  customers_search: customersSearchDuration,
 };
 
 export default function () {

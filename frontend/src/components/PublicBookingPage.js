@@ -821,8 +821,20 @@ const PublicBookingPage = () => {
 
     setSubmitting(true);
     try {
-      // Use pre-solved Turnstile token (auto-solved on page load) — soft mode, proceed even without token
-      let token = turnstileToken || (window.turnstile && turnstileWidgetId.current ? window.turnstile.getResponse(turnstileWidgetId.current) : null) || "";
+      // Use pre-solved Turnstile token (auto-solved on page load) — soft mode, proceed even without token.
+      // KRİTİK: getResponse, ilk rezervasyondan sonra widget reset/kaldırıldığında
+      // stale widget id ile SENKRON exception fırlatır ("Invalid widget id"). Bu
+      // eskiden tüm handleSubmit'i patlatıp POST'u engelliyor ve "randevu
+      // oluşturulamadı" toast'ı gösteriyordu (bayat sayfada 2. rezervasyon). Soft
+      // mode olduğu için token'ı güvenli çözüp, hata olursa boş geçiyoruz.
+      let token = turnstileToken || "";
+      if (!token && window.turnstile && turnstileWidgetId.current) {
+        try {
+          token = window.turnstile.getResponse(turnstileWidgetId.current) || "";
+        } catch (_) {
+          token = ""; // Widget reset/kaldırılmış — soft mode, boş token ile devam
+        }
+      }
       console.log('[Turnstile] token available:', token ? `length=${token.length}` : 'empty (soft mode)');
 
       const fullName = customerFullName.trim();
@@ -893,8 +905,17 @@ const PublicBookingPage = () => {
       toast.success(t('publicBooking.appointmentCreated'));
       triggerSuccessReset();
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || t('publicBooking.errorCreateAppointment');
+      const status = error.response?.status;
+      const detail = (error.response?.data?.detail || '').toString();
+      const errorMessage = detail || t('publicBooking.errorCreateAppointment');
       toast.error(errorMessage);
+      // Slot doldu (409 veya "dolu/doldu" mesajı) → toast'la bırakma; grid'i
+      // tazele ve saat seçimine dön ki dolan slot anında kapansın.
+      if (status === 409 || /(dolu|doldu|taken)/i.test(detail)) {
+        setSelectedTime("");
+        setCurrentStep(4);
+        loadAvailableSlots();
+      }
     } finally {
       setSubmitting(false);
       // Reset widget so it auto-solves again for next attempt.
@@ -997,8 +1018,19 @@ const PublicBookingPage = () => {
         triggerSuccessReset();
       }
     } catch (err) {
+      const status = err.response?.status;
       const msg = err.response?.data?.detail || (currentLang === 'en' ? 'Verification failed.' : 'Doğrulama başarısız.');
       toast.error(msg);
+      // Slot çakışması (409 "az önce doldu") → doğrulama ekranından çık, grid'i
+      // tazele ve saat seçimine dön; dolan slot anında kapanır, kullanıcı yeni
+      // saat seçebilir. Kod/telefon state'i korunur (aynı müşteri tekrar dener).
+      if (status === 409) {
+        setVerificationPending(false);
+        setVerificationStatus(null);
+        setSelectedTime("");
+        setCurrentStep(4);
+        loadAvailableSlots();
+      }
     } finally {
       setVerifyingCode(false);
     }

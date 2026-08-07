@@ -13593,11 +13593,13 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             known_count = await redis_client.incr(known_key)
             if known_count == 1:
                 await redis_client.expire(known_key, 86400)  # 24 saat
-            if known_count <= 10:
+            # Anti-spam: tanıdık müşteri günde en fazla 3 randevuyu WhatsApp
+            # doğrulamasız alabilir; sonrası WhatsApp zorunlu (spam'i kısar).
+            if known_count <= 3:
                 skip_verification = True
-                logging.info(f"✅ Tanıdık müşteri bypass: {appointment.phone} ({known_count}/10 bugün)")
+                logging.info(f"✅ Tanıdık müşteri bypass: {appointment.phone} ({known_count}/3 bugün)")
             else:
-                logging.info(f"⚠️ Tanıdık müşteri günlük limit ({known_count}/10), WhatsApp zorunlu")
+                logging.info(f"⚠️ Tanıdık müşteri günlük limit ({known_count}/3), WhatsApp zorunlu")
         else:
             skip_verification = True  # Redis yoksa bypass ver
 
@@ -13992,6 +13994,31 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     appointment_data['service_name'] = service['name']
     appointment_data['service_price'] = service['price']
     appointment_data['service_duration'] = service.get('duration', 30)  # Toplam hizmet süresi
+
+    # Solo işletme (yalnızca admin hizmet veriyor) → public randevu ATANMAMIŞ
+    # (staff_member_id=None) kaydedilir. Admin adının randevu kartında "personel"
+    # olarak görünmesini engeller; merchant paneli ve verify-code yolu ile tutarlı.
+    # Yalnızca: müşteri açıkça personel SEÇMEDİYSE + atanan admin ise + bu hizmeti
+    # veren admin-dışı GERÇEK personel YOKSA uygulanır (çok personelli org'da admin
+    # meşru sağlayıcıysa dokunmaz). Çakışma kontrolü zaten admin+None ile yapıldı.
+    if assigned_staff_id and not appointment.staff_member_id:
+        _admin_u = await db.users.find_one(
+            {"organization_id": organization_id, "role": "admin"},
+            {"_id": 0, "username": 1},
+        )
+        if _admin_u and assigned_staff_id == _admin_u.get("username"):
+            _real_staff = await db.users.find_one(
+                {
+                    "organization_id": organization_id,
+                    "role": {"$ne": "admin"},
+                    "permitted_service_ids": {"$all": resolved_service_ids},
+                },
+                {"_id": 0, "username": 1},
+            )
+            if not _real_staff:
+                assigned_staff_id = None
+                logging.info("ℹ️ Public booking: solo işletme (yalnız admin) → randevu atanmamış (None) kaydedildi")
+
     appointment_data['staff_member_id'] = assigned_staff_id
     appointment_data['source'] = 'public_booking'  # Public booking'den geldiğini işaretle
     
@@ -14360,6 +14387,34 @@ async def verify_code_and_create_appointment(request: Request):
     })
     doc = apt_obj.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
+
+    # ── Slot çakışma kontrolü (TOCTOU koruması) ──────────────────────────
+    # /public/appointments müsaitliği doğrulama kodundan ÖNCE bakar; kod
+    # girilene kadar slot dolabilir (aynı müşteri 2. kez ya da başka biri).
+    # Eskiden bu yol kontrolsüz insert ediyordu → personelsiz org'da aynı
+    # saate ÇİFT kayıt oluşuyordu. _check_slot_conflict tek kaynak semantiği:
+    # staff_member_id=None → org-geneli overlap; atanmış personel → o personel
+    # + boş randevular. Ödeme bekleyen (online/deposit) randevular slot rezerve
+    # etmez → kontrolü atla (rezervasyon ödeme akışında yapılır).
+    if apt_payment_status != "pending_payment":
+        _conflict_dur = int(total_duration or service.get("duration", 30) or 30)
+        if await _check_slot_conflict(
+            db, org_id, apt_obj.staff_member_id,
+            apt_obj.appointment_date, apt_obj.appointment_time, _conflict_dur,
+        ):
+            await db.organization_plans.update_one(
+                {"organization_id": org_id}, {"$inc": {"quota_usage": -1}}
+            )
+            try:
+                await redis_client.delete(pending_key)
+                await redis_client.delete(f"plann:pending:phone:{stored_phone}:{org_id}")
+            except Exception:
+                pass
+            raise HTTPException(
+                status_code=409,
+                detail="Seçtiğiniz saat az önce doldu. Lütfen sayfayı yenileyip başka bir saat seçin.",
+            )
+
     await db.appointments.insert_one(doc)
 
     # Müşteriyi kaydet
@@ -16387,6 +16442,29 @@ async def _process_whatsapp_verification(db, redis_client, from_wa_number: str, 
         })
         doc = apt_obj.model_dump()
         doc["created_at"] = doc["created_at"].isoformat()
+
+        # ── Slot çakışma kontrolü (TOCTOU koruması) ──────────────────────
+        # /public/verify-code ile aynı: kod (WhatsApp cevabı) gelene kadar slot
+        # dolabilir. Kontrolsüz insert personelsiz org'da çift kayda yol açıyordu.
+        # Webhook 200+reply döndürmeli → raise etmiyoruz, kotayı geri alıp
+        # pending'i temizleyip dostça mesaj dönüyoruz.
+        _conflict_dur = int(total_duration or service.get("duration", 30) or 30)
+        if await _check_slot_conflict(
+            db, org_id, apt_obj.staff_member_id,
+            apt_obj.appointment_date, apt_obj.appointment_time, _conflict_dur,
+        ):
+            await db.organization_plans.update_one(
+                {"organization_id": org_id}, {"$inc": {"quota_usage": -1}}
+            )
+            try:
+                await redis_client.delete(pending_key)
+                await redis_client.delete(f"plann:pending:phone:{stored_phone}:{org_id}")
+            except Exception:
+                pass
+            if detect_language_from_phone(from_wa_number) == "TR":
+                return {"reply": "❌ Seçtiğiniz saat az önce doldu. Lütfen yeniden randevu oluşturun."}
+            return {"reply": "❌ Your selected time slot was just taken. Please book again."}
+
         await db.appointments.insert_one(doc)
 
         await db.customers.update_one(

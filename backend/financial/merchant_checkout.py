@@ -1084,6 +1084,38 @@ async def _send_post_payment_notifications(db, apt: Dict[str, Any], org_id: str)
         except Exception as e:
             logger.warning("Post-payment WebSocket failed: %s", e)
 
+        # Redis cache invalidation — admin dashboard & customers listesi tazelensin.
+        # Public checkout tarafında Request objesi elde yok, doğrudan Redis'e vuruyoruz.
+        try:
+            from server import app as _srv_app
+            _redis = getattr(_srv_app.state, "redis_client", None)
+            if _redis and org_id:
+                for _prefix in ("dashboard_stats", "customers_list"):
+                    _key = f"plann:org_{org_id}:{_prefix}"
+                    await _redis.delete(_key)
+                    _wild = await _redis.keys(f"{_key}*")
+                    if _wild:
+                        await _redis.delete(*_wild)
+        except Exception as _cache_err:
+            logger.warning("Post-payment cache invalidation skipped: %s", _cache_err)
+
+        # Denormalize sayaç güncellemesi — post-payment yeni randevu oluştu.
+        try:
+            from server import _apply_customer_delta as _delta_fn
+            _is_completed = (apt.get("status") == "Tamamlandı")
+            await _delta_fn(
+                db,
+                organization_id=org_id,
+                phone=customer_phone or apt.get("phone") or "",
+                name=customer_name or apt.get("customer_name"),
+                delta_total=1,
+                delta_completed=1 if _is_completed else 0,
+                appointment_date=apt.get("appointment_date"),
+                appointment_time=apt.get("appointment_time"),
+            )
+        except Exception as _delta_err:
+            logger.warning("Post-payment customer delta skipped: %s", _delta_err)
+
     except Exception as e:
         logger.error("_send_post_payment_notifications error: %s", e)
 

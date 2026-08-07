@@ -206,11 +206,23 @@ class MerchantWalletsColl:
 
 
 class CustomersColl:
+    def __init__(self):
+        self.docs: List[dict] = []
+
+    def find(self, query: dict, projection=None, *args, **kwargs):
+        oid = query.get("organization_id")
+        matched = []
+        for d in self.docs:
+            if oid and d.get("organization_id") != oid:
+                continue
+            matched.append({k: v for k, v in d.items() if k != "_id"})
+        return MockCursor(matched)
+
     async def find_one(self, query: dict, projection=None):
         return None
 
     async def insert_one(self, doc: dict):
-        pass
+        self.docs.append(dict(doc))
 
 
 class AuditLogsColl:
