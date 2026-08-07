@@ -6,6 +6,7 @@ from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from meta_capi_service import get_meta_capi_service, split_full_name
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -7567,6 +7568,12 @@ async def cancel_selected_appointments(
 # Donmuş mobil build sözleşmesi. response_model=List[Appointment] — alan
 # ekleme/çıkarma/rename YASAK; yeni davranış yalnızca YENİ query parametresi
 # arkasında. bkz. OPERATIONS.md §2 + .cursor/rules/api-contract.mdc
+#
+# FAZ 2 (parametre-versiyonlu pagination — ADDITIVE, legacy şekle DOKUNMAZ):
+#   • limit YOK  → eskisi gibi TAM ARRAY (List[Appointment]) — donmuş build bunu bekler.
+#   • ?limit=&cursor= → YENİ şekil {items, next_cursor, has_more} (JSONResponse ile
+#     response_model baypas edilir). items[] her elemanı yine birebir Appointment şekli.
+#   Cursor sırası: (appointment_date, appointment_time, id) artan; base64(date|time|id).
 @api_router.get("/appointments", response_model=List[Appointment])
 async def get_appointments(
     request: Request, 
@@ -7576,6 +7583,8 @@ async def get_appointments(
     status: Optional[str] = None, 
     search: Optional[str] = None,
     staff_member_id: Optional[str] = None,
+    limit: Optional[int] = None,
+    cursor: Optional[str] = None,
     current_user: UserInDB = Depends(get_current_user)
 ):
     db = await get_db_from_request(request)
@@ -7615,7 +7624,40 @@ async def get_appointments(
             {'phone': {'$regex': search, '$options': 'i'}}
         ]
     
-    appointments_from_db = await db.appointments.find(query, {"_id": 0}).sort([("appointment_date", 1), ("appointment_time", 1)]).to_list(1000)
+    # ── FAZ 2: parametre-versiyonlu fetch ────────────────────────────────────
+    # limit YOK → legacy tam array (donmuş build). limit VAR → cursor pagination.
+    use_pagination = limit is not None
+    has_more = False
+    if use_pagination:
+        effective_limit = max(1, int(limit))
+        if cursor:
+            try:
+                _raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+                c_date, c_time, c_id = _raw.split("|", 2)
+                tie_break = {
+                    "$or": [
+                        {"appointment_date": {"$gt": c_date}},
+                        {"appointment_date": c_date, "appointment_time": {"$gt": c_time}},
+                        {"appointment_date": c_date, "appointment_time": c_time, "id": {"$gt": c_id}},
+                    ]
+                }
+                # Mevcut query'de $or olabilir (search/unassigned) → $and ile birleştir.
+                base_wo_org = {k: v for k, v in query.items() if k != "organization_id"}
+                query = {"organization_id": current_user.organization_id, "$and": [tie_break]}
+                if base_wo_org:
+                    query["$and"].append(base_wo_org)
+            except Exception:
+                logging.warning(f"GET /appointments: bozuk cursor atlandı: {cursor}")
+        appointments_from_db = await (
+            db.appointments.find(query, {"_id": 0})
+            .sort([("appointment_date", 1), ("appointment_time", 1), ("id", 1)])
+            .limit(effective_limit + 1)
+        ).to_list(effective_limit + 1)
+        has_more = len(appointments_from_db) > effective_limit
+        if has_more:
+            appointments_from_db = appointments_from_db[:effective_limit]
+    else:
+        appointments_from_db = await db.appointments.find(query, {"_id": 0}).sort([("appointment_date", 1), ("appointment_time", 1)]).to_list(1000)
     try:
         turkey_tz = ZoneInfo("Europe/Istanbul"); now = datetime.now(turkey_tz)
     except Exception:
@@ -7706,6 +7748,17 @@ async def get_appointments(
         _eligible = session_group_ids_from_merchant_transactions(_tx)
     attach_refund_eligible(appointments_from_db, _eligible)
     
+    # ── FAZ 2: paginated şekil (limit VAR) — legacy array'e DOKUNMAZ ──────────
+    if use_pagination:
+        # Her item yine BİREBİR Appointment şekli (donmuş alan seti korunur).
+        items = [jsonable_encoder(Appointment(**a)) for a in appointments_from_db]
+        next_cursor: Optional[str] = None
+        if has_more and appointments_from_db:
+            _last = appointments_from_db[-1]
+            _raw = f"{_last.get('appointment_date', '')}|{_last.get('appointment_time', '')}|{_last.get('id', '')}"
+            next_cursor = base64.urlsafe_b64encode(_raw.encode()).decode()
+        return JSONResponse({"items": items, "next_cursor": next_cursor, "has_more": has_more})
+
     return appointments_from_db
 
 # === SERVICES ROUTES ===

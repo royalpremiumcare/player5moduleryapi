@@ -1,0 +1,278 @@
+{
+    "root_group": {
+        "checks": {
+            "Services OK (200)": {
+                "id": "87d04c8b7e90b873f6252bcf988d0e5b",
+                "passes": 2995,
+                "fails": 0,
+                "name": "Services OK (200)",
+                "path": "::Services OK (200)"
+            },
+            "Customers (search) OK (200)": {
+                "passes": 2894,
+                "fails": 0,
+                "name": "Customers (search) OK (200)",
+                "path": "::Customers (search) OK (200)",
+                "id": "28588fdd4e78788a7839d372fca342c1"
+            },
+            "Customers (paginated 30) OK (200)": {
+                "passes": 2972,
+                "fails": 0,
+                "name": "Customers (paginated 30) OK (200)",
+                "path": "::Customers (paginated 30) OK (200)",
+                "id": "d0979c24102700770992cb70720de04b"
+            },
+            "Appointments (legacy flat) OK (200)": {
+                "name": "Appointments (legacy flat) OK (200)",
+                "path": "::Appointments (legacy flat) OK (200)",
+                "id": "01a6451f77c7ab35695e76d6c0b3be5b",
+                "passes": 2945,
+                "fails": 0
+            },
+            "Users OK (200)": {
+                "name": "Users OK (200)",
+                "path": "::Users OK (200)",
+                "id": "26a187ab2a99b5c7aef99eff7c624f5e",
+                "passes": 2890,
+                "fails": 0
+            },
+            "Dashboard Stats OK (200)": {
+                "fails": 0,
+                "name": "Dashboard Stats OK (200)",
+                "path": "::Dashboard Stats OK (200)",
+                "id": "4658e35a0cdd4a11106ef47c85997584",
+                "passes": 2973
+            },
+            "Finance Summary OK (200)": {
+                "name": "Finance Summary OK (200)",
+                "path": "::Finance Summary OK (200)",
+                "id": "611dd97f73911eef4b3fdf4ba90a1c7e",
+                "passes": 2935,
+                "fails": 0
+            },
+            "Expenses OK (200)": {
+                "name": "Expenses OK (200)",
+                "path": "::Expenses OK (200)",
+                "id": "053e84c1ed68ee93910d89f694827cfd",
+                "passes": 2881,
+                "fails": 0
+            },
+            "Settings OK (200)": {
+                "fails": 0,
+                "name": "Settings OK (200)",
+                "path": "::Settings OK (200)",
+                "id": "8ac0cd018c1dba26f15e83bb6e542dbf",
+                "passes": 2882
+            },
+            "Payroll OK (200)": {
+                "name": "Payroll OK (200)",
+                "path": "::Payroll OK (200)",
+                "id": "b608e8d9509db28a620ec7a3ad4947bf",
+                "passes": 2934,
+                "fails": 0
+            },
+            "Appointments (paginated 30) OK (200)": {
+                "path": "::Appointments (paginated 30) OK (200)",
+                "id": "52752d566b03f0e58144bee835574a06",
+                "passes": 2874,
+                "fails": 0,
+                "name": "Appointments (paginated 30) OK (200)"
+            },
+            "Current Plan OK (200)": {
+                "passes": 2969,
+                "fails": 0,
+                "name": "Current Plan OK (200)",
+                "path": "::Current Plan OK (200)",
+                "id": "a680cabfbdf617925a2d7deb6a207fb5"
+            },
+            "Customers (legacy flat) OK (200)": {
+                "id": "7a037c433d9c780ae568847965cc0d57",
+                "passes": 2876,
+                "fails": 0,
+                "name": "Customers (legacy flat) OK (200)",
+                "path": "::Customers (legacy flat) OK (200)"
+            }
+        },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {}
+    },
+    "metrics": {
+        "errors": {
+            "passes": 0,
+            "fails": 38020,
+            "thresholds": {
+                "rate<0.05": false
+            },
+            "value": 0
+        },
+        "http_req_connecting": {
+            "avg": 0.007912520331404521,
+            "min": 0,
+            "med": 0,
+            "max": 5.889689,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_req_failed": {
+            "fails": 38020,
+            "passes": 0,
+            "value": 0
+        },
+        "vus_max": {
+            "value": 1000,
+            "min": 1000,
+            "max": 1000
+        },
+        "checks": {
+            "fails": 0,
+            "passes": 38020,
+            "value": 1
+        },
+        "customers_search_duration": {
+            "avg": 1619.8559604122283,
+            "min": 14.895034,
+            "med": 1525.2160020000001,
+            "max": 6157.267238,
+            "p(90)": 3075.0355117,
+            "p(95)": 3497.0586458999996
+        },
+        "customers_paginated_duration": {
+            "avg": 1559.2124130444183,
+            "min": 9.91427,
+            "med": 1400.6225175,
+            "max": 6098.681058,
+            "p(90)": 3017.7900432,
+            "p(95)": 3530.178182449999
+        },
+        "iterations": {
+            "count": 38020,
+            "rate": 271.35300038041294
+        },
+        "dashboard_duration": {
+            "avg": 1951.8501422563081,
+            "min": 10.295394,
+            "med": 1678.838373,
+            "max": 10255.786997,
+            "p(90)": 3767.4732746000004,
+            "p(95)": 4590.896470000001
+        },
+        "http_req_tls_handshaking": {
+            "p(95)": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0
+        },
+        "http_req_receiving": {
+            "min": 0.017051,
+            "med": 0.906999,
+            "max": 1397.700969,
+            "p(90)": 7.750469299999998,
+            "p(95)": 12.40875769999999,
+            "avg": 4.331597729563432
+        },
+        "appointments_paginated_duration": {
+            "p(90)": 3941.1070914000006,
+            "p(95)": 4540.976635649999,
+            "avg": 2053.9208376645793,
+            "min": 15.224011,
+            "med": 1857.2655795,
+            "max": 7445.077252
+        },
+        "data_sent": {
+            "rate": 113049.14286916351,
+            "count": 15839620
+        },
+        "iteration_duration": {
+            "avg": 1891.2579720555957,
+            "min": 108.935523,
+            "med": 1674.696151,
+            "max": 10356.895964,
+            "p(90)": 3696.586473199999,
+            "p(95)": 4368.056389099998
+        },
+        "http_req_waiting": {
+            "min": 8.047652,
+            "med": 1570.460692,
+            "max": 10255.403088,
+            "p(90)": 3591.0512156999994,
+            "p(95)": 4256.333311399997,
+            "avg": 1786.1091654192808
+        },
+        "vus": {
+            "value": 19,
+            "min": 5,
+            "max": 1000
+        },
+        "customers_duration": {
+            "med": 2410.1356655,
+            "max": 8824.575226,
+            "p(90)": 4941.345163,
+            "p(95)": 5698.1924705,
+            "avg": 2633.6847265618935,
+            "min": 43.990232
+        },
+        "services_duration": {
+            "min": 8.785615,
+            "med": 1394.01709,
+            "max": 5794.990269,
+            "p(90)": 3037.4397597999996,
+            "p(95)": 3506.095632399999,
+            "avg": 1550.2972604971649
+        },
+        "http_req_duration": {
+            "med": 1573.5273124999999,
+            "max": 10255.786997,
+            "p(90)": 3596.1911958999985,
+            "p(95)": 4267.298408999996,
+            "avg": 1790.4680783769033,
+            "min": 8.318671,
+            "thresholds": {
+                "p(95)<2000": true
+            }
+        },
+        "data_received": {
+            "count": 703210314,
+            "rate": 5018890.810161818
+        },
+        "appointments_duration": {
+            "min": 18.366621,
+            "med": 1952.296886,
+            "max": 6934.999635,
+            "p(90)": 3970.1633869999996,
+            "p(95)": 4471.0254515999995,
+            "avg": 2081.135643355174
+        },
+        "http_req_blocked": {
+            "p(95)": 0.021749099999999993,
+            "avg": 0.018933134455549706,
+            "min": 0.002525,
+            "med": 0.006743,
+            "max": 7.976138,
+            "p(90)": 0.010289
+        },
+        "http_req_sending": {
+            "max": 4.62572,
+            "p(90)": 0.039644,
+            "p(95)": 0.052679449999999954,
+            "avg": 0.02731522806417699,
+            "min": 0.006763,
+            "med": 0.018495499999999998
+        },
+        "http_reqs": {
+            "rate": 271.35300038041294,
+            "count": 38020
+        },
+        "http_req_duration{expected_response:true}": {
+            "med": 1573.5273124999999,
+            "max": 10255.786997,
+            "p(90)": 3596.1911958999985,
+            "p(95)": 4267.298408999996,
+            "avg": 1790.4680783769033,
+            "min": 8.318671
+        }
+    }
+}

@@ -10,6 +10,7 @@ const servicesDuration = new Trend('services_duration');
 const customersDuration = new Trend('customers_duration');
 const customersPagedDuration = new Trend('customers_paginated_duration');
 const customersSearchDuration = new Trend('customers_search_duration');
+const appointmentsPagedDuration = new Trend('appointments_paginated_duration');
 
 export let options = {
   stages: [
@@ -27,7 +28,7 @@ export let options = {
 };
 
 const BASE_URL = 'http://127.0.0.1:8002/api';
-const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb3lhbHByZW1pdW1jYXJlQGdtYWlsLmNvbSIsInVzZXJfaWQiOiJlNzg2Yzk1Yi1hODIwLTRjYmUtYjgwNS1hOTZmMDdkMGY2ZDgiLCJvcmdfaWQiOiJiZDIxNWRiMC1jZDdkLTQ2YmItYTA5MS1hMjA1YTYyNGI0NWIiLCJyb2xlIjoiYWRtaW4iLCJjb21wYW55X25hbWUiOiJSb3lhbCBQcmVtaXVtIENhcmUiLCJmdWxsX25hbWUiOiJGYXRpaCBcdTAxNWVlbnlcdTAwZmN6IiwiY2FuX3ZpZXdfYWxsX2FwcG9pbnRtZW50cyI6ZmFsc2UsIm9uYm9hcmRpbmdfY29tcGxldGVkIjp0cnVlLCJleHAiOjE3ODYwNTIwOTF9.E-FZ4VkEGRBIf0i5emBi3AxPPLk9d_Kh3KzfZHap9sM';
+const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyb3lhbHByZW1pdW1jYXJlQGdtYWlsLmNvbSIsInVzZXJfaWQiOiJlNzg2Yzk1Yi1hODIwLTRjYmUtYjgwNS1hOTZmMDdkMGY2ZDgiLCJvcmdfaWQiOiJiZDIxNWRiMC1jZDdkLTQ2YmItYTA5MS1hMjA1YTYyNGI0NWIiLCJyb2xlIjoiYWRtaW4iLCJjb21wYW55X25hbWUiOiJSb3lhbCBQcmVtaXVtIENhcmUiLCJmdWxsX25hbWUiOiJGYXRpaCBcdTAxNWVlbnlcdTAwZmN6IiwiY2FuX3ZpZXdfYWxsX2FwcG9pbnRtZW50cyI6ZmFsc2UsIm9uYm9hcmRpbmdfY29tcGxldGVkIjp0cnVlLCJleHAiOjE3ODY2Njk3NTN9.szKwjGy32QyuSmt1pmLEUDVAERugTr4jwLXPdTpLIMc';
 
 const params = {
   headers: {
@@ -39,7 +40,8 @@ const params = {
 // Tüm GET endpoint'leri — iş mantığı hatası OLMAZ
 const endpoints = [
   { name: 'Dashboard Stats',              url: '/stats/dashboard',           trend: 'dashboard' },
-  { name: 'Appointments',                 url: '/appointments',              trend: 'appointments' },
+  { name: 'Appointments (legacy flat)',   url: '/appointments',              trend: 'appointments' },
+  { name: 'Appointments (paginated 30)',  url: '/appointments?limit=30',     trend: 'appointments_paginated' },
   { name: 'Services',                     url: '/services',                  trend: 'services' },
   { name: 'Customers (legacy flat)',      url: '/customers',                 trend: 'customers' },
   { name: 'Customers (paginated 30)',     url: '/customers?limit=30',        trend: 'customers_paginated' },
@@ -59,6 +61,7 @@ const trendMap = {
   customers: customersDuration,
   customers_paginated: customersPagedDuration,
   customers_search: customersSearchDuration,
+  appointments_paginated: appointmentsPagedDuration,
 };
 
 export default function () {
