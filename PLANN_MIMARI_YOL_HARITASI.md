@@ -107,9 +107,13 @@ Stratejik çerçeve: Force-update "geleceği koruma" değil, **legacy contract'�
   2. Kural: Android sürüm bump'ı bundan sonra **git'te** yapılır; PC yalnızca temiz `git pull`'dan build alır.
   3. İdeal: Android'i de **Codemagic Android workflow**'una taşı (AAB + Play Store publish). Manuel PC adımı ve divergence riski kökten biter; her iki platform git'ten build alınır.
 
-### Faz 5 — OTA (EN SON, bilinçli) — 🟡 KARAR VERİLDİ + ENTEGRE (ota-decision: Capgo manuel, internal kanal; yayın akışı test bekliyor)
+### Faz 5 — OTA (EN SON, bilinçli) — ✅ ENTEGRE + DOĞRULANDI (Capgo manuel, internal kanal; prod kanal ayrımı + trial kararı kaldı)
 
-> **KARAR:** Capgo Cloud (yönetilmiş imzalama/rollback/Apple uyumu) — self-host R2 yerine. `@capgo/capacitor-updater@7.50.2` **manuel** entegre edildi (`capgo init` non-TTY'de patladığı için). `capacitor.config.json` -> `CapacitorUpdater` (autoUpdate + appReadyTimeout 10s); `App.js` mount'ta `notifyAppReady()` (rollback güvenliği); Android native bağlandı, iOS Codemagic'te sync olur. İlk kanal `internal`. Yayın/rollback testi + `production` promote KALDI. Komutlar `OPERATIONS.md` §5.
+> **KARAR:** Capgo Cloud (yönetilmiş imzalama/rollback/Apple uyumu) — self-host R2 yerine. `@capgo/capacitor-updater@7.50.2` **manuel** entegre edildi (`capgo init` non-TTY'de patladığı için). `capacitor.config.json` -> `CapacitorUpdater` (autoUpdate + appReadyTimeout 10s); `App.js` mount'ta `notifyAppReady()` (rollback güvenliği); Android native bağlandı, iOS Codemagic'te sync olur.
+>
+> **DOĞRULAMA (Ağu 2026):** iOS TestFlight build **62 (6.1)** kuruldu; internal kanala 6.1.1 test bundle'ı (görünür rozet) push edildi -> cihaza indi (soğuk açılışta uygulandı) -> temiz **6.1.2** ile geri alındı. Uçtan uca OTA ÇALIŞIYOR. Not: bundle sürümü native `versionName`'den yüksek olmalı (6.1 -> 6.1.1).
+>
+> **KALAN:** (1) Prod öncesi kanal sıkılaştırma — ayrı `production` kanalı (default), `internal`'ı public/default'tan çıkar (şu an test için permissive: public+default+self-assign+auto-update=none). (2) Capgo trial ~15 gün; kalıcı plan/ücret kararı. (3) "Sıfırıncı build" — Capgo'lu ilk store build'i yayına girmeden sahadaki cihazlar OTA almaz.
 
 
 Senin için ortalamadan daha değerli: manuel Android akışını (JS-only'de) ortadan kaldırır, tek bundle iki platforma gider, Codemagic upload'ı otomatikleştirebilir. Ama native plugin ekler -> "sıfırıncı build" kuralı geçerli; ve rollback/imzalama riskini getirir.

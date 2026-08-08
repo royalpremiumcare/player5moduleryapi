@@ -252,7 +252,15 @@ yeni store build'i şart.
   npx @capgo/cli@latest bundle upload -a "$CAPGO_TOKEN" -c production --path ./build
   ```
 - **Sürüm uyumu:** OTA bundle'ın native uyumu package.json version'a göre eşleşir; native değişiklik olan
-  release'lerde OTA push etme, store build bekle.
+  release'lerde OTA push etme, store build bekle. **Bundle sürümü native `versionName`'den YÜKSEK olmalı**
+  (ör. native 6.1 -> bundle 6.1.1); düşükse Capgo teslim etmez (`--bundle <ver>` ile explicit ver).
+- **DURUM (Ağu 2026):** OTA uçtan uca DOĞRULANDI — iOS TestFlight build 62 (6.1) + internal kanal;
+  6.1.1 test bundle'ı (görünür rozetle) cihaza indi, ardından temiz 6.1.2 ile geri alındı.
+- **⚠️ PROD ÖNCESİ SIKILAŞTIR (TODO):** Test için `internal` kanalı şu an PERMISSIVE (public + default +
+  self-assign + disable-auto-update=none). Gerçek kullanıcılar Capgo'lu build almadan ÖNCE: ayrı
+  `production` kanalı (default, public, stable bundle) aç; `internal`'ı public/default'tan ÇIKAR (sadece
+  test cihazları, self-assign veya elle device link). Aksi halde tüm cihazlar internal'ı çeker.
+- **Trial:** Capgo hesabı ~15 gün trial; kalıcı kullanım için plan/ücret kararı gerekli.
 
 ### "Sıfırıncı build" gerçeği
 
