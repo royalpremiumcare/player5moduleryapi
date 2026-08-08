@@ -15,6 +15,7 @@ import RefundPolicy from "./components/RefundPolicy";
 import SsoPage from "./components/SsoPage";
 import SalesPlaybookPage from "./components/SalesPlaybookPage";
 import App from "./App";
+import ForceUpdateGate from "./components/ForceUpdateGate";
 import { ProgrammaticSeoPage } from "./AppRoutes";
 
 const AppRouter = () => {
@@ -37,7 +38,10 @@ const AppRouter = () => {
   const isSuperAdmin = userRole === 'superadmin';
 
   return (
-    <Routes>
+    <>
+      {/* Force-update kapısı — auth'tan bağımsız, splash/login dahil her yerde üstte */}
+      <ForceUpdateGate />
+      <Routes>
       {/* Root Route - Authenticated ise App, değilse Landing (Native ise direkt Login) */}
       <Route 
         path="/" 
@@ -127,7 +131,8 @@ const AppRouter = () => {
       {/* Public Booking - Catch dynamic business slugs (domain.com/isletmeadi) */}
       {/* This must be last to avoid catching login/register/dashboard/superadmin/subscribe */}
       <Route path="/:slug" element={<PublicBookingPage />} />
-    </Routes>
+      </Routes>
+    </>
   );
 };
 

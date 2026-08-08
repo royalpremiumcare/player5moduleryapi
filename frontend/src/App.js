@@ -43,8 +43,6 @@ import ChatWidget from "@/components/ChatWidget";
 import AhaSpotlight from "@/components/AhaSpotlight";
 import AhaCelebration from "@/components/AhaCelebration";
 import AhaErrorScreen from "@/components/AhaErrorScreen";
-import ForceUpdateModal from "@/components/ForceUpdateModal";
-import { evaluateUpdate } from "@/lib/versionCheck";
 import posthog from "@/lib/posthog";
 import metaPixel from "@/lib/metaPixel";
 import { loadChatwoot, setChatwootUser } from "@/lib/chatwoot";
@@ -59,50 +57,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { PushNotifications } from '@capacitor/push-notifications';
-import { openExternalUrl } from "@/lib/openExternalUrl";
-
-// Mağaza yönlendirme hedefleri (push action: OPEN_STORE)
-const STORE_LINKS = {
-  ios: {
-    native: 'itms-apps://apps.apple.com/app/id6759719891',
-    web: 'https://apps.apple.com/app/id6759719891',
-  },
-  android: {
-    native: 'market://details?id=co.plannapp.app',
-    web: 'https://play.google.com/store/apps/details?id=co.plannapp.app',
-  },
-};
-
-/**
- * Push bildirimindeki action === 'OPEN_STORE' için kullanıcıyı işletim
- * sistemine göre native mağaza uygulamasına yönlendirir; native şema
- * açılamazsa web mağaza linkine fallback yapar.
- *
- * Backend payload'u platforma özel anahtarlarla (store_url_ios /
- * store_url_android) veya genel store_url_native ile hedefleri override
- * edebilir (esneklik için).
- */
-function openAppStore(data = {}) {
-  const platform = Capacitor.getPlatform(); // 'ios' | 'android' | 'web'
-  const conf = STORE_LINKS[platform] || STORE_LINKS.android;
-  // Platforma özel override > genel native override > yerel varsayılan
-  const nativeUrl = data[`store_url_${platform}`] || data.store_url_native || conf.native;
-  const webUrl = data.store_url_web || conf.web;
-
-  // Web (PWA): doğrudan web mağaza linki
-  if (platform === 'web') {
-    return openExternalUrl(webUrl);
-  }
-
-  // Native: önce native şema (itms-apps:// / market://), olmazsa web fallback
-  try {
-    const ok = openExternalUrl(nativeUrl);
-    if (ok) return true;
-  } catch (e) {
-    console.warn('openAppStore native scheme failed, falling back to web', e);
-  }
-  return openExternalUrl(webUrl);
-}
+import { openAppStore } from "@/lib/appStore";
 
 const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
   ? registerPlugin('FCMTokenPlugin')
@@ -127,10 +82,7 @@ function App() {
   const [stats, setStats] = useState(null);
   // Bildirime tıklayınca açılan premium randevu detay sayfası (id tutulur)
   const [detailAppointmentId, setDetailAppointmentId] = useState(null);
-  // Force-update kapısı: { level: 'block'|'soft', storeUrl } | null. FAIL-OPEN.
-  const [updateGate, setUpdateGate] = useState(null);
-  // Yumuşak (soft) uyarı bu oturumda kapatıldıysa tekrar gösterme.
-  const softUpdateDismissedRef = useRef(false);
+  // Force-update kapısı artık AppRouter'daki <ForceUpdateGate/> içinde (auth'tan bağımsız).
   // Bildirim TAP listener'ı yalnız BİR kez bağlansın (subscribeToPush birden çok
   // kez çağrılabilir → çift handler = detay 2 kez açılır). Ref ile tek sefer garanti.
   const pushActionListenerBound = useRef(false);
@@ -191,36 +143,8 @@ function App() {
     }
   }, [currentView]);
 
-  // ===== FORCE-UPDATE SÜRÜM KONTROLÜ (yalnız native, FAIL-OPEN) =====
-  // Backend YALNIZ sinyal verir; burada UX kilidi uygulanır. Herhangi bir hata
-  // (config alınamadı, getInfo patladı, semver parse edilemedi) → kapı AÇILMAZ
-  // (kullanıcı asla kilitlenmez). Web'de hiç çalışmaz (zaten hep günceldir).
-  const checkAppVersion = useCallback(async () => {
-    try {
-      if (!Capacitor.isNativePlatform()) return;
-      const platform = Capacitor.getPlatform();
-      const info = await CapacitorApp.getInfo();
-      const currentVersion = info?.version;
-      if (!currentVersion) return;
-      const { data: config } = await api.get('/app/config');
-      const result = evaluateUpdate({ currentVersion, platform, config });
-      if (result.level === 'block') {
-        setUpdateGate({ level: 'block', storeUrl: result.storeUrl });
-      } else if (result.level === 'soft') {
-        if (softUpdateDismissedRef.current) return; // bu oturumda kapatıldıysa gösterme
-        setUpdateGate({ level: 'soft', storeUrl: result.storeUrl });
-      } else {
-        setUpdateGate(null);
-      }
-    } catch (_) {
-      // FAIL-OPEN: sessizce yut, kullanıcıyı kilitleme
-    }
-  }, []);
-
-  // Açılışta bir kez kontrol et.
-  useEffect(() => {
-    checkAppVersion();
-  }, [checkAppVersion]);
+  // Force-update sürüm kontrolü AppRouter'daki <ForceUpdateGate/> içine taşındı
+  // (auth'tan bağımsız; splash/login dahil her yerde çalışır).
 
   const goBack = useCallback(() => {
     // 1) Açık form/modal varsa önce onu kapat
@@ -1047,7 +971,7 @@ function App() {
     let appListener;
     if (Capacitor.isNativePlatform()) {
       CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) { resync(); checkAppVersion(); }
+        if (isActive) { resync(); }
       }).then((l) => { appListener = l; });
     }
 
@@ -1061,7 +985,7 @@ function App() {
       appListener?.remove();
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [token, subscribeToPush, checkAppVersion]);
+  }, [token, subscribeToPush]);
 
   // WebSocket setup for real-time updates
   const socketRef = useRef(null);
@@ -2027,17 +1951,7 @@ function App() {
         />
       )}
 
-      {/* ===== FORCE-UPDATE KAPISI (native, en üst z-index) ===== */}
-      {updateGate && (
-        <ForceUpdateModal
-          level={updateGate.level}
-          onUpdate={() => openAppStore({ store_url_web: updateGate.storeUrl })}
-          onDismiss={() => {
-            softUpdateDismissedRef.current = true;
-            setUpdateGate(null);
-          }}
-        />
-      )}
+      {/* Force-update modalı artık AppRouter'daki <ForceUpdateGate/> içinde render ediliyor. */}
 
       {/* ===== AHA ACTIVATION OVERLAY'LERİ ===== */}
       {/* Yalnızca admin + dashboard view + form kapalı + setup wizard kapalı iken */}
