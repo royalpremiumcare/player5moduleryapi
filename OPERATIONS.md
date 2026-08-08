@@ -236,30 +236,41 @@ Web (JS/CSS/HTML) değişikliklerini App Store/Play review beklemeden telefonlar
 yeni store build'i şart.
 
 - **Kurulum (yapıldı):** `@capgo/capacitor-updater` kuruldu; `capacitor.config.json` -> `plugins.CapacitorUpdater`
-  (`autoUpdate: true`, `appReadyTimeout: 10000`); `App.js` mount'ta `CapacitorUpdater.notifyAppReady()`
-  (native). Android native bağlandı (`cap update android`), iOS Codemagic'te `cap sync ios` ile bağlanır.
+  (`autoUpdate: true`, `defaultChannel: "production"`, `appReadyTimeout: 10000`, `directUpdate: false`);
+  `ForceUpdateGate` mount'ta `CapacitorUpdater.notifyAppReady()` (native). Android native bağlandı
+  (`cap update android`), iOS Codemagic'te `cap sync ios` ile bağlanır.
 - **notifyAppReady KRİTİK:** çağrılmazsa Capgo bundle'ı bozuk sayıp `appReadyTimeout` (10s) sonrası son
-  sağlam sürüme geri döner (otomatik rollback). App.js'teki useEffect'i SİLME.
-- **Kanal politikası:** önce `internal` (sadece test cihazları). Doğrulanınca `production`'a promote.
+  sağlam sürüme geri döner (otomatik rollback). `notifyAppReady` `ForceUpdateGate` içinde (App.js'te DEĞİL;
+  App.js yalnız auth sonrası mount olur, login ekranında çağrılmaz -> yanlış rollback). Bu çağrıyı SİLME.
+- **Kanal politikası (PROD — Ağu 2026 itibarıyla aktif):**
+  - `production` = **default + public**, self-assign KAPALI → tüm gerçek kullanıcılar buradan çeker.
+    `disable-auto-update=major` (major sürüm atlamalarını otomatik engeller; minor/patch akar).
+  - `internal` = public/default DEĞİL, **self-assign AÇIK** → yalnız elle bağlanan test cihazları.
+  - Native build'ler `capacitor.config.json` -> `CapacitorUpdater.defaultChannel: "production"` ile
+    doğrudan production'ı hedefler (yeni kurulumlar otomatik production).
 - **Yayın komutları** (API key gizli, Codemagic/lokal env'den; repoya YAZMA):
   ```bash
   cd frontend
   npm run build                                             # build/ üret
+  # 1) ÖNCE internal'a yükleyip test cihazında doğrula:
   npx @capgo/cli@latest bundle upload -a "$CAPGO_TOKEN" \
-      -c internal --path ./build                            # internal kanala yükle
-  # Test cihazını internal kanala bağla (bir kez): dashboard'dan cihaz -> internal
-  # Doğrulandıktan sonra production'a taşı:
-  npx @capgo/cli@latest bundle upload -a "$CAPGO_TOKEN" -c production --path ./build
+      -c internal --path ./build --bundle <ver>
+  # (Test cihazı bir kez internal'a self-assign edilir: dashboard -> device -> internal)
+  # 2) Doğrulandıktan sonra AYNI bundle'ı production'a bağla (herkese aç):
+  npx @capgo/cli@latest channel set production co.plannapp.app -a "$CAPGO_TOKEN" \
+      --bundle <ver> --state default --ignore-metadata-check
+  # Alternatif: doğrudan production'a yükle (test atlanır — önerilmez):
+  # npx @capgo/cli@latest bundle upload -a "$CAPGO_TOKEN" -c production --path ./build --bundle <ver>
   ```
+  Not: `--ignore-metadata-check` gerekli çünkü OTA yalnız JS taşır; native plugin'ler zaten store
+  build'inde (62) mevcut, Capgo'nun "yeni native plugin" uyarısı burada güvenle yok sayılır.
 - **Sürüm uyumu:** OTA bundle'ın native uyumu package.json version'a göre eşleşir; native değişiklik olan
   release'lerde OTA push etme, store build bekle. **Bundle sürümü native `versionName`'den YÜKSEK olmalı**
   (ör. native 6.1 -> bundle 6.1.1); düşükse Capgo teslim etmez (`--bundle <ver>` ile explicit ver).
-- **DURUM (Ağu 2026):** OTA uçtan uca DOĞRULANDI — iOS TestFlight build 62 (6.1) + internal kanal;
-  6.1.1 test bundle'ı (görünür rozetle) cihaza indi, ardından temiz 6.1.2 ile geri alındı.
-- **⚠️ PROD ÖNCESİ SIKILAŞTIR (TODO):** Test için `internal` kanalı şu an PERMISSIVE (public + default +
-  self-assign + disable-auto-update=none). Gerçek kullanıcılar Capgo'lu build almadan ÖNCE: ayrı
-  `production` kanalı (default, public, stable bundle) aç; `internal`'ı public/default'tan ÇIKAR (sadece
-  test cihazları, self-assign veya elle device link). Aksi halde tüm cihazlar internal'ı çeker.
+- **DURUM (Ağu 2026):** OTA uçtan uca DOĞRULANDI ve PROD'A AÇILDI. `production` kanalı default+public,
+  self-assign kapalı, bundle 6.1.10; `internal` public'ten çıkarıldı, self-assign açık (test-only).
+  Force-update block/soft modalleri, `notifyAppReady` (login öncesi rollback fix), soft "kapat" kalıcılığı
+  tümü cihazda doğrulandı.
 - **Trial:** Capgo hesabı ~15 gün trial; kalıcı kullanım için plan/ücret kararı gerekli.
 
 ### "Sıfırıncı build" gerçeği
@@ -274,8 +285,10 @@ kadar kalmak zorunda.
 
 - Backend: hatalı deploy'da önceki image'a dön. `docker compose build` yerine bilinen iyi git commit'e
   checkout -> yeniden build -> up. (Öneri: her deploy öncesi `git rev-parse HEAD` not al.)
-- OTA (Capgo — kuruldu): bozuk bundle -> `notifyAppReady` çağrılmazsa `appReadyTimeout` (10s) sonrası son
-  sağlam sürüme otomatik fallback. Prod'a açmadan önce `internal` kanalda rollback davranışı test EDİLMELİ.
+- OTA (Capgo — prod'da aktif): bozuk bundle -> `notifyAppReady` çağrılmazsa `appReadyTimeout` (10s) sonrası
+  son sağlam sürüme otomatik fallback. `notifyAppReady` artık `ForceUpdateGate` içinde (auth'tan bağımsız,
+  login ekranında da çağrılır). Acil geri alma: `channel set production --bundle <önceki_iyi_ver>
+  --state default --ignore-metadata-check` ile stabil bundle'a döndür.
 
 ---
 

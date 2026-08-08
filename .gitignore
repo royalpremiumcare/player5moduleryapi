@@ -20,3 +20,12 @@ ANDROİD PCDEN AKTARIM/
 frontend/android/app/upload
 *.keystore
 *.jks
+
+# Python virtualenv — ASLA commit edilmez (git add -A kazası önlemi)
+venv/
+# Log ve geçici ETL/diagnostic çıktıları
+*.log
+scraper.log
+windsurf-diagnostics.txt
+# Ham veri klasörleri (ETL girdileri, repoya girmez)
+yeni_datalar/

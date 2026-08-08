@@ -9,7 +9,6 @@ import { io } from "socket.io-client";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import { StatusBar, Style } from '@capacitor/status-bar';
-import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
 import Dashboard from "@/components/Dashboard";
 import AppointmentDetail from "@/components/AppointmentDetail";
@@ -345,12 +344,8 @@ function App() {
     }
   }, []);
 
-  // Capgo OTA: uygulama sağlıklı açıldı sinyali. notifyAppReady çağrılmazsa Capgo
-  // appReadyTimeout sonrası bundle'ı bozuk sayıp son sağlam sürüme geri döner (rollback).
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    CapacitorUpdater.notifyAppReady().catch(() => { /* web/no-op önemsiz */ });
-  }, []);
+  // Capgo notifyAppReady() artık AppRouter'daki <ForceUpdateGate/> içinde (auth'tan
+  // bağımsız çağrılır; login ekranında rollback'i önler).
 
   // Web push tıklaması → service worker /?randevu=<id> açar. Kullanıcı giriş
   // yapmışsa premium randevu detay sayfasını aç ve URL'i temizle.

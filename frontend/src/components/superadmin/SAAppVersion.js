@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { Smartphone, Save, RefreshCw, AlertTriangle, Apple, Play, ListChecks } from "lucide-react";
+import { Smartphone, Save, RefreshCw, AlertTriangle, Apple, Play, ListChecks, Lock, X } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import { toast } from "sonner";
 import api from "../../api/api";
 
@@ -18,8 +20,27 @@ const emptyCfg = {
   store_urls: { ios: "", android: "" },
 };
 
+const normalizeCfg = (data) => ({
+  min_supported_version: {
+    ios: data?.min_supported_version?.ios || "",
+    android: data?.min_supported_version?.android || "",
+  },
+  latest_version: {
+    ios: data?.latest_version?.ios || "",
+    android: data?.latest_version?.android || "",
+  },
+  store_urls: {
+    ios: data?.store_urls?.ios || "",
+    android: data?.store_urls?.android || "",
+  },
+});
+
 const SAAppVersion = () => {
   const [cfg, setCfg] = useState(emptyCfg);
+  // Sunucudaki kayıtlı ("şu an geçerli") değerler — form düzenlenirken sapmasın diye ayrı tutulur.
+  const [savedCfg, setSavedCfg] = useState(emptyCfg);
+  // Panelin açıldığı native cihazın çalışan uygulama sürümü (web'de boş kalır).
+  const [deviceVersion, setDeviceVersion] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -27,20 +48,9 @@ const SAAppVersion = () => {
     setLoading(true);
     try {
       const { data } = await api.get("/app/config");
-      setCfg({
-        min_supported_version: {
-          ios: data?.min_supported_version?.ios || "",
-          android: data?.min_supported_version?.android || "",
-        },
-        latest_version: {
-          ios: data?.latest_version?.ios || "",
-          android: data?.latest_version?.android || "",
-        },
-        store_urls: {
-          ios: data?.store_urls?.ios || "",
-          android: data?.store_urls?.android || "",
-        },
-      });
+      const n = normalizeCfg(data);
+      setCfg(n);
+      setSavedCfg(n);
     } catch (err) {
       toast.error("Sürüm ayarları yüklenemedi");
     } finally {
@@ -52,6 +62,17 @@ const SAAppVersion = () => {
     load();
   }, [load]);
 
+  // Bu cihazın çalışan sürümünü anlık göster (yalnız native panelde anlamlı).
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!Capacitor.isNativePlatform()) return;
+        const info = await CapacitorApp.getInfo();
+        setDeviceVersion(info?.version || "");
+      } catch (_) { /* web/no-op */ }
+    })();
+  }, []);
+
   const setField = (group, platform, value) => {
     setCfg((prev) => ({ ...prev, [group]: { ...prev[group], [platform]: value } }));
   };
@@ -60,11 +81,9 @@ const SAAppVersion = () => {
     setSaving(true);
     try {
       const { data } = await api.put("/superadmin/app-config", cfg);
-      setCfg({
-        min_supported_version: { ...emptyCfg.min_supported_version, ...data?.min_supported_version },
-        latest_version: { ...emptyCfg.latest_version, ...data?.latest_version },
-        store_urls: { ...emptyCfg.store_urls, ...data?.store_urls },
-      });
+      const n = normalizeCfg(data);
+      setCfg(n);
+      setSavedCfg(n);
       toast.success("Sürüm ayarları kaydedildi");
     } catch (err) {
       toast.error(err.response?.data?.detail || "Kaydedilemedi");
@@ -73,15 +92,47 @@ const SAAppVersion = () => {
     }
   };
 
-  const PlatformCard = ({ platform, Icon, title }) => (
+  const PlatformCard = ({ platform, Icon, title }) => {
+    const isThisDevice = deviceVersion && Capacitor.getPlatform() === platform;
+    return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
       <div className="flex items-center gap-2 mb-4">
         <Icon className="w-5 h-5 text-gray-700" />
         <h3 className="font-semibold text-gray-900">{title}</h3>
       </div>
+
+      {/* Şu an geçerli değerler — sunucudaki kayıtlı hâl, anlık */}
+      <div className="mb-4 rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-1 text-emerald-700">
+            <X className="w-3 h-3" /> En güncel (kapatılabilir)
+          </span>
+          <span className="font-semibold text-gray-900">{savedCfg.latest_version[platform] || "—"}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-1 text-red-700">
+            <Lock className="w-3 h-3" /> Minimum (kapatılamaz)
+          </span>
+          <span className="font-semibold text-gray-900">{savedCfg.min_supported_version[platform] || "—"}</span>
+        </div>
+        {isThisDevice && (
+          <div className="flex items-center justify-between pt-1.5 border-t border-gray-200">
+            <span className="inline-flex items-center gap-1 text-indigo-700">
+              <Smartphone className="w-3 h-3" /> Bu cihazdaki sürüm
+            </span>
+            <span className="font-semibold text-indigo-700">v{deviceVersion}</span>
+          </div>
+        )}
+      </div>
+
       <div className="space-y-3">
         <label className="block">
-          <span className="text-xs font-medium text-gray-500">Minimum desteklenen sürüm (zorunlu güncelleme eşiği)</span>
+          <span className="text-xs font-medium text-gray-500 flex items-center gap-1.5 flex-wrap">
+            Minimum desteklenen sürüm (zorunlu güncelleme eşiği)
+            <span className="inline-flex items-center gap-0.5 bg-red-50 text-red-700 border border-red-200 rounded-full px-1.5 py-0.5 text-[10px] font-semibold">
+              <Lock className="w-2.5 h-2.5" /> Kapatılamaz
+            </span>
+          </span>
           <input
             value={cfg.min_supported_version[platform]}
             onChange={(e) => setField("min_supported_version", platform, e.target.value)}
@@ -90,7 +141,12 @@ const SAAppVersion = () => {
           />
         </label>
         <label className="block">
-          <span className="text-xs font-medium text-gray-500">En güncel sürüm (yumuşak uyarı eşiği)</span>
+          <span className="text-xs font-medium text-gray-500 flex items-center gap-1.5 flex-wrap">
+            En güncel sürüm (yumuşak uyarı eşiği)
+            <span className="inline-flex items-center gap-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-1.5 py-0.5 text-[10px] font-semibold">
+              <X className="w-2.5 h-2.5" /> Kapatılabilir
+            </span>
+          </span>
           <input
             value={cfg.latest_version[platform]}
             onChange={(e) => setField("latest_version", platform, e.target.value)}
@@ -109,7 +165,8 @@ const SAAppVersion = () => {
         </label>
       </div>
     </div>
-  );
+    );
+  };
 
   return (
     <div className="p-4 lg:p-6 max-w-3xl mx-auto">

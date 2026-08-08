@@ -51,10 +51,10 @@ export function compareVersions(a, b) {
  * @param {string} p.currentVersion — CapacitorApp.getInfo().version (ör. "6.1")
  * @param {'ios'|'android'|'web'} p.platform
  * @param {Object} p.config — GET /api/app/config yanıtı
- * @returns {{ level: 'block'|'soft'|'none', storeUrl: string }}
+ * @returns {{ level: 'block'|'soft'|'none', storeUrl: string, version: string }}
  */
 export function evaluateUpdate({ currentVersion, platform, config }) {
-  const none = { level: 'none', storeUrl: '' };
+  const none = { level: 'none', storeUrl: '', version: '' };
   // Web hiç kilitlenmez (her zaman güncel servis edilir).
   if (platform !== 'ios' && platform !== 'android') return none;
   if (!config || !currentVersion) return none;
@@ -65,11 +65,11 @@ export function evaluateUpdate({ currentVersion, platform, config }) {
 
   // min_supported altı → BLOCK (fail-open: karşılaştırma belirsizse bloklama)
   const cmpMin = compareVersions(currentVersion, minV);
-  if (cmpMin === -1) return { level: 'block', storeUrl };
+  if (cmpMin === -1) return { level: 'block', storeUrl, version: minV || '' };
 
   // latest altı → SOFT
   const cmpLatest = compareVersions(currentVersion, latestV);
-  if (cmpLatest === -1) return { level: 'soft', storeUrl };
+  if (cmpLatest === -1) return { level: 'soft', storeUrl, version: latestV || '' };
 
-  return { level: 'none', storeUrl };
+  return { level: 'none', storeUrl, version: '' };
 }

@@ -28,6 +28,7 @@
     },
     "CapacitorUpdater": {
       "autoUpdate": true,
+      "defaultChannel": "production",
       "appReadyTimeout": 10000,
       "responseTimeout": 20,
       "directUpdate": false
