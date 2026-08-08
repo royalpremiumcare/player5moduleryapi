@@ -29,3 +29,5 @@ scraper.log
 windsurf-diagnostics.txt
 # Ham veri klasörleri (ETL girdileri, repoya girmez)
 yeni_datalar/
+# Capgo OTA token — ASLA commit edilmez (ota-release.sh buradan okur)
+.capgo.token
