@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUpCircle, X } from "lucide-react";
 
@@ -14,12 +14,31 @@ import { ArrowUpCircle, X } from "lucide-react";
 const ForceUpdateModal = ({ level, onUpdate, onDismiss }) => {
   const { t } = useTranslation();
 
+  // Block modal açıkken arka planın kaymasını engelle (html/body + varsa #app-wrapper).
+  useEffect(() => {
+    if (level !== "block") return;
+    const targets = [
+      document.documentElement,
+      document.body,
+      document.getElementById("app-wrapper"),
+    ].filter(Boolean);
+    const prev = targets.map((el) => el.style.overflow);
+    targets.forEach((el) => { el.style.overflow = "hidden"; });
+    return () => {
+      targets.forEach((el, i) => { el.style.overflow = prev[i]; });
+    };
+  }, [level]);
+
   if (level !== "block" && level !== "soft") return null;
 
   // ── Zorunlu güncelleme: kapatılamaz tam ekran ──
   if (level === "block") {
     return (
-      <div className="fixed inset-0 z-[1200] bg-black/70 flex items-center justify-center p-4">
+      <div
+        className="fixed inset-0 z-[1200] bg-black/70 flex items-center justify-center p-4"
+        style={{ touchAction: "none" }}
+        onTouchMove={(e) => e.preventDefault()}
+      >
         <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 text-center animate-in fade-in zoom-in-95">
           <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-zinc-900 flex items-center justify-center">
             <ArrowUpCircle className="w-7 h-7 text-white" />

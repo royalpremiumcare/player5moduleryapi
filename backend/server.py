@@ -12522,12 +12522,17 @@ def _merge_app_config(doc):
 
 
 @api_router.get("/app/config")
-async def get_app_config(request: Request):
+async def get_app_config(request: Request, response: Response):
     """
     Mobil uygulama config'i (force-update sinyali). PUBLIC — auth gerektirmez ki
     login öncesi de kontrol edilebilsin. DB'den okunur; yoksa güvenli defaults.
     Fail-open: her durumda 200 + geçerli config döner, ASLA kullanıcıyı kilitlemez.
+
+    Cache-Control: no-store — force-update sinyali HER ZAMAN taze olmalı; WebView/
+    tarayıcı cache'i eski eşiği döndürürse modal yanlış (kaybolur/kalır) davranır.
     """
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
     doc = None
     try:
         db = await get_db_from_request(request)
