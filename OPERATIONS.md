@@ -209,13 +209,25 @@ göremez → etkisiz). Doğru kullanım: v6.1 popülasyona yayıldıktan sonra `
 3. `submit_to_testflight: true`, `submit_to_app_store: false` -> TestFlight'a düşer.
 4. App Store'a terfi MANUEL. Review ~2 gün + kullanıcı adoption'ı haftalar sürer.
 
-### Android (manuel)
+### Android (Codemagic — Ağu 2026'da otomatikleşti)
 
-1. Burada düzenle -> commit push.
-2. PC'de temiz `git pull` (uncommitted local edit OLMADAN).
-3. Android Studio -> AAB -> Play Store.
-- Hedef: bu akışı Codemagic Android workflow'una taşımak (AAB + Play publish), böylece her iki
-  platform da git'ten build alınır ve sürüm drift'i biter.
+`codemagic.yaml` -> workflow `android-capacitor-workflow` (`mac_mini_m2`):
+1. Burada düzenle (versionCode/Name git'te bump) -> git push.
+2. Codemagic'te workflow'u MANUEL başlat (otomatik trigger YOK — her commit AAB üretmesin diye).
+3. Adımlar: `npm install --legacy-peer-deps` -> `npm run build` -> `npx cap sync android` ->
+   **JDK 21 seç** (`/usr/libexec/java_home -v 21`; Capacitor 7 `@capacitor/android` v7 modülü Java 21
+   ZORUNLU kılar — PC'de Android Studio JBR 21 kullandığı için görünmüyordu) -> keystore'u
+   `local.properties`'e yaz -> `./gradlew bundleRelease -Dorg.gradle.java.home=... --no-daemon`.
+4. İmza: keystore Codemagic env'de base64 (`CM_KEYSTORE` + `CM_KEYSTORE_PASSWORD`/`CM_KEY_ALIAS`/
+   `CM_KEY_PASSWORD`, grup `android_secrets`). `app/build.gradle`'da KOŞULLU `signingConfig`
+   (local.properties varsa uygular; PC'de yoksa Android Studio sihirbazı bozulmaz).
+5. Şu an sonuç **email ile AAB** olarak gelir; Play'e MANUEL yüklenir.
+
+- **YAPILACAK (android-play-publish):** `publishing.email` yerine `publishing.google_play`
+  (`credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS`, `track: internal|production`,
+  `submit_as_draft`) ile DOĞRUDAN Play Store'a publish. Google Play service account JSON'u
+  Codemagic env'e eklemek gerekir. Bitince manuel yükleme adımı da kalkar.
+- Eski manuel yol (yedek): PC'de temiz `git pull` -> Android Studio -> AAB -> Play Store.
 
 ### "Sıfırıncı build" gerçeği
 
