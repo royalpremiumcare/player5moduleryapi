@@ -9,6 +9,7 @@ import { io } from "socket.io-client";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import { StatusBar, Style } from '@capacitor/status-bar';
+import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
 import Dashboard from "@/components/Dashboard";
 import AppointmentDetail from "@/components/AppointmentDetail";
@@ -418,6 +419,13 @@ function App() {
         window.navigator.standalone === true) {
       localStorage.setItem('is_app_mode', 'true');
     }
+  }, []);
+
+  // Capgo OTA: uygulama sağlıklı açıldı sinyali. notifyAppReady çağrılmazsa Capgo
+  // appReadyTimeout sonrası bundle'ı bozuk sayıp son sağlam sürüme geri döner (rollback).
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    CapacitorUpdater.notifyAppReady().catch(() => { /* web/no-op önemsiz */ });
   }, []);
 
   // Web push tıklaması → service worker /?randevu=<id> açar. Kullanıcı giriş

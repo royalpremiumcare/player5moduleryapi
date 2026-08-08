@@ -229,6 +229,31 @@ göremez → etkisiz). Doğru kullanım: v6.1 popülasyona yayıldıktan sonra `
   Codemagic env'e eklemek gerekir. Bitince manuel yükleme adımı da kalkar.
 - Eski manuel yol (yedek): PC'de temiz `git pull` -> Android Studio -> AAB -> Play Store.
 
+### OTA (Capgo — manuel entegrasyon, `@capgo/capacitor-updater@7`)
+
+Web (JS/CSS/HTML) değişikliklerini App Store/Play review beklemeden telefonlara push etmek için.
+**SADECE web bundle güncellenir** — native kod (plugin ekleme, izin, native ayar) değişirse OTA YETMEZ,
+yeni store build'i şart.
+
+- **Kurulum (yapıldı):** `@capgo/capacitor-updater` kuruldu; `capacitor.config.json` -> `plugins.CapacitorUpdater`
+  (`autoUpdate: true`, `appReadyTimeout: 10000`); `App.js` mount'ta `CapacitorUpdater.notifyAppReady()`
+  (native). Android native bağlandı (`cap update android`), iOS Codemagic'te `cap sync ios` ile bağlanır.
+- **notifyAppReady KRİTİK:** çağrılmazsa Capgo bundle'ı bozuk sayıp `appReadyTimeout` (10s) sonrası son
+  sağlam sürüme geri döner (otomatik rollback). App.js'teki useEffect'i SİLME.
+- **Kanal politikası:** önce `internal` (sadece test cihazları). Doğrulanınca `production`'a promote.
+- **Yayın komutları** (API key gizli, Codemagic/lokal env'den; repoya YAZMA):
+  ```bash
+  cd frontend
+  npm run build                                             # build/ üret
+  npx @capgo/cli@latest bundle upload -a "$CAPGO_TOKEN" \
+      -c internal --path ./build                            # internal kanala yükle
+  # Test cihazını internal kanala bağla (bir kez): dashboard'dan cihaz -> internal
+  # Doğrulandıktan sonra production'a taşı:
+  npx @capgo/cli@latest bundle upload -a "$CAPGO_TOKEN" -c production --path ./build
+  ```
+- **Sürüm uyumu:** OTA bundle'ın native uyumu package.json version'a göre eşleşir; native değişiklik olan
+  release'lerde OTA push etme, store build bekle.
+
 ### "Sıfırıncı build" gerçeği
 
 Sahadaki mevcut build'lerde force-update / OTA kodu YOK. Bu yüzden force-update yayınlandığında bile
@@ -241,8 +266,8 @@ kadar kalmak zorunda.
 
 - Backend: hatalı deploy'da önceki image'a dön. `docker compose build` yerine bilinen iyi git commit'e
   checkout -> yeniden build -> up. (Öneri: her deploy öncesi `git rev-parse HEAD` not al.)
-- OTA (Capgo geldiğinde): bozuk bundle -> `appReadyTimeout` + son sağlam sürüme otomatik fallback
-  yapılandırılmış OLMALI. Bu mekanizma test edilmeden OTA prod'a açılmaz.
+- OTA (Capgo — kuruldu): bozuk bundle -> `notifyAppReady` çağrılmazsa `appReadyTimeout` (10s) sonrası son
+  sağlam sürüme otomatik fallback. Prod'a açmadan önce `internal` kanalda rollback davranışı test EDİLMELİ.
 
 ---
 

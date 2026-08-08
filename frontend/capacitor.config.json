@@ -25,6 +25,12 @@
     "PushNotifications": {
       "presentationOptions": ["badge", "sound", "alert"],
       "iconColor": "#2563eb"
+    },
+    "CapacitorUpdater": {
+      "autoUpdate": true,
+      "appReadyTimeout": 10000,
+      "responseTimeout": 20,
+      "directUpdate": false
     }
   }
 }
