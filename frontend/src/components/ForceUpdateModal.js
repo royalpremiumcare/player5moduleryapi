@@ -19,7 +19,7 @@ const ForceUpdateModal = ({ level, onUpdate, onDismiss }) => {
   // ── Zorunlu güncelleme: kapatılamaz tam ekran ──
   if (level === "block") {
     return (
-      <div className="fixed inset-0 z-[120] bg-black/70 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[1200] bg-black/70 flex items-center justify-center p-4">
         <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 text-center animate-in fade-in zoom-in-95">
           <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-zinc-900 flex items-center justify-center">
             <ArrowUpCircle className="w-7 h-7 text-white" />
@@ -42,11 +42,15 @@ const ForceUpdateModal = ({ level, onUpdate, onDismiss }) => {
   }
 
   // ── Yumuşak uyarı: alt banner, kapatılabilir ──
+  // z-index alt navigasyon çubuğundan (z-1000) YÜKSEK ve nav yüksekliği kadar
+  // yukarı ofsetli — yoksa dashboard'da nav bar banner'ı örter.
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[110] p-4 pointer-events-none">
+    <div
+      className="fixed inset-x-0 z-[1100] px-4 pointer-events-none"
+      style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 76px)" }}
+    >
       <div
         className="mx-auto max-w-md bg-white border border-zinc-200 rounded-xl shadow-lg p-4 flex items-center gap-3 pointer-events-auto animate-in slide-in-from-bottom"
-        style={{ marginBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="shrink-0 w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center">
           <ArrowUpCircle className="w-5 h-5 text-zinc-900" />
@@ -55,7 +59,7 @@ const ForceUpdateModal = ({ level, onUpdate, onDismiss }) => {
           <p className="text-sm font-semibold text-zinc-900">
             {t("forceUpdate.softTitle")}
           </p>
-          <p className="text-xs text-zinc-500 truncate">
+          <p className="text-xs text-zinc-500 leading-snug">
             {t("forceUpdate.softBody")}
           </p>
         </div>
