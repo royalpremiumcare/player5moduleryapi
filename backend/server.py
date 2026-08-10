@@ -1,5 +1,5 @@
 from voice_ai_service import get_voice_ai_service
-from whatsapp_service import send_whatsapp_template, detect_language_from_phone
+from whatsapp_service import send_whatsapp_template, send_meta_whatsapp_template, detect_language_from_phone
 from funnel_registry import is_frontend_owned, is_valid_event
 from funnel_service import ensure_funnel_indexes, record_funnel_event, track_webhook_event
 from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
@@ -16472,6 +16472,95 @@ def _send_whatsapp_text_reply(to_number: str, text: str) -> None:
             logger.info(f"Auto-reply gönderildi → {to_number}")
     except Exception as e:
         logger.error(f"Auto-reply exception: {e}")
+
+
+# ═══ Uptime Kuma → WhatsApp (isletme_bilgilendirme) ═══
+# Yan sunucudaki Uptime Kuma bu endpoint'e POST atar.
+# ÖNEMLİ: Bu sunucu ÇÖKERSE webhook buraya ulaşamaz → DOWN bildirimi
+# için Kuma'nın Telegram/Discord veya yan sunucudaki ayrı bir alıcı
+# kullanması gerekir. UP (yeniden ayakta) bildirimi buradan gelir.
+# Uptime Kuma URL örneği:
+#   https://plannapp.co/api/v1/uptime-kuma-webhook?token=<UPTIME_WEBHOOK_SECRET>
+# NOT: app.include_router(api_router) bu satırın ÜSTÜNDE çağrıldığı için
+# @api_router.post burada kayıt olmaz — @app.post ile doğrudan mount edilir.
+@app.post("/api/v1/uptime-kuma-webhook")
+async def uptime_kuma_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Uptime Kuma durum değişikliğini WhatsApp şablonu ile yöneticiye iletir."""
+    expected_secret = (os.getenv("UPTIME_WEBHOOK_SECRET") or "").strip()
+    if expected_secret:
+        provided = (
+            request.query_params.get("token")
+            or request.headers.get("X-Uptime-Token")
+            or ""
+        ).strip()
+        if not secrets.compare_digest(provided, expected_secret):
+            raise HTTPException(status_code=401, detail="Geçersiz webhook token")
+
+    admin_phone = (os.getenv("UPTIME_ALERT_PHONE") or "").strip()
+    if not admin_phone:
+        logger.error("UPTIME_ALERT_PHONE tanımlı değil — WhatsApp uyarısı atlanıyor")
+        raise HTTPException(status_code=503, detail="UPTIME_ALERT_PHONE yapılandırılmamış")
+
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Geçersiz JSON body")
+
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="JSON object bekleniyor")
+
+    monitor = data.get("monitor") if isinstance(data.get("monitor"), dict) else {}
+    heartbeat = data.get("heartbeat") if isinstance(data.get("heartbeat"), dict) else {}
+    monitor_name = monitor.get("name") or "PLANN Servisi"
+    raw_status = heartbeat.get("status")
+    try:
+        status_int = int(raw_status) if raw_status is not None else -1
+    except (TypeError, ValueError):
+        status_int = -1
+    msg = data.get("msg") or heartbeat.get("msg") or "Durum değişikliği algılandı."
+
+    if status_int == 0:
+        status_text = "ÇÖKTÜ 🔴"
+    elif status_int == 1:
+        status_text = "YENİDEN AYAKTA 🟢"
+    else:
+        status_text = f"DURUM DEĞİŞTİ ({raw_status})"
+
+    param_1 = (os.getenv("UPTIME_ALERT_NAME") or "Fatih").strip() or "Fatih"
+    # Meta template değişkenleri genelde ~1024 karakter; güvenli kırp
+    param_2 = f"{monitor_name} durumu: {status_text}\nDetay: {msg}"
+    if len(param_2) > 900:
+        param_2 = param_2[:897] + "..."
+
+    template_name = (os.getenv("UPTIME_WA_TEMPLATE") or "isletme_bilgilendirme").strip()
+    language_code = (os.getenv("UPTIME_WA_TEMPLATE_LANG") or "tr").strip() or "tr"
+
+    def _send_uptime_wa():
+        try:
+            # Randevu send_whatsapp_template DEĞİL — düşük seviye Meta çağrısı
+            # (template_name + body {{1}}, {{2}}). Şablon Meta'da onaylı olmalı.
+            send_meta_whatsapp_template(
+                to_number=admin_phone,
+                template_name=template_name,
+                language_code=language_code,
+                components=[
+                    {
+                        "type": "body",
+                        "parameters": [
+                            {"type": "text", "text": param_1},
+                            {"type": "text", "text": param_2},
+                        ],
+                    }
+                ],
+            )
+        except Exception as e:
+            logger.error(f"Uptime Kuma WA gönderilemedi: {e}", exc_info=True)
+
+    background_tasks.add_task(_send_uptime_wa)
+    logger.info(
+        f"Uptime Kuma webhook kabul: monitor={monitor_name!r} status={status_int} → WA kuyruğa alındı"
+    )
+    return {"status": "ok"}
 
 
 @app.get("/webhook")
