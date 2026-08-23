@@ -3,6 +3,9 @@ import api from "../api/api";
 import { toast } from "sonner";
 import { X, Search, Plus, Send, Loader2, User, Check, AlertCircle, Info, CreditCard } from "lucide-react";
 
+// Açılır listede gösterilecek müşteri sayısı — sunucudan bu kadar çekilir.
+const CUSTOMER_PAGE_SIZE = 50;
+
 /**
  * Pay-by-Link ("Ödeme İste") drawer.
  *
@@ -81,16 +84,31 @@ export default function PaymentRequestDrawer({
     };
   }, [open]);
 
-  // Load customers + company name when opened
+  // İşletme adı yalnızca açılışta bir kez gerekiyor.
   useEffect(() => {
     if (!open) return;
-    api.get("/customers")
-      .then((res) => setCustomers(Array.isArray(res.data) ? res.data : []))
-      .catch(() => setCustomers([]));
     api.get("/settings")
       .then((res) => setCompanyName(res.data?.company_name || ""))
       .catch(() => {});
   }, [open]);
+
+  // Müşteri araması sunucuda yapılıyor. Eskiden tüm liste indirilip istemcide
+  // filtreleniyordu; 10 bin müşterili bir işletmede bu tek çağrı yük testinde
+  // 12,8 sn sürüyordu (bkz. k6_faz3_analiz_raporu.md).
+  useEffect(() => {
+    if (!open) return;
+    const handle = setTimeout(() => {
+      const params = { limit: CUSTOMER_PAGE_SIZE };
+      const term = query.trim();
+      // Müşteri seçildikten sonra arama kutusunda onun adı yazıyor; bunu yeni bir
+      // arama sanıp listeyi daraltmayalım.
+      if (term && term !== (selected?.name || selected?.phone)) params.search = term;
+      api.get("/customers", { params })
+        .then((res) => setCustomers(res.data?.items || []))
+        .catch(() => setCustomers([]));
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [open, query, selected]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -103,15 +121,16 @@ export default function PaymentRequestDrawer({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Sunucu zaten aramayı uyguladı; burada yalnızca kullanıcı yazarken (debounce
+  // dolmadan önce) liste sıçramasın diye anlık yerel süzme yapıyoruz.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return customers.slice(0, 50);
-    return customers
-      .filter((c) =>
-        (c.name || "").toLowerCase().includes(q) ||
-        (c.phone || "").toLowerCase().includes(q)
-      )
-      .slice(0, 50);
+    if (!q) return customers;
+    const local = customers.filter((c) =>
+      (c.name || "").toLowerCase().includes(q) ||
+      (c.phone || "").toLowerCase().includes(q)
+    );
+    return local.length > 0 ? local : customers;
   }, [customers, query]);
 
   const pickCustomer = (c) => {

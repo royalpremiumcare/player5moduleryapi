@@ -37,8 +37,9 @@ def pick_aha_slot(
     Aha demo randevusu için tarih/saat seç.
 
     Davranış:
-      1. `now() + AHA_OFFSET_MINUTES` baz alınır (~15dk gelecek; kullanıcıya
-         ders kıvamında "yakın bir zamana atadık" görüntüsü verir).
+      1. `now()` bir sonraki 15 dakikalık ızgara noktasına yukarı yuvarlanır
+         (kesin gelecekteki tam :00/:15/:30/:45). Örn. 08:11 → 08:15, 10:00 → 10:15.
+         Böylece randevu rastgele/dağınık bir dakikaya değil, temiz bir dilime düşer.
       2. work_start/work_end mesai pencerelerine zorlanır.
          - candidate.hour < work_start  → o günün work_start:00'ı
          - candidate.hour >= work_end   → ertesi günün work_start:00'ı
@@ -67,7 +68,12 @@ def pick_aha_slot(
     if work_end <= work_start:
         work_end = work_start + 8
 
-    candidate = now + timedelta(minutes=AHA_OFFSET_MINUTES)
+    # Bir sonraki 15 dakikalık ızgara noktasına yukarı yuvarla (kesin gelecek).
+    # base.minute % 15 == 0 olsa bile bir sonraki dilime atlar → her zaman ileri.
+    interval = AHA_OFFSET_MINUTES  # 15 dk
+    base = now.replace(second=0, microsecond=0)
+    minutes_to_add = interval - (base.minute % interval)
+    candidate = base + timedelta(minutes=minutes_to_add)
     if candidate.hour < work_start:
         candidate = candidate.replace(hour=work_start, minute=0, second=0, microsecond=0)
     elif candidate.hour >= work_end:

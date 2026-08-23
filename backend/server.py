@@ -1,11 +1,11 @@
 from voice_ai_service import get_voice_ai_service
-from whatsapp_service import send_whatsapp_template, send_meta_whatsapp_template, detect_language_from_phone
+from whatsapp_service import send_whatsapp_template, detect_language_from_phone
 from funnel_registry import is_frontend_owned, is_valid_event
 from funnel_service import ensure_funnel_indexes, record_funnel_event, track_webhook_event
 from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from meta_capi_service import get_meta_capi_service, split_full_name
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
@@ -172,7 +172,7 @@ else:
     brevo_api_instance = None
     logging.warning("⚠️ BREVO_API_KEY bulunamadı! E-posta gönderimi devre dışı.")
 
-async def send_email(to_email: str, subject: str, html_content: str, to_name: str = None, sender_name: str = "PLANN", sender_email: str = "noreply@plannapp.co"):
+async def send_email(to_email: str, subject: str, html_content: str, to_name: str = None, sender_name: str = "PLANN", sender_email: str = "info@plannapp.co"):
     """Brevo API ile e-posta gönder - Global helper fonksiyon (async)"""
     global brevo_api_instance
     try:
@@ -235,45 +235,121 @@ async def send_email(to_email: str, subject: str, html_content: str, to_name: st
 # şablonunu kullanır: logolu açık gri başlık, beyaz içerik gövdesi, alt bilgi.
 # `content_html` gövde hücresinin içine yerleştirilir.
 
-def _wrap_brand_email(content_html: str, lang: str = "tr") -> str:
-    """İçeriği PLANN marka e-posta şablonuna (kayıt e-postası ile aynı) sarar."""
-    logo_url = "https://plannapp.co/api/static/logo.png"
-    logo_alt = "PLANN Logo" if lang == "en" else "PLANN Logosu"
+# --- Premium marka tipografisi (Uptime/System Monitor şablonu ile aynı dil) ---
+_BRAND_FONT_SERIF = "Georgia, 'Times New Roman', Times, serif"
+_BRAND_FONT_SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+
+
+def _brand_shell(content_html: str, lang: str = "tr") -> str:
+    """İçeriği PLANN premium e-posta kabuğuna sarar.
+
+    Krem zemin, beyaz kart, tipografik 'P L A N N' başlık, serif gövde ve
+    minimalist alt bilgi. Tüm stiller inline (Gmail/Brevo uyumu için)."""
     year = datetime.now(timezone.utc).year
-    footer = (
-        f"© {year} PLANN. All rights reserved."
-        if lang == "en"
-        else f"© {year} PLANN. Tüm hakları saklıdır."
-    )
-    return f"""
-    <html>
-    <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-        <table width="100%" border="0" cellpadding="0" cellspacing="0">
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background-color:#fbfbfa;color:#1a1a1a;-webkit-font-smoothing:antialiased;font-family:{_BRAND_FONT_SERIF};">
+  <center style="width:100%;background-color:#fbfbfa;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:#fbfbfa;">
+      <tr>
+        <td align="center" style="padding:60px 16px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;margin:0 auto;background-color:#ffffff;border:1px solid #e5e5e3;box-shadow:0 4px 20px rgba(0,0,0,0.02);">
             <tr>
-                <td align="center" style="padding: 20px 0;">
-                    <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                        <tr>
-                            <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                <img src="{logo_url}" alt="{logo_alt}" style="max-width: 150px; height: auto;">
-                            </td>
-                        </tr>
-                        <tr style="background-color: #ffffff;">
-                            <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                {content_html}
-                            </td>
-                        </tr>
-                        <tr style="background-color: #f9f9f9;">
-                            <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                <p>{footer}</p>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
+              <td style="padding:60px 50px 40px 50px;text-align:center;border-bottom:1px solid #f2f2f0;">
+                <h1 style="margin:0;font-family:{_BRAND_FONT_SERIF};font-size:30px;font-weight:300;letter-spacing:10px;color:#1a1a1a;text-transform:uppercase;">P L A N N</h1>
+              </td>
             </tr>
-        </table>
-    </body>
-    </html>
-    """
+            <tr>
+              <td style="padding:50px 50px 40px 50px;">
+                {content_html}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:40px 50px;text-align:center;font-family:{_BRAND_FONT_SANS};font-size:10px;letter-spacing:2px;color:#a3a3a0;text-transform:uppercase;border-top:1px solid #f2f2f0;">
+                PLANNAPP LTD. ALL RIGHTS RESERVED. &copy; {year}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </center>
+</body>
+</html>"""
+
+
+def _brand_body(
+    *,
+    badge: str = "",
+    statement: str = "",
+    paragraphs: Optional[list] = None,
+    meta_rows: Optional[list] = None,
+    button: Optional[dict] = None,
+    note: str = "",
+) -> str:
+    """Premium gövde bloğu üretir: kategori etiketi, italik ana cümle, paragraflar,
+    etiket/değer meta tablosu, çerçeveli buton ve isteğe bağlı dipnot."""
+    parts = []
+    if badge:
+        parts.append(
+            f'<div style="font-family:{_BRAND_FONT_SANS};font-size:10px;letter-spacing:3px;'
+            f'text-transform:uppercase;color:#8c8c88;margin:0 0 30px 0;text-align:center;font-weight:500;">{badge}</div>'
+        )
+    if statement:
+        parts.append(
+            f'<div style="font-family:{_BRAND_FONT_SERIF};font-size:23px;line-height:1.6;color:#1a1a1a;'
+            f'text-align:center;margin:0 0 45px 0;font-weight:400;font-style:italic;">{statement}</div>'
+        )
+    for p in (paragraphs or []):
+        parts.append(
+            f'<p style="font-family:{_BRAND_FONT_SERIF};font-size:17px;line-height:1.75;color:#3a3a3a;margin:0 0 20px 0;">{p}</p>'
+        )
+    if meta_rows:
+        # Etiket/değer satırları ince çerçeveli bir kutu içinde (premium meta paneli)
+        rows = ""
+        n = len(meta_rows)
+        for i, (label, value) in enumerate(meta_rows):
+            border = "" if i == n - 1 else "border-bottom:1px solid #f2f2f0;"
+            rows += (
+                f'<tr><td style="padding:18px 24px;{border}font-family:{_BRAND_FONT_SANS};font-size:11px;'
+                f'text-transform:uppercase;letter-spacing:2px;color:#8c8c88;font-weight:500;width:30%;vertical-align:top;">{label}</td>'
+                f'<td style="padding:18px 24px 18px 0;{border}font-family:{_BRAND_FONT_SERIF};font-size:16px;color:#1a1a1a;vertical-align:top;">{value}</td></tr>'
+            )
+        parts.append(
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'style="width:100%;margin:12px 0 45px 0;border:1px solid #e5e5e3;border-collapse:collapse;">{rows}</table>'
+        )
+    if note:
+        parts.append(
+            f'<p style="font-family:{_BRAND_FONT_SANS};font-size:13px;line-height:1.6;color:#8c8c88;'
+            f'margin:28px 0 0 0;padding-top:20px;border-top:1px solid #f2f2f0;">{note}</p>'
+        )
+    if button and button.get("url") and button.get("label"):
+        parts.append(
+            f'<div style="text-align:center;margin-top:40px;">'
+            f'<a href="{button["url"]}" target="_blank" style="border:1px solid #1a1a1a;color:#1a1a1a;'
+            f'text-decoration:none;padding:16px 42px;font-family:{_BRAND_FONT_SANS};font-size:11px;'
+            f'font-weight:600;text-transform:uppercase;letter-spacing:3px;display:inline-block;">{button["label"]}</a></div>'
+        )
+    return "\n".join(parts)
+
+
+def _brand_email(*, lang: str = "tr", **body_kwargs) -> str:
+    """Kısayol: premium gövdeyi premium kabuğa sarıp tam HTML döndürür."""
+    return _brand_shell(_brand_body(**body_kwargs), lang=lang)
+
+
+def _wrap_brand_email(content_html: str, lang: str = "tr") -> str:
+    """Geriye dönük uyum: serbest içerik HTML'ini premium kabuğa sarar."""
+    body = (
+        f'<div style="font-family:{_BRAND_FONT_SERIF};font-size:17px;line-height:1.75;color:#3a3a3a;">'
+        f'{content_html}</div>'
+    )
+    return _brand_shell(body, lang=lang)
 
 
 # Subscription email helpers
@@ -336,98 +412,40 @@ def _build_subscription_email(lang: str, full_name: str, plan_name: str, billing
     if lang == 'en':
         subject = "Your PLANN subscription is now active"
         cycle_label = "Yearly" if cycle == 'yearly' else "Monthly"
-        logo_url = "https://plannapp.co/api/static/logo.png"
-        html_content = f"""
-        <html>
-          <body style=\"margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;\">
-            <table width=\"100%\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\">
-              <tr>
-                <td align=\"center\" style=\"padding: 20px 0;\">
-                  <table width=\"600\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);\">
-                    <tr>
-                      <td align=\"center\" style=\"padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;\">
-                        <img src=\"{logo_url}\" alt=\"PLANN Logo\" style=\"max-width: 150px; height: auto;\">
-                      </td>
-                    </tr>
-                    <tr style=\"background-color: #ffffff;\">
-                      <td style=\"padding: 40px 30px; color: #333333; font-size: 16px;\">
-                        <h1 style=\"font-size: 24px; color: #111111; margin-top: 0; text-align: center;\">Your subscription is active!</h1>
-                        <p>Hello {safe_name or 'there'},</p>
-                        <p>Your PLANN subscription has been successfully activated.</p>
-                        <p><strong>Plan:</strong> {safe_plan}</p>
-                        <p><strong>Billing:</strong> {cycle_label}</p>
-                        <p style=\"text-align: center; margin-top: 30px; margin-bottom: 30px;\">
-                          You can now continue using PLANN with your new plan.
-                        </p>
-                      </td>
-                    </tr>
-                    <tr style=\"background-color: #ffffff;\">
-                      <td align=\"center\" style=\"padding: 0 30px 40px 30px;\">
-                        <a href=\"{dashboard_url}\" target=\"_blank\" style=\"background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;\">
-                          Go to Dashboard
-                        </a>
-                      </td>
-                    </tr>
-                    <tr style=\"background-color: #f9f9f9;\">
-                      <td align=\"center\" style=\"padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;\">
-                        <p>© 2025 PLANN. All rights reserved.</p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </body>
-        </html>
-        """
+        html_content = _brand_email(
+            lang='en',
+            badge="Subscription",
+            statement="Your subscription is now active.",
+            paragraphs=[
+                f"Hello {safe_name or 'there'},",
+                "Your payment was received and your PLANN subscription has been successfully activated.",
+                "You can now continue using PLANN with your new plan.",
+            ],
+            meta_rows=[
+                ("Plan", safe_plan or "—"),
+                ("Billing", cycle_label),
+            ],
+            button={"label": "Go to Dashboard", "url": dashboard_url},
+        )
         return subject, html_content
 
     subject = "PLANN aboneliğiniz aktif edildi"
     cycle_label = "Yıllık" if cycle == 'yearly' else "Aylık"
-    logo_url = "https://plannapp.co/api/static/logo.png"
-    html_content = f"""
-    <html>
-      <body style=\"margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;\">
-        <table width=\"100%\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\">
-          <tr>
-            <td align=\"center\" style=\"padding: 20px 0;\">
-              <table width=\"600\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);\">
-                <tr>
-                  <td align=\"center\" style=\"padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;\">
-                    <img src=\"{logo_url}\" alt=\"PLANN Logosu\" style=\"max-width: 150px; height: auto;\">
-                  </td>
-                </tr>
-                <tr style=\"background-color: #ffffff;\">
-                  <td style=\"padding: 40px 30px; color: #333333; font-size: 16px;\">
-                    <h1 style=\"font-size: 24px; color: #111111; margin-top: 0; text-align: center;\">Aboneliğiniz aktif edildi!</h1>
-                    <p>Merhaba {safe_name or ' '},</p>
-                    <p>Ödemeniz başarıyla alındı ve aboneliğiniz aktif edildi.</p>
-                    <p><strong>Paket:</strong> {safe_plan}</p>
-                    <p><strong>Dönem:</strong> {cycle_label}</p>
-                    <p style=\"text-align: center; margin-top: 30px; margin-bottom: 30px;\">
-                      Artık yeni paketinizle PLANN'ı kullanmaya devam edebilirsiniz.
-                    </p>
-                  </td>
-                </tr>
-                <tr style=\"background-color: #ffffff;\">
-                  <td align=\"center\" style=\"padding: 0 30px 40px 30px;\">
-                    <a href=\"{dashboard_url}\" target=\"_blank\" style=\"background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;\">
-                      Panele git
-                    </a>
-                  </td>
-                </tr>
-                <tr style=\"background-color: #f9f9f9;\">
-                  <td align=\"center\" style=\"padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;\">
-                    <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-      </body>
-    </html>
-    """
+    html_content = _brand_email(
+        lang='tr',
+        badge="Abonelik",
+        statement="Aboneliğiniz aktif edildi.",
+        paragraphs=[
+            f"Merhaba {safe_name or ''},",
+            "Ödemeniz başarıyla alındı ve aboneliğiniz aktif edildi.",
+            "Artık yeni paketinizle PLANN'ı kullanmaya devam edebilirsiniz.",
+        ],
+        meta_rows=[
+            ("Paket", safe_plan or "—"),
+            ("Dönem", cycle_label),
+        ],
+        button={"label": "Panele git", "url": dashboard_url},
+    )
     return subject, html_content
 
 
@@ -471,6 +489,149 @@ async def _send_subscription_email_once(
             {"$set": {"subscription_email_sent": True, "subscription_email_sent_at": now, "subscription_email_lang": lang}},
             upsert=True
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# AKTİVASYON NUDGE — kayıt +1 gün, hiç GERÇEK randevu oluşturmayan admin'e
+# uygulama içine çekmeye yönelik tek seferlik premium e-posta.
+# ══════════════════════════════════════════════════════════════════════════
+ACTIVATION_NUDGE_MIN_AGE_HOURS = int(os.getenv("ACTIVATION_NUDGE_MIN_AGE_HOURS", "24"))
+ACTIVATION_NUDGE_MAX_AGE_DAYS = int(os.getenv("ACTIVATION_NUDGE_MAX_AGE_DAYS", "7"))
+# Akıllı buton: cihaza göre uygulamayı/mağazayı, masaüstünde web panelini açar
+# (hoş geldin e-postasıyla aynı /api/app/open yönlendirmesi).
+ACTIVATION_NUDGE_APP_URL_TR = os.getenv(
+    "ACTIVATION_NUDGE_APP_URL_TR",
+    "https://plannapp.co/api/app/open?web=https%3A%2F%2Fplannapp.co",
+)
+ACTIVATION_NUDGE_APP_URL_EN = os.getenv(
+    "ACTIVATION_NUDGE_APP_URL_EN",
+    "https://plannapp.co/api/app/open?web=https%3A%2F%2Fplannapp.co.uk",
+)
+
+
+def _parse_iso_dt(value):
+    """ISO string / datetime → tz-aware UTC datetime (naive ise UTC varsayılır)."""
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        try:
+            d = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+    return None
+
+
+def _build_activation_nudge_email(lang: str, full_name: str, app_url: str) -> tuple[str, str]:
+    """Kayıt olup henüz randevu oluşturmamış kullanıcıya nazik hatırlatma e-postası."""
+    safe = (full_name or "").strip()
+    if lang == "en":
+        subject = "Put an end to empty appointment slots"
+        html = _brand_email(
+            lang="en",
+            badge="First Step",
+            statement="Put an end to empty appointment slots.",
+            paragraphs=[
+                f"Hello {safe or 'there'},",
+                "Waiting for a client while wondering &ldquo;Will they actually show up?&rdquo; — or losing hours to no-shows because someone simply forgot — is frustrating. And texting everyone one by one to confirm is a job in itself.",
+                "<strong>PLANN was built to eliminate exactly this problem.</strong>",
+                "You just add the appointment; PLANN takes it from there. The automatic WhatsApp confirmations and reminders sent to your clients don't only prevent forgotten bookings — <strong>they take your business's image to the next level.</strong> A client who receives a professional notification the moment they book will see you as a far more established and trustworthy brand.",
+                "You've created your account, but you haven't experienced this ease yet. Take just one minute: open PLANN, tap the <strong>(+)</strong> button, and add your first client.",
+                "Let us handle the reminders and your professional image — you just focus on growing your business.",
+            ],
+            note="You received this because you signed up for PLANN and haven't created an appointment yet.",
+            button={"label": "Create my first appointment", "url": app_url},
+        )
+        return subject, html
+    subject = "Boş kalan randevu saatlerine son verin"
+    html = _brand_email(
+        lang="tr",
+        badge="İlk Adım",
+        statement="Boş kalan randevu saatlerine son verin.",
+        paragraphs=[
+            f"Merhaba {safe or ''},",
+            "Müşterinizi beklerken &ldquo;Acaba gelecek mi?&rdquo; diye düşünmek veya randevuyu unuttukları için boşa giden saatlerin maliyeti can sıkıcıdır. Herkese tek tek mesaj atıp teyit almak ise ayrı bir mesai gerektirir.",
+            "<strong>PLANN tam olarak bu sorunu ortadan kaldırmak için tasarlandı.</strong>",
+            "Siz sadece randevuyu eklersiniz; gerisini PLANN devralır. Müşterilerinize giden otomatik WhatsApp onay ve hatırlatma mesajları sadece unutkanlıkların önüne geçmekle kalmaz; <strong>işletmenizin imajını da bir üst seviyeye taşır.</strong> Randevusunu aldığı an profesyonel bir bilgilendirme mesajı alan müşterilerinizin gözünde çok daha kurumsal ve güvenilir bir marka olarak konumlanırsınız.",
+            "Hesabınızı oluşturdunuz ama bu rahatlığı henüz deneyimlemediniz. Sadece bir dakikanızı ayırın: PLANN'ı açın, alttaki <strong>(+)</strong> butonuna dokunun ve ilk müşterinizi ekleyin.",
+            "Hatırlatmaları ve profesyonel görünümünüzü biz halledelim, siz sadece işinizi büyütmeye odaklanın.",
+        ],
+        note="Bu e-postayı, PLANN'a kaydolduğunuz hâlde henüz randevu oluşturmadığınız için aldınız.",
+        button={"label": "İlk randevumu oluştur", "url": app_url},
+    )
+    return subject, html
+
+
+async def send_activation_nudges(db):
+    """Kayıttan ~1 gün sonra hiç gerçek (demo olmayan) randevu oluşturmamış admin'lere
+    tek seferlik aktivasyon e-postası gönderir. `activation_nudge_sent` ile idempotent."""
+    try:
+        now = datetime.now(timezone.utc)
+        # DISTRIBUTED LOCK: 17 worker → günde tek çalıştırma (aksi 17x gönderim riski)
+        redis_client = getattr(getattr(_app_instance, 'state', None), 'redis_client', None)
+        if redis_client:
+            try:
+                lock_key = f"activation_nudge_lock:{now.strftime('%Y%m%d')}"
+                if not await redis_client.set(lock_key, "1", nx=True, ex=23 * 3600):
+                    logging.debug("Activation nudge skipped - another worker holds the daily lock")
+                    return 0
+            except Exception as lock_err:
+                logging.warning(f"Activation nudge lock unavailable, proceeding: {lock_err}")
+        min_created = now - timedelta(days=ACTIVATION_NUDGE_MAX_AGE_DAYS)
+        max_created = now - timedelta(hours=ACTIVATION_NUDGE_MIN_AGE_HOURS)
+        sent = 0
+        cursor = db.users.find(
+            {"role": "admin", "activation_nudge_sent": {"$ne": True}},
+            {"username": 1, "full_name": 1, "organization_id": 1, "created_at": 1, "user_id": 1},
+        )
+        async for u in cursor:
+            created = _parse_iso_dt(u.get("created_at"))
+            if not created or not (min_created <= created <= max_created):
+                continue
+            org = u.get("organization_id")
+            email = (u.get("username") or "").strip()
+            uid = u.get("user_id")
+            if not org or "@" not in email:
+                continue
+            # Gerçek (demo olmayan) randevu var mı?
+            real = await db.appointments.find_one(
+                {"organization_id": org, "is_demo": {"$ne": True}, "source": {"$ne": "aha_activation"}},
+                {"_id": 1},
+            )
+            if real:
+                await db.users.update_one(
+                    {"user_id": uid},
+                    {"$set": {"activation_nudge_sent": True, "activation_nudge_skipped": "has_appointment"}},
+                )
+                continue
+            # Dil: settings.support_phone +44 ise EN, aksi TR
+            lang = "tr"
+            try:
+                s = await db.settings.find_one({"organization_id": org}, {"support_phone": 1})
+                if ((s or {}).get("support_phone") or "").startswith("+44"):
+                    lang = "en"
+            except Exception:
+                pass
+            app_url = ACTIVATION_NUDGE_APP_URL_EN if lang == "en" else ACTIVATION_NUDGE_APP_URL_TR
+            subject, html = _build_activation_nudge_email(lang, u.get("full_name"), app_url)
+            ok = await send_email(to_email=email, subject=subject, html_content=html, to_name=u.get("full_name"))
+            await db.users.update_one(
+                {"user_id": uid},
+                {"$set": {
+                    "activation_nudge_sent": bool(ok),
+                    "activation_nudge_sent_at": now.isoformat() if ok else None,
+                    "activation_nudge_lang": lang,
+                }},
+            )
+            if ok:
+                sent += 1
+        if sent:
+            logging.info(f"Activation nudge: {sent} e-posta gönderildi")
+        return sent
+    except Exception as e:
+        logging.error(f"send_activation_nudges failed: {e}", exc_info=True)
+        return 0
+
 
 # === SMS REMINDER SCHEDULER ===
 scheduler = AsyncIOScheduler()
@@ -862,6 +1023,26 @@ async def lifespan(app: FastAPI):
             replace_existing=True,
             max_instances=1
         )
+
+        # Aktivasyon nudge — her gün 08:00 UTC (~11:00 TR): kayıttan +1 gün geçmiş,
+        # hiç gerçek randevu oluşturmamış admin'lere tek seferlik e-posta.
+        if app.db is not None:
+            _nudge_db = app.db
+
+            async def _run_activation_nudges():
+                try:
+                    await send_activation_nudges(_nudge_db)
+                except Exception as e:
+                    logging.error(f"activation_nudges job failed: {e}", exc_info=True)
+
+            scheduler.add_job(
+                _run_activation_nudges,
+                CronTrigger(hour=8, minute=0),
+                id='activation_nudge_job',
+                replace_existing=True,
+                max_instances=1,
+            )
+            logging.info("  - Activation Nudge: Enabled (daily 08:00 UTC)")
         
         # Step 4b: Financial Engine Cron Jobs
         if app.db is not None:
@@ -1014,8 +1195,29 @@ async def lifespan(app: FastAPI):
             await app.db.appointments.create_index([("organization_id", 1), ("status", 1)])
             # Dashboard aggregate'leri (org + status + appointment_date) filtreliyor → compound index.
             await app.db.appointments.create_index([("organization_id", 1), ("status", 1), ("appointment_date", 1)])
+            # GET /api/appointments cursor sıralaması: sort([date:1, time:1, id:1]).
+            # Bu index olmadan planlayıcı organizasyonun TÜM randevularını çekip belleğe
+            # alıyor ve orada sıralıyordu (SORT stage) — limit=50 istense bile. Index
+            # sıralı geldiği için artık limit kadar okuyup duruyor.
+            try:
+                await app.db.appointments.create_index(
+                    [("organization_id", 1), ("appointment_date", 1), ("appointment_time", 1), ("id", 1)],
+                    name="appointments_org_date_time_id",
+                )
+            except Exception as idx_err:
+                logging.debug(f"appointments (org, date, time, id) index skipped: {idx_err}")
             
-            # Customers indexes — cursor pagination + Türkçe collation ile arama
+            # Customers indexes — cursor pagination + Türkçe collation ile arama.
+            #
+            # NOT: (organization_id, phone) üzerinde GLOBAL unique index BİLİNÇLİ olarak
+            # zorlanmıyor. Domain gereği bu alanlar tekrar edebilir:
+            #   • Telefonsuz walk-in müşteriler `phone:"0"` ile saklanıyor → org başına
+            #     birden çok farklı kişi aynı "0" değerine sahip olabilir (veri değil, tasarım).
+            #   • Aynı telefon farklı isimle ayrı müşteri olabilir (ör. anne telefonuyla
+            #     kızına randevu) → paylaşılan telefon geçerli bir senaryo.
+            # Bu yüzden aşağıdaki NON-UNIQUE index efektif olandır. Unique'i yine de bir kez
+            # deniyoruz (kurulursa bonus veri bütünlüğü); kurulamazsa bu beklenen bir durum,
+            # bu nedenle DEBUG seviyesinde loglanır (WARNING değil — prod loglarını kirletmesin).
             try:
                 await app.db.customers.create_index(
                     [("organization_id", 1), ("phone", 1)],
@@ -1023,10 +1225,8 @@ async def lifespan(app: FastAPI):
                     name="customers_org_phone_unique",
                 )
             except Exception as idx_err:
-                # Duplicate phone kayıtları varsa unique index kurulamaz;
-                # backfill script duplike'leri temizler, sonraki restart'ta kurulur.
-                logging.warning(
-                    f"customers unique (org_id, phone) index skipped (duplicate phone kayıtları olabilir): {idx_err}"
+                logging.debug(
+                    f"customers (org_id, phone) unique index atlandı (beklenen: paylaşılan/boş telefonlar): {idx_err}"
                 )
                 try:
                     await app.db.customers.create_index(
@@ -2870,6 +3070,18 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
             )
             await db.services.insert_one(service.model_dump())
             service_ids.append(service_id)
+    else:
+        # Sektör "Diğer/Boş" (veya boş) → sektör bazlı default hizmet yok. Yine de
+        # takvim baştan boş kalmasın ve aha demo çalışsın diye tek bir genel hizmet ekle.
+        gen_lang = lang or get_request_language(request) or 'tr'
+        gen_name = "Appointment" if str(gen_lang).lower().startswith('en') else "Randevu"
+        try:
+            gen_id = str(uuid.uuid4())
+            gen_service = Service(id=gen_id, organization_id=new_org_id, name=gen_name, price=0, duration=30)
+            await db.services.insert_one(gen_service.model_dump())
+            service_ids.append(gen_id)
+        except Exception as _gen_err:
+            logging.warning(f"Genel default hizmet eklenemedi ({user_in.username}): {_gen_err}")
     
     # Admin'e tüm hizmetleri ata
     if service_ids:
@@ -2905,97 +3117,37 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
             lang_for_email = 'tr'
         
         logo_url = "https://plannapp.co/api/static/logo.png"
-        dashboard_url = "https://plannapp.co.uk" if lang_for_email == 'en' else "https://plannapp.co"
         user_name = user_in.full_name or user_in.username
-        
+        # Akıllı buton: cihaza göre uygulamayı açar (iOS/Android), yoksa mağazaya,
+        # masaüstünde web paneline yönlendirir.
         if lang_for_email == 'en':
+            login_url = "https://plannapp.co/api/app/open?web=https%3A%2F%2Fplannapp.co.uk"
             subject = "Welcome to PLANN! Your Free Trial Has Started."
-            html_content = f"""
-            <html>
-            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-                <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                    <tr>
-                        <td align="center" style="padding: 20px 0;">
-                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                                <tr>
-                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                        <img src="{logo_url}" alt="PLANN Logo" style="max-width: 150px; height: auto;">
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Welcome to PLANN Appointment System!</h1>
-                                        <p>Hello {user_name},</p>
-                                        <p>Thank you for deciding to bring your business into the digital world with PLANN.</p>
-                                        <p>Your <strong>7-day (or 50-appointment)</strong> free trial has been successfully started, giving you access to all our features designed to simplify your appointment management.</p>
-                                        <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
-                                            You can now go to your dashboard to create your first appointment and start exploring the system.
-                                        </p>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td align="center" style="padding: 0 30px 40px 30px;">
-                                        <a href="{dashboard_url}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
-                                            Get Started
-                                        </a>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #f9f9f9;">
-                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                        <p>© 2025 PLANN. All rights reserved.</p>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-            </html>
-            """
+            html_content = _brand_email(
+                lang='en',
+                badge="Welcome",
+                statement="We're thrilled you chose to grow your business with PLANN.",
+                paragraphs=[
+                    f"Hello {user_name},",
+                    "To let you explore the system we designed to save you time — with no limits — we've started your <strong>7-day free trial</strong>.",
+                    "Just sign in to your dashboard to create your first appointment and see how easily you can manage them.",
+                ],
+                button={"label": "Sign In", "url": login_url},
+            )
         else:
+            login_url = "https://plannapp.co/api/app/open?web=https%3A%2F%2Fplannapp.co"
             subject = "PLANN'a Hoş Geldiniz! Ücretsiz Deneme Sürümünüz Başladı."
-            html_content = f"""
-            <html>
-            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-                <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                    <tr>
-                        <td align="center" style="padding: 20px 0;">
-                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                                <tr>
-                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                        <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">PLANN Randevu Sistemine Hoş Geldiniz!</h1>
-                                        <p>Merhaba {user_name},</p>
-                                        <p>İşletmenizi PLANN ile dijital dünyaya taşımaya karar verdiğiniz için teşekkür ederiz.</p>
-                                        <p>Randevu yönetiminizi kolaylaştırmak için tasarlanan tüm özelliklerimize erişim sağlayan <strong>7 günlük (veya 50 randevuluk)</strong> ücretsiz deneme sürümünüz başarıyla başlatıldı.</p>
-                                        <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
-                                            Artık panonuza giderek ilk randevunuzu oluşturabilir ve sistemi keşfetmeye başlayabilirsiniz.
-                                        </p>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td align="center" style="padding: 0 30px 40px 30px;">
-                                        <a href="{dashboard_url}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
-                                            Kullanmaya Başla
-                                        </a>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #f9f9f9;">
-                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                        <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-            </html>
-            """
+            html_content = _brand_email(
+                lang='tr',
+                badge="Hoş Geldiniz",
+                statement="İşletmenizi PLANN ile büyütmeyi seçtiğiniz için çok mutluyuz.",
+                paragraphs=[
+                    f"Merhaba {user_name},",
+                    "Size zaman kazandırmak için tasarladığımız sistemimizi hiçbir kısıtlama olmadan inceleyebilmeniz için <strong>7 günlük ücretsiz deneme</strong> sürenizi başlattık.",
+                    "Kontrol panelinize giriş yaparak ilk randevunuzu oluşturabilir, randevularınızı ne kadar kolay yönetebileceğinizi hemen test edebilirsiniz.",
+                ],
+                button={"label": "Giriş Yap", "url": login_url},
+            )
         
         await send_email(
             to_email=user_in.username,
@@ -3300,7 +3452,34 @@ async def aha_test_appointment(
         sort=[("order", 1), ("created_at", 1)],
     )
     if not service:
-        raise HTTPException(status_code=400, detail="No service available for the demo appointment.")
+        # Sektörü "Diğer/Boş" seçen org'larda hiç default hizmet oluşmuyordu →
+        # aha demo "No service available" ile patlıyordu (aha başarısızlıklarının %90'ı).
+        # Hata vermek yerine genel bir hizmet oluştur: hem demo çalışır hem org kullanılabilir olur.
+        svc_lang = (getattr(current_user, "language", None) or "tr").lower()
+        svc_name = "Appointment" if svc_lang == "en" else "Randevu"
+        try:
+            fallback_service = Service(
+                id=str(uuid.uuid4()),
+                organization_id=current_user.organization_id,
+                name=svc_name,
+                price=0,
+                duration=30,
+            )
+            await db.services.insert_one(fallback_service.model_dump())
+            service = fallback_service.model_dump()
+            service.pop("_id", None)
+            # Admin'e bu hizmeti ata (permitted_service_ids)
+            try:
+                await db.users.update_one(
+                    {"username": current_user.username},
+                    {"$addToSet": {"permitted_service_ids": fallback_service.id}},
+                )
+            except Exception:
+                pass
+            logging.info(f"aha: fallback hizmet oluşturuldu org={current_user.organization_id}")
+        except Exception as _svc_err:
+            logging.error(f"aha fallback service creation failed: {_svc_err}", exc_info=True)
+            raise HTTPException(status_code=400, detail="No service available for the demo appointment.")
 
     # State=aha_wa_failed iken mevcut randevu varsa onu reuse et, sadece WA tekrar dene
     existing_apt = None
@@ -3915,90 +4094,32 @@ async def send_personnel_invitation_email(recipient_email: str, recipient_name: 
         # Invitation link oluştur (setup-password route'u kullan)
         invitation_link = f"https://plannapp.co/setup-password?token={invitation_token}" if lang == 'tr' else f"https://plannapp.co.uk/setup-password?token={invitation_token}"
         
-        logo_url = "https://plannapp.co/api/static/logo.png"
-        
         if lang == 'en':
             subject = "PLANN Invitation: Create Your Account"
-            html_content = f"""
-            <html>
-            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-                <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                    <tr>
-                        <td align="center" style="padding: 20px 0;">
-                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                                <tr>
-                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                        <img src="{logo_url}" alt="PLANN Logo" style="max-width: 150px; height: auto;">
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">PLANN Invitation</h1>
-                                        <p>Hello {recipient_name},</p>
-                                        <p><strong>{admin_name}</strong> has added you as staff to <strong>{organization_name}</strong>'s PLANN appointment system.</p>
-                                        <p>Please click the button below to activate your account and set your password.</p>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td align="center" style="padding: 0 30px 40px 30px;">
-                                        <a href="{invitation_link}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
-                                            Set Password and Log In
-                                        </a>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #f9f9f9;">
-                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                        <p>© 2025 PLANN. All rights reserved.</p>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-            </html>
-            """
+            html_content = _brand_email(
+                lang='en',
+                badge="Invitation",
+                statement="You have been invited to PLANN.",
+                paragraphs=[
+                    f"Hello {recipient_name},",
+                    f"<strong>{admin_name}</strong> has added you as staff to <strong>{organization_name}</strong>'s PLANN appointment system.",
+                    "Please click the button below to activate your account and set your password.",
+                ],
+                button={"label": "Set Password and Log In", "url": invitation_link},
+            )
         else:
             subject = "PLANN Davetiyesi: Hesabınızı Oluşturun"
-            html_content = f"""
-            <html>
-            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-                <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                    <tr>
-                        <td align="center" style="padding: 20px 0;">
-                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                                <tr>
-                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                        <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">PLANN Davetiyesi</h1>
-                                        <p>Merhaba {recipient_name},</p>
-                                        <p><strong>{admin_name}</strong> sizi <strong>{organization_name}</strong> işletmesinin PLANN randevu sistemine personel olarak ekledi.</p>
-                                        <p>Hesabınızı aktif etmek ve şifrenizi belirlemek için lütfen aşağıdaki butona tıklayın.</p>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td align="center" style="padding: 0 30px 40px 30px;">
-                                        <a href="{invitation_link}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
-                                            Şifremi Belirle ve Giriş Yap
-                                        </a>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #f9f9f9;">
-                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                        <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-            </html>
-            """
+            html_content = _brand_email(
+                lang='tr',
+                badge="Davet",
+                statement="PLANN'a davet edildiniz.",
+                paragraphs=[
+                    f"Merhaba {recipient_name},",
+                    f"<strong>{admin_name}</strong> sizi <strong>{organization_name}</strong> işletmesinin PLANN randevu sistemine personel olarak ekledi.",
+                    "Hesabınızı aktif etmek ve şifrenizi belirlemek için lütfen aşağıdaki butona tıklayın.",
+                ],
+                button={"label": "Şifremi Belirle ve Giriş Yap", "url": invitation_link},
+            )
         
         logging.info(f"📧 Personel davet e-postası gönderiliyor: {recipient_email} (Token: {invitation_token[:8]}...)")
         
@@ -4036,104 +4157,34 @@ async def send_password_reset_email(user_email: str, user_name: str, reset_link:
         if lang not in ['tr', 'en']:
             lang = get_email_language(user_email)
         
-        logo_url = "https://plannapp.co/api/static/logo.png"
-        
         if lang == 'en':
             subject = "PLANN Password Reset Request"
-            html_content = f"""
-            <html>
-            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-                <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                    <tr>
-                        <td align="center" style="padding: 20px 0;">
-                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                                <tr>
-                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                        <img src="{logo_url}" alt="PLANN Logo" style="max-width: 150px; height: auto;">
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Forgot Your Password?</h1>
-                                        <p>Hello {user_name},</p>
-                                        <p>We received a password reset request for your PLANN account. Please click the button below to regain access to your account.</p>
-                                        <p>This link will expire after <strong>30 minutes</strong> for security reasons.</p>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td align="center" style="padding: 0 30px 40px 30px;">
-                                        <a href="{reset_link}" target="_blank" style="background-color: #dc3545; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
-                                            Reset Password
-                                        </a>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td align="center" style="padding: 0 30px 40px 30px; font-size: 14px; color: #888888;">
-                                        <p style="border-top: 1px solid #eeeeee; padding-top: 20px;">
-                                            If you did not make this request, please ignore this email. Your account will remain secure.
-                                        </p>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #f9f9f9;">
-                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                        <p>© 2025 PLANN. All rights reserved.</p>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-            </html>
-            """
+            html_content = _brand_email(
+                lang='en',
+                badge="Security",
+                statement="Forgot your password?",
+                paragraphs=[
+                    f"Hello {user_name},",
+                    "We received a password reset request for your PLANN account. Please click the button below to regain access to your account.",
+                    "This link will expire after <strong>30 minutes</strong> for security reasons.",
+                ],
+                button={"label": "Reset Password", "url": reset_link},
+                note="If you did not make this request, please ignore this email. Your account will remain secure.",
+            )
         else:
             subject = "PLANN Şifre Sıfırlama Talebi"
-            html_content = f"""
-            <html>
-            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-                <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                    <tr>
-                        <td align="center" style="padding: 20px 0;">
-                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                                <tr>
-                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                        <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Şifrenizi mi Unuttunuz?</h1>
-                                        <p>Merhaba {user_name},</p>
-                                        <p>PLANN hesabınız için bir şifre sıfırlama talebi aldık. Hesabınıza yeniden erişim sağlamak için lütfen aşağıdaki butona tıklayın.</p>
-                                        <p>Bu link, güvenlik nedeniyle <strong>30 dakika</strong> sonra geçerliliğini yitirecektir.</p>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td align="center" style="padding: 0 30px 40px 30px;">
-                                        <a href="{reset_link}" target="_blank" style="background-color: #dc3545; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold; display: inline-block;">
-                                            Şifremi Sıfırla
-                                        </a>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td align="center" style="padding: 0 30px 40px 30px; font-size: 14px; color: #888888;">
-                                        <p style="border-top: 1px solid #eeeeee; padding-top: 20px;">
-                                            Eğer bu talebi siz yapmadıysanız, bu e-postayı dikkate almayınız. Hesabınız güvende kalmaya devam edecektir.
-                                        </p>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #f9f9f9;">
-                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                        <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-            </html>
-            """
+            html_content = _brand_email(
+                lang='tr',
+                badge="Güvenlik",
+                statement="Şifrenizi mi unuttunuz?",
+                paragraphs=[
+                    f"Merhaba {user_name},",
+                    "PLANN hesabınız için bir şifre sıfırlama talebi aldık. Hesabınıza yeniden erişim sağlamak için lütfen aşağıdaki butona tıklayın.",
+                    "Bu link, güvenlik nedeniyle <strong>30 dakika</strong> sonra geçerliliğini yitirecektir.",
+                ],
+                button={"label": "Şifremi Sıfırla", "url": reset_link},
+                note="Eğer bu talebi siz yapmadıysanız, bu e-postayı dikkate almayınız. Hesabınız güvende kalmaya devam edecektir.",
+            )
         
         # HTML içeriğinin uzunluğunu kontrol et
         html_length = len(html_content)
@@ -4167,92 +4218,42 @@ async def send_contact_notification_email(contact_name: str, contact_phone: str,
         # Dil belirleme - contact_email veya contact_phone'a göre
         lang = get_email_language(contact_email or contact_phone) if contact_email else 'tr'
         
-        logo_url = "https://plannapp.co/api/static/logo.png"
-        
+        phone_html = f'<a href="tel:{contact_phone}" style="color:#1a1a1a;text-decoration:underline;">{contact_phone}</a>'
+
         if lang == 'en':
             subject = "PLANN - New Contact Request"
-            html_content = f"""
-            <html>
-            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-                <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                    <tr>
-                        <td align="center" style="padding: 20px 0;">
-                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                                <tr>
-                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                        <img src="{logo_url}" alt="PLANN Logo" style="max-width: 150px; height: auto;">
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">New Contact Request</h1>
-                                        <p>Hello,</p>
-                                        <p>A new contact request has been received from the PLANN interface. Details are below:</p>
-                                        <div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
-                                            <p style="margin: 10px 0;"><strong>Full Name:</strong> {contact_name}</p>
-                                            <p style="margin: 10px 0;"><strong>Phone:</strong> <a href="tel:{contact_phone}" style="color: #007bff; text-decoration: none;">{contact_phone}</a></p>
-                                            <p style="margin: 10px 0;"><strong>Email:</strong> {contact_email if contact_email else '<em>Not provided</em>'}</p>
-                                            {f'<p style="margin: 10px 0;"><strong>Message:</strong></p><p style="margin: 10px 0; padding: 10px; background-color: #ffffff; border-left: 3px solid #007bff;">{contact_message}</p>' if contact_message else ''}
-                                        </div>
-                                        <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
-                                            Please contact the customer as soon as possible.
-                                        </p>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #f9f9f9;">
-                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                        <p>© 2025 PLANN. All rights reserved.</p>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-            </html>
-            """
+            email_display = contact_email if contact_email else "<em>Not provided</em>"
+            meta_rows = [
+                ("Full Name", contact_name),
+                ("Phone", phone_html),
+                ("Email", email_display),
+            ]
+            if contact_message:
+                meta_rows.append(("Message", contact_message))
+            html_content = _brand_email(
+                lang='en',
+                badge="New Contact Request",
+                statement="A new contact request has been received.",
+                meta_rows=meta_rows,
+                note="Please contact the customer as soon as possible.",
+            )
         else:
             subject = "PLANN - Yeni İletişim Talebi"
-            html_content = f"""
-            <html>
-            <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-                <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                    <tr>
-                        <td align="center" style="padding: 20px 0;">
-                            <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                                <tr>
-                                    <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                        <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #ffffff;">
-                                    <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                        <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Yeni İletişim Talebi</h1>
-                                        <p>Merhaba,</p>
-                                        <p>PLANN arayüzünden yeni bir iletişim talebi alındı. Detaylar aşağıdadır:</p>
-                                        <div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
-                                            <p style="margin: 10px 0;"><strong>Ad Soyad:</strong> {contact_name}</p>
-                                            <p style="margin: 10px 0;"><strong>Telefon:</strong> <a href="tel:{contact_phone}" style="color: #007bff; text-decoration: none;">{contact_phone}</a></p>
-                                            <p style="margin: 10px 0;"><strong>E-posta:</strong> {contact_email if contact_email else '<em>Belirtilmemiş</em>'}</p>
-                                            {f'<p style="margin: 10px 0;"><strong>Mesaj:</strong></p><p style="margin: 10px 0; padding: 10px; background-color: #ffffff; border-left: 3px solid #007bff;">{contact_message}</p>' if contact_message else ''}
-                                        </div>
-                                        <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
-                                            Lütfen en kısa sürede müşteri ile iletişime geçin.
-                                        </p>
-                                    </td>
-                                </tr>
-                                <tr style="background-color: #f9f9f9;">
-                                    <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                        <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-            </html>
-            """
+            email_display = contact_email if contact_email else "<em>Belirtilmemiş</em>"
+            meta_rows = [
+                ("Ad Soyad", contact_name),
+                ("Telefon", phone_html),
+                ("E-posta", email_display),
+            ]
+            if contact_message:
+                meta_rows.append(("Mesaj", contact_message))
+            html_content = _brand_email(
+                lang='tr',
+                badge="Yeni İletişim Talebi",
+                statement="Yeni bir iletişim talebi alındı.",
+                meta_rows=meta_rows,
+                note="Lütfen en kısa sürede müşteri ile iletişime geçin.",
+            )
         
         result = await send_email(
             to_email=admin_email,
@@ -4271,51 +4272,19 @@ async def send_contact_notification_email(contact_name: str, contact_phone: str,
 async def send_contact_confirmation_email(contact_name: str, contact_email: str):
     """Kullanıcıya iletişim talebi onay e-postası gönderir"""
     try:
-        logo_url = "https://plannapp.co/api/static/logo.png"
         dashboard_url = "https://plannapp.co"
         subject = "PLANN - Talebiniz Alındı"
-        html_content = f"""
-        <html>
-        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6;">
-            <table width="100%" border="0" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td align="center" style="padding: 20px 0;">
-                        <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                            <tr>
-                                <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                                    <img src="{logo_url}" alt="PLANN Logosu" style="max-width: 150px; height: auto;">
-                                </td>
-                            </tr>
-                            <tr style="background-color: #ffffff;">
-                                <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                                    <h1 style="font-size: 24px; color: #111111; margin-top: 0; text-align: center;">Talebiniz Alındı!</h1>
-                                    <p>Merhaba {contact_name},</p>
-                                    <p>PLANN iletişim formunu doldurduğunuz için teşekkür ederiz.</p>
-                                    <p>İletişim bilgileriniz kaydedildi ve en kısa sürede sizinle iletişime geçeceğiz.</p>
-                                    <p style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
-                                        Sorularınız için bizimle iletişime geçebilirsiniz.
-                                    </p>
-                                </td>
-                            </tr>
-                            <tr style="background-color: #ffffff;">
-                                <td align="center" style="padding: 0 30px 40px 30px;">
-                                    <a href="{dashboard_url}" target="_blank" style="background-color: #111111; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 25px; font-size: 16px; font-weight: bold; display: inline-block;">
-                                        PLANN'ı Keşfet
-                                    </a>
-                                </td>
-                            </tr>
-                            <tr style="background-color: #f9f9f9;">
-                                <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                                    <p>© 2025 PLANN. Tüm hakları saklıdır.</p>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """
+        html_content = _brand_email(
+            lang='tr',
+            badge="Talebiniz Alındı",
+            statement="Talebiniz bize ulaştı.",
+            paragraphs=[
+                f"Merhaba {contact_name},",
+                "PLANN iletişim formunu doldurduğunuz için teşekkür ederiz.",
+                "İletişim bilgileriniz kaydedildi ve en kısa sürede sizinle iletişime geçeceğiz.",
+            ],
+            button={"label": "PLANN'ı Keşfet", "url": dashboard_url},
+        )
         
         result = await send_email(
             to_email=contact_email,
@@ -4623,6 +4592,30 @@ def build_turkish_case_insensitive_pattern(s: str) -> str:
             # Rakamlar, boşluk, tire vb. — regex için escape et.
             parts.append(re.escape(ch))
     return ''.join(parts)
+
+
+def _phone_match_variants(phone: str) -> list:
+    """Bir telefonun olası saklama formatlarını üretir (05.. / +90.. / 90.. / 10 hane).
+
+    Randevudan otomatik müşteri eklemede, aynı kişinin farklı formatla girilip
+    mükerrer kayıt oluşturmasını engellemek için kullanılır. 10 haneden kısa
+    (ör. "0" telefonsuz walk-in) değerlerde davranış DEĞİŞMEZ: sadece kendisini döner.
+    """
+    raw = (phone or "").strip()
+    clean = re.sub(r"\D", "", raw)
+    if len(clean) < 10:
+        return [raw] if raw else []
+    variants = {raw, clean}
+    core = None
+    if clean.startswith("90") and len(clean) == 12:
+        core = clean[2:]
+    elif clean.startswith("0") and len(clean) == 11:
+        core = clean[1:]
+    elif len(clean) == 10 and not clean.startswith("0"):
+        core = clean
+    if core and len(core) == 10:
+        variants.update({core, "0" + core, "90" + core, "+90" + core})
+    return list(variants)
 
 
 async def _apply_customer_delta(
@@ -5624,12 +5617,17 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, b
         logging.error(f"❌ Süpürge işlemi sırasında hata oluştu: {e}")
     # ---------------------------------------------------------
     # Müşteriyi customers collection'ına ekle (eğer yoksa)
+    # Format-dedup: aynı kişi farklı telefon formatıyla (05.. / +90.. / 90..) girilirse
+    # yeni müşteri açılmasın, mevcut kayda bağlansın. resolved_customer_phone, sayaç
+    # upsert'inin doğru (mevcut) dokümana yazması için aşağıda kullanılır.
+    resolved_customer_phone = appointment.phone
     try:
-        # Aynı telefon numarasına sahip müşterileri bul
+        # Aynı telefonun tüm format varyantlarıyla eşleşen müşterileri bul
+        _phone_variants = _phone_match_variants(appointment.phone)
         customers_with_phone = await db.customers.find(
             {
                 "organization_id": current_user.organization_id,
-                "phone": appointment.phone
+                "phone": {"$in": _phone_variants}
             },
             {"_id": 0, "name": 1, "phone": 1}
         ).to_list(100)
@@ -5641,6 +5639,9 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, b
             if customer.get("name", "").strip().lower() == customer_name_normalized:
                 existing_customer = customer
                 break
+        if existing_customer and existing_customer.get("phone"):
+            # Mevcut kaydın saklı telefon formatını kanonik kabul et (sayaç oraya yazılsın)
+            resolved_customer_phone = existing_customer.get("phone")
         
         if not existing_customer:
             # Müşteri yoksa ekle
@@ -5679,7 +5680,7 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, b
         await _apply_customer_delta(
             db,
             organization_id=current_user.organization_id,
-            phone=appointment.phone,
+            phone=resolved_customer_phone,
             name=appointment.customer_name,
             delta_total=1,
             delta_completed=1 if appointment_obj.status == "Tamamlandı" else 0,
@@ -7585,10 +7586,17 @@ async def get_appointments(
     staff_member_id: Optional[str] = None,
     limit: Optional[int] = None,
     cursor: Optional[str] = None,
+    session_only: Optional[bool] = None,
     current_user: UserInDB = Depends(get_current_user)
 ):
     db = await get_db_from_request(request)
     query = {"organization_id": current_user.organization_id, "status": {"$ne": "Ödeme Bekleniyor"}}
+
+    # Seans paketi ekranı geçmiş seansları da göstermek zorunda (Tamamlanan sekmesi),
+    # bu yüzden tarih penceresine sığmıyor. Bu filtre ile yalnızca pakete ait randevular
+    # çekilir — küçük ve sınırlı bir küme. Parametre GÖNDERİLMEZSE davranış birebir eskisi.
+    if session_only:
+        query["session_group_id"] = {"$exists": True, "$ne": None}
     
     # Personel sadece kendine atanan randevuları görebilir (can_view_all_appointments yetkisi yoksa)
     if current_user.role == "staff" and not current_user.can_view_all_appointments:
@@ -7657,7 +7665,15 @@ async def get_appointments(
         if has_more:
             appointments_from_db = appointments_from_db[:effective_limit]
     else:
-        appointments_from_db = await db.appointments.find(query, {"_id": 0}).sort([("appointment_date", 1), ("appointment_time", 1)]).to_list(1000)
+        # Penceresiz dump'ta 1000 tavanı kalsın (tüm geçmişi yanlışlıkla çekmeye karşı).
+        # Tarih veya seans filtresi varken aynı tavan eşleşen kayıtları sessizce kesiyordu:
+        # yoğun bir işletmede "bugün" / takvim ayı listenin dışına düşüyordu.
+        windowed = bool(date or start_date or end_date or session_only)
+        appointments_from_db = await (
+            db.appointments.find(query, {"_id": 0})
+            .sort([("appointment_date", 1), ("appointment_time", 1)])
+            .to_list(None if windowed else 1000)
+        )
     try:
         turkey_tz = ZoneInfo("Europe/Istanbul"); now = datetime.now(turkey_tz)
     except Exception:
@@ -7808,20 +7824,62 @@ async def delete_service(request: Request, service_id: str, current_user: UserIn
         logging.error(f"Service cache invalidation failed: {e}")
     return {"message": "Hizmet silindi"}
 
-def _validate_service_payment_limits(price: float, payment_rule: Optional[str], deposit_amount: Optional[float]):
-    """Enforce minimum online payment / deposit limits."""
+async def _get_org_base_currency(db, organization_id: str) -> str:
+    """Organizasyonun para birimi (GBP / TRY). Ayar yoksa TRY."""
+    try:
+        settings_doc = await db.settings.find_one(
+            {"organization_id": organization_id}, {"_id": 0, "base_currency": 1}
+        )
+        currency = (settings_doc or {}).get("base_currency") or "TRY"
+        return currency.upper()
+    except Exception as e:
+        logging.error(f"base_currency okunamadı ({organization_id}): {e}")
+        return "TRY"
+
+
+def _validate_service_payment_limits(
+    price: float,
+    payment_rule: Optional[str],
+    deposit_amount: Optional[float],
+    base_currency: str = "TRY",
+):
+    """Minimum online ödeme / kapora limitleri.
+
+    Eşikler para birimine göre değişir ve tek kaynaktan (financial.money) okunur;
+    checkout tarafı (merchant_checkout) da aynı sözlükleri kullanıyor. Eskiden burada
+    TRY değerleri sabit kodluydu, bu yüzden GBP işletmelerde £300 altındaki her hizmet
+    reddediliyordu.
+    """
     if not payment_rule or payment_rule == "on_site":
         return
+
+    from financial.money import MIN_ONLINE_PAYMENT_MINOR, MIN_DEPOSIT_MINOR, format_display_short
+
+    currency = (base_currency or "TRY").upper()
+    if currency not in MIN_ONLINE_PAYMENT_MINOR:
+        currency = "TRY"
+    min_online = MIN_ONLINE_PAYMENT_MINOR[currency]
+    min_deposit = MIN_DEPOSIT_MINOR[currency]
+
     price_minor = int(round(price * 100))
-    if payment_rule in ("online", "full_online") and price_minor < 30_000:
-        raise HTTPException(status_code=400, detail="Online ödeme için hizmet fiyatı en az 300₺ olmalıdır.")
+    if payment_rule in ("online", "full_online") and price_minor < min_online:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Online ödeme için hizmet fiyatı en az {format_display_short(min_online, currency)} olmalıdır.",
+        )
     if payment_rule == "deposit":
-        if price_minor < 30_000:
-            raise HTTPException(status_code=400, detail="Kapora için hizmet fiyatı en az 300₺ olmalıdır.")
+        if price_minor < min_online:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Kapora için hizmet fiyatı en az {format_display_short(min_online, currency)} olmalıdır.",
+            )
         if deposit_amount is not None:
             dep_minor = int(round(deposit_amount * 100))
-            if dep_minor < 20_000:
-                raise HTTPException(status_code=400, detail="Kapora tutarı en az 200₺ olmalıdır.")
+            if dep_minor < min_deposit:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Kapora tutarı en az {format_display_short(min_deposit, currency)} olmalıdır.",
+                )
             if dep_minor > price_minor:
                 raise HTTPException(status_code=400, detail="Kapora tutarı, hizmetin toplam fiyatını aşamaz.")
 
@@ -7836,7 +7894,10 @@ async def update_service(request: Request, service_id: str, service_update: Serv
     effective_price = service_update.price if service_update.price is not None else service.get("price", 0)
     effective_rule = service_update.payment_rule if service_update.payment_rule is not None else service.get("payment_rule")
     effective_deposit = service_update.deposit_amount if service_update.deposit_amount is not None else service.get("deposit_amount")
-    _validate_service_payment_limits(effective_price, effective_rule, effective_deposit)
+    _validate_service_payment_limits(
+        effective_price, effective_rule, effective_deposit,
+        await _get_org_base_currency(db, current_user.organization_id),
+    )
     if service_update.category_id:
         cat = await db.categories.find_one({"id": service_update.category_id, "organization_id": current_user.organization_id}, {"_id": 0, "id": 1})
         if not cat:
@@ -7883,7 +7944,10 @@ async def create_service(request: Request, service: ServiceCreate, current_user:
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
     
     db = await get_db_from_request(request)
-    _validate_service_payment_limits(service.price, service.payment_rule, service.deposit_amount)
+    _validate_service_payment_limits(
+        service.price, service.payment_rule, service.deposit_amount,
+        await _get_org_base_currency(db, current_user.organization_id),
+    )
     if service.category_id:
         cat = await db.categories.find_one({"id": service.category_id, "organization_id": current_user.organization_id}, {"_id": 0, "id": 1})
         if not cat:
@@ -8013,6 +8077,65 @@ async def delete_category(request: Request, category_id: str, current_user: User
     except Exception as e:
         logging.error(f"Category cache invalidation failed: {e}")
     return {"message": "Kategori silindi"}
+
+@api_router.post("/categories/{category_id}/services")
+async def assign_services_to_category(request: Request, category_id: str, payload: dict, current_user: UserInDB = Depends(get_current_user)):
+    """Bir kategorinin hizmet üyeliğini topluca ayarlar.
+
+    `service_ids` kategorinin YENİ tam üye listesidir: listede olanlara `category_id`
+    atanır, kategoride olup listede olmayanların ataması kaldırılır. Boş liste
+    göndermek kategoriyi boşaltır. Bu semantik, arayüzdeki çoklu seçim kutusunun
+    "kaydet" davranışıyla birebir örtüşüyor.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+
+    service_ids = payload.get("service_ids")
+    if not isinstance(service_ids, list):
+        raise HTTPException(status_code=400, detail="service_ids listesi gerekli")
+    unique_ids = [sid for sid in dict.fromkeys(service_ids) if isinstance(sid, str) and sid]
+
+    db = await get_db_from_request(request)
+    org_id = current_user.organization_id
+
+    cat = await db.categories.find_one({"id": category_id, "organization_id": org_id}, {"_id": 0, "id": 1})
+    if not cat:
+        raise HTTPException(status_code=404, detail="Kategori bulunamadı")
+
+    # Başka organizasyonun hizmeti sızmasın: gönderilen her id bu org'da var mı?
+    if unique_ids:
+        existing = await db.services.find(
+            {"organization_id": org_id, "id": {"$in": unique_ids}}, {"_id": 0, "id": 1}
+        ).to_list(2000)
+        existing_ids = {s.get("id") for s in existing}
+        missing = [sid for sid in unique_ids if sid not in existing_ids]
+        if missing:
+            raise HTTPException(status_code=400, detail="Geçersiz hizmet listesi")
+
+    assigned = 0
+    if unique_ids:
+        result = await db.services.update_many(
+            {"organization_id": org_id, "id": {"$in": unique_ids}},
+            {"$set": {"category_id": category_id}}
+        )
+        assigned = result.modified_count
+
+    removed_result = await db.services.update_many(
+        {"organization_id": org_id, "category_id": category_id, "id": {"$nin": unique_ids}},
+        {"$unset": {"category_id": ""}}
+    )
+
+    try:
+        await invalidate_service_caches(request, org_id)
+    except Exception as e:
+        logging.error(f"Category assignment cache invalidation failed: {e}")
+
+    return {
+        "category_id": category_id,
+        "assigned_count": assigned,
+        "removed_count": removed_result.modified_count,
+        "total_in_category": len(unique_ids),
+    }
 
 @api_router.post("/categories/reorder", status_code=204)
 async def reorder_categories(request: Request, payload: dict, current_user: UserInDB = Depends(get_current_user)):
@@ -10018,6 +10141,396 @@ async def get_personnel_stats(request: Request, current_user: UserInDB = Depends
     return {
         "total_revenue_generated": total_revenue_generated,
         "completed_appointments_count": completed_appointments_count
+    }
+
+# ═══════════════════════════════════════════════════════════════════════════
+# İSTATİSTİKLER SAYFASI — kapsamlı agregasyon (Randevular/Müşteriler/Kasa/Personel/Hizmetler)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _stats_canon_phone(phone: Optional[str]) -> str:
+    """Telefonu kanonik anahtara indirger (son 10 hane) → mükerrer müşteri sayımını azaltır."""
+    digits = re.sub(r"\D", "", phone or "")
+    if len(digits) > 10:
+        digits = digits[-10:]
+    return digits
+
+
+def _resolve_stats_range(range_key: str, start: Optional[str], end: Optional[str], tz):
+    """range_key → (start_date, end_date) date objeleri. Europe/Istanbul bazlı."""
+    today = datetime.now(tz).date()
+    if range_key == "today":
+        return today, today
+    if range_key == "this_week":
+        return today - timedelta(days=today.weekday()), today
+    if range_key == "this_month":
+        return today.replace(day=1), today
+    if range_key == "last_month":
+        first_this = today.replace(day=1)
+        last_prev = first_this - timedelta(days=1)
+        return last_prev.replace(day=1), last_prev
+    if range_key == "this_year":
+        return today.replace(month=1, day=1), today
+    if range_key == "custom" and start and end:
+        try:
+            s = datetime.strptime(start, "%Y-%m-%d").date()
+            e = datetime.strptime(end, "%Y-%m-%d").date()
+            return (e, s) if e < s else (s, e)
+        except ValueError:
+            pass
+    # varsayılan: bu ay
+    return today.replace(day=1), today
+
+
+@api_router.get("/stats/analytics")
+async def get_stats_analytics(
+    request: Request,
+    range_key: str = Query("this_month", alias="range"),
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """İstatistikler sayfası için tek agregasyon ucu (sadece admin, org-scoped).
+
+    Yeni uç — mevcut hiçbir response şekli değişmez (API sözleşmesi güvenli).
+    Gelir yalnız 'Tamamlandı' randevulardan; çoklu hizmette services[].price_snapshot,
+    tekli hizmette service_price. Tahsilat modu (Yerinde/Online/Kapora) hizmetin
+    payment_rule'undan türetilir.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+
+    from collections import Counter, defaultdict
+
+    db = await get_db_from_request(request)
+    tz = ZoneInfo("Europe/Istanbul")
+    org = current_user.organization_id
+    start_d, end_d = _resolve_stats_range(range_key, start, end, tz)
+    start_s, end_s = start_d.isoformat(), end_d.isoformat()
+    span_days = (end_d - start_d).days + 1
+    granularity = "month" if span_days > 92 else "day"
+    base = {"organization_id": org}
+
+    COMPLETED = "Tamamlandı"
+    CANCELLED = {"İptal", "İptal Edildi"}
+    NOSHOW = "Gelmedi"
+
+    appt_fields = {
+        "_id": 0, "status": 1, "source": 1, "appointment_date": 1, "appointment_time": 1,
+        "staff_member_id": 1, "service_id": 1, "service_name": 1, "service_price": 1,
+        "services": 1, "customer_name": 1, "phone": 1, "payment_status": 1,
+    }
+
+    async def _appts_in_range():
+        return await db.appointments.find(
+            {**base, "appointment_date": {"$gte": start_s, "$lte": end_s}}, appt_fields
+        ).to_list(100000)
+
+    async def _expenses_in_range():
+        return await db.expenses.find(
+            {**base, "date": {"$gte": start_s, "$lte": end_s}},
+            {"_id": 0, "amount": 1, "category": 1, "date": 1},
+        ).to_list(100000)
+
+    async def _services_all():
+        return await db.services.find(
+            base, {"_id": 0, "id": 1, "name": 1, "payment_rule": 1}
+        ).to_list(100000)
+
+    async def _staff_all():
+        return await db.users.find(
+            {**base, "role": {"$in": ["admin", "staff"]}},
+            {"_id": 0, "username": 1, "full_name": 1},
+        ).to_list(10000)
+
+    async def _first_appt_agg():
+        cur = db.appointments.aggregate([
+            {"$match": base},
+            {"$group": {"_id": "$phone", "first_date": {"$min": "$appointment_date"}}},
+        ])
+        return await cur.to_list(100000)
+
+    async def _customers_all():
+        return await db.customers.find(
+            base, {"_id": 0, "phone": 1, "created_at": 1}
+        ).to_list(100000)
+
+    appts, expenses, services, staff_users, first_appt, customers_docs = await asyncio.gather(
+        _appts_in_range(), _expenses_in_range(), _services_all(),
+        _staff_all(), _first_appt_agg(), _customers_all(),
+    )
+
+    svc_rule = {s["id"]: (s.get("payment_rule") or "on_site") for s in services}
+    staff_name = {u["username"]: (u.get("full_name") or u["username"]) for u in staff_users}
+
+    def _amount(a):
+        svcs = a.get("services")
+        if svcs:
+            return sum((x.get("price_snapshot") or 0) for x in svcs)
+        return a.get("service_price") or 0
+
+    def _mode(a):
+        svcs = a.get("services")
+        ids = [x.get("service_id") for x in svcs] if svcs else [a.get("service_id")]
+        rules = []
+        for sid in ids:
+            r = svc_rule.get(sid, "on_site")
+            rules.append("online" if r in ("online", "full_online") else r)
+        if "deposit" in rules:
+            mode = "deposit"
+        elif "online" in rules:
+            mode = "online"
+        else:
+            mode = "on_site"
+        if mode == "on_site" and a.get("payment_status") == "paid":
+            mode = "online"
+        return mode
+
+    completed = [a for a in appts if a.get("status") == COMPLETED]
+    total_income = sum(_amount(a) for a in completed)
+    total_expense = sum(float(e.get("amount") or 0) for e in expenses)
+    completed_count = len(completed)
+    total_appts = len(appts)
+
+    # ── Zaman serisi (gelir / gider / net / randevu) ──
+    def _bucket(d_str):
+        return d_str[:7] if granularity == "month" else d_str
+
+    buckets = {}
+
+    def _b(key):
+        return buckets.setdefault(key, {"income": 0.0, "expense": 0.0, "appointments": 0})
+
+    ordered = []
+    if granularity == "month":
+        y, m = start_d.year, start_d.month
+        while (y, m) <= (end_d.year, end_d.month):
+            key = f"{y:04d}-{m:02d}"
+            ordered.append(key)
+            _b(key)
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+    else:
+        d = start_d
+        while d <= end_d:
+            key = d.isoformat()
+            ordered.append(key)
+            _b(key)
+            d += timedelta(days=1)
+
+    for a in appts:
+        ad = a.get("appointment_date")
+        if ad:
+            _b(_bucket(ad))["appointments"] += 1
+    for a in completed:
+        ad = a.get("appointment_date")
+        if ad:
+            _b(_bucket(ad))["income"] += _amount(a)
+    for e in expenses:
+        dd = e.get("date")
+        if dd:
+            _b(_bucket(dd))["expense"] += float(e.get("amount") or 0)
+
+    timeseries = [
+        {
+            "label": k,
+            "income": round(buckets[k]["income"], 2),
+            "expense": round(buckets[k]["expense"], 2),
+            "net": round(buckets[k]["income"] - buckets[k]["expense"], 2),
+            "appointments": buckets[k]["appointments"],
+        }
+        for k in ordered
+    ]
+
+    # ── Randevu kırılımları ──
+    status_counter = Counter(a.get("status") or "—" for a in appts)
+    source_counter = Counter(
+        "public_booking" if (a.get("source") == "public_booking") else "manual" for a in appts
+    )
+    weekday_counter = Counter()
+    hour_counter = Counter()
+    for a in appts:
+        ad = a.get("appointment_date")
+        if ad:
+            try:
+                weekday_counter[datetime.strptime(ad, "%Y-%m-%d").weekday()] += 1
+            except ValueError:
+                pass
+        tm = a.get("appointment_time") or ""
+        if ":" in tm:
+            try:
+                hour_counter[int(tm.split(":")[0])] += 1
+            except ValueError:
+                pass
+    cancelled = sum(status_counter.get(s, 0) for s in CANCELLED)
+    noshow = status_counter.get(NOSHOW, 0)
+
+    # ── Müşteriler ──
+    first_date_map = {}
+    for row in first_appt:
+        ph = _stats_canon_phone(row.get("_id"))
+        fd = row.get("first_date")
+        if ph and fd:
+            if ph not in first_date_map or fd < first_date_map[ph]:
+                first_date_map[ph] = fd
+    for c in customers_docs:
+        ph = _stats_canon_phone(c.get("phone"))
+        created = c.get("created_at")
+        cd = created[:10] if isinstance(created, str) and len(created) >= 10 else None
+        if ph and cd:
+            if ph not in first_date_map or cd < first_date_map[ph]:
+                first_date_map[ph] = cd
+    total_customers = len(first_date_map)
+    new_customers = sum(1 for fd in first_date_map.values() if start_s <= fd <= end_s)
+
+    new_by_bucket = Counter()
+    for fd in first_date_map.values():
+        if start_s <= fd <= end_s:
+            new_by_bucket[_bucket(fd)] += 1
+    new_series = [{"label": k, "count": new_by_bucket.get(k, 0)} for k in ordered]
+
+    range_customer = defaultdict(lambda: {"name": "", "visits": 0, "spent": 0.0})
+    for a in appts:
+        ph = _stats_canon_phone(a.get("phone"))
+        if not ph:
+            continue
+        rc = range_customer[ph]
+        rc["visits"] += 1
+        if not rc["name"]:
+            rc["name"] = a.get("customer_name") or ""
+    for a in completed:
+        ph = _stats_canon_phone(a.get("phone"))
+        if ph:
+            range_customer[ph]["spent"] += _amount(a)
+    new_in_range = returning_in_range = 0
+    for ph in range_customer:
+        fd = first_date_map.get(ph)
+        if fd is not None and start_s <= fd <= end_s:
+            new_in_range += 1
+        else:
+            returning_in_range += 1
+    # Tüm müşteriler, harcamaya göre yüksekten düşüğe (frontend listeyi scroll eder)
+    top_customers = sorted(
+        (
+            {"name": v["name"] or "—", "visits": v["visits"], "spent": round(v["spent"], 2)}
+            for v in range_customer.values()
+        ),
+        key=lambda x: x["spent"],
+        reverse=True,
+    )
+
+    # ── Kasa: tahsilat modu / gider kategori / hizmete göre gelir ──
+    mode_agg = defaultdict(lambda: {"amount": 0.0, "count": 0})
+    for a in completed:
+        md = _mode(a)
+        mode_agg[md]["amount"] += _amount(a)
+        mode_agg[md]["count"] += 1
+    income_by_mode = [
+        {"mode": k, "amount": round(v["amount"], 2), "count": v["count"]}
+        for k, v in mode_agg.items()
+    ]
+
+    cat_agg = defaultdict(float)
+    for e in expenses:
+        cat_agg[e.get("category") or "Diğer"] += float(e.get("amount") or 0)
+    expense_by_category = sorted(
+        ({"category": k, "amount": round(v, 2)} for k, v in cat_agg.items()),
+        key=lambda x: x["amount"],
+        reverse=True,
+    )
+
+    # ── Hizmetler + Personel (tamamlanan randevulardan) ──
+    svc_agg = defaultdict(lambda: {"name": "", "count": 0, "revenue": 0.0})
+    staff_agg = defaultdict(lambda: {"completed": 0, "revenue": 0.0})
+    for a in completed:
+        amt = _amount(a)
+        sid = a.get("staff_member_id")
+        skey = sid if sid else "__unassigned__"
+        staff_agg[skey]["completed"] += 1
+        staff_agg[skey]["revenue"] += amt
+        svcs = a.get("services")
+        if svcs:
+            for x in svcs:
+                k = x.get("service_id") or x.get("name_snapshot") or "—"
+                row = svc_agg[k]
+                row["name"] = x.get("name_snapshot") or row["name"] or "—"
+                row["count"] += 1
+                row["revenue"] += (x.get("price_snapshot") or 0)
+        else:
+            k = a.get("service_id") or a.get("service_name") or "—"
+            row = svc_agg[k]
+            row["name"] = a.get("service_name") or row["name"] or "—"
+            row["count"] += 1
+            row["revenue"] += amt
+
+    services_stats = sorted(
+        (
+            {
+                "name": v["name"] or "—",
+                "count": v["count"],
+                "revenue": round(v["revenue"], 2),
+                "avg_price": round(v["revenue"] / v["count"], 2) if v["count"] else 0,
+            }
+            for v in svc_agg.values()
+        ),
+        key=lambda x: x["count"],
+        reverse=True,
+    )
+    income_by_service = sorted(
+        ({"name": s["name"], "amount": s["revenue"]} for s in services_stats),
+        key=lambda x: x["amount"],
+        reverse=True,
+    )[:8]
+
+    personnel = []
+    for skey, v in staff_agg.items():
+        if skey == "__unassigned__":
+            username, full_name = "__unassigned__", None
+        else:
+            username, full_name = skey, staff_name.get(skey, skey)
+        personnel.append({
+            "username": username,
+            "full_name": full_name,
+            "completed": v["completed"],
+            "revenue": round(v["revenue"], 2),
+            "avg_ticket": round(v["revenue"] / v["completed"], 2) if v["completed"] else 0,
+        })
+    personnel.sort(key=lambda x: x["revenue"], reverse=True)
+
+    return {
+        "range": {"key": range_key, "start": start_s, "end": end_s, "granularity": granularity},
+        "summary": {
+            "total_income": round(total_income, 2),
+            "total_expense": round(total_expense, 2),
+            "net_profit": round(total_income - total_expense, 2),
+            "total_appointments": total_appts,
+            "completed_appointments": completed_count,
+            "total_customers": total_customers,
+            "new_customers": new_customers,
+            "avg_ticket": round(total_income / completed_count, 2) if completed_count else 0,
+        },
+        "timeseries": timeseries,
+        "appointments": {
+            "by_status": [{"status": k, "count": v} for k, v in status_counter.items()],
+            "by_source": [{"source": k, "count": v} for k, v in source_counter.items()],
+            "by_weekday": [{"weekday": wd, "count": weekday_counter.get(wd, 0)} for wd in range(7)],
+            "by_hour": [{"hour": h, "count": hour_counter.get(h, 0)} for h in sorted(hour_counter)],
+            "cancellation_rate": round(cancelled / total_appts * 100, 1) if total_appts else 0,
+            "noshow_rate": round(noshow / total_appts * 100, 1) if total_appts else 0,
+        },
+        "customers": {
+            "new_series": new_series,
+            "new_vs_returning": {"new": new_in_range, "returning": returning_in_range},
+            "top": top_customers,
+        },
+        "kasa": {
+            "income_by_mode": income_by_mode,
+            "expense_by_category": expense_by_category,
+            "income_by_service": income_by_service,
+        },
+        "personnel": personnel,
+        "services": services_stats,
     }
 
 # === CHATWOOT IDENTITY (HMAC) ===
@@ -12542,6 +13055,116 @@ async def get_app_config(request: Request, response: Response):
     return _merge_app_config(doc)
 
 
+# ═══ Akıllı uygulama açıcı (smart app launcher) ═══
+# E-posta butonları buraya link verir. Cihaz tespiti + "yüklüyse aç, değilse mağaza".
+#   - Android: intent:// (scheme=plannapp, package=co.plannapp.app) → app varsa açar,
+#     yoksa browser_fallback_url ile Play Store'a düşer (native fallback, tek adım).
+#   - iOS: plannapp:// denenir; app açılırsa sayfa arka plana düşer (visibilitychange),
+#     açılmazsa kısa timeout sonrası App Store'a yönlendirilir.
+#   - Masaüstü/diğer: web paneline (plannapp.co / plannapp.co.uk) gider.
+_APP_ANDROID_PACKAGE = "co.plannapp.app"
+_APP_URL_SCHEME = "plannapp"
+_APP_WEB_ALLOWED = ("https://plannapp.co", "https://plannapp.co.uk")
+
+
+def _build_app_launcher_html(*, store_ios: str, store_android: str, web_url: str) -> str:
+    """Cihaza göre uygulamayı açan / mağazaya yönlendiren minimal HTML sayfası."""
+    from urllib.parse import quote
+    scheme_url = f"{_APP_URL_SCHEME}://open"
+    android_intent = (
+        f"intent://open#Intent;scheme={_APP_URL_SCHEME};package={_APP_ANDROID_PACKAGE};"
+        f"S.browser_fallback_url={quote(store_android, safe='')};end"
+    )
+    return f"""<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PLANN</title>
+  <style>
+    html,body{{margin:0;height:100%;background:#fbfbfa;color:#1a1a1a;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}}
+    .wrap{{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;}}
+    h1{{margin:0 0 16px;font-weight:300;letter-spacing:10px;font-size:26px;text-transform:uppercase;}}
+    p{{margin:0 0 22px;color:#8c8c88;font-size:14px;letter-spacing:1px;}}
+    a.btn{{border:1px solid #1a1a1a;color:#1a1a1a;text-decoration:none;padding:14px 34px;
+      font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:3px;display:inline-block;}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>P L A N N</h1>
+    <p id="msg">Yönlendiriliyorsunuz…</p>
+    <a class="btn" id="fallback" href="{web_url}">Devam Et</a>
+  </div>
+  <script>
+    (function() {{
+      var ua = navigator.userAgent || navigator.vendor || '';
+      var isAndroid = /android/i.test(ua);
+      var isIOS = /iphone|ipad|ipod/i.test(ua) ||
+                  (/(Macintosh)/i.test(ua) && 'ontouchend' in document);
+      var STORE_IOS = {json.dumps(store_ios)};
+      var STORE_ANDROID = {json.dumps(store_android)};
+      var WEB = {json.dumps(web_url)};
+      var SCHEME = {json.dumps(scheme_url)};
+      var ANDROID_INTENT = {json.dumps(android_intent)};
+      var fb = document.getElementById('fallback');
+
+      if (isAndroid) {{
+        fb.href = STORE_ANDROID;
+        window.location.href = ANDROID_INTENT;
+        return;
+      }}
+      if (isIOS) {{
+        fb.href = STORE_IOS;
+        var opened = false;
+        var onHide = function() {{ opened = true; }};
+        document.addEventListener('visibilitychange', function() {{
+          if (document.visibilityState === 'hidden') onHide();
+        }});
+        window.addEventListener('pagehide', onHide);
+        window.addEventListener('blur', onHide);
+        setTimeout(function() {{ window.location.href = SCHEME; }}, 50);
+        setTimeout(function() {{
+          if (!opened && document.visibilityState === 'visible') {{
+            window.location.href = STORE_IOS;
+          }}
+        }}, 1400);
+        return;
+      }}
+      window.location.href = WEB;
+    }})();
+  </script>
+</body>
+</html>"""
+
+
+@api_router.get("/app/open")
+async def app_open(request: Request, web: str = "", path: str = ""):
+    """
+    Akıllı uygulama açıcı. PUBLIC. Cihaza göre uygulamayı açar; yüklü değilse
+    mağazaya (App Store / Play Store), masaüstünde web paneline yönlendirir.
+    E-posta butonları bu endpoint'e link verir (`?web=` ile web fallback seçilir).
+    """
+    doc = None
+    try:
+        db = await get_db_from_request(request)
+        doc = await db.app_config.find_one({"_id": "global"}, {"_id": 0})
+    except Exception as e:
+        logging.warning(f"/app/open config okunamadı, defaults: {e}")
+    cfg = _merge_app_config(doc)
+    store_ios = cfg["store_urls"]["ios"]
+    store_android = cfg["store_urls"]["android"]
+
+    web_url = web if web in _APP_WEB_ALLOWED else "https://plannapp.co"
+
+    html = _build_app_launcher_html(store_ios=store_ios, store_android=store_android, web_url=web_url)
+    return HTMLResponse(
+        content=html,
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
+    )
+
+
 @api_router.put("/superadmin/app-config")
 async def update_app_config(request: Request, current_user: UserInDB = Depends(get_superadmin_user)):
     """
@@ -14218,12 +14841,15 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
     except Exception as e:
         logging.error(f"❌ Public süpürge hatası: {e}")
     # Müşteriyi customers collection'ına ekle (eğer yoksa)
+    # Format-dedup: aynı kişi farklı telefon formatıyla girilirse yeni müşteri açılmasın.
+    resolved_customer_phone = appointment.phone
     try:
-        # Aynı telefon numarasına sahip müşterileri bul
+        # Aynı telefonun tüm format varyantlarıyla eşleşen müşterileri bul
+        _phone_variants = _phone_match_variants(appointment.phone)
         customers_with_phone = await db.customers.find(
             {
                 "organization_id": organization_id,
-                "phone": appointment.phone
+                "phone": {"$in": _phone_variants}
             },
             {"_id": 0, "name": 1, "phone": 1}
         ).to_list(100)
@@ -14235,6 +14861,8 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             if customer.get("name", "").strip().lower() == customer_name_normalized:
                 existing_customer = customer
                 break
+        if existing_customer and existing_customer.get("phone"):
+            resolved_customer_phone = existing_customer.get("phone")
         
         if not existing_customer:
             # Müşteri yoksa ekle
@@ -14278,7 +14906,7 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
             await _apply_customer_delta(
                 db,
                 organization_id=organization_id,
-                phone=appointment.phone,
+                phone=resolved_customer_phone,
                 name=appointment.customer_name,
                 delta_total=1,
                 delta_completed=1 if _apt_status == "Tamamlandı" else 0,
@@ -16406,6 +17034,102 @@ async def ai_chat_endpoint(
 # --- Router prefix'i buraya taşındı ---
 app.include_router(api_router, prefix="/api")
 
+
+# ═══ iOS Universal Links — apple-app-site-association (AASA) ═══
+# App kökünde (prefix'siz) servis edilir; nginx `/.well-known/apple-app-site-association`
+# path'ini backend'e (8002) proxy'ler.
+# Claim edilen path'ler:
+#   • /api/app/open*  — e-posta / akıllı açıcı (mevcut)
+#   • /appstore*      — Instagram bio Universal Link; uygulama yüklüyse app açılır,
+#                       yüklü değilse GET /appstore HTTP 302 ile App Store'a gider
+# Diğer https linkleri (şifre sıfırlama, public booking vb.) tarayıcıda kalsın.
+# appID = <TeamID>.<bundle> = 9V42VGDN9U.co.plannapp.app
+_AASA_PAYLOAD = {
+    "applinks": {
+        "apps": [],
+        "details": [
+            {
+                "appID": "9V42VGDN9U.co.plannapp.app",
+                "appIDs": ["9V42VGDN9U.co.plannapp.app"],
+                "paths": [
+                    "/api/app/open",
+                    "/api/app/open/*",
+                    "/appstore",
+                    "/appstore/*",
+                ],
+                "components": [
+                    {"/": "/api/app/open", "comment": "PLANN akıllı uygulama açıcı"},
+                    {"/": "/api/app/open/*", "comment": "PLANN akıllı uygulama açıcı (alt path)"},
+                    {"/": "/appstore", "comment": "Instagram / App Store Universal Link"},
+                    {"/": "/appstore/*", "comment": "Instagram / App Store Universal Link (alt path)"},
+                ],
+            }
+        ],
+    }
+}
+
+# Instagram WebView https meta refresh'i de blokluyor → itms-apps:// native scheme.
+# Otomatik JS denemesi + manuel buton (https değil, itms-apps).
+_APPSTORE_ITMS_URL = "itms-apps://apps.apple.com/app/id6759719891"
+_APPSTORE_META_REFRESH_HTML = """<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLANN</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #ffffff; }
+        .btn { display: inline-block; padding: 14px 28px; background-color: #000000; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; margin-top: 20px;}
+        p { color: #333333; font-size: 18px; font-weight: 500;}
+    </style>
+</head>
+<body>
+    <p>App Store'a bağlanıyor...</p>
+    <a href="itms-apps://apps.apple.com/app/id6759719891" class="btn">App Store'da Aç</a>
+    
+    <script>
+        // Instagram'ın JS'i engellememe ihtimaline karşı otomatik fırlatma
+        setTimeout(function() {
+            window.location.href = "itms-apps://apps.apple.com/app/id6759719891";
+        }, 300);
+    </script>
+</body>
+</html>"""
+
+
+@app.get("/.well-known/apple-app-site-association", include_in_schema=False)
+@app.get("/apple-app-site-association", include_in_schema=False)
+async def apple_app_site_association():
+    """iOS Universal Links doğrulama dosyası. application/json + no redirect + 200."""
+    return JSONResponse(
+        content=_AASA_PAYLOAD,
+        media_type="application/json",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/appstore", include_in_schema=False)
+@app.get("/appstore/", include_in_schema=False)
+async def appstore_redirect():
+    """Instagram bio fallback: HTTP 200 + itms-apps:// (https meta refresh WebView'de bloklanıyor)."""
+    return HTMLResponse(
+        content=_APPSTORE_META_REFRESH_HTML,
+        status_code=200,
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
+    )
+
+
+_PLAYSTORE_REDIRECT_URL = (
+    "https://play.google.com/store/apps/details?id=co.plannapp.app&pcampaignid=web_share"
+)
+
+
+@app.get("/playstore", include_in_schema=False)
+@app.get("/playstore/", include_in_schema=False)
+async def playstore_redirect():
+    """Google Play Store yönlendirmesi: HTTP 302 (HTML yok)."""
+    return RedirectResponse(url=_PLAYSTORE_REDIRECT_URL, status_code=302)
+
 # --- Financial Engine Router ---
 try:
     from financial.financial_endpoints import router as financial_router
@@ -16472,95 +17196,6 @@ def _send_whatsapp_text_reply(to_number: str, text: str) -> None:
             logger.info(f"Auto-reply gönderildi → {to_number}")
     except Exception as e:
         logger.error(f"Auto-reply exception: {e}")
-
-
-# ═══ Uptime Kuma → WhatsApp (isletme_bilgilendirme) ═══
-# Yan sunucudaki Uptime Kuma bu endpoint'e POST atar.
-# ÖNEMLİ: Bu sunucu ÇÖKERSE webhook buraya ulaşamaz → DOWN bildirimi
-# için Kuma'nın Telegram/Discord veya yan sunucudaki ayrı bir alıcı
-# kullanması gerekir. UP (yeniden ayakta) bildirimi buradan gelir.
-# Uptime Kuma URL örneği:
-#   https://plannapp.co/api/v1/uptime-kuma-webhook?token=<UPTIME_WEBHOOK_SECRET>
-# NOT: app.include_router(api_router) bu satırın ÜSTÜNDE çağrıldığı için
-# @api_router.post burada kayıt olmaz — @app.post ile doğrudan mount edilir.
-@app.post("/api/v1/uptime-kuma-webhook")
-async def uptime_kuma_webhook(request: Request, background_tasks: BackgroundTasks):
-    """Uptime Kuma durum değişikliğini WhatsApp şablonu ile yöneticiye iletir."""
-    expected_secret = (os.getenv("UPTIME_WEBHOOK_SECRET") or "").strip()
-    if expected_secret:
-        provided = (
-            request.query_params.get("token")
-            or request.headers.get("X-Uptime-Token")
-            or ""
-        ).strip()
-        if not secrets.compare_digest(provided, expected_secret):
-            raise HTTPException(status_code=401, detail="Geçersiz webhook token")
-
-    admin_phone = (os.getenv("UPTIME_ALERT_PHONE") or "").strip()
-    if not admin_phone:
-        logger.error("UPTIME_ALERT_PHONE tanımlı değil — WhatsApp uyarısı atlanıyor")
-        raise HTTPException(status_code=503, detail="UPTIME_ALERT_PHONE yapılandırılmamış")
-
-    try:
-        data = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Geçersiz JSON body")
-
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=400, detail="JSON object bekleniyor")
-
-    monitor = data.get("monitor") if isinstance(data.get("monitor"), dict) else {}
-    heartbeat = data.get("heartbeat") if isinstance(data.get("heartbeat"), dict) else {}
-    monitor_name = monitor.get("name") or "PLANN Servisi"
-    raw_status = heartbeat.get("status")
-    try:
-        status_int = int(raw_status) if raw_status is not None else -1
-    except (TypeError, ValueError):
-        status_int = -1
-    msg = data.get("msg") or heartbeat.get("msg") or "Durum değişikliği algılandı."
-
-    if status_int == 0:
-        status_text = "ÇÖKTÜ 🔴"
-    elif status_int == 1:
-        status_text = "YENİDEN AYAKTA 🟢"
-    else:
-        status_text = f"DURUM DEĞİŞTİ ({raw_status})"
-
-    param_1 = (os.getenv("UPTIME_ALERT_NAME") or "Fatih").strip() or "Fatih"
-    # Meta template değişkenleri genelde ~1024 karakter; güvenli kırp
-    param_2 = f"{monitor_name} durumu: {status_text}\nDetay: {msg}"
-    if len(param_2) > 900:
-        param_2 = param_2[:897] + "..."
-
-    template_name = (os.getenv("UPTIME_WA_TEMPLATE") or "isletme_bilgilendirme").strip()
-    language_code = (os.getenv("UPTIME_WA_TEMPLATE_LANG") or "tr").strip() or "tr"
-
-    def _send_uptime_wa():
-        try:
-            # Randevu send_whatsapp_template DEĞİL — düşük seviye Meta çağrısı
-            # (template_name + body {{1}}, {{2}}). Şablon Meta'da onaylı olmalı.
-            send_meta_whatsapp_template(
-                to_number=admin_phone,
-                template_name=template_name,
-                language_code=language_code,
-                components=[
-                    {
-                        "type": "body",
-                        "parameters": [
-                            {"type": "text", "text": param_1},
-                            {"type": "text", "text": param_2},
-                        ],
-                    }
-                ],
-            )
-        except Exception as e:
-            logger.error(f"Uptime Kuma WA gönderilemedi: {e}", exc_info=True)
-
-    background_tasks.add_task(_send_uptime_wa)
-    logger.info(
-        f"Uptime Kuma webhook kabul: monitor={monitor_name!r} status={status_int} → WA kuyruğa alındı"
-    )
-    return {"status": "ok"}
 
 
 @app.get("/webhook")

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import SeoLinks from "./SeoLinks";
+import SiteSeo from "./SiteSeo";
 import {
   Dialog,
   DialogContent,
@@ -39,11 +40,8 @@ const LandingPage = () => {
   const [contactModalOpen, setContactModalOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState(null); // tam ekran dashboard önizleme
 
-  useEffect(() => {
-    document.title = i18n.language?.toLowerCase().startsWith('tr')
-      ? 'PLANN | Randevu Sistemi'
-      : 'PLANN | Appointment System';
-  }, [i18n.language]);
+  // Title/description/canonical/hreflang artık SiteSeo (Helmet) tarafından
+  // host bazlı yönetiliyor — document.title hack'i kaldırıldı.
   
   // PWA/APK kontrolü - Uygulama modundaysa login'e yönlendir
   useEffect(() => {
@@ -76,7 +74,7 @@ const LandingPage = () => {
     ? `${dashboardAssetBase}/screenshots/landing-dashboard-tr.png?v=${dashboardAssetVersion}`
     : `${dashboardAssetBase}/screenshots/landing-dashboard-en.png?v=${dashboardAssetVersion}`;
   // Mobilde okunması güç olan geniş dashboard yerine gösterilen dikey mobil önizleme
-  const dashboardMobileImageSrc = `${dashboardAssetBase}/screenshots/landing-dashboard-mobile.png?v=m2`;
+  const dashboardMobileImageSrc = `${dashboardAssetBase}/screenshots/landing-dashboard-mobile.png?v=m3`;
   // M9: PRICING tablosu artık tek kaynak (frontend/src/lib/pricing.js).
   // Subscribe.js ve LandingPage burada aynı sayılardan beslenir — drift önleme.
   // PRICING.try/gbp.{plan}.{original,discounted}; yearly = original * 10.
@@ -437,6 +435,7 @@ const LandingPage = () => {
 
   return (
     <div className="min-h-screen bg-[#fafafa] landing-page-container">
+      <SiteSeo />
       {/* Banner - Full Width Top (Mobilde header üstünde, Desktop'ta header altında) */}
       <div className="w-full bg-gray-900 text-white py-2 md:hidden">
         <div className="container mx-auto px-4 text-center">

@@ -12,29 +12,55 @@ services:
       - "127.0.0.1:27017:27017"
     volumes:
       - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand({ping:1}).ok\" | grep 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # 2. Redis (Backend için gerekli)
   redis:
     image: redis:alpine
     container_name: plann_redis
     restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # 3. FastAPI Backend
   backend:
     build: ./backend
     container_name: plann_backend
     restart: always
-    # KRİTİK: socket_app kullanılmalı (Socket.IO mount'u için), workers 4 + Redis manager ile çoklu işçi desteği
+
+    # KRİTİK: socket_app kullanılmalı (Socket.IO mount'u için)
     command: uvicorn server:socket_app --host 0.0.0.0 --port 8002 --workers 17
+
     ports:
       - "8002:8002"
+
     volumes:
       - backend_static:/app/static
+
     depends_on:
       - mongodb
       - redis
+
     env_file:
       - ./backend/.env
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/api/health', timeout=5)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # 4. React Frontend
   frontend:
@@ -45,6 +71,22 @@ services:
       - "8081:80"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # 5. Dozzle (Konteyner Log Röntgeni)
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: plann_dozzle
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "9999:8080"
 
 volumes:
   mongodb_data:

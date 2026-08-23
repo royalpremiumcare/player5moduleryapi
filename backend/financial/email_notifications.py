@@ -22,42 +22,102 @@ BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "fatihsenyuz12@gmail.com")
 SUPERADMIN_ALERT_EMAIL = "fatihsenyuz12@gmail.com"
 SENDER_NAME = "PLANN"
-SENDER_EMAIL = "noreply@plannapp.co"
+SENDER_EMAIL = "info@plannapp.co"
 
 LOGO_URL = "https://plannapp.co/api/static/logo.png"
 DASHBOARD_URL = "https://plannapp.co"
 
+# Premium marka tipografisi (server.py _brand_shell ile aynı dil).
+_BRAND_FONT_SERIF = "Georgia, 'Times New Roman', Times, serif"
+_BRAND_FONT_SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+
 
 def _wrap_branded(body_html: str) -> str:
-    """Wrap inner body HTML with the branded PLANN email shell (logo, border, footer)."""
-    return f"""\
+    """Gövde HTML'ini PLANN premium e-posta kabuğuna sarar (krem zemin, beyaz kart,
+    tipografik 'P L A N N' başlık, minimalist alt bilgi). Tüm stiller inline."""
+    year = datetime.now(timezone.utc).year
+    return f"""<!DOCTYPE html>
 <html>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6; background-color: #f4f4f4;">
-    <table width="100%" border="0" cellpadding="0" cellspacing="0">
-        <tr>
-            <td align="center" style="padding: 20px 0;">
-                <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-                    <tr>
-                        <td align="center" style="padding: 30px 0; background-color: #f9f9f9; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                            <img src="{LOGO_URL}" alt="PLANN Logo" style="max-width: 150px; height: auto;">
-                        </td>
-                    </tr>
-                    <tr style="background-color: #ffffff;">
-                        <td style="padding: 40px 30px; color: #333333; font-size: 16px;">
-                            {body_html}
-                        </td>
-                    </tr>
-                    <tr style="background-color: #f9f9f9;">
-                        <td align="center" style="padding: 20px 30px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                            <p style="margin: 0;">&copy; 2025 PLANN. T&uuml;m haklar&iacute; sakl&iacute;d&iacute;r.</p>
-                        </td>
-                    </tr>
-                </table>
-            </td>
-        </tr>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background-color:#fbfbfa;color:#1a1a1a;-webkit-font-smoothing:antialiased;font-family:{_BRAND_FONT_SERIF};">
+  <center style="width:100%;background-color:#fbfbfa;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:#fbfbfa;">
+      <tr>
+        <td align="center" style="padding:60px 16px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;margin:0 auto;background-color:#ffffff;border:1px solid #e5e5e3;box-shadow:0 4px 20px rgba(0,0,0,0.02);">
+            <tr>
+              <td style="padding:60px 50px 40px 50px;text-align:center;border-bottom:1px solid #f2f2f0;">
+                <h1 style="margin:0;font-family:{_BRAND_FONT_SERIF};font-size:30px;font-weight:300;letter-spacing:10px;color:#1a1a1a;text-transform:uppercase;">P L A N N</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:50px 50px 40px 50px;">
+                {body_html}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:40px 50px;text-align:center;font-family:{_BRAND_FONT_SANS};font-size:10px;letter-spacing:2px;color:#a3a3a0;text-transform:uppercase;border-top:1px solid #f2f2f0;">
+                PLANNAPP LTD. ALL RIGHTS RESERVED. &copy; {year}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
     </table>
+  </center>
 </body>
 </html>"""
+
+
+def _fin_body(*, badge="", statement="", paragraphs=None, meta_rows=None, button=None, note="", extra_html=""):
+    """server.py _brand_body ile aynı premium gövde (financial modülü için bağımsız kopya)."""
+    parts = []
+    if badge:
+        parts.append(
+            f'<div style="font-family:{_BRAND_FONT_SANS};font-size:10px;letter-spacing:3px;'
+            f'text-transform:uppercase;color:#8c8c88;margin:0 0 30px 0;text-align:center;font-weight:500;">{badge}</div>'
+        )
+    if statement:
+        parts.append(
+            f'<div style="font-family:{_BRAND_FONT_SERIF};font-size:23px;line-height:1.6;color:#1a1a1a;'
+            f'text-align:center;margin:0 0 45px 0;font-weight:400;font-style:italic;">{statement}</div>'
+        )
+    for p in (paragraphs or []):
+        parts.append(
+            f'<p style="font-family:{_BRAND_FONT_SERIF};font-size:17px;line-height:1.75;color:#3a3a3a;margin:0 0 20px 0;">{p}</p>'
+        )
+    if meta_rows:
+        rows = ""
+        n = len(meta_rows)
+        for i, (label, value) in enumerate(meta_rows):
+            border = "" if i == n - 1 else "border-bottom:1px solid #f2f2f0;"
+            rows += (
+                f'<tr><td style="padding:18px 24px;{border}font-family:{_BRAND_FONT_SANS};font-size:11px;'
+                f'text-transform:uppercase;letter-spacing:2px;color:#8c8c88;font-weight:500;width:30%;vertical-align:top;">{label}</td>'
+                f'<td style="padding:18px 24px 18px 0;{border}font-family:{_BRAND_FONT_SERIF};font-size:16px;color:#1a1a1a;vertical-align:top;">{value}</td></tr>'
+            )
+        parts.append(
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'style="width:100%;margin:12px 0 45px 0;border:1px solid #e5e5e3;border-collapse:collapse;">{rows}</table>'
+        )
+    if extra_html:
+        parts.append(extra_html)
+    if note:
+        parts.append(
+            f'<p style="font-family:{_BRAND_FONT_SANS};font-size:13px;line-height:1.6;color:#8c8c88;'
+            f'margin:28px 0 0 0;padding-top:20px;border-top:1px solid #f2f2f0;">{note}</p>'
+        )
+    if button and button.get("url") and button.get("label"):
+        parts.append(
+            f'<div style="text-align:center;margin-top:40px;">'
+            f'<a href="{button["url"]}" target="_blank" style="border:1px solid #1a1a1a;color:#1a1a1a;'
+            f'text-decoration:none;padding:16px 42px;font-family:{_BRAND_FONT_SANS};font-size:11px;'
+            f'font-weight:600;text-transform:uppercase;letter-spacing:3px;display:inline-block;">{button["label"]}</a></div>'
+        )
+    return "\n".join(parts)
 
 
 def _send_email(
@@ -111,21 +171,20 @@ def send_payout_success_email(
     rail_label = "BACS" if payout_rail == "bacs" else "Banka Transferi"
 
     subject = f"Ödemeniz gönderildi — {amount_display}"
-    body = f"""\
-<h1 style="font-size: 24px; color: #10b981; margin-top: 0; text-align: center;">&#10003; Ödemeniz Yolda</h1>
-<p>Merhaba {merchant_name},</p>
-<p>
-    <strong>{amount_display}</strong> tutarındaki ödemeniz <strong>{rail_label}</strong>
-    üzerinden banka hesabınıza gönderildi.
-</p>
-<p style="background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 4px; color: #166534; font-size: 14px;">
-    İşlem aynı gün içinde hesabınıza yansır.
-</p>
-<p style="text-align: center; margin-top: 30px; margin-bottom: 10px;">
-    <a href="{DASHBOARD_URL}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold; display: inline-block;">
-        Panoya Git
-    </a>
-</p>"""
+    body = _fin_body(
+        badge="Ödeme",
+        statement="Ödemeniz yolda.",
+        paragraphs=[
+            f"Merhaba {merchant_name},",
+            f"<strong>{amount_display}</strong> tutarındaki ödemeniz <strong>{rail_label}</strong> üzerinden banka hesabınıza gönderildi.",
+            "İşlem aynı gün içinde hesabınıza yansır.",
+        ],
+        meta_rows=[
+            ("Tutar", amount_display),
+            ("Yöntem", rail_label),
+        ],
+        button={"label": "Panoya Git", "url": DASHBOARD_URL},
+    )
     return _send_email(to_email, merchant_name, subject, _wrap_branded(body))
 
 
@@ -138,25 +197,22 @@ def send_payout_failed_email(
 ) -> bool:
     amount_display = format_display(amount_minor, base_currency)
 
-    error_block = ""
+    meta = [("Tutar", amount_display)]
     if error_message:
-        error_block = f'<p style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 12px 16px; border-radius: 4px; color: #991b1b; font-size: 14px;">Hata: {error_message}</p>'
+        meta.append(("Hata", error_message))
 
     subject = f"Ödeme başarısız — {amount_display}"
-    body = f"""\
-<h1 style="font-size: 24px; color: #ef4444; margin-top: 0; text-align: center;">&#10007; Ödeme Gönderilemedi</h1>
-<p>Merhaba {merchant_name},</p>
-<p>
-    <strong>{amount_display}</strong> tutarındaki ödemeniz gönderilemedi.
-    Tutar cüzdanınıza iade edildi.
-</p>
-{error_block}
-<p>Lütfen banka bilgilerinizi kontrol edin veya destek ekibimizle iletişime geçin.</p>
-<p style="text-align: center; margin-top: 30px; margin-bottom: 10px;">
-    <a href="{DASHBOARD_URL}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold; display: inline-block;">
-        Panoya Git
-    </a>
-</p>"""
+    body = _fin_body(
+        badge="Ödeme",
+        statement="Ödeme gönderilemedi.",
+        paragraphs=[
+            f"Merhaba {merchant_name},",
+            f"<strong>{amount_display}</strong> tutarındaki ödemeniz gönderilemedi. Tutar cüzdanınıza iade edildi.",
+            "Lütfen banka bilgilerinizi kontrol edin veya destek ekibimizle iletişime geçin.",
+        ],
+        meta_rows=meta,
+        button={"label": "Panoya Git", "url": DASHBOARD_URL},
+    )
     return _send_email(to_email, merchant_name, subject, _wrap_branded(body))
 
 
@@ -170,22 +226,20 @@ def send_dispute_alert_email(
     amount_display = format_display(amount_minor, base_currency)
 
     subject = f"İtiraz (Dispute) bildirimi — {amount_display}"
-    body = f"""\
-<h1 style="font-size: 24px; color: #f59e0b; margin-top: 0; text-align: center;">&#9888; Ödeme İtirazı</h1>
-<p>Merhaba {merchant_name},</p>
-<p>
-    <strong>{amount_display}</strong> tutarındaki bir ödeme için müşteriniz
-    itiraz (dispute) başlattı. İlgili tutar geçici olarak dondurulmuştur.
-</p>
-<p style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; color: #92400e; font-size: 14px;">
-    Dispute ID: <strong>{dispute_id}</strong>
-</p>
-<p>İtiraz süreci otomatik olarak yönetilmektedir. Sonuç hakkında bilgilendirileceksiniz.</p>
-<p style="text-align: center; margin-top: 30px; margin-bottom: 10px;">
-    <a href="{DASHBOARD_URL}" target="_blank" style="background-color: #007bff; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold; display: inline-block;">
-        Panoya Git
-    </a>
-</p>"""
+    body = _fin_body(
+        badge="İtiraz",
+        statement="Bir ödeme için itiraz başlatıldı.",
+        paragraphs=[
+            f"Merhaba {merchant_name},",
+            f"<strong>{amount_display}</strong> tutarındaki bir ödeme için müşteriniz itiraz (dispute) başlattı. İlgili tutar geçici olarak dondurulmuştur.",
+            "İtiraz süreci otomatik olarak yönetilmektedir. Sonuç hakkında bilgilendirileceksiniz.",
+        ],
+        meta_rows=[
+            ("Tutar", amount_display),
+            ("Dispute ID", dispute_id),
+        ],
+        button={"label": "Panoya Git", "url": DASHBOARD_URL},
+    )
     return _send_email(to_email, merchant_name, subject, _wrap_branded(body))
 
 

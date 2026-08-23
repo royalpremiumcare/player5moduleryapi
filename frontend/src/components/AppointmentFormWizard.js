@@ -2,12 +2,14 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } fr
 import { format, addDays, isSameDay, startOfDay, differenceInCalendarDays } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
-import { Calendar as CalendarIcon, Clock, ArrowLeft, User, Search, X, Check, UserPlus, ChevronLeft, Loader2, Users, Import, AlertTriangle, Info } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, ArrowLeft, User, Search, X, Check, UserPlus, ChevronLeft, Loader2, Users, Import, AlertTriangle, Info, Plus, SearchX } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import axios from "axios";
 import { Virtuoso } from 'react-virtuoso';
 
@@ -35,6 +37,27 @@ const publicApi = axios.create({
   baseURL: `${BACKEND_URL}/api`,
 });
 
+// Sihirbaz içi hizmet formu — ServiceManagement.js'teki form ile aynı alanlar.
+// Müşteri listesi sayfa boyutu — liste sonuna gelindikçe sonraki sayfa çekilir.
+const CUSTOMER_PAGE_SIZE = 30;
+
+const SERVICE_FORM_DEFAULTS = {
+  name: "",
+  price: "",
+  duration: "30",
+  isSessionPackage: false,
+  sessionCount: "2",
+  paymentRule: "on_site",
+  depositAmount: "",
+};
+
+// Backend ile aynı eşikler — kaynak: financial/money.py MIN_ONLINE_PAYMENT_MINOR / MIN_DEPOSIT_MINOR.
+// Para birimine göre değişir; GBP işletmede ₺300 istemek anlamsız.
+const PAYMENT_MINIMUMS = {
+  "₺": { online: 300, deposit: 200 },
+  "£": { online: 5, deposit: 3 },
+};
+
 /** API `yyyy-MM-dd` veya ISO string → yerel takvim günü (UTC kayması yüzünden yanlış gün / boş slot önlenir) */
 function parseLocalAppointmentDate(value) {
   if (!value) return new Date();
@@ -50,7 +73,7 @@ function parseLocalAppointmentDate(value) {
   return new Date(value);
 }
 
-const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
+const AppointmentFormWizard = ({ services, appointment, onSave, onCancel, onServiceCreated, servicesLoading = false }) => {
   const { userRole, canViewAll } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
@@ -105,9 +128,23 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   // Hizmet Arama
   const [serviceSearchTerm, setServiceSearchTerm] = useState("");
   const [debouncedServiceSearchTerm, setDebouncedServiceSearchTerm] = useState("");
-  
-  // Müşteri Arama
+
+  // Sihirbaz içinden oluşturulan hizmetler. `services` prop'u parent'tan gelir ve
+  // yeniden yüklenene kadar yeni kaydı içermez; bu liste aradaki boşluğu kapatır.
+  const [createdServices, setCreatedServices] = useState([]);
+  const [showNewServiceDialog, setShowNewServiceDialog] = useState(false);
+  const [newServiceForm, setNewServiceForm] = useState(SERVICE_FORM_DEFAULTS);
+  const [newServiceErrors, setNewServiceErrors] = useState({});
+  const [savingNewService, setSavingNewService] = useState(false);
+
+  // Müşteri Arama — liste sunucudan sayfa sayfa gelir (arama da sunucuda yapılır).
+  // Eskiden tüm müşteri listesi tek seferde indirilip istemcide süzülüyordu; 10 bin
+  // müşterili bir işletmede bu çağrı yük testinde 12,8 sn sürüyordu.
   const [customers, setCustomers] = useState([]);
+  const [customersLoading, setCustomersLoading] = useState(true);
+  const [customersLoadingMore, setCustomersLoadingMore] = useState(false);
+  const [customersCursor, setCustomersCursor] = useState(null);
+  const [customersHasMore, setCustomersHasMore] = useState(false);
   const [customerSearchTerm, setCustomerSearchTerm] = useState("");
   const [debouncedCustomerSearchTerm, setDebouncedCustomerSearchTerm] = useState("");
   const [isNewCustomerMode, setIsNewCustomerMode] = useState(false);
@@ -128,7 +165,8 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     loadCurrentUser();
     loadAllStaff();
     loadSettings();
-    loadCustomers();
+    // Müşteri listesi burada değil, aşağıdaki arama effect'inde çekilir; o effect
+    // mount'ta da bir kez (search="") çalışır → çift çağrı olmaz.
     if (appointment) {
       setFormData({
         customer_name: appointment.customer_name,
@@ -165,14 +203,22 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     return () => cancelAnimationFrame(id);
   }, [step]);
 
+  // Prop'tan gelen hizmetler + sihirbaz içinden yeni oluşturulanlar.
+  const allServices = useMemo(() => {
+    const base = services || [];
+    if (createdServices.length === 0) return base;
+    const known = new Set(base.map((s) => s?.id));
+    return [...base, ...createdServices.filter((s) => s?.id && !known.has(s.id))];
+  }, [services, createdServices]);
+
   useEffect(() => {
-    if (userRole === 'staff' && !canViewAll && currentUser && services.length > 0) {
-      const allowed = services.filter(s => currentUser.permitted_service_ids?.includes(s.id));
+    if (userRole === 'staff' && !canViewAll && currentUser && allServices.length > 0) {
+      const allowed = allServices.filter(s => currentUser.permitted_service_ids?.includes(s.id));
       setFilteredServices(allowed);
     } else {
-      setFilteredServices(services);
+      setFilteredServices(allServices);
     }
-  }, [userRole, currentUser, services]);
+  }, [userRole, canViewAll, currentUser, allServices]);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedServiceSearchTerm(serviceSearchTerm), 150);
@@ -191,14 +237,60 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     return (phone.startsWith('+44') || phone.startsWith('44')) ? '£' : '₺';
   }, [settings]);
 
+  const paymentMinimums = PAYMENT_MINIMUMS[currencySymbol] || PAYMENT_MINIMUMS["₺"];
+
   useEffect(() => {
     const id = setTimeout(() => setDebouncedCustomerSearchTerm(customerSearchTerm), 150);
     return () => clearTimeout(id);
   }, [customerSearchTerm]);
 
+  // Arama terimi değiştiğinde ilk sayfa; listenin sonuna gelindiğinde sonraki sayfa.
+  // Bu callback, onu çağıran useEffect'ten ÖNCE tanımlanmalı — aksi halde
+  // Temporal Dead Zone'da ReferenceError atılır ve sihirbaz hiç açılmaz.
+  const loadCustomers = useCallback(async ({ search = "", cursor = null } = {}) => {
+    if (cursor) setCustomersLoadingMore(true);
+    else setCustomersLoading(true);
+    try {
+      const params = { limit: CUSTOMER_PAGE_SIZE };
+      if (search.trim()) params.search = search.trim();
+      if (cursor) params.cursor = cursor;
+      const res = await api.get("/customers", { params });
+      const items = res.data?.items || [];
+      setCustomers((prev) => (cursor ? [...prev, ...items] : items));
+      setCustomersCursor(res.data?.next_cursor || null);
+      setCustomersHasMore(Boolean(res.data?.has_more));
+    } catch (e) {
+      console.error(e);
+      if (!cursor) setCustomers([]);
+    } finally {
+      setCustomersLoading(false);
+      setCustomersLoadingMore(false);
+    }
+  }, []);
+
+  const loadMoreCustomers = useCallback(() => {
+    if (!customersHasMore || customersLoadingMore || customersLoading) return;
+    loadCustomers({ search: debouncedCustomerSearchTerm, cursor: customersCursor });
+  }, [
+    customersHasMore, customersLoadingMore, customersLoading,
+    customersCursor, debouncedCustomerSearchTerm, loadCustomers,
+  ]);
+
+  // Tek arama tetikleyicisi: mount'ta bir kez ("" ile) ve arama terimi
+  // değiştiğinde ilk sayfayı çeker.
+  useEffect(() => {
+    setCustomersCursor(null);
+    loadCustomers({ search: debouncedCustomerSearchTerm });
+    try {
+      customerListRef.current?.scrollToIndex(0);
+    } catch (e) {
+      /* Virtuoso henüz mount olmamış olabilir */
+    }
+  }, [debouncedCustomerSearchTerm, loadCustomers]);
+
   const selectedService = useMemo(
-    () => services.find((s) => s.id === formData.service_id),
-    [services, formData.service_id]
+    () => allServices.find((s) => s.id === formData.service_id),
+    [allServices, formData.service_id]
   );
   const isNewMultiPackage =
     !appointment && selectedService?.session_count && selectedService.session_count > 1;
@@ -214,8 +306,8 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   }, [multiServiceEnabled, selectedServiceIds, formData.service_id]);
 
   const selectedServiceObjs = useMemo(
-    () => effectiveServiceIds.map((id) => services.find((s) => s.id === id)).filter(Boolean),
-    [effectiveServiceIds, services]
+    () => effectiveServiceIds.map((id) => allServices.find((s) => s.id === id)).filter(Boolean),
+    [effectiveServiceIds, allServices]
   );
   const multiTotalPrice = useMemo(
     () => selectedServiceObjs.reduce((sum, s) => sum + (Number(s.price) || 0), 0),
@@ -251,7 +343,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     }
     setSelectedServiceIds((prev) => {
       const hasPackage = prev.some((id) => {
-        const s = services.find((x) => x.id === id);
+        const s = allServices.find((x) => x.id === id);
         return s?.session_count && s.session_count > 1;
       });
       const base = hasPackage ? [] : prev;
@@ -259,7 +351,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         ? base.filter((id) => id !== service.id)
         : [...base, service.id];
     });
-  }, [multiServiceEnabled, services]);
+  }, [multiServiceEnabled, allServices]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -308,28 +400,19 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [wizardTotalSteps, showContactSelectionDialog, showNotSupportedDialog]);
 
+  // Arama ve sıralama sunucuda yapılıyor (Türkçe collation ile). Burada yalnızca
+  // kullanıcı yazarken, debounce dolup yeni sayfa gelene kadar liste sıçramasın
+  // diye anlık yerel süzme uygulanıyor.
   const filteredCustomers = useMemo(() => {
     const raw = customers || [];
-    const search = (debouncedCustomerSearchTerm || "").toLocaleLowerCase('tr');
-    const phoneSearch = String(debouncedCustomerSearchTerm || "");
-
-    const filtered = search
-      ? raw.filter((c) => {
-          const name = (c?.name || "").toLocaleLowerCase('tr');
-          const phone = String(c?.phone || "");
-          return name.includes(search) || phone.includes(phoneSearch);
-        })
-      : raw;
-
-    const locale = i18n.language === 'tr' ? 'tr-TR' : 'en-GB';
-    return filtered
-      .slice()
-      .sort((a, b) => {
-        const aName = String(a?.name || "");
-        const bName = String(b?.name || "");
-        return aName.localeCompare(bName, locale, { sensitivity: 'base' });
-      });
-  }, [customers, debouncedCustomerSearchTerm, i18n.language]);
+    if (!customerSearchTerm || customerSearchTerm === debouncedCustomerSearchTerm) return raw;
+    const search = customerSearchTerm.toLocaleLowerCase('tr');
+    return raw.filter((c) => {
+      const name = (c?.name || "").toLocaleLowerCase('tr');
+      const phone = String(c?.phone || "");
+      return name.includes(search) || phone.includes(customerSearchTerm);
+    });
+  }, [customers, customerSearchTerm, debouncedCustomerSearchTerm]);
 
   useEffect(() => {
     if (effectiveServiceIds.length > 0 && allStaff.length > 0) {
@@ -366,9 +449,6 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
 
   const loadAllStaff = async () => {
     try { const res = await api.get("/users"); setAllStaff(res.data || []); } catch (e) { console.error(e); }
-  };
-  const loadCustomers = async () => {
-    try { const res = await api.get("/customers"); setCustomers(res.data || []); } catch (e) { console.error(e); }
   };
   const loadSettings = async () => {
     try { const res = await api.get("/settings"); setSettings(res.data); } catch (e) { console.error(e); }
@@ -418,6 +498,107 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
   }, [loadAvailableSlots, step, availabilityNonce, effectiveServiceIds]);
 
   // --- HANDLERS ---
+
+  const isAdmin = userRole === 'admin';
+
+  // Boş sonuç ekranından hizmet oluşturma: arama metni ad alanına taşınır.
+  const openNewServiceDialog = () => {
+    setNewServiceForm({ ...SERVICE_FORM_DEFAULTS, name: serviceSearchTerm.trim() });
+    setNewServiceErrors({});
+    setShowNewServiceDialog(true);
+  };
+
+  // Modal açıkken toast arkada kalıyor; bu yüzden uyarılar ilgili alanın altında gösteriliyor.
+  const updateNewServiceForm = (patch, clearedFields = []) => {
+    setNewServiceForm((prev) => ({ ...prev, ...patch }));
+    if (clearedFields.length > 0) {
+      setNewServiceErrors((prev) => {
+        const next = { ...prev };
+        clearedFields.forEach((f) => delete next[f]);
+        return next;
+      });
+    }
+  };
+
+  const handleCreateService = async () => {
+    const name = newServiceForm.name.trim();
+    const price = Number(String(newServiceForm.price).replace(',', '.'));
+    const duration = parseInt(newServiceForm.duration, 10);
+    const rule = newServiceForm.paymentRule || 'on_site';
+    const deposit = Number(String(newServiceForm.depositAmount).replace(',', '.'));
+    const sessionCount = parseInt(newServiceForm.sessionCount, 10);
+
+    const errors = {};
+    if (!name) errors.name = t('appointments.form.wizard.serviceNameRequired');
+    if (!Number.isFinite(price) || price <= 0) errors.price = t('appointments.form.wizard.servicePriceInvalid');
+    if (!Number.isFinite(duration) || duration <= 0) errors.duration = t('appointments.form.wizard.serviceDurationInvalid');
+    if (newServiceForm.isSessionPackage && (!Number.isFinite(sessionCount) || sessionCount < 2 || sessionCount > 50)) {
+      errors.sessionCount = t('appointments.form.wizard.sessionCountInvalid');
+    }
+    // Backend ile aynı eşikler (server.py `_validate_service_payment_limits`); son söz yine backend'in.
+    if ((rule === 'online' || rule === 'deposit') && Number.isFinite(price) && price > 0 && price < paymentMinimums.online) {
+      errors.paymentRule = t('appointments.form.wizard.minOnlinePrice', { amount: paymentMinimums.online, symbol: currencySymbol });
+    }
+    if (rule === 'deposit') {
+      if (!Number.isFinite(deposit) || deposit < paymentMinimums.deposit) {
+        errors.depositAmount = t('appointments.form.wizard.minDeposit', { amount: paymentMinimums.deposit, symbol: currencySymbol });
+      } else if (Number.isFinite(price) && deposit > price) {
+        errors.depositAmount = t('appointments.form.wizard.depositExceedsPrice');
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setNewServiceErrors(errors);
+      return;
+    }
+    setNewServiceErrors({});
+
+    setSavingNewService(true);
+    try {
+      const res = await api.post('/services', {
+        name,
+        price,
+        duration,
+        session_count: newServiceForm.isSessionPackage ? sessionCount : null,
+        payment_rule: rule,
+        deposit_amount: rule === 'deposit' ? deposit : null,
+      });
+      const created = res.data;
+      setCreatedServices((prev) => [...prev, created]);
+      setShowNewServiceDialog(false);
+      setNewServiceForm(SERVICE_FORM_DEFAULTS);
+      setNewServiceErrors({});
+      setServiceSearchTerm("");
+      toast.success(t('appointments.form.wizard.serviceCreated', { name: created.name }));
+      // Parent listesini tazele (opsiyonel prop; yoksa yerel liste yeterli).
+      try { onServiceCreated?.(); } catch (e) { /* parent tazeleme hatası akışı bozmasın */ }
+      handleServicePick(created);
+    } catch (e) {
+      // Modal açık kaldığı için toast görünmez; hata formun içinde gösteriliyor.
+      setNewServiceErrors({ general: formatApiError(e, t, t('appointments.form.operationFailed')) });
+    } finally {
+      setSavingNewService(false);
+    }
+  };
+
+  // Müşteri aramasında girilen metin telefon mu, isim mi?
+  const searchLooksLikePhone = useMemo(() => {
+    const term = (customerSearchTerm || "").trim();
+    if (!term) return false;
+    if (!/^[0-9+\s()\-]+$/.test(term)) return false;
+    const digits = term.replace(/\D/g, "");
+    return digits.length >= 6 && digits.length <= 11;
+  }, [customerSearchTerm]);
+
+  const startNewCustomerFromSearch = () => {
+    const term = (customerSearchTerm || "").trim();
+    setIsNewCustomerMode(true);
+    if (searchLooksLikePhone) {
+      setFormData((prev) => ({ ...prev, customer_name: "", phone: term.replace(/[^0-9+]/g, "") }));
+    } else {
+      setFormData((prev) => ({ ...prev, customer_name: term, phone: "" }));
+    }
+  };
 
   // --- REHBER İŞLEMLERİ ---
   const handleImportFromContacts = async () => {
@@ -772,7 +953,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
       const payload = buildAppointmentPayload();
 
       if (!appointment) {
-        const svc = services.find((s) => s.id === formData.service_id);
+        const svc = allServices.find((s) => s.id === formData.service_id);
         attachNewPackageFields(payload, svc);
       }
 
@@ -934,6 +1115,71 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
           );
         })}
       </div>
+
+      {/* Hizmetler henüz gelmediyse boş sonuç ekranı yerine iskelet göster —
+          aksi halde ilk açılışta "henüz hizmet yok" yanlış yanıp sönüyor. */}
+      {servicesLoading && allServices.length === 0 && (
+        <div className="space-y-3" aria-busy="true">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="flex items-center justify-between p-5 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl"
+            >
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-40 max-w-[55%] bg-zinc-200/70 rounded animate-pulse" />
+                <div className="h-3 w-24 max-w-[35%] bg-zinc-200/50 rounded animate-pulse" />
+              </div>
+              <div className="w-7 h-7 rounded-full bg-zinc-200/70 animate-pulse shrink-0" />
+            </div>
+          ))}
+          <span className="sr-only">{t('appointments.form.loading')}</span>
+        </div>
+      )}
+
+      {visibleServices.length === 0 && !(servicesLoading && allServices.length === 0) && (
+        <div className="py-10 px-6 flex flex-col items-center text-center backdrop-blur-xl bg-white/40 border border-dashed border-zinc-300 rounded-2xl shadow-sm animate-in fade-in duration-200">
+          <div className="w-14 h-14 rounded-2xl bg-zinc-100 border border-zinc-200 flex items-center justify-center mb-4">
+            <SearchX className="w-6 h-6 text-zinc-400" />
+          </div>
+          <h3 className="font-bold text-zinc-900">
+            {debouncedServiceSearchTerm
+              ? t('appointments.form.wizard.noServiceResults')
+              : t('appointments.form.wizard.noServicesYet')}
+          </h3>
+          <p className="text-sm text-zinc-500 font-medium mt-1.5 max-w-xs leading-relaxed">
+            {debouncedServiceSearchTerm
+              ? t('appointments.form.wizard.noServiceResultsDesc', { term: debouncedServiceSearchTerm })
+              : t('appointments.form.wizard.noServicesYetDesc')}
+          </p>
+
+          <div className="flex flex-col gap-2 mt-5 w-full max-w-xs">
+            {isAdmin && (
+              <Button
+                onClick={openNewServiceDialog}
+                className="w-full bg-zinc-900 hover:bg-black text-white h-12 rounded-xl font-bold shadow-lg"
+              >
+                <Plus className="w-4 h-4 mr-1.5" strokeWidth={2.5} />
+                {t('appointments.form.wizard.addService')}
+              </Button>
+            )}
+            {serviceSearchTerm && (
+              <Button
+                variant="outline"
+                onClick={() => setServiceSearchTerm("")}
+                className="w-full h-12 rounded-xl font-bold backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 text-zinc-900"
+              >
+                {t('appointments.form.wizard.clearSearch')}
+              </Button>
+            )}
+          </div>
+
+          {!isAdmin && (
+            <p className="text-xs text-zinc-500 font-medium mt-4 max-w-xs leading-relaxed">
+              {t('appointments.form.wizard.askAdminForService')}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -1024,21 +1270,94 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             </div>
           </>
         ) : (
-          <button 
-            onClick={() => { setIsNewCustomerMode(true); setFormData(prev => ({...prev, customer_name: "", phone: ""})); }}
-            className="w-full py-4 flex items-center justify-center gap-2 border-2 border-dashed border-zinc-300 rounded-2xl text-zinc-600 font-bold hover:bg-white/50 hover:border-zinc-400 transition-all backdrop-blur-sm shadow-sm"
-          >
-            <UserPlus className="h-5 w-5" />
-            <span>{t('appointments.form.newCustomer')}</span>
-          </button>
+          // Boş sonuç ekranı zaten kendi "Yeni Müşteri" butonunu (akıllı ön-doldurmalı)
+          // gösteriyor; ikisi birden çıkmasın.
+          !(!customersLoading && filteredCustomers.length === 0) && (
+            <button 
+              onClick={() => { setIsNewCustomerMode(true); setFormData(prev => ({...prev, customer_name: "", phone: ""})); }}
+              className="w-full py-4 flex items-center justify-center gap-2 border-2 border-dashed border-zinc-300 rounded-2xl text-zinc-600 font-bold hover:bg-white/50 hover:border-zinc-400 transition-all backdrop-blur-sm shadow-sm"
+            >
+              <UserPlus className="h-5 w-5" />
+              <span>{t('appointments.form.newCustomer')}</span>
+            </button>
+          )
         )}
 
-        {!isNewCustomerMode && (
+        {!isNewCustomerMode && customersLoading && (
+          <div className="space-y-3" aria-busy="true" aria-live="polite">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 p-4 backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl"
+              >
+                <div className="w-11 h-11 rounded-xl bg-zinc-200/70 animate-pulse shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3.5 w-32 max-w-[60%] bg-zinc-200/70 rounded animate-pulse" />
+                  <div className="h-3 w-24 max-w-[40%] bg-zinc-200/50 rounded animate-pulse" />
+                </div>
+              </div>
+            ))}
+            <span className="sr-only">{t('appointments.form.loading')}</span>
+          </div>
+        )}
+
+        {!isNewCustomerMode && !customersLoading && filteredCustomers.length === 0 && (
+          <div className="py-10 px-6 flex flex-col items-center text-center backdrop-blur-xl bg-white/40 border border-dashed border-zinc-300 rounded-2xl shadow-sm animate-in fade-in duration-200">
+            <div className="w-14 h-14 rounded-2xl bg-zinc-100 border border-zinc-200 flex items-center justify-center mb-4">
+              <SearchX className="w-6 h-6 text-zinc-400" />
+            </div>
+            <h3 className="font-bold text-zinc-900">
+              {debouncedCustomerSearchTerm
+                ? t('appointments.form.wizard.noCustomerResults')
+                : t('appointments.form.wizard.noCustomersYet')}
+            </h3>
+            <p className="text-sm text-zinc-500 font-medium mt-1.5 max-w-xs leading-relaxed">
+              {debouncedCustomerSearchTerm
+                ? t(
+                    searchLooksLikePhone
+                      ? 'appointments.form.wizard.noCustomerResultsPhoneDesc'
+                      : 'appointments.form.wizard.noCustomerResultsDesc',
+                    { term: debouncedCustomerSearchTerm }
+                  )
+                : t('appointments.form.wizard.noCustomersYetDesc')}
+            </p>
+
+            <div className="flex flex-col gap-2 mt-5 w-full max-w-xs">
+              <Button
+                onClick={startNewCustomerFromSearch}
+                className="w-full bg-zinc-900 hover:bg-black text-white h-12 rounded-xl font-bold shadow-lg"
+              >
+                <UserPlus className="w-4 h-4 mr-1.5" strokeWidth={2.5} />
+                {t('appointments.form.newCustomer')}
+              </Button>
+              {customerSearchTerm && (
+                <Button
+                  variant="outline"
+                  onClick={() => setCustomerSearchTerm("")}
+                  className="w-full h-12 rounded-xl font-bold backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 text-zinc-900"
+                >
+                  {t('appointments.form.wizard.clearSearch')}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!isNewCustomerMode && !customersLoading && filteredCustomers.length > 0 && (
           <Virtuoso
             ref={customerListRef}
             style={{ height: 420 }}
             data={filteredCustomers}
             overscan={200}
+            endReached={loadMoreCustomers}
+            components={{
+              Footer: () =>
+                customersLoadingMore ? (
+                  <div className="py-4 flex items-center justify-center">
+                    <Loader2 className="w-5 h-5 text-zinc-400 animate-spin" />
+                  </div>
+                ) : null,
+            }}
             itemContent={(_, c) => (
               <div className="pb-3">
                 <div
@@ -1084,7 +1403,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
         
         {/* Seans Paketi Bilgilendirmesi */}
         {(() => {
-          const selectedSvc = services.find(s => s.id === formData.service_id);
+          const selectedSvc = allServices.find(s => s.id === formData.service_id);
           if (selectedSvc?.session_count && selectedSvc.session_count > 1) {
             return (
               <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl flex items-start gap-2.5">
@@ -1530,6 +1849,199 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel }) => {
             </Button>
             <Button onClick={handleSelectFromContacts} className="bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg">
               {t('appointments.form.contactDialog.useSelected', { count: selectedContactPhones.size })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sihirbaz İçinden Yeni Hizmet */}
+      <Dialog open={showNewServiceDialog} onOpenChange={(open) => { if (!savingNewService) setShowNewServiceDialog(open); }}>
+        <DialogContent className="sm:max-w-md max-h-[78dvh] flex flex-col backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
+          <DialogHeader className="border-b border-zinc-200 pb-4 shrink-0">
+            <DialogTitle className="text-xl font-black text-zinc-900">
+              {t('appointments.form.wizard.newServiceTitle')}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-5 space-y-4 overflow-y-auto overflow-x-hidden flex-1 px-1 pr-2">
+            <p className="text-sm text-zinc-600 font-medium leading-relaxed">
+              {t('appointments.form.wizard.newServiceDesc')}
+            </p>
+
+            {/* Temel Bilgiler */}
+            <div className="flex items-center gap-3">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                {t('appointments.form.wizard.sectionBasics')}
+              </h3>
+              <div className="flex-1 h-px bg-zinc-200/70" />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-bold text-zinc-700">{t('services.fields.name')}</Label>
+              <Input
+                autoFocus
+                value={newServiceForm.name}
+                onChange={(e) => updateNewServiceForm({ name: e.target.value }, ['name'])}
+                placeholder={t('appointments.form.wizard.serviceNamePlaceholder')}
+                className={`h-11 rounded-xl backdrop-blur-md bg-white/60 border focus:ring-2 focus:ring-zinc-900 font-medium ${newServiceErrors.name ? 'border-red-400' : 'border-white/40'}`}
+              />
+              {newServiceErrors.name && <p className="text-xs text-red-500 font-medium">{newServiceErrors.name}</p>}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-sm font-bold text-zinc-700">
+                  {t('services.fields.price')} ({currencySymbol})
+                </Label>
+                <Input
+                  inputMode="decimal"
+                  value={newServiceForm.price}
+                  onChange={(e) => updateNewServiceForm({ price: e.target.value.replace(/[^0-9.,]/g, '') }, ['price', 'paymentRule', 'depositAmount'])}
+                  placeholder="0"
+                  className={`h-11 rounded-xl backdrop-blur-md bg-white/60 border focus:ring-2 focus:ring-zinc-900 font-medium ${newServiceErrors.price ? 'border-red-400' : 'border-white/40'}`}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-bold text-zinc-700">{t('services.fields.duration')}</Label>
+                <Input
+                  inputMode="numeric"
+                  value={newServiceForm.duration}
+                  onChange={(e) => updateNewServiceForm({ duration: e.target.value.replace(/[^0-9]/g, '') }, ['duration'])}
+                  placeholder="30"
+                  className={`h-11 rounded-xl backdrop-blur-md bg-white/60 border focus:ring-2 focus:ring-zinc-900 font-medium ${newServiceErrors.duration ? 'border-red-400' : 'border-white/40'}`}
+                />
+              </div>
+            </div>
+            {(newServiceErrors.price || newServiceErrors.duration) ? (
+              <p className="text-xs text-red-500 font-medium">{newServiceErrors.price || newServiceErrors.duration}</p>
+            ) : (
+              <p className="text-xs text-zinc-500 font-medium">{t('services.management.durationNote')}</p>
+            )}
+
+            {/* Paket Tipi */}
+            <div className="flex items-center gap-3 pt-2">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                {t('appointments.form.wizard.sectionPackage')}
+              </h3>
+              <div className="flex-1 h-px bg-zinc-200/70" />
+            </div>
+
+            <div className="flex items-center justify-between p-4 rounded-xl backdrop-blur-md bg-white/50 border border-white/30 shadow-sm">
+              <div className="flex-1 pr-3">
+                <Label htmlFor="wizard-session-toggle" className="text-sm font-bold text-zinc-900 cursor-pointer">
+                  {t('appointments.form.wizard.isSessionPackage')}
+                </Label>
+                <p className="text-xs text-zinc-600 mt-1 font-medium">
+                  {t('appointments.form.wizard.isSessionPackageDesc')}
+                </p>
+              </div>
+              <Switch
+                id="wizard-session-toggle"
+                checked={newServiceForm.isSessionPackage}
+                onCheckedChange={(checked) => updateNewServiceForm({ isSessionPackage: checked }, ['sessionCount'])}
+              />
+            </div>
+
+            {newServiceForm.isSessionPackage && (
+              <div className="space-y-2 animate-in fade-in duration-200">
+                <Label className="text-sm font-bold text-zinc-700">{t('appointments.form.wizard.sessionCountLabel')}</Label>
+                <Input
+                  inputMode="numeric"
+                  value={newServiceForm.sessionCount}
+                  onChange={(e) => updateNewServiceForm({ sessionCount: e.target.value.replace(/[^0-9]/g, '') }, ['sessionCount'])}
+                  placeholder="7"
+                  className={`h-11 rounded-xl backdrop-blur-md bg-white/60 border focus:ring-2 focus:ring-zinc-900 font-medium ${newServiceErrors.sessionCount ? 'border-red-400' : 'border-white/40'}`}
+                />
+                {newServiceErrors.sessionCount
+                  ? <p className="text-xs text-red-500 font-medium">{newServiceErrors.sessionCount}</p>
+                  : <p className="text-xs text-zinc-500 font-medium">{t('appointments.form.wizard.sessionCountNote')}</p>}
+              </div>
+            )}
+
+            {/* Ödeme */}
+            <div className="flex items-center gap-3 pt-2">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                {t('appointments.form.wizard.sectionPayment')}
+              </h3>
+              <div className="flex-1 h-px bg-zinc-200/70" />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-bold text-zinc-700">{t('appointments.form.wizard.paymentRuleLabel')}</Label>
+              <select
+                value={newServiceForm.paymentRule}
+                onChange={(e) => updateNewServiceForm({ paymentRule: e.target.value }, ['paymentRule', 'depositAmount'])}
+                className={`w-full backdrop-blur-md bg-white/60 border rounded-xl h-11 px-3 text-sm font-medium text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none ${newServiceErrors.paymentRule ? 'border-red-400' : 'border-white/40'}`}
+              >
+                <option value="on_site">{t('appointments.form.wizard.paymentOnSite')}</option>
+                <option value="online">{t('appointments.form.wizard.paymentOnline')}</option>
+                <option value="deposit">{t('appointments.form.wizard.paymentDeposit')}</option>
+              </select>
+              <p className="text-xs text-zinc-500 font-medium leading-relaxed">
+                {newServiceForm.paymentRule === 'online'
+                  ? t('appointments.form.wizard.paymentOnlineDesc')
+                  : newServiceForm.paymentRule === 'deposit'
+                    ? t('appointments.form.wizard.paymentDepositDesc')
+                    : t('appointments.form.wizard.paymentOnSiteDesc')}
+              </p>
+              {(newServiceForm.paymentRule === 'online' || newServiceForm.paymentRule === 'deposit') && (
+                <p className={`text-xs font-medium ${newServiceErrors.paymentRule ? 'text-red-500' : 'text-zinc-400'}`}>
+                  {newServiceErrors.paymentRule
+                    || t('appointments.form.wizard.minOnlinePriceNote', { amount: paymentMinimums.online, symbol: currencySymbol })}
+                </p>
+              )}
+            </div>
+
+            {newServiceForm.paymentRule === 'deposit' && (
+              <div className="space-y-2 animate-in fade-in duration-200">
+                <Label className="text-sm font-bold text-zinc-700">
+                  {t('appointments.form.wizard.depositAmountLabel', { symbol: currencySymbol })}
+                </Label>
+                <Input
+                  inputMode="decimal"
+                  value={newServiceForm.depositAmount}
+                  onChange={(e) => updateNewServiceForm({ depositAmount: e.target.value.replace(/[^0-9.,]/g, '') }, ['depositAmount'])}
+                  placeholder={String(paymentMinimums.deposit)}
+                  className={`h-11 rounded-xl backdrop-blur-md bg-white/60 border focus:ring-2 focus:ring-zinc-900 font-medium ${newServiceErrors.depositAmount ? 'border-red-400' : 'border-white/40'}`}
+                />
+                {newServiceErrors.depositAmount
+                  ? <p className="text-xs text-red-500 font-medium">{newServiceErrors.depositAmount}</p>
+                  : <p className="text-xs text-zinc-500 font-medium">
+                      {t('appointments.form.wizard.depositAmountNote', { amount: paymentMinimums.deposit, symbol: currencySymbol })}
+                    </p>}
+              </div>
+            )}
+
+            {newServiceErrors.general && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200">
+                <p className="text-xs text-red-600 font-bold leading-relaxed">{newServiceErrors.general}</p>
+              </div>
+            )}
+
+            <p className="text-xs text-zinc-500 font-medium leading-relaxed pt-1">
+              {t('appointments.form.wizard.newServiceHint')}
+            </p>
+          </div>
+
+          <DialogFooter className="border-t border-zinc-200 pt-4 flex-col sm:flex-row gap-2 shrink-0">
+            <Button
+              variant="outline"
+              disabled={savingNewService}
+              onClick={() => setShowNewServiceDialog(false)}
+              className="w-full sm:w-auto backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl font-bold h-11"
+            >
+              {t('appointments.form.contactDialog.cancel')}
+            </Button>
+            <Button
+              onClick={handleCreateService}
+              disabled={savingNewService}
+              className="w-full sm:w-auto bg-zinc-900 hover:bg-black text-white rounded-xl font-bold shadow-lg h-11"
+            >
+              {savingNewService ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                t('appointments.form.wizard.createAndContinue')
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

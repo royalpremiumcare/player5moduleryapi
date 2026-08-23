@@ -41,14 +41,19 @@
     "skip": "Skip Tour"
   },
   "errors": {
+    "generic": "An error occurred. Please try again.",
+    "network": "Network error. Please check your connection.",
+    "server": "Server error. Please try again later.",
+    "unauthorized": "You are not authorised to perform this action.",
+    "notFound": "The requested item could not be found.",
+    "sessionExpired": "Your session has expired. Please log in again.",
     "mvp": {
-      "idempotency_key_mismatch": "This idempotency key was already used with a different request. Use a new key or repeat the exact same request.",
-      "idempotency_in_progress": "A request with this idempotency key is still processing. Please wait a moment and try again.",
-      "slot_conflict": "That time is not available, or another action is in progress for this slot. Choose another time or try again shortly.",
-      "validation_failed": "The request could not be completed. Check the details and try again.",
-      "permission_denied": "You do not have permission for this action.",
-      "stripe_insufficient_balance": "Refund could not be completed due to a payment provider limitation. Try again later or contact support.",
-      "stripe_refund_succeeded_db_failed": "The refund was processed, but our records could not be updated yet. It has been queued for reconciliation. Contact support if this persists."
+      "slot_conflict": "This time conflicts with another booking or is unavailable.",
+      "validation_failed": "The request could not be validated.",
+      "idempotency_key_mismatch": "This operation key was already used with different data.",
+      "idempotency_in_progress": "The same request is still processing. Try again shortly.",
+      "stripe_insufficient_balance": "Refund could not be completed (payment provider).",
+      "permission_denied": "You do not have permission for this action."
     }
   },
   "brand": {
@@ -71,6 +76,7 @@
     "services": "Services",
     "staff": "Staff",
     "reports": "Reports",
+    "statistics": "Statistics",
     "settings": "Settings",
     "finance": "Finance",
     "profile": "Profile",
@@ -81,7 +87,12 @@
     "hero": {
       "with": "with PLANN",
       "appointment": "Appointment",
-      "words": ["Fast", "Practical", "Easy", "Affordable"],
+      "words": [
+        "Fast",
+        "Practical",
+        "Easy",
+        "Affordable"
+      ],
       "subtitle": "Meet the fast, reliable and user-friendly appointment software.",
       "subtitle2": "Keep your business accessible at all times.",
       "trialButton": "Try Free for 7 Days",
@@ -351,8 +362,8 @@
         "dentalClinic": "Dental Clinics",
         "other": "Other/Empty"
       },
-      "sectorWarning": "⚠️ You will need to create your services manually",
-      "sectorSuccess": "✅ Default services for your sector will be loaded automatically",
+      "sectorWarning": "You will need to create your services manually",
+      "sectorSuccess": "Default services for your sector will be loaded automatically",
       "fullName": "Full Name",
       "fullNamePlaceholder": "Your Full Name",
       "email": "Email",
@@ -554,6 +565,17 @@
     "historyEmpty": "No appointment history found",
     "notesTitle": "Notes",
     "notesPlaceholder": "Notes about the customer (allergies, preferences, etc.)...",
+    "tabOverview": "Overview",
+    "tabHistory": "History",
+    "tabNotes": "Notes",
+    "summaryTitle": "Summary",
+    "summaryTotalAppointments": "Total Appointments",
+    "summaryTotalSpent": "Total Spent",
+    "summaryLastAppointment": "Last Appointment",
+    "topServicesTitle": "Most Frequent Services",
+    "recentTransactionsTitle": "Recent Transactions",
+    "notesEmpty": "No notes added for this customer yet.",
+    "noData": "—",
     "notesSaved": "Notes saved",
     "notesSaveError": "Could not save notes",
     "deleteTitle": "Delete Customer",
@@ -684,7 +706,49 @@
         "available": "Available",
         "busy": "Busy",
         "staffBusy": "Selected staff is busy at this time",
-        "allStaffBusy": "All staff are busy at this time"
+        "allStaffBusy": "All staff are busy at this time",
+        "noServiceResults": "No service matches that search",
+        "noServiceResultsDesc": "Nothing found for \"{{term}}\". You can create the service here and carry on with the booking.",
+        "noServicesYet": "No services yet",
+        "noServicesYetDesc": "You need at least one service before you can book an appointment.",
+        "askAdminForService": "No services are assigned to you. Ask your manager to assign some.",
+        "addService": "Add New Service",
+        "clearSearch": "Clear Search",
+        "newServiceTitle": "New Service",
+        "newServiceDesc": "Create the service here and the booking will carry on from where you left off.",
+        "newServiceHint": "You can change any of these later on the Services page.",
+        "serviceNamePlaceholder": "e.g. Haircut",
+        "serviceNameRequired": "Service name is required",
+        "servicePriceInvalid": "Enter a valid price",
+        "serviceDurationInvalid": "Enter a valid duration",
+        "sectionBasics": "Basic Info",
+        "sectionPackage": "Package Type",
+        "sectionPayment": "Payment",
+        "isSessionPackage": "Is this a session package?",
+        "isSessionPackageDesc": "If enabled, you need to enter the number of sessions",
+        "sessionCountLabel": "How many sessions?",
+        "sessionCountNote": "Between 2 and 50 sessions",
+        "sessionCountInvalid": "Session count must be between 2 and 50",
+        "paymentRuleLabel": "Payment Rule",
+        "paymentOnSite": "Pay On Site",
+        "paymentOnline": "Full Online Payment",
+        "paymentDeposit": "Deposit Only",
+        "paymentOnSiteDesc": "The client pays at the venue; nothing is taken online.",
+        "paymentOnlineDesc": "The client pays the full amount online when booking.",
+        "paymentDepositDesc": "The client pays a fixed deposit online and the rest at the venue.",
+        "minOnlinePriceNote": "Online payment and deposit require a price of at least {{symbol}}{{amount}}",
+        "minOnlinePrice": "Online payment and deposit require a price of at least {{symbol}}{{amount}}",
+        "depositAmountLabel": "Deposit Amount ({{symbol}})",
+        "depositAmountNote": "At least {{symbol}}{{amount}}. The rest is paid at the venue.",
+        "minDeposit": "The deposit must be at least {{symbol}}{{amount}}",
+        "depositExceedsPrice": "The deposit cannot exceed the service price",
+        "serviceCreated": "{{name}} added",
+        "createAndContinue": "Create and Continue",
+        "noCustomerResults": "No client matches that search",
+        "noCustomerResultsDesc": "No client named \"{{term}}\" is on file. You can add them as a new client.",
+        "noCustomerResultsPhoneDesc": "No client is registered with {{term}}. You can add them as a new client.",
+        "noCustomersYet": "No clients yet",
+        "noCustomersYetDesc": "Add your first client here, or import them from your phone contacts."
       },
       "contactDialog": {
         "title": "Select Contacts",
@@ -769,6 +833,41 @@
       "price": "Price",
       "description": "Description",
       "category": "Category"
+    },
+    "categories": {
+      "title": "Categories",
+      "subtitle": "Group your services and set the order clients see on your booking page",
+      "add": "Category",
+      "empty": "No categories yet. These are optional.",
+      "label": "Category",
+      "none": "No category",
+      "placeholder": "e.g. Hair Services",
+      "addTitle": "Add Category",
+      "editTitle": "Edit Category",
+      "dialogDescription": "Enter a name for grouping your services",
+      "added": "Category added",
+      "updated": "Category updated",
+      "deleted": "Category deleted",
+      "saveFailed": "Could not save the category",
+      "deleteFailed": "Could not delete the category",
+      "deleteTitle": "Delete Category",
+      "deleteDescription": "This category will be deleted. Services in it stay put, they just lose the category.",
+      "serviceCount": "{{count}} service",
+      "serviceCount_other": "{{count}} services",
+      "noServices": "No services assigned",
+      "assign": "Services",
+      "assignTitle": "Choose Services",
+      "assignDescription": "Tick the services you want to appear in this category. Unticking removes it from the category; the service itself is not deleted.",
+      "assignSearchPlaceholder": "Search services",
+      "assignNoServices": "No services yet.",
+      "assignNoResults": "No service matches that search.",
+      "assignSaveButton": "Save {{count}} service",
+      "assignSaveButton_other": "Save {{count}} services",
+      "assignSaved": "{{category}}: {{added}} added, {{removed}} removed",
+      "assignFailed": "Could not save the assignment",
+      "serviceCount_one": "{{count}} service",
+      "assignSaveButton_one": "Save {{count}} service",
+      "currentlyIn": "Currently in {{category}}"
     }
   },
   "staff": {
@@ -1277,22 +1376,6 @@
     "maxLength": "Must be at most {{max}} characters",
     "passwordMismatch": "Passwords do not match"
   },
-  "errors": {
-    "generic": "An error occurred. Please try again.",
-    "network": "Network error. Please check your connection.",
-    "server": "Server error. Please try again later.",
-    "unauthorized": "You are not authorised to perform this action.",
-    "notFound": "The requested item could not be found.",
-    "sessionExpired": "Your session has expired. Please log in again.",
-    "mvp": {
-      "slot_conflict": "This time conflicts with another booking or is unavailable.",
-      "validation_failed": "The request could not be validated.",
-      "idempotency_key_mismatch": "This operation key was already used with different data.",
-      "idempotency_in_progress": "The same request is still processing. Try again shortly.",
-      "stripe_insufficient_balance": "Refund could not be completed (payment provider).",
-      "permission_denied": "You do not have permission for this action."
-    }
-  },
   "time": {
     "minutes": "minutes",
     "hours": "hours",
@@ -1396,6 +1479,94 @@
     "empty": "No notifications yet",
     "emptyDesc": "Online appointments will appear here",
     "newAppointment": "New Appointment"
+  },
+  "stats": {
+    "title": "Statistics",
+    "loading": "Loading...",
+    "loadError": "Failed to load statistics",
+    "noData": "No data",
+    "range": {
+      "today": "Today",
+      "thisWeek": "This Week",
+      "thisMonth": "This Month",
+      "lastMonth": "Last Month",
+      "thisYear": "This Year"
+    },
+    "tabs": {
+      "appointments": "Appointments",
+      "customers": "Customers",
+      "kasa": "Cash",
+      "personnel": "Staff",
+      "services": "Services"
+    },
+    "kpi": {
+      "totalAppointments": "Total Appointments",
+      "completed": "Completed",
+      "cancellationRate": "Cancellation Rate",
+      "noshowRate": "No-show Rate",
+      "cancelled": "Cancelled",
+      "deleted": "Removed",
+      "totalCustomers": "Total Customers",
+      "newCustomers": "New Customers",
+      "returning": "Returning",
+      "income": "Income",
+      "expense": "Expense",
+      "net": "Net Profit",
+      "avgTicket": "Avg. Ticket",
+      "activeStaff": "Staff",
+      "topEarner": "Top Earner",
+      "serviceCount": "Service Types",
+      "topService": "Most Popular"
+    },
+    "chart": {
+      "appointmentTrend": "Appointment Trend",
+      "byStatus": "By Status",
+      "bySource": "By Source",
+      "byWeekday": "By Weekday",
+      "byHour": "By Hour",
+      "newCustomerTrend": "New Customer Trend",
+      "newVsReturning": "New vs Returning",
+      "topCustomers": "Top Spending Customers",
+      "allCustomers": "All Customers",
+      "incomeExpense": "Income and Expenses",
+      "incomeByMode": "Income Split (Collection)",
+      "expenseByCategory": "Expenses (Category)",
+      "incomeByService": "Income by Service",
+      "revenueByStaff": "Revenue by Staff",
+      "mostBooked": "Most Booked Services",
+      "serviceMix": "Service Mix"
+    },
+    "source": {
+      "online": "Online",
+      "manual": "Manual"
+    },
+    "customers": {
+      "new": "New",
+      "returning": "Returning",
+      "visits": "visits"
+    },
+    "mode": {
+      "onSite": "On-site",
+      "online": "Fully Online",
+      "deposit": "Deposit"
+    },
+    "personnel": {
+      "unassigned": "Unassigned"
+    },
+    "services": {
+      "times": "times"
+    },
+    "tooltip": {
+      "appointments": "Appointments"
+    },
+    "table": {
+      "staff": "Staff",
+      "completed": "Appts",
+      "avgTicket": "Avg.",
+      "revenue": "Revenue",
+      "service": "Service",
+      "count": "Count"
+    }
   },
   "publicBooking": {
     "loading": "Loading...",

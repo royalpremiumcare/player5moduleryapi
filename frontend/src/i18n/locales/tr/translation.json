@@ -41,14 +41,19 @@
     "skip": "Turu Geç"
   },
   "errors": {
+    "generic": "Bir hata oluştu. Lütfen tekrar deneyin.",
+    "network": "Bağlantı hatası. Lütfen bağlantınızı kontrol edin.",
+    "server": "Sunucu hatası. Lütfen daha sonra tekrar deneyin.",
+    "unauthorized": "Bu işlemi gerçekleştirme yetkiniz yok.",
+    "notFound": "İstenen öğe bulunamadı.",
+    "sessionExpired": "Oturumunuz sona erdi. Lütfen tekrar giriş yapın.",
     "mvp": {
-      "idempotency_key_mismatch": "Bu idempotency anahtarı farklı bir istek gövdesiyle zaten kullanıldı. Yeni bir anahtar kullanın veya aynı isteği tekrarlayın.",
-      "idempotency_in_progress": "Bu anahtarla bir istek hâlâ işleniyor. Lütfen kısa süre bekleyip tekrar deneyin.",
-      "slot_conflict": "Bu saat uygun değil veya bu slot için başka bir işlem sürüyor. Başka bir saat seçin veya kısa süre sonra tekrar deneyin.",
-      "validation_failed": "İşlem tamamlanamadı. Bilgileri kontrol edip tekrar deneyin.",
-      "permission_denied": "Bu işlem için yetkiniz yok.",
-      "stripe_insufficient_balance": "Ödeme sağlayıcı limiti nedeniyle iade tamamlanamadı. Daha sonra tekrar deneyin veya destek ile iletişime geçin.",
-      "stripe_refund_succeeded_db_failed": "İade işlendi ancak kayıtlarımız henüz güncellenemedi. Mutabakat kuyruğuna alındı. Sorun sürerse destek ile iletişime geçin."
+      "slot_conflict": "Bu saat başka bir randevu ile çakışıyor veya uygun değil.",
+      "validation_failed": "İstek doğrulanamadı.",
+      "idempotency_key_mismatch": "Bu işlem anahtarı farklı veriyle zaten kullanıldı.",
+      "idempotency_in_progress": "Aynı istek hâlen işleniyor. Kısa süre sonra tekrar deneyin.",
+      "stripe_insufficient_balance": "İade tamamlanamadı (ödeme sağlayıcı bakiyesi).",
+      "permission_denied": "Bu işlem için yetkiniz yok."
     }
   },
   "brand": {
@@ -71,6 +76,7 @@
     "services": "Hizmetler",
     "staff": "Personel",
     "reports": "Raporlar",
+    "statistics": "İstatistikler",
     "settings": "Ayarlar",
     "finance": "Finans",
     "profile": "Profil",
@@ -81,7 +87,12 @@
     "hero": {
       "with": "PLANN ile",
       "appointment": "Randevu",
-      "words": ["Hızlı", "Pratik", "Kolay", "Hesaplı"],
+      "words": [
+        "Hızlı",
+        "Pratik",
+        "Kolay",
+        "Hesaplı"
+      ],
       "subtitle": "Hızlı, güvenilir ve kullanıcı dostu randevu yazılımı ile tanışın.",
       "subtitle2": "İşletmeniz her an erişilebilir olsun.",
       "trialButton": "7 Gün Ücretsiz Deneyin",
@@ -351,8 +362,8 @@
         "dentalClinic": "Diş Klinikleri",
         "other": "Diğer/Boş"
       },
-      "sectorWarning": "⚠️ Kendi hizmetlerinizi manuel olarak oluşturmanız gerekecek",
-      "sectorSuccess": "✅ Sektörünüze özel varsayılan hizmetler otomatik yüklenecek",
+      "sectorWarning": "Kendi hizmetlerinizi manuel olarak oluşturmanız gerekecek",
+      "sectorSuccess": "Sektörünüze özel varsayılan hizmetler otomatik yüklenecek",
       "fullName": "Ad Soyad",
       "fullNamePlaceholder": "Adınız Soyadınız",
       "email": "E-posta",
@@ -556,6 +567,17 @@
     "historyEmpty": "Randevu geçmişi bulunamadı",
     "notesTitle": "Notlar",
     "notesPlaceholder": "Müşteriyle ilgili notlar (alerji, tercih vb.)...",
+    "tabOverview": "Genel Bakış",
+    "tabHistory": "Geçmiş",
+    "tabNotes": "Notlar",
+    "summaryTitle": "Özet",
+    "summaryTotalAppointments": "Toplam Randevu",
+    "summaryTotalSpent": "Toplam Harcama",
+    "summaryLastAppointment": "Son Randevu",
+    "topServicesTitle": "En Çok Yaptığı İşlemler",
+    "recentTransactionsTitle": "Son İşlemler",
+    "notesEmpty": "Bu müşteri için henüz not eklenmedi.",
+    "noData": "—",
     "notesSaved": "Notlar kaydedildi",
     "notesSaveError": "Notlar kaydedilemedi",
     "deleteTitle": "Müşteriyi Sil",
@@ -686,7 +708,49 @@
         "available": "Müsait",
         "busy": "Dolu",
         "staffBusy": "Seçili personel bu saatte dolu",
-        "allStaffBusy": "Tüm personeller bu saatte dolu"
+        "allStaffBusy": "Tüm personeller bu saatte dolu",
+        "noServiceResults": "Bu aramaya uyan hizmet yok",
+        "noServiceResultsDesc": "\"{{term}}\" için kayıtlı bir hizmet bulunamadı. Yeni hizmet oluşturup randevuya devam edebilirsiniz.",
+        "noServicesYet": "Henüz hizmet eklenmemiş",
+        "noServicesYetDesc": "Randevu oluşturabilmek için önce bir hizmet tanımlamanız gerekiyor.",
+        "askAdminForService": "Size atanmış hizmet görünmüyor. Yöneticinizden hizmet ataması yapmasını isteyin.",
+        "addService": "Yeni Hizmet Ekle",
+        "clearSearch": "Aramayı Temizle",
+        "newServiceTitle": "Yeni Hizmet",
+        "newServiceDesc": "Hizmeti burada oluşturun; kaydedince randevu akışı kaldığı yerden devam eder.",
+        "newServiceHint": "Bu ayarları sonradan Hizmetler sayfasından değiştirebilirsiniz.",
+        "serviceNamePlaceholder": "Örn. Saç Kesimi",
+        "serviceNameRequired": "Hizmet adı gerekli",
+        "servicePriceInvalid": "Geçerli bir fiyat girin",
+        "serviceDurationInvalid": "Geçerli bir süre girin",
+        "sectionBasics": "Temel Bilgiler",
+        "sectionPackage": "Paket Tipi",
+        "sectionPayment": "Ödeme",
+        "isSessionPackage": "Bu hizmet bir seans paketi mi?",
+        "isSessionPackageDesc": "Açarsanız seans sayısı girmeniz gerekir",
+        "sessionCountLabel": "Kaç Seans?",
+        "sessionCountNote": "En az 2, en fazla 50 seans",
+        "sessionCountInvalid": "Seans sayısı 2 ile 50 arasında olmalı",
+        "paymentRuleLabel": "Ödeme Kuralı",
+        "paymentOnSite": "Yerinde Ödeme",
+        "paymentOnline": "Tamamı Online Ödeme",
+        "paymentDeposit": "Sadece Kapora",
+        "paymentOnSiteDesc": "Müşteri ödemeyi işletmede yapar, online ödeme alınmaz.",
+        "paymentOnlineDesc": "Müşteri randevu alırken ödemenin tamamını online yapar.",
+        "paymentDepositDesc": "Müşteri randevu alırken sabit kapora öder, kalanı işletmede.",
+        "minOnlinePriceNote": "Online ödeme ve kapora için hizmet fiyatı en az {{amount}}{{symbol}} olmalı",
+        "minOnlinePrice": "Online ödeme ve kapora için hizmet fiyatı en az {{amount}}{{symbol}} olmalı",
+        "depositAmountLabel": "Kapora Tutarı ({{symbol}})",
+        "depositAmountNote": "En az {{amount}}{{symbol}}. Kalan tutar işletmede ödenir.",
+        "minDeposit": "Kapora tutarı en az {{amount}}{{symbol}} olmalı",
+        "depositExceedsPrice": "Kapora tutarı, hizmetin toplam fiyatını aşamaz",
+        "serviceCreated": "{{name}} eklendi",
+        "createAndContinue": "Oluştur ve Devam Et",
+        "noCustomerResults": "Bu aramaya uyan müşteri yok",
+        "noCustomerResultsDesc": "\"{{term}}\" adında kayıtlı müşteri bulunamadı. Yeni müşteri olarak ekleyebilirsiniz.",
+        "noCustomerResultsPhoneDesc": "{{term}} numarasına kayıtlı müşteri bulunamadı. Yeni müşteri olarak ekleyebilirsiniz.",
+        "noCustomersYet": "Henüz müşteri kaydı yok",
+        "noCustomersYetDesc": "İlk müşterinizi buradan ekleyebilir veya telefon rehberinizden aktarabilirsiniz."
       },
       "contactDialog": {
         "title": "Kişileri Seç",
@@ -771,6 +835,41 @@
       "price": "Fiyat",
       "description": "Açıklama",
       "category": "Kategori"
+    },
+    "categories": {
+      "title": "Kategoriler",
+      "subtitle": "Hizmetlerinizi gruplayın ve müşteri sayfasındaki sırayı belirleyin",
+      "add": "Kategori",
+      "empty": "Henüz kategori yok. İsteğe bağlıdır.",
+      "label": "Kategori",
+      "none": "Kategorisiz",
+      "placeholder": "Örn: Saç Hizmetleri",
+      "addTitle": "Kategori Ekle",
+      "editTitle": "Kategori Düzenle",
+      "dialogDescription": "Hizmetlerinizi gruplamak için bir kategori adı girin",
+      "added": "Kategori eklendi",
+      "updated": "Kategori güncellendi",
+      "deleted": "Kategori silindi",
+      "saveFailed": "Kategori kaydedilemedi",
+      "deleteFailed": "Kategori silinemedi",
+      "deleteTitle": "Kategoriyi Sil",
+      "deleteDescription": "Bu kategori silinecek. Bağlı hizmetler kategorisiz kalacak (silinmez).",
+      "serviceCount": "{{count}} hizmet",
+      "noServices": "Hizmet atanmamış",
+      "assign": "Hizmetler",
+      "assignTitle": "Hizmet Seç",
+      "assignDescription": "Bu kategoride görünmesini istediğiniz hizmetleri işaretleyin. İşareti kaldırdıklarınız kategoriden çıkar, hizmet silinmez.",
+      "assignSearchPlaceholder": "Hizmet ara",
+      "assignNoServices": "Henüz hizmet yok.",
+      "assignNoResults": "Bu aramaya uyan hizmet yok.",
+      "assignSaveButton": "{{count}} hizmeti kaydet",
+      "assignSaved": "{{category}}: {{added}} hizmet eklendi, {{removed}} hizmet çıkarıldı",
+      "assignFailed": "Atama kaydedilemedi",
+      "serviceCount_one": "{{count}} hizmet",
+      "serviceCount_other": "{{count}} hizmet",
+      "assignSaveButton_one": "{{count}} hizmeti kaydet",
+      "assignSaveButton_other": "{{count}} hizmeti kaydet",
+      "currentlyIn": "Şu an {{category}} içinde"
     }
   },
   "staff": {
@@ -1279,22 +1378,6 @@
     "maxLength": "En fazla {{max}} karakter olmalıdır",
     "passwordMismatch": "Şifreler eşleşmiyor"
   },
-  "errors": {
-    "generic": "Bir hata oluştu. Lütfen tekrar deneyin.",
-    "network": "Bağlantı hatası. Lütfen bağlantınızı kontrol edin.",
-    "server": "Sunucu hatası. Lütfen daha sonra tekrar deneyin.",
-    "unauthorized": "Bu işlemi gerçekleştirme yetkiniz yok.",
-    "notFound": "İstenen öğe bulunamadı.",
-    "sessionExpired": "Oturumunuz sona erdi. Lütfen tekrar giriş yapın.",
-    "mvp": {
-      "slot_conflict": "Bu saat başka bir randevu ile çakışıyor veya uygun değil.",
-      "validation_failed": "İstek doğrulanamadı.",
-      "idempotency_key_mismatch": "Bu işlem anahtarı farklı veriyle zaten kullanıldı.",
-      "idempotency_in_progress": "Aynı istek hâlen işleniyor. Kısa süre sonra tekrar deneyin.",
-      "stripe_insufficient_balance": "İade tamamlanamadı (ödeme sağlayıcı bakiyesi).",
-      "permission_denied": "Bu işlem için yetkiniz yok."
-    }
-  },
   "time": {
     "minutes": "dakika",
     "hours": "saat",
@@ -1398,6 +1481,94 @@
     "empty": "Henüz bildirim yok",
     "emptyDesc": "Online randevular burada görünecek",
     "newAppointment": "Yeni Randevu"
+  },
+  "stats": {
+    "title": "İstatistikler",
+    "loading": "Yükleniyor...",
+    "loadError": "İstatistikler yüklenemedi",
+    "noData": "Veri yok",
+    "range": {
+      "today": "Bugün",
+      "thisWeek": "Bu Hafta",
+      "thisMonth": "Bu Ay",
+      "lastMonth": "Geçen Ay",
+      "thisYear": "Bu Yıl"
+    },
+    "tabs": {
+      "appointments": "Randevular",
+      "customers": "Müşteriler",
+      "kasa": "Kasa",
+      "personnel": "Personel",
+      "services": "Hizmetler"
+    },
+    "kpi": {
+      "totalAppointments": "Toplam Randevu",
+      "completed": "Tamamlanan",
+      "cancellationRate": "İptal Oranı",
+      "noshowRate": "Gelmedi Oranı",
+      "cancelled": "İptal Olan",
+      "deleted": "Silinen",
+      "totalCustomers": "Toplam Müşteri",
+      "newCustomers": "Yeni Müşteri",
+      "returning": "Geri Dönen",
+      "income": "Gelir",
+      "expense": "Gider",
+      "net": "Net Kâr",
+      "avgTicket": "Ort. Fiş",
+      "activeStaff": "Personel",
+      "topEarner": "En Çok Ciro",
+      "serviceCount": "Hizmet Çeşidi",
+      "topService": "En Popüler"
+    },
+    "chart": {
+      "appointmentTrend": "Randevu Trendi",
+      "byStatus": "Duruma Göre Dağılım",
+      "bySource": "Kaynağa Göre",
+      "byWeekday": "Haftanın Günü",
+      "byHour": "Saat Dağılımı",
+      "newCustomerTrend": "Yeni Müşteri Trendi",
+      "newVsReturning": "Yeni vs Geri Dönen",
+      "topCustomers": "En Çok Harcayan Müşteriler",
+      "allCustomers": "Tüm Müşteriler",
+      "incomeExpense": "Gelirler ve Giderler",
+      "incomeByMode": "Gelir Dağılımı (Tahsilat)",
+      "expenseByCategory": "Giderler (Kategori)",
+      "incomeByService": "Hizmete Göre Gelir",
+      "revenueByStaff": "Personele Göre Ciro",
+      "mostBooked": "En Çok Alınan Hizmetler",
+      "serviceMix": "Hizmet Karması"
+    },
+    "source": {
+      "online": "Online",
+      "manual": "Manuel"
+    },
+    "customers": {
+      "new": "Yeni",
+      "returning": "Geri Dönen",
+      "visits": "ziyaret"
+    },
+    "mode": {
+      "onSite": "Yerinde",
+      "online": "Tamamı Online",
+      "deposit": "Kapora"
+    },
+    "personnel": {
+      "unassigned": "Atanmamış"
+    },
+    "services": {
+      "times": "kez"
+    },
+    "tooltip": {
+      "appointments": "Randevu"
+    },
+    "table": {
+      "staff": "Personel",
+      "completed": "Randevu",
+      "avgTicket": "Ort.",
+      "revenue": "Ciro",
+      "service": "Hizmet",
+      "count": "Adet"
+    }
   },
   "publicBooking": {
     "loading": "Yükleniyor...",

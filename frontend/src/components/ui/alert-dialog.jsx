@@ -10,12 +10,22 @@ const AlertDialogTrigger = AlertDialogPrimitive.Trigger
 
 const AlertDialogPortal = AlertDialogPrimitive.Portal
 
-const AlertDialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
+// Bkz. dialog.jsx — safe-area şeridinde html'in beyaz arka planı görünmesin diye
+// overlay negatif inset ile o şeritlerin üstüne taşınıyor.
+const SAFE_AREA_BLEED = {
+  top: "calc(-1 * env(safe-area-inset-top, 0px))",
+  bottom: "calc(-1 * env(safe-area-inset-bottom, 0px))",
+  left: "calc(-1 * env(safe-area-inset-left, 0px))",
+  right: "calc(-1 * env(safe-area-inset-right, 0px))",
+};
+
+const AlertDialogOverlay = React.forwardRef(({ className, style, ...props }, ref) => (
   <AlertDialogPrimitive.Overlay
     className={cn(
       "fixed inset-0 z-[1100] bg-black/45 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
+    style={{ ...SAFE_AREA_BLEED, ...style }}
     {...props}
     ref={ref} />
 ))

@@ -1,11 +1,18 @@
+// PLANN sitemap/robots üretici — SEO domain mimarisi (Ağustos 2026)
+//
+// İki localized sitemap üretir:
+//   sitemap-tr.xml → https://plannapp.co    (ana sayfa + /cozumler + /ozellikler)
+//   sitemap-uk.xml → https://plannapp.co.uk (ana sayfa + /solutions + /features)
+//
+// Kurallar:
+// - Yalnızca self-canonical URL'ler sitemap'e girer (EN sayfalar TR sitemap'e GİRMEZ).
+// - Gerçek eşdeğer TR↔EN çiftlerinde xhtml:link hreflang alternates eklenir.
+// - robots-tr.txt / robots-uk.txt kendi domainlerinin sitemap'ini işaret eder.
+// - sitemap.xml / robots.txt TR kopyası olarak da yazılır (nginx host map'i
+//   co.uk isteklerini -uk varyantına yönlendirir; TR default'tur).
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
-
-const BASE_URL = (process.env.SITEMAP_BASE_URL || "https://plannapp.co").replace(
-  /\/+$/,
-  ""
-);
 
 const seoDataPath = path.resolve(
   __dirname,
@@ -18,25 +25,23 @@ const seoDataPath = path.resolve(
 
 const publicDir = path.resolve(__dirname, "..", "frontend", "public");
 const buildDir = path.resolve(__dirname, "..", "frontend", "build");
-const sitemapPath = path.join(publicDir, "sitemap.xml");
-const robotsPath = path.join(publicDir, "robots.txt");
 
-const loadSeoData = () => {
+const loadSeoModule = () => {
   const raw = fs.readFileSync(seoDataPath, "utf8");
 
   const transformed =
     raw.replace(/export const /g, "const ") +
-    "\nmodule.exports = { seoData, getSeoEntry };\n";
+    "\nmodule.exports = { seoData, SEO_ORIGINS, CATEGORY_PATHS, HREFLANG_PAIRS };\n";
 
   const context = { module: { exports: {} } };
   vm.createContext(context);
   vm.runInContext(transformed, context);
 
-  if (!context.module.exports || !Array.isArray(context.module.exports.seoData)) {
-    throw new Error("Could not load seoData from src/data/seoData.js");
+  const mod = context.module.exports;
+  if (!mod || !Array.isArray(mod.seoData) || !mod.SEO_ORIGINS || !mod.CATEGORY_PATHS) {
+    throw new Error("Could not load seoData module from src/data/seoData.js");
   }
-
-  return context.module.exports.seoData;
+  return mod;
 };
 
 const xmlEscape = (value) =>
@@ -47,77 +52,106 @@ const xmlEscape = (value) =>
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&apos;");
 
-const buildAbsoluteUrl = (p) => `${BASE_URL}${p}`;
-
 const main = () => {
-  const allItems = loadSeoData();
+  const { seoData, SEO_ORIGINS, CATEGORY_PATHS, HREFLANG_PAIRS } = loadSeoModule();
 
-  const trItems = allItems.filter((x) => x.locale === "tr");
-  const enItems = allItems.filter((x) => x.locale === "en-GB");
+  const getPath = (entry) =>
+    `/${CATEGORY_PATHS[entry.category][entry.locale]}/${entry.slug}`;
+  const getUrl = (entry) => `${SEO_ORIGINS[entry.locale]}${getPath(entry)}`;
 
-  const dedupe = (items) => {
-    const m = new Map();
-    for (const item of items) {
-      const key = `${item.category}:${item.slug}`;
-      if (!m.has(key)) m.set(key, item);
-    }
-    return Array.from(m.values());
+  const getAlternate = (entry) => {
+    const pair = HREFLANG_PAIRS.find(([tr, en]) =>
+      entry.locale === "tr" ? tr === entry.slug : en === entry.slug
+    );
+    if (!pair) return null;
+    const altSlug = entry.locale === "tr" ? pair[1] : pair[0];
+    const altLocale = entry.locale === "tr" ? "en-GB" : "tr";
+    return seoData.find(
+      (i) => i.category === entry.category && i.slug === altSlug && i.locale === altLocale
+    );
   };
-
-  const urls = [];
-
-  for (const item of dedupe(trItems)) {
-    const isVertical = item.category === "vertical";
-    const trPath = isVertical
-      ? `/cozumler/${item.slug}`
-      : `/ozellikler/${item.slug}`;
-    urls.push(buildAbsoluteUrl(trPath));
-  }
-
-  for (const item of dedupe(enItems)) {
-    const isVertical = item.category === "vertical";
-    const enPath = isVertical
-      ? `/solutions/${item.slug}`
-      : `/features/${item.slug}`;
-    urls.push(buildAbsoluteUrl(enPath));
-  }
-
-  urls.sort((a, b) => a.localeCompare(b));
 
   const lastMod = new Date().toISOString();
 
-  const xml =
-    `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-    urls
-      .map(
-        (loc) =>
-          `  <url>\n` +
-          `    <loc>${xmlEscape(loc)}</loc>\n` +
-          `    <lastmod>${xmlEscape(lastMod)}</lastmod>\n` +
-          `  </url>`
-      )
-      .join("\n") +
-    `\n</urlset>\n`;
+  const urlBlock = (loc, alternates) => {
+    let block = `  <url>\n    <loc>${xmlEscape(loc)}</loc>\n    <lastmod>${xmlEscape(lastMod)}</lastmod>\n`;
+    for (const alt of alternates) {
+      block += `    <xhtml:link rel="alternate" hreflang="${alt.hreflang}" href="${xmlEscape(alt.href)}"/>\n`;
+    }
+    block += `  </url>`;
+    return block;
+  };
 
-  fs.mkdirSync(publicDir, { recursive: true });
-  fs.writeFileSync(sitemapPath, xml, "utf8");
+  const homeAlternates = [
+    { hreflang: "tr-TR", href: "https://plannapp.co/" },
+    { hreflang: "en-GB", href: "https://plannapp.co.uk/" },
+    { hreflang: "x-default", href: "https://plannapp.co/" },
+  ];
 
-  const robots =
+  const buildSitemap = (locale) => {
+    const origin = SEO_ORIGINS[locale];
+    const blocks = [urlBlock(`${origin}/`, homeAlternates)];
+
+    const items = seoData
+      .filter((i) => i.locale === locale)
+      .sort((a, b) => getUrl(a).localeCompare(getUrl(b)));
+
+    for (const item of items) {
+      const alt = getAlternate(item);
+      const alternates = alt
+        ? [
+            {
+              hreflang: "tr-TR",
+              href: getUrl(item.locale === "tr" ? item : alt),
+            },
+            {
+              hreflang: "en-GB",
+              href: getUrl(item.locale === "en-GB" ? item : alt),
+            },
+          ]
+        : [];
+      blocks.push(urlBlock(getUrl(item), alternates));
+    }
+
+    return (
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n` +
+      blocks.join("\n") +
+      `\n</urlset>\n`
+    );
+  };
+
+  const buildRobots = (locale) =>
     `User-agent: *\n` +
     `Allow: /\n` +
     `\n` +
-    `Sitemap: ${BASE_URL}/sitemap.xml\n`;
+    `Sitemap: ${SEO_ORIGINS[locale]}/sitemap.xml\n`;
 
-  fs.writeFileSync(robotsPath, robots, "utf8");
+  const outputs = {
+    "sitemap-tr.xml": buildSitemap("tr"),
+    "sitemap-uk.xml": buildSitemap("en-GB"),
+    "robots-tr.txt": buildRobots("tr"),
+    "robots-uk.txt": buildRobots("en-GB"),
+  };
+  // Varsayılan dosyalar = TR (nginx map co.uk isteklerini -uk varyantına çevirir)
+  outputs["sitemap.xml"] = outputs["sitemap-tr.xml"];
+  outputs["robots.txt"] = outputs["robots-tr.txt"];
 
-  if (fs.existsSync(buildDir)) {
-    fs.writeFileSync(path.join(buildDir, "sitemap.xml"), xml, "utf8");
-    fs.writeFileSync(path.join(buildDir, "robots.txt"), robots, "utf8");
+  fs.mkdirSync(publicDir, { recursive: true });
+  const dirs = [publicDir];
+  if (fs.existsSync(buildDir)) dirs.push(buildDir);
+
+  for (const dir of dirs) {
+    for (const [name, content] of Object.entries(outputs)) {
+      fs.writeFileSync(path.join(dir, name), content, "utf8");
+    }
   }
 
+  const trCount = (outputs["sitemap-tr.xml"].match(/<loc>/g) || []).length;
+  const ukCount = (outputs["sitemap-uk.xml"].match(/<loc>/g) || []).length;
   process.stdout.write(
-    `Generated:\n- ${sitemapPath}\n- ${robotsPath}\nBase URL: ${BASE_URL}\nURLs: ${urls.length}\n`
+    `Generated sitemaps/robots in: ${dirs.join(", ")}\n` +
+      `TR URLs: ${trCount}, UK URLs: ${ukCount}\n`
   );
 };
 

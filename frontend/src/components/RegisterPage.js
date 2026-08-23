@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Building2, User, Mail, Lock, ArrowRight, Phone, Globe, MessageCircle, ArrowLeft } from 'lucide-react';
+import { Building2, User, Mail, Lock, Phone, Globe, MessageCircle, ArrowLeft } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -245,7 +245,7 @@ const RegisterPage = () => {
     ];
 
     return (
-        <div className="bg-white animate-slide-down register-page-container">
+        <div className="bg-[#fbfbfa] animate-slide-down register-page-container text-[#1a1a1a]">
             {/* Toast'u safe-area kadar aşağı it — notch/dynamic island'a girip
                 yarım görünmesin. `--offset` sonner'ın içerideki spacing
                 CSS değişkenidir; mobilde `env(safe-area-inset-top)`
@@ -259,27 +259,26 @@ const RegisterPage = () => {
             <div className="w-full max-w-md">
                 {/* Logo & Title */}
                 <div className="text-center mb-8">
-                    <h1 className="text-4xl font-bold text-gray-900 mb-2">{t('brand.name')}</h1>
-                    <p className="text-gray-600">{t('brand.tagline')}</p>
+                    <h1 className="font-serif font-light tracking-[0.4em] text-[26px] uppercase text-[#1a1a1a]">{t('brand.name')}</h1>
+                    <p className="mt-4 text-[13px] tracking-[0.06em] text-[#8c8c88] font-serif italic">{t('brand.tagline')}</p>
                 </div>
 
-                <Card className="shadow-2xl border-0">
+                <Card className="bg-white border border-[#ececea] shadow-sm rounded-2xl">
                     <CardHeader className="space-y-1 pb-6">
                         <div className="flex justify-end mb-2">
-                            <Button 
-                                variant="ghost" 
-                                size="sm"
+                            <button
+                                type="button"
                                 onClick={() => i18n.changeLanguage(i18n.language === 'tr' ? 'en' : 'tr')}
-                                className="text-gray-500 hover:text-gray-700"
+                                className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8c8c88] hover:text-[#1a1a1a] transition-colors"
                             >
-                                <Globe className="w-4 h-4 mr-1" />
-                                {i18n.language === 'tr' ? '🇬🇧 EN' : '🇹🇷 TR'}
-                            </Button>
+                                <Globe className="w-3.5 h-3.5" strokeWidth={1.75} />
+                                {i18n.language === 'tr' ? 'EN' : 'TR'}
+                            </button>
                         </div>
-                        <CardTitle className="text-2xl md:text-3xl font-bold text-center text-gray-900">
+                        <CardTitle className="text-xl md:text-2xl font-light tracking-[0.05em] text-center text-[#1a1a1a]">
                             {t('auth.register.title')}
                         </CardTitle>
-                        <CardDescription className="text-center text-base">
+                        <CardDescription className="text-center text-[13px] text-[#8c8c88] font-serif italic">
                             {t('auth.register.subtitle')}
                         </CardDescription>
                     </CardHeader>
@@ -302,7 +301,7 @@ const RegisterPage = () => {
                                 </div>
                                 <form onSubmit={handleVerify} className="space-y-5">
                                     <div className="space-y-2">
-                                        <Label htmlFor="otp_code" className="text-sm font-semibold text-gray-700">
+                                        <Label htmlFor="otp_code" className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8c8c88]">
                                             {t('auth.register.otpLabel', 'Doğrulama Kodu')}
                                         </Label>
                                         <Input
@@ -315,7 +314,7 @@ const RegisterPage = () => {
                                             value={otpCode}
                                             onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                                             placeholder="123456"
-                                            className="text-center tracking-[0.5em] font-mono text-2xl h-14 border-2 focus:border-gray-900"
+                                            className="text-center tracking-[0.5em] font-mono text-2xl h-14 bg-white border border-[#e5e5e3] rounded-lg focus:border-[#1a1a1a] focus-visible:ring-0 focus:ring-0"
                                             maxLength={6}
                                             required
                                         />
@@ -332,7 +331,7 @@ const RegisterPage = () => {
                                     </div>
                                     <Button
                                         type="submit"
-                                        className="w-full h-12 bg-gray-900 hover:bg-gray-800 text-white font-semibold rounded-full shadow-lg transition-all duration-200"
+                                        className="w-full h-12 bg-[#1a1a1a] hover:bg-black text-white text-[12px] font-semibold uppercase tracking-[0.2em] rounded-lg transition-colors"
                                         disabled={loading || otpCode.length !== 6}
                                     >
                                         {loading ? t('auth.register.verifying', 'Doğrulanıyor...') : t('auth.register.verifyButton', 'Doğrula ve Hesabı Oluştur')}
@@ -366,11 +365,11 @@ const RegisterPage = () => {
                         {step === 'form' && (
                         <form onSubmit={handleRegister} onFocus={handleFormFocus} className="space-y-5">
                             <div className="space-y-2">
-                                <Label htmlFor="organization_name" className="text-sm font-semibold text-gray-700">
+                                <Label htmlFor="organization_name" className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8c8c88]">
                                     {t('auth.register.businessName')}
                                 </Label>
                                 <div className="relative">
-                                    <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#c4c4c0]" />
                                     <Input
                                         id="organization_name"
                                         name="organization_name"
@@ -378,21 +377,21 @@ const RegisterPage = () => {
                                         value={formData.organization_name}
                                         onChange={handleChange}
                                         placeholder={t('auth.register.businessNamePlaceholder')}
-                                        className="pl-10 h-12 border-2 focus:border-gray-900"
+                                        className="pl-10 h-12 bg-white border border-[#e5e5e3] rounded-lg text-base focus:border-[#1a1a1a] focus-visible:ring-0 focus:ring-0"
                                         required
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="sector" className="text-sm font-semibold text-gray-700">
+                                <Label htmlFor="sector" className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8c8c88]">
                                     {t('auth.register.sector')}
                                 </Label>
                                 <Select
                                     value={formData.sector}
                                     onValueChange={(value) => setFormData({ ...formData, sector: value })}
                                 >
-                                    <SelectTrigger className="h-12 border-2 focus:border-gray-900">
+                                    <SelectTrigger className="h-12 bg-white border border-[#e5e5e3] rounded-lg focus:border-[#1a1a1a] focus:ring-0">
                                         <SelectValue placeholder={t('auth.register.sectorPlaceholder')} />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -404,23 +403,23 @@ const RegisterPage = () => {
                                     </SelectContent>
                                 </Select>
                                 {formData.sector === "Diğer/Boş" && (
-                                    <p className="text-xs text-amber-600 mt-1">
+                                    <p className="mt-2 rounded-lg bg-[#f5f5f3] border border-[#ececea] px-3 py-2 text-[12px] leading-relaxed text-[#6a6a68]">
                                         {t('auth.register.sectorWarning')}
                                     </p>
                                 )}
                                 {formData.sector && formData.sector !== "Diğer/Boş" && (
-                                    <p className="text-xs text-green-600 mt-1">
+                                    <p className="mt-2 rounded-lg bg-[#f5f5f3] border border-[#ececea] px-3 py-2 text-[12px] leading-relaxed text-[#6a6a68]">
                                         {t('auth.register.sectorSuccess')}
                                     </p>
                                 )}
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="full_name" className="text-sm font-semibold text-gray-700">
+                                <Label htmlFor="full_name" className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8c8c88]">
                                     {t('auth.register.fullName')}
                                 </Label>
                                 <div className="relative">
-                                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#c4c4c0]" />
                                     <Input
                                         id="full_name"
                                         name="full_name"
@@ -428,18 +427,18 @@ const RegisterPage = () => {
                                         value={formData.full_name}
                                         onChange={handleChange}
                                         placeholder={t('auth.register.fullNamePlaceholder')}
-                                        className="pl-10 h-12 border-2 focus:border-gray-900"
+                                        className="pl-10 h-12 bg-white border border-[#e5e5e3] rounded-lg text-base focus:border-[#1a1a1a] focus-visible:ring-0 focus:ring-0"
                                         required
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="username" className="text-sm font-semibold text-gray-700">
+                                <Label htmlFor="username" className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8c8c88]">
                                     {t('auth.register.email')}
                                 </Label>
                                 <div className="relative">
-                                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#c4c4c0]" />
                                     <Input
                                         id="username"
                                         name="username"
@@ -447,18 +446,18 @@ const RegisterPage = () => {
                                         value={formData.username}
                                         onChange={handleChange}
                                         placeholder={t('auth.register.email')}
-                                        className="pl-10 h-12 border-2 focus:border-gray-900"
+                                        className="pl-10 h-12 bg-white border border-[#e5e5e3] rounded-lg text-base focus:border-[#1a1a1a] focus-visible:ring-0 focus:ring-0"
                                         required
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="support_phone" className="text-sm font-semibold text-gray-700">
+                                <Label htmlFor="support_phone" className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8c8c88]">
                                     {t('auth.register.phone')}
                                 </Label>
                                 <div className="relative">
-                                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#c4c4c0]" />
                                     <Input
                                         id="support_phone"
                                         name="support_phone"
@@ -466,7 +465,7 @@ const RegisterPage = () => {
                                         value={formData.support_phone}
                                         onChange={handlePhoneChange}
                                         placeholder={i18n.language === 'en' ? '+44XXXXXXXXXX' : '+905XXXXXXXXX'}
-                                        className="pl-10 h-12 border-2 focus:border-gray-900"
+                                        className="pl-10 h-12 bg-white border border-[#e5e5e3] rounded-lg text-base focus:border-[#1a1a1a] focus-visible:ring-0 focus:ring-0"
                                         required
                                         minLength={13}
                                         maxLength={13}
@@ -475,11 +474,11 @@ const RegisterPage = () => {
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="password" className="text-sm font-semibold text-gray-700">
+                                <Label htmlFor="password" className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8c8c88]">
                                     {t('auth.register.password')}
                                 </Label>
                                 <div className="relative">
-                                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#c4c4c0]" />
                                     <Input
                                         id="password"
                                         name="password"
@@ -487,7 +486,7 @@ const RegisterPage = () => {
                                         value={formData.password}
                                         onChange={handleChange}
                                         placeholder="••••••••"
-                                        className="pl-10 h-12 border-2 focus:border-gray-900"
+                                        className="pl-10 h-12 bg-white border border-[#e5e5e3] rounded-lg text-base focus:border-[#1a1a1a] focus-visible:ring-0 focus:ring-0"
                                         required
                                     />
                                 </div>
@@ -495,7 +494,7 @@ const RegisterPage = () => {
 
                             <Button 
                                 type="submit" 
-                                className="w-full h-12 bg-gray-900 hover:bg-gray-800 text-white font-semibold rounded-full shadow-lg transition-all duration-200" 
+                                className="w-full h-12 bg-[#1a1a1a] hover:bg-black text-white text-[12px] font-semibold uppercase tracking-[0.2em] rounded-lg transition-colors" 
                                 disabled={loading}
                             >
                                 {loading ? t('auth.register.registering') : t('auth.register.registerButton')}
@@ -513,10 +512,9 @@ const RegisterPage = () => {
                             <Button
                                 variant="outline"
                                 onClick={() => navigate('/login')}
-                                className="w-full h-12 border-2 border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white font-semibold rounded-full transition-all duration-200"
+                                className="w-full h-12 bg-transparent border border-[#1a1a1a] text-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-white text-[12px] font-semibold uppercase tracking-[0.2em] rounded-lg transition-colors"
                             >
                                 {t('auth.register.loginLink')}
-                                <ArrowRight className="w-4 h-4 ml-2" />
                             </Button>
                         </div>
                         )}
@@ -526,9 +524,9 @@ const RegisterPage = () => {
                 {!isAppMode && (
                     <div className="text-center mt-4 md:mt-6">
                         <Button
-                            variant="outline"
+                            variant="ghost"
                             onClick={() => navigate('/')}
-                            className="text-gray-900 hover:text-white hover:bg-gray-900 border-2 border-gray-900 px-6 py-3 text-base md:text-lg font-semibold rounded-lg transition-all duration-200 shadow-md"
+                            className="text-[11px] uppercase tracking-[0.2em] text-[#a8a8a4] hover:text-[#1a1a1a] hover:bg-transparent transition-colors"
                         >
                             {t('common.backToHome')}
                         </Button>

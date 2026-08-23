@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { Helmet } from "react-helmet-async";
+import { SEO_ORIGINS, getSeoUrl, getAlternateEntry } from "../data/seoData";
 
 const normaliseLocale = (locale) => {
   if (!locale) return "en-GB";
@@ -9,55 +10,66 @@ const normaliseLocale = (locale) => {
   return "en-GB";
 };
 
-const buildCanonicalUrl = (canonicalPath) => {
-  if (typeof window === "undefined") return canonicalPath || "";
-
-  const origin = window.location.origin;
-  const path = canonicalPath || window.location.pathname;
-  return `${origin}${path}`;
-};
-
-export default function SeoWrapper({ seo, canonicalPath }) {
-  const canonicalUrl = useMemo(
-    () => buildCanonicalUrl(canonicalPath),
-    [canonicalPath]
-  );
+export default function SeoWrapper({ seo, faq }) {
+  // Canonical her zaman locale'in SABİT domaininden üretilir (window.origin
+  // DEĞİL): TR sayfalar → plannapp.co, EN sayfalar → plannapp.co.uk.
+  // Böylece .co üzerinden servis edilen /solutions sayfaları cross-domain
+  // canonical ile .co.uk'yi gösterir.
+  const canonicalUrl = useMemo(() => (seo ? getSeoUrl(seo) : ""), [seo]);
+  const alternate = useMemo(() => getAlternateEntry(seo), [seo]);
 
   const jsonLd = useMemo(() => {
     if (!seo) return null;
 
-    const type = seo.schemaType || "WebPage";
-
-    const base = {
-      "@context": "https://schema.org",
-      "@type": type,
-      name: seo.h1 || seo.title || "PLANN",
+    // Sayfa bir yazılımı anlatıyor; işletmenin kendisini değil. Bu yüzden
+    // JSON-LD tipi her zaman SoftwareApplication'dır (BarberShop vb. DEĞİL).
+    // Uydurma rating/review/price eklenmez.
+    const softwareApp = {
+      "@type": "SoftwareApplication",
+      name: "PLANN",
+      headline: seo.h1 || seo.title,
       description: seo.metaDescription,
       url: canonicalUrl,
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web, iOS, Android",
+      inLanguage: normaliseLocale(seo.locale),
       publisher: {
         "@type": "Organization",
-        name: "PLANN",
+        name: "PLANNAPP LTD",
+        url: "https://plannapp.co/",
       },
     };
 
-    if (
-      type === "SoftwareApplication" ||
-      type === "WebApplication" ||
-      type === "MobileApplication"
-    ) {
+    // FAQ varsa: görünen FAQ içeriğiyle BİREBİR aynı FAQPage schema eklenir
+    // (içerik kaynağı seoContent.js — sayfa ile aynı data).
+    if (Array.isArray(faq) && faq.length > 0) {
       return {
-        ...base,
-        applicationCategory: "BusinessApplication",
-        operatingSystem: "Web",
+        "@context": "https://schema.org",
+        "@graph": [
+          softwareApp,
+          {
+            "@type": "FAQPage",
+            mainEntity: faq.map((item) => ({
+              "@type": "Question",
+              name: item.q,
+              acceptedAnswer: { "@type": "Answer", text: item.a },
+            })),
+          },
+        ],
       };
     }
 
-    return base;
-  }, [seo, canonicalUrl]);
+    return { "@context": "https://schema.org", ...softwareApp };
+  }, [seo, canonicalUrl, faq]);
 
   if (!seo) return null;
 
-  const htmlLang = normaliseLocale(seo.locale);
+  const htmlLang = seo.locale === "tr" ? "tr" : "en-GB";
+  const ogLocale = seo.locale === "tr" ? "tr_TR" : "en_GB";
+  const ogImage = `${SEO_ORIGINS[seo.locale]}/plannlogo.png`;
+
+  const trEntry = seo.locale === "tr" ? seo : alternate;
+  const enEntry = seo.locale === "en-GB" ? seo : alternate;
 
   return (
     <Helmet>
@@ -69,11 +81,22 @@ export default function SeoWrapper({ seo, canonicalPath }) {
 
       <link rel="canonical" href={canonicalUrl} />
 
+      {/* Karşılıklı hreflang — yalnızca gerçek eşdeğer sayfa varsa */}
+      {trEntry && enEntry && (
+        <link rel="alternate" hrefLang="tr-TR" href={getSeoUrl(trEntry)} />
+      )}
+      {trEntry && enEntry && (
+        <link rel="alternate" hrefLang="en-GB" href={getSeoUrl(enEntry)} />
+      )}
+
       <meta property="og:site_name" content="PLANN" />
       <meta property="og:type" content="website" />
       <meta property="og:title" content={seo.title} />
       <meta property="og:description" content={seo.metaDescription} />
       <meta property="og:url" content={canonicalUrl} />
+      <meta property="og:locale" content={ogLocale} />
+      <meta property="og:image" content={ogImage} />
+      <meta property="og:image:alt" content="PLANN" />
 
       <meta name="twitter:card" content="summary" />
       <meta name="twitter:title" content={seo.title} />

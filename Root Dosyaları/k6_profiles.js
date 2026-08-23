@@ -20,21 +20,26 @@ const trends = {
   dashboard: new Trend('dashboard_duration'),
   appointments: new Trend('appointments_duration'),
   appointments_paginated: new Trend('appointments_paginated_duration'),
+  appointments_session: new Trend('appointments_session_duration'),
   services: new Trend('services_duration'),
-  customers: new Trend('customers_duration'),
   customers_paginated: new Trend('customers_paginated_duration'),
   customers_search: new Trend('customers_search_duration'),
 };
 
-// Ölçek-hassas çekirdek set (large profilinde bunlar anlamlı)
+// Panelin gerçek çağrıları. Limitsiz /appointments ve /customers bilinçli olarak
+// yok: web artık bunları kullanmıyor; ölçmek p95'i eski uçlarla kirletiyordu.
+const _start = new Date();
+_start.setDate(_start.getDate() - 7);
+const WINDOW_START = _start.toISOString().slice(0, 10);
+
 const CORE = [
-  { name: 'Dashboard Stats',              url: '/stats/dashboard',                 trend: 'dashboard' },
-  { name: 'Appointments (legacy flat)',   url: '/appointments',                    trend: 'appointments' },
-  { name: 'Appointments (paginated 30)',  url: '/appointments?limit=30',           trend: 'appointments_paginated' },
-  { name: 'Services',                     url: '/services',                        trend: 'services' },
-  { name: 'Customers (legacy flat)',      url: '/customers',                       trend: 'customers' },
-  { name: 'Customers (paginated 30)',     url: '/customers?limit=30',              trend: 'customers_paginated' },
-  { name: 'Customers (search)',           url: '/customers?limit=30&search=fatih', trend: 'customers_search' },
+  { name: 'Dashboard Stats', url: '/stats/dashboard', trend: 'dashboard' },
+  { name: 'Appointments (windowed 7d)', url: `/appointments?start_date=${WINDOW_START}`, trend: 'appointments' },
+  { name: 'Appointments (paginated 30)', url: '/appointments?limit=30', trend: 'appointments_paginated' },
+  { name: 'Appointments (session_only)', url: '/appointments?session_only=true', trend: 'appointments_session' },
+  { name: 'Services', url: '/services', trend: 'services' },
+  { name: 'Customers (paginated 30)', url: '/customers?limit=30', trend: 'customers_paginated' },
+  { name: 'Customers (search)', url: '/customers?limit=30&search=fatih', trend: 'customers_search' },
 ];
 
 // Gerçek org profillerinde (cold/warm) ek panel endpoint'leri de yüke dahil

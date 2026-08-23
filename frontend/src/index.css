@@ -29,6 +29,35 @@ code {
         source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
+/* Yatay kaydırılabilir şeritlerde scrollbar'ı gizle (fonksiyon korunur). */
+.no-scrollbar {
+    -ms-overflow-style: none; /* IE/Edge */
+    scrollbar-width: none; /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/WebView (Android) */
+    width: 0;
+    height: 0;
+}
+
+/* Uygulama genelinde scrollbar'ı gizle — kaydırma çalışır, sadece bar görünmez.
+ * Mobil-first / sessiz lüks estetik: sağdaki dikey bar sırıtmasın. */
+html,
+body,
+#root,
+* {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar,
+*::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/WebView */
+    width: 0;
+    height: 0;
+}
+
 @layer base {
     :root {
         --background: 0 0% 100%;

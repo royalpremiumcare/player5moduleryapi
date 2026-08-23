@@ -14,7 +14,6 @@ import Dashboard from "@/components/Dashboard";
 import AppointmentDetail from "@/components/AppointmentDetail";
 import CalendarView from "@/components/Calendar";
 import SessionsHub from "@/components/SessionsHub";
-import AppointmentForm from "@/components/AppointmentForm";
 import AppointmentFormWizard from "@/components/AppointmentFormWizard";
 import ServiceManagement from "@/components/ServiceManagement";
 import CashRegister from "@/components/CashRegister";
@@ -30,6 +29,7 @@ import MerchantPaymentSettings from "@/components/MerchantPaymentSettings";
 import MerchantRefundRequests from "@/components/MerchantRefundRequests";
 import Subscribe from "@/components/Subscribe";
 import Customers from "@/components/Customers";
+import Statistics from "@/components/Statistics";
 import ImportData from "@/components/ImportData";
 import StaffManagement from "@/components/StaffManagement";
 import AuditLogs from "@/components/AuditLogs";
@@ -45,22 +45,19 @@ import AhaErrorScreen from "@/components/AhaErrorScreen";
 import posthog from "@/lib/posthog";
 import metaPixel from "@/lib/metaPixel";
 import { loadChatwoot, setChatwootUser } from "@/lib/chatwoot";
-import { Briefcase, DollarSign, SettingsIcon, Users, Upload, LogOut, Moon, Sun, UserCog, FileText, Home, Plus, CreditCard, User, HelpCircle, Package, Bell, Layers, Calendar } from "lucide-react";
+import { Briefcase, DollarSign, SettingsIcon, Menu, Users, Upload, LogOut, Moon, Sun, UserCog, FileText, Home, Plus, CreditCard, User, HelpCircle, Package, BarChart3, Layers, Calendar } from "lucide-react";
 import { useTheme } from "./context/ThemeContext";
 import { useTranslation } from "react-i18next";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { PushNotifications } from '@capacitor/push-notifications';
 import { openAppStore } from "@/lib/appStore";
 
 const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
   ? registerPlugin('FCMTokenPlugin')
   : null;
+
+// Bildirim listesi yakın geçmişteki bekleyen public randevuları da göstersin diye
+// pencere bugünden değil, birkaç gün geriden başlıyor.
+const NOTIFICATION_LOOKBACK_DAYS = 7;
 
 function App() {
   const { logout, userRole, token } = useAuth();
@@ -77,10 +74,13 @@ function App() {
     return 'dashboard';
   });
   const [services, setServices] = useState([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
   const [appointments, setAppointments] = useState([]);
   const [stats, setStats] = useState(null);
   // Bildirime tıklayınca açılan premium randevu detay sayfası (id tutulur)
   const [detailAppointmentId, setDetailAppointmentId] = useState(null);
+  // Detay modalı bildirimler sayfasından mı açıldı? (kapatınca oraya geri dön)
+  const [detailFromNotif, setDetailFromNotif] = useState(false);
   // Force-update kapısı artık AppRouter'daki <ForceUpdateGate/> içinde (auth'tan bağımsız).
   // Bildirim TAP listener'ı yalnız BİR kez bağlansın (subscribeToPush birden çok
   // kez çağrılabilir → çift handler = detay 2 kez açılır). Ref ile tek sefer garanti.
@@ -200,9 +200,8 @@ function App() {
     };
   }, [goBack]);
   
-  // Notification states
+  // Notification states (bildirim listesi Ayarlar içinde gösterilir)
   const [notifications, setNotifications] = useState([]);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const notificationsRef = useRef([]);
   const location = useLocation();
@@ -624,13 +623,38 @@ function App() {
       setServices(response.data);
     } catch (error) {
       toast.error("Hizmetler yüklenemedi");
+    } finally {
+      setServicesLoading(false);
     }
   }, []);
 
+  // Panelin ihtiyacı olan randevu kümesi iki parçadan oluşuyor:
+  //   1) Yakın tarih penceresi — Dashboard yalnızca bugün ve sonrasını okuyor,
+  //      bildirimler ise yakın geçmişteki bekleyen public randevuları.
+  //   2) Seans paketi randevuları — SessionsHub'ın "Tamamlanan" sekmesi geçmişe
+  //      bakmak zorunda olduğu için tarih penceresine sığmıyor.
+  //
+  // Eskiden burada parametresiz `/appointments` çağrılıyordu. Backend o yolda
+  // tarihe ARTAN sıralayıp ilk 1000 kaydı döndürüyor; yani randevu sayısı 1000'i
+  // aşan bir işletmede panele en ESKİ 1000 randevu geliyor ve bugünün listesi
+  // boş görünüyordu. Pencereleyerek hem bu hatayı hem de yük testinde ölçülen
+  // 6,4 sn'lik yanıt süresini ortadan kaldırıyoruz.
   const loadAppointments = useCallback(async () => {
     try {
-      const response = await api.get("/appointments"); 
-      const allAppointments = response.data || [];
+      const since = new Date();
+      since.setDate(since.getDate() - NOTIFICATION_LOOKBACK_DAYS);
+      const startDate = since.toISOString().slice(0, 10);
+
+      const [recentRes, sessionRes] = await Promise.all([
+        api.get("/appointments", { params: { start_date: startDate } }),
+        api.get("/appointments", { params: { session_only: true } }),
+      ]);
+
+      const byId = new Map();
+      for (const apt of [...(recentRes.data || []), ...(sessionRes.data || [])]) {
+        if (apt?.id) byId.set(apt.id, apt);
+      }
+      const allAppointments = Array.from(byId.values());
       setAppointments(allAppointments);
       
       // 'Bekliyor' durumundaki ve sadece public_booking kaynaklı randevuları bildirim olarak ekle
@@ -645,6 +669,7 @@ function App() {
       // Bildirim formatına dönüştür - okunmuş durumu localStorage'dan kontrol et
       const newNotifications = pendingAppointments.map(appt => ({
         id: appt.id, // Unique ID kullan
+        appointmentId: appt.id, // Karta tıklayınca detay modalını açmak için
         read: readNotificationIds.includes(appt.id), // localStorage'dan kontrol et
         type: 'new_appointment',
         title: 'Yeni Randevu',
@@ -1498,7 +1523,7 @@ function App() {
                 </h2>
               </div>
 
-              {/* Sağ Bölüm: SuperAdmin + Bildirim Zili */}
+              {/* Sağ Bölüm: SuperAdmin + Ayarlar (bildirim rozeti dahil) */}
               <div className="flex-shrink-0 flex items-center gap-2">
                 {userRole === 'superadmin' && (
                   <button
@@ -1513,84 +1538,29 @@ function App() {
                     <UserCog className="w-6 h-6 text-blue-600" />
                   </button>
                 )}
-                <DropdownMenu modal={false} open={showNotifications} onOpenChange={setShowNotifications}>
-                  <DropdownMenuTrigger asChild>
-                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative">
-                      <Bell className="w-6 h-6 text-gray-700" />
-                      {notifications.filter(n => !n.read).length > 0 && (
-                        <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center font-bold px-1">
-                          {notifications.filter(n => !n.read).length > 9 ? '9+' : notifications.filter(n => !n.read).length}
-                        </span>
-                      )}
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" sideOffset={8} className="w-72 sm:w-80 max-h-[60vh] overflow-y-auto p-0 rounded-xl border border-gray-200 bg-white shadow-xl">
-                    <div className="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between sticky top-0 z-10 bg-white rounded-t-xl">
-                      <span className="font-bold text-gray-900 text-sm">{t('notifications.title')}</span>
-                      {notifications.length > 0 && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setNotifications(prev => prev.map(n => ({...n, read: true})));
-                            const allIds = notifications.map(n => n.id);
-                            const existingIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
-                            localStorage.setItem('readNotificationIds', JSON.stringify([...new Set([...existingIds, ...allIds])]));
-                          }}
-                          className="text-[11px] font-medium text-blue-600 hover:text-blue-700 transition-colors"
-                        >
-                          {t('notifications.markAllRead')}
-                        </button>
-                      )}
-                    </div>
-                    {notifications.length === 0 ? (
-                      <div className="py-8 px-4 text-center">
-                        <Bell className="w-6 h-6 text-gray-300 mx-auto mb-2" />
-                        <p className="text-xs text-gray-400">{t('notifications.empty')}</p>
-                      </div>
-                    ) : (
-                      <div>
-                        {notifications.map(notification => (
-                          <DropdownMenuItem 
-                            key={notification.id} 
-                            className={`px-3 py-2.5 cursor-pointer border-b border-gray-50 last:border-0 rounded-none focus:bg-gray-50 ${!notification.read ? 'bg-blue-50/40' : ''}`}
-                            onClick={() => {
-                              setNotifications(prev => prev.map(n => 
-                                n.id === notification.id ? {...n, read: true} : n
-                              ));
-                              const existingIds = JSON.parse(localStorage.getItem('readNotificationIds') || '[]');
-                              if (!existingIds.includes(notification.id)) {
-                                localStorage.setItem('readNotificationIds', JSON.stringify([...existingIds, notification.id]));
-                              }
-                              setShowNotifications(false);
-                            }}
-                          >
-                            <div className="flex items-start gap-2 w-full">
-                              <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${!notification.read ? 'bg-blue-500' : 'bg-transparent'}`} />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-xs font-semibold text-gray-800 truncate">{notification.message}</p>
-                                  <span className="text-[10px] text-gray-400 flex-shrink-0">
-                                    {new Date(notification.time).toLocaleTimeString(i18n.language === 'tr' ? 'tr-TR' : 'en-GB', { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                </div>
-                                {notification.details && (
-                                  <p className="text-[11px] text-gray-500 truncate mt-0.5">{notification.details}</p>
-                                )}
-                              </div>
-                            </div>
-                          </DropdownMenuItem>
-                        ))}
-                      </div>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <button
+                  onClick={() => {
+                    setCurrentView('settings');
+                    setShowForm(false);
+                  }}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative tour-settings"
+                  title={t('nav.settings', 'Ayarlar')}
+                  aria-label={t('nav.settings', 'Ayarlar')}
+                >
+                  <Menu className="w-6 h-6 text-gray-700" strokeWidth={1.75} />
+                  {notifications.filter(n => !n.read).length > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center font-bold px-1">
+                      {notifications.filter(n => !n.read).length > 9 ? '9+' : notifications.filter(n => !n.read).length}
+                    </span>
+                  )}
+                </button>
               </div>
             </div>
           </div>
         </header>
       )}
 
-      <main className={(currentView === "dashboard" || currentView === "sessions" || currentView === "settings" || currentView === "settings-subscription" || currentView === "settings-profile" || currentView === "settings-location" || currentView === "settings-online-booking" || currentView === "subscribe" || currentView === "staff" || currentView === "services" || currentView === "marketing-assistant" || currentView === "help-center") && !showForm ? "" : "container mx-auto px-4 py-6"}>
+      <main className={(currentView === "dashboard" || currentView === "sessions" || currentView === "settings" || currentView === "statistics" || currentView === "settings-subscription" || currentView === "settings-profile" || currentView === "settings-location" || currentView === "settings-online-booking" || currentView === "subscribe" || currentView === "staff" || currentView === "services" || currentView === "marketing-assistant" || currentView === "help-center") && !showForm ? "" : "container mx-auto px-4 py-6"}>
         {/* Ödeme Başarı Banner'ı */}
         {showPaymentSuccess && (
           <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-6 shadow-lg sticky top-0 z-50 animate-in slide-in-from-top">
@@ -1646,7 +1616,9 @@ function App() {
         {showForm && (
           <AppointmentFormWizard
             services={services}
+            servicesLoading={servicesLoading}
             appointment={selectedAppointment}
+            onServiceCreated={loadServices}
             onSave={handleAppointmentSaved}
             onCancel={() => {
               setShowForm(false);
@@ -1743,6 +1715,19 @@ function App() {
             }}
             userRole={userRole}
             onLogout={logout}
+            notifications={notifications}
+            setNotifications={setNotifications}
+            onOpenAppointment={(id) => { if (id) { setDetailFromNotif(true); setDetailAppointmentId(String(id)); } }}
+          />
+        )}
+        {currentView === "statistics" && userRole === 'admin' && (
+          <Statistics
+            userRole={userRole}
+            settings={settings}
+            onNavigate={(view) => {
+              setCurrentView(view);
+              setShowForm(false);
+            }}
           />
         )}
         {currentView === "settings-subscription" && userRole === 'admin' && (
@@ -1837,21 +1822,21 @@ function App() {
             transition: 'none'
           }}
         >
-          <div className="flex items-center justify-around px-2 py-2">
+          <div className="grid grid-cols-5 items-center justify-items-center px-1 py-2">
             {/* Anasayfa */}
             <button
               onClick={() => {
                 setCurrentView("dashboard");
                 setShowForm(false);
               }}
-              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+              className={`flex flex-col items-center gap-1 px-1 py-2 rounded-lg transition-colors min-w-0 max-w-full ${
                 currentView === "dashboard"
                   ? "text-gray-900"
                   : "text-gray-600 hover:text-gray-900"
               }`}
             >
               <Home className="w-5 h-5" />
-              <span className="text-xs font-medium">{t('nav.dashboard', 'Dashboard')}</span>
+              <span className="text-xs font-medium truncate max-w-full">{t('nav.dashboard', 'Dashboard')}</span>
             </button>
 
             {hasActiveSessions ? (
@@ -1861,12 +1846,12 @@ function App() {
                   setCurrentView("sessions");
                   setShowForm(false);
                 }}
-                className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+                className={`flex flex-col items-center gap-1 px-1 py-2 rounded-lg transition-colors min-w-0 max-w-full ${
                   currentView === "sessions" ? "text-gray-900" : "text-gray-600 hover:text-gray-900"
                 }`}
               >
                 <Layers className="w-5 h-5" />
-                <span className="text-xs font-medium">{t('nav.sessions', 'Sessions')}</span>
+                <span className="text-xs font-medium truncate max-w-full">{t('nav.sessions', 'Sessions')}</span>
               </button>
             ) : (
               <button
@@ -1875,12 +1860,12 @@ function App() {
                   setCurrentView("calendar");
                   setShowForm(false);
                 }}
-                className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
+                className={`flex flex-col items-center gap-1 px-1 py-2 rounded-lg transition-colors min-w-0 max-w-full ${
                   currentView === "calendar" ? "text-gray-900" : "text-gray-600 hover:text-gray-900"
                 }`}
               >
                 <Calendar className="w-5 h-5" />
-                <span className="text-xs font-medium">{t('nav.calendar', 'Calendar')}</span>
+                <span className="text-xs font-medium truncate max-w-full">{t('nav.calendar', 'Calendar')}</span>
               </button>
             )}
 
@@ -1898,23 +1883,36 @@ function App() {
                 setCurrentView("customers");
                 setShowForm(false);
               }}
-              className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
+              className="flex flex-col items-center gap-1 px-1 py-2 rounded-lg transition-colors text-gray-600 hover:text-gray-900 min-w-0 max-w-full"
             >
               <Users className="w-5 h-5" />
-              <span className="text-xs font-medium">{t('nav.customers', 'Customers')}</span>
+              <span className="text-xs font-medium truncate max-w-full">{t('nav.customers', 'Customers')}</span>
             </button>
 
-            {/* Ayarlar */}
-            <button
-              onClick={() => {
-                setCurrentView("settings");
-                setShowForm(false);
-              }}
-              className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors text-gray-600 hover:text-gray-900 tour-settings"
-            >
-              <SettingsIcon className="w-5 h-5" />
-              <span className="text-xs font-medium">{t('nav.settings', 'Settings')}</span>
-            </button>
+            {/* Admin: İstatistikler — diğer roller: Ayarlar (Ayarlar herkes için header dişlisinde de var) */}
+            {userRole === 'admin' ? (
+              <button
+                onClick={() => {
+                  setCurrentView("statistics");
+                  setShowForm(false);
+                }}
+                className="flex flex-col items-center gap-1 px-1 py-2 rounded-lg transition-colors text-gray-600 hover:text-gray-900 min-w-0 max-w-full"
+              >
+                <BarChart3 className="w-5 h-5" />
+                <span className="text-xs font-medium truncate max-w-full">{t('nav.statistics', 'İstatistikler')}</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setCurrentView("settings");
+                  setShowForm(false);
+                }}
+                className="flex flex-col items-center gap-1 px-1 py-2 rounded-lg transition-colors text-gray-600 hover:text-gray-900 min-w-0 max-w-full"
+              >
+                <SettingsIcon className="w-5 h-5" />
+                <span className="text-xs font-medium truncate max-w-full">{t('nav.settings', 'Settings')}</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1932,7 +1930,10 @@ function App() {
         />
       )}
 
-      {/* Bildirime tıklayınca açılan premium randevu detay sayfası (kapatınca dashboard) */}
+      {/* Bildirime tıklayınca açılan premium randevu detay sayfası.
+          Bildirimler sayfasından açıldıysa kapatınca oraya geri döner (Ayarlar
+          view'i korunur → Settings zaten bildirimler alt sayfasında kalır);
+          diğer durumlarda dashboard'a döner. */}
       {token && currentUser && detailAppointmentId && (
         <AppointmentDetail
           appointmentId={detailAppointmentId}
@@ -1941,7 +1942,11 @@ function App() {
           onClose={() => {
             setDetailAppointmentId(null);
             setShowForm(false);
-            setCurrentView('dashboard');
+            if (detailFromNotif) {
+              setDetailFromNotif(false);
+            } else {
+              setCurrentView('dashboard');
+            }
           }}
         />
       )}

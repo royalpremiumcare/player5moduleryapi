@@ -56,6 +56,7 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerHistory, setCustomerHistory] = useState(null);
   const [customerNotes, setCustomerNotes] = useState("");
+  const [detailTab, setDetailTab] = useState("overview");
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState(null);
@@ -101,15 +102,15 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
     // Not: loadCustomers burada tetiklenmez. Aşağıdaki [debouncedSearch] useEffect'i
     // mount'ta bir kez (search="") çalışıp ilk sayfayı çeker → çift çağrı olmaz.
     loadSettings();
-    if (userRole === 'staff') {
+      if (userRole === 'staff') {
       loadCurrentStaffUsername();
-    }
-
+      }
+    
     if (!socketRef.current) {
       const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
       const socketUrl = BACKEND_URL || window.location.origin;
       const authToken = token || localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-
+      
       const socket = io(socketUrl, {
         path: '/api/socket.io',
         transports: ['websocket', 'polling'],
@@ -117,9 +118,9 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
         reconnectionDelayMax: 5000,
         auth: { token: authToken || '' }
       });
-
+      
       socketRef.current = socket;
-
+      
       socket.on('connect', () => {
         const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
         if (token) {
@@ -132,7 +133,7 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
           } catch (error) { console.error('Error parsing token:', error); }
         }
       });
-
+      
       // Cursor pagination — event geldiğinde ilk sayfayı mevcut arama filtresi
       // ile yeniden çek. Etkilenen kayıtlar genelde en üstte olduğundan pratik
       // regresyon minimal (kaydırılan alt sayfalar sıfırlanır).
@@ -153,7 +154,7 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
       });
     }
     return () => {};
-  }, []);
+  }, []); 
 
   useEffect(() => {
     if (selectedCustomer) {
@@ -219,7 +220,7 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
       }
     } finally {
       if (seq === requestSeqRef.current) {
-        setLoading(false);
+      setLoading(false);
         setIsFetchingMore(false);
       }
     }
@@ -277,6 +278,7 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
 
   const handleCustomerClick = async (customer) => {
     setSelectedCustomer(customer);
+    setDetailTab("overview");
     await loadCustomerHistory(customer.phone);
   };
 
@@ -629,62 +631,116 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
     : customers;
 
   if (selectedCustomer) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 pb-20">
-        <div className="p-4 space-y-4">
-          <button
-            onClick={() => { setSelectedCustomer(null); setCustomerHistory(null); setCustomerNotes(""); }}
-            className="flex items-center gap-2 px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-white/50 rounded-xl transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span className="text-sm font-bold">{t('customers.backToCustomers')}</span>
-          </button>
+    // ── Türetilmiş istatistikler (Genel Bakış sekmesi için) ──
+    const appts = customerHistory?.appointments || [];
+    const isCompleted = (s) => s === 'Tamamlandı' || s === 'Completed';
+    const isCancelled = (s) => s === 'İptal Edildi' || s === 'İptal' || s === 'Cancelled';
+    // Fiyat = randevu anındaki SNAPSHOT (sonradan hizmet fiyatı değişse de bozulmaz).
+    // Çoklu hizmet kalemleri price_snapshot tutar; tekli randevu service_price tutar.
+    const apptPrice = (a) => {
+      if (Array.isArray(a?.services) && a.services.length) {
+        return a.services.reduce((sum, x) => sum + (Number(x?.price_snapshot ?? x?.price) || 0), 0);
+      }
+      return Number(a?.service_price) || 0;
+    };
+    // Görünen hizmet adı: çoklu hizmet ise "A + B" olarak birleştir.
+    const apptServiceName = (a) => {
+      if (Array.isArray(a?.services) && a.services.length) {
+        const joined = a.services.map(x => x?.name_snapshot).filter(Boolean).join(' + ');
+        if (joined) return joined;
+      }
+      return a?.service_name || t('customers.noData');
+    };
+    const supportPhoneClean = (settings?.support_phone || '').replace(/\s/g, '');
+    const currencySymbol = (supportPhoneClean.startsWith('+44') || supportPhoneClean.startsWith('44')) ? '£' : '₺';
+    const formatMoney = (amount) => {
+      const n = Math.round(Number(amount) || 0);
+      return i18n.language === 'en'
+        ? `${currencySymbol}${n.toLocaleString('en-GB')}`
+        : `${n.toLocaleString('tr-TR')}${currencySymbol}`;
+    };
+    const formatPct = (pct) => (i18n.language === 'en' ? `${pct}%` : `%${pct}`);
+    // ÖZET yalnız TAMAMLANMIŞ randevulara dayanır — ileri tarihli/bekleyen randevular
+    // tamamlanana kadar özete (sayı/harcama/son randevu) yansımaz.
+    const completedAppts = appts.filter(a => isCompleted(a.status));
+    const totalCount = completedAppts.length;
+    const totalSpent = completedAppts.reduce((s, a) => s + apptPrice(a), 0);
+    const apptsByDateDesc = [...appts].sort((a, b) =>
+      new Date(`${b.appointment_date}T${b.appointment_time || '00:00'}`) - new Date(`${a.appointment_date}T${a.appointment_time || '00:00'}`)
+    );
+    const lastApt = [...completedAppts].sort((a, b) =>
+      new Date(`${b.appointment_date}T${b.appointment_time || '00:00'}`) - new Date(`${a.appointment_date}T${a.appointment_time || '00:00'}`)
+    )[0];
+    // Sıklık (yalnız tamamlanan): çoklu hizmet randevularında her alt hizmeti ayrı say.
+    const freq = {};
+    completedAppts.forEach(a => {
+      if (Array.isArray(a?.services) && a.services.length) {
+        a.services.forEach(x => { const n = x?.name_snapshot; if (n) freq[n] = (freq[n] || 0) + 1; });
+      } else {
+        const n = a?.service_name; if (n) freq[n] = (freq[n] || 0) + 1;
+      }
+    });
+    const topServices = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const totalForPct = Object.values(freq).reduce((s, n) => s + n, 0) || 1;
 
-          <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg text-center">
-            <div className="flex flex-col items-center">
-              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-full flex items-center justify-center font-black text-2xl mb-4 shadow-md">
-                {getInitials(selectedCustomer.name)}
+    const tabs = [
+      { id: 'overview', label: t('customers.tabOverview') },
+      { id: 'history', label: t('customers.tabHistory') },
+      { id: 'notes', label: t('customers.tabNotes') },
+    ];
+
+    const StatusBadge = ({ status }) => (
+      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+        status === t('dashboard.status.completed') || status === 'Tamamlandı' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+        status === t('dashboard.status.pending') || status === 'Bekliyor' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+        status === 'İptal Edildi' || status === 'Cancelled' ? 'bg-red-50 text-red-700 border border-red-200' :
+        'bg-zinc-100 text-zinc-600 border border-zinc-200'
+      }`}>{status}</span>
+    );
+
+    const AptRow = ({ apt, showSessionBadge }) => {
+      const price = apptPrice(apt);
+      const cancelled = isCancelled(apt.status);
+      return (
+        <div className="flex items-start gap-3 py-4">
+          <span className="w-[68px] shrink-0 text-xs text-zinc-400 font-medium leading-snug pt-0.5">
+            {format(new Date(apt.appointment_date), "d MMM yyyy", { locale: dateLocale })}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-semibold leading-snug break-words ${cancelled ? 'text-zinc-400 line-through' : 'text-zinc-800'}`}>
+              {apptServiceName(apt)}
+            </p>
+            {showSessionBadge && (
+              <div className="mt-1"><SessionBadge number={apt.session_number} total={apt.session_total} size="sm" /></div>
+            )}
+            {SHOW_APPOINTMENT_CARD_STATUS && price <= 0 && (
+              <div className="mt-1"><StatusBadge status={apt.status} /></div>
+            )}
               </div>
-              <h2 className="text-xl font-black text-zinc-900 mt-4 mb-2">{selectedCustomer.name}</h2>
-              <p className="text-zinc-600 mb-6 font-medium">{selectedCustomer.phone}</p>
-              <div className="flex gap-3 w-full max-w-xs">
-                <Button onClick={() => handleCall(selectedCustomer.phone)} variant="outline" className="flex-1 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 text-zinc-700 rounded-xl font-bold shadow-sm">
-                  <Phone className="w-4 h-4 mr-2" /> {t('customers.actions.call')}
-                </Button>
-                <Button onClick={() => handleWhatsApp(selectedCustomer.phone)} className="flex-1 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold shadow-lg">
-                  <MessageSquare className="w-4 h-4 mr-2" /> {t('customers.actions.whatsapp')}
-                </Button>
-              </div>
-              {userRole === 'admin' && (
-                <div className="flex gap-2 w-full max-w-xs mt-3">
-                  <Button onClick={handleOpenEditDialog} variant="outline" className="flex-1 backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 text-zinc-700 rounded-xl font-bold shadow-sm">
-                    <Edit2 className="w-4 h-4 mr-2" /> {i18n.language === 'tr' ? 'Düzenle' : 'Edit'}
-                  </Button>
-                  <Button onClick={() => { setCustomerToDelete(selectedCustomer); setDeleteDialogOpen(true); }} variant="outline" className="flex-1 backdrop-blur-md bg-white/60 border-red-300 text-red-600 hover:bg-red-50 rounded-xl font-bold shadow-sm">
-                    <Trash2 className="w-4 h-4 mr-2" /> {t('customers.deleteButton')}
-                  </Button>
-                </div>
+          {price > 0 && (
+            <span className={`shrink-0 text-sm font-semibold whitespace-nowrap pt-0.5 ${cancelled ? 'text-zinc-400 line-through' : 'text-zinc-900'}`}>
+              {formatMoney(price)}
+            </span>
               )}
             </div>
-          </div>
+      );
+    };
 
-          <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
-            <h3 className="font-black text-zinc-900 mb-4 text-base">{t('customers.historyTitle')}</h3>
-            {loadingHistory ? (
-              <div className="text-center py-8">
+    const renderHistoryList = () => {
+      if (loadingHistory) {
+        return (
+          <div className="text-center py-10">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 mx-auto mb-3"></div>
-                <p className="text-zinc-600 font-medium">{t('customers.loading')}</p>
+            <p className="text-zinc-500 font-medium text-sm">{t('customers.loading')}</p>
               </div>
-            ) : customerHistory && customerHistory.appointments.length > 0 ? (
-              (() => {
-                const sorted = [...customerHistory.appointments].sort((a, b) => {
-                  const da = new Date(`${a.appointment_date}T${a.appointment_time || '00:00'}`);
-                  const db2 = new Date(`${b.appointment_date}T${b.appointment_time || '00:00'}`);
-                  return db2 - da;
-                });
+        );
+      }
+      if (!(customerHistory && customerHistory.appointments.length > 0)) {
+        return <p className="text-zinc-400 text-center py-10 font-medium text-sm">{t('customers.historyEmpty')}</p>;
+      }
                 const sessionGroups = {};
                 const singles = [];
-                sorted.forEach(apt => {
+      apptsByDateDesc.forEach(apt => {
                   if (apt.session_group_id) {
                     if (!sessionGroups[apt.session_group_id]) sessionGroups[apt.session_group_id] = [];
                     sessionGroups[apt.session_group_id].push(apt);
@@ -702,36 +758,8 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
                   sortDate: new Date(`${apt.appointment_date}T${apt.appointment_time || '00:00'}`)
                 }));
                 const allEntries = [...groupEntries, ...singleEntries].sort((a, b) => b.sortDate - a.sortDate);
-
-                const StatusBadge = ({ status }) => (
-                  <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                    status === t('dashboard.status.completed') || status === 'Tamamlandı' ? 'bg-green-100 text-green-700' :
-                    status === t('dashboard.status.pending') || status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-700' :
-                    status === 'İptal Edildi' || status === 'Cancelled' ? 'bg-red-100 text-red-700' :
-                    'bg-gray-100 text-gray-700'
-                  }`}>{status}</span>
-                );
-
-                const AptRow = ({ apt, showSessionBadge }) => (
-                  <div className="flex items-center justify-between p-3 bg-white/50 rounded-lg border border-white/30">
-                    <div>
-                      <p className="font-bold text-zinc-900 text-sm">
-                        {format(new Date(apt.appointment_date), "d MMMM yyyy", { locale: dateLocale })}
-                        <span className="text-zinc-400 font-medium ml-1">{apt.appointment_time}</span>
-                      </p>
-                      <p className="text-sm text-zinc-600 font-medium">{apt.service_name}</p>
-                      {showSessionBadge && (
-                        <SessionBadge number={apt.session_number} total={apt.session_total} size="sm" />
-                      )}
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      {SHOW_APPOINTMENT_CARD_STATUS && <StatusBadge status={apt.status} />}
-                    </div>
-                  </div>
-                );
-
                 return (
-                  <div className="space-y-3">
+        <div className="divide-y divide-zinc-50">
                     {allEntries.map((entry, idx) => {
                       if (entry.type === 'single') {
                         return <AptRow key={entry.apt.id || idx} apt={entry.apt} showSessionBadge={false} />;
@@ -740,20 +768,20 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
                       const firstApt = apts[0];
                       const activeCount = apts.filter(a => a.status !== 'İptal Edildi' && a.status !== 'Cancelled').length;
                       return (
-                        <details key={gid} className="group backdrop-blur-md bg-white/50 rounded-xl border border-white/30 shadow-sm overflow-hidden">
-                          <summary className="flex items-center justify-between p-4 cursor-pointer list-none select-none hover:bg-white/60 transition-colors">
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center justify-center w-8 h-8 bg-zinc-100 rounded-lg">
+              <details key={gid} className="group py-2">
+                <summary className="flex items-center justify-between py-2 cursor-pointer list-none select-none">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center justify-center w-8 h-8 bg-zinc-100 rounded-lg shrink-0">
                                 <span className="text-xs font-black text-zinc-700">{apts.length}x</span>
                               </div>
-                              <div>
-                                <p className="font-bold text-zinc-900 text-sm">{firstApt.service_name}</p>
-                                <p className="text-xs text-zinc-500">{activeCount}/{apts.length} {i18n.language === 'tr' ? 'aktif seans' : 'active sessions'}</p>
+                    <div className="min-w-0">
+                      <p className="font-bold text-zinc-900 text-sm break-words">{apptServiceName(firstApt)}</p>
+                      <p className="text-xs text-zinc-400">{activeCount}/{apts.length} {i18n.language === 'tr' ? 'aktif seans' : 'active sessions'}</p>
                               </div>
                             </div>
                             <svg className="w-4 h-4 text-zinc-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                           </summary>
-                          <div className="px-4 pb-4 space-y-2">
+                <div className="pl-11">
                             {apts.map(apt => <AptRow key={apt.id} apt={apt} showSessionBadge={true} />)}
                           </div>
                         </details>
@@ -761,19 +789,143 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
                     })}
                   </div>
                 );
-              })()
-            ) : (
-              <p className="text-zinc-600 text-center py-8 font-medium">{t('customers.historyEmpty')}</p>
-            )}
+    };
+
+    const SummaryCell = ({ label, value }) => (
+      <div className="px-3 text-center">
+        <p className="text-[11px] text-zinc-400 font-medium mb-2 leading-snug">{label}</p>
+        <p className="text-[17px] font-semibold text-zinc-900 tracking-tight tabular-nums leading-none">{value}</p>
+      </div>
+    );
+
+    return (
+      <div className="min-h-screen bg-zinc-50 pb-24">
+        <div className="max-w-2xl mx-auto p-4 space-y-4">
+          <button
+            onClick={() => { setSelectedCustomer(null); setCustomerHistory(null); setCustomerNotes(""); setDetailTab("overview"); }}
+            className="flex items-center gap-2 px-2 py-2 text-zinc-500 hover:text-zinc-900 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="text-sm font-bold">{t('customers.backToCustomers')}</span>
+          </button>
+
+          {/* Profil kartı */}
+          <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-20 h-20 bg-gradient-to-br from-zinc-700 to-zinc-900 text-white rounded-full flex items-center justify-center font-black text-2xl mb-4 shadow-sm">
+                {getInitials(selectedCustomer.name)}
+              </div>
+              <h2 className="text-xl font-black text-zinc-900 mb-1">{selectedCustomer.name}</h2>
+              <div className="flex items-center gap-1.5 text-zinc-500 font-medium text-sm mb-5">
+                <Phone className="w-3.5 h-3.5" />
+                <span>{selectedCustomer.phone}</span>
+              </div>
+              <div className="flex gap-3 w-full max-w-xs">
+                <Button onClick={() => handleCall(selectedCustomer.phone)} variant="outline" className="flex-1 border-zinc-200 text-zinc-700 hover:bg-zinc-50 rounded-xl font-bold h-11">
+                  <Phone className="w-4 h-4 mr-2" /> {t('customers.actions.call')}
+                </Button>
+                <Button onClick={() => handleWhatsApp(selectedCustomer.phone)} className="flex-1 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold shadow-sm h-11">
+                  <MessageSquare className="w-4 h-4 mr-2" /> {t('customers.actions.whatsapp')}
+                </Button>
+              </div>
+              {userRole === 'admin' && (
+                <div className="flex gap-2 w-full max-w-xs mt-3">
+                  <Button onClick={handleOpenEditDialog} variant="outline" className="flex-1 border-zinc-200 text-zinc-700 hover:bg-zinc-50 rounded-xl font-bold h-11">
+                    <Edit2 className="w-4 h-4 mr-2" /> {i18n.language === 'tr' ? 'Düzenle' : 'Edit'}
+                  </Button>
+                  <Button onClick={() => { setCustomerToDelete(selectedCustomer); setDeleteDialogOpen(true); }} variant="outline" className="flex-1 border-red-200 text-red-600 hover:bg-red-50 rounded-xl font-bold h-11">
+                    <Trash2 className="w-4 h-4 mr-2" /> {t('customers.deleteButton')}
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-6 shadow-lg">
-            <h3 className="font-black text-zinc-900 mb-3 text-base">{t('customers.notesTitle')}</h3>
+          {/* Sekmeler + içerik */}
+          <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden">
+            <div className="flex border-b border-zinc-100">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setDetailTab(tab.id)}
+                  className={`flex-1 py-3.5 text-sm font-bold transition-colors relative ${
+                    detailTab === tab.id ? 'text-zinc-900' : 'text-zinc-400 hover:text-zinc-600'
+                  }`}
+                >
+                  {tab.label}
+                  {detailTab === tab.id && (
+                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-10 h-0.5 bg-zinc-900 rounded-full" />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-5">
+              {/* GENEL BAKIŞ */}
+              {detailTab === 'overview' && (
+                loadingHistory ? (
+                  <div className="text-center py-10">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 mx-auto mb-3"></div>
+                    <p className="text-zinc-500 font-medium text-sm">{t('customers.loading')}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    {/* Özet */}
+                    <div className="rounded-xl border border-zinc-100 p-4">
+                      <p className="text-sm font-semibold text-zinc-900 mb-4">{t('customers.summaryTitle')}</p>
+                      <div className="grid grid-cols-3 divide-x divide-zinc-100">
+                        <SummaryCell label={t('customers.summaryTotalAppointments')} value={totalCount} />
+                        <SummaryCell label={t('customers.summaryTotalSpent')} value={totalSpent > 0 ? formatMoney(totalSpent) : t('customers.noData')} />
+                        <SummaryCell label={t('customers.summaryLastAppointment')} value={lastApt ? format(new Date(lastApt.appointment_date), "d MMM yyyy", { locale: dateLocale }) : t('customers.noData')} />
+                      </div>
+                    </div>
+
+                    {/* En Çok Yaptığı İşlemler */}
+                    <div className="rounded-xl border border-zinc-100 p-4">
+                      <p className="text-sm font-semibold text-zinc-900 mb-4">{t('customers.topServicesTitle')}</p>
+                      {topServices.length > 0 ? (
+                        <div className="space-y-4">
+                          {topServices.map(([name, count]) => {
+                            const pct = Math.round((count / totalForPct) * 100);
+                            const barW = Math.min(100, Math.max(3, pct));
+                            return (
+                              <div key={name}>
+                                <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                                  <span className="text-sm text-zinc-700 font-medium break-words min-w-0">{name}</span>
+                                  <span className="shrink-0 text-sm font-bold text-zinc-900">{formatPct(pct)}</span>
+                                </div>
+                                <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+                                  <div className="h-full bg-zinc-900 rounded-full transition-all" style={{ width: `${barW}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-zinc-400 text-center py-6 font-medium text-sm">{t('customers.historyEmpty')}</p>
+            )}
+          </div>
+                  </div>
+                )
+              )}
+
+              {/* GEÇMİŞ — Son İşlemler */}
+              {detailTab === 'history' && (
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900 mb-2">{t('customers.recentTransactionsTitle')}</p>
+                  {renderHistoryList()}
+                </div>
+              )}
+
+              {/* NOTLAR */}
+              {detailTab === 'notes' && (
             <div className="space-y-3">
-              <Textarea value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} placeholder={t('customers.notesPlaceholder')} rows={4} className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl font-medium focus:ring-2 focus:ring-zinc-900" />
-              <Button onClick={handleSaveNotes} className="w-full bg-zinc-900 hover:bg-black text-white rounded-xl h-12 font-bold shadow-lg">
+                  <Textarea value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} placeholder={t('customers.notesPlaceholder')} rows={5} className="bg-zinc-50 border-zinc-200 rounded-xl font-medium focus:ring-2 focus:ring-zinc-900" />
+                  <Button onClick={handleSaveNotes} className="w-full bg-zinc-900 hover:bg-black text-white rounded-xl h-12 font-bold shadow-sm">
                 {t('common.save')}
               </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -899,25 +1051,25 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
           ) : (
             <>
               {filteredCustomers.map((customer) => (
-                <div key={customer.phone} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:bg-white/50 transition-all duration-300">
-                  <div className="flex items-center gap-4">
-                    <div onClick={() => handleCustomerClick(customer)} className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl flex items-center justify-center font-black flex-shrink-0 cursor-pointer shadow-md">
-                      {getInitials(customer.name)}
-                    </div>
-                    <div onClick={() => handleCustomerClick(customer)} className="flex-1 min-w-0 cursor-pointer">
-                      <h3 className="text-zinc-900 font-black text-base truncate">{customer.name}</h3>
-                      <p className="text-zinc-600 text-sm truncate font-medium">{customer.phone}</p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {userRole === 'admin' && (
-                        <button onClick={(e) => { e.stopPropagation(); setCustomerToDelete(customer); setDeleteDialogOpen(true); }} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-colors">
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      )}
-                      <ChevronRight onClick={() => handleCustomerClick(customer)} className="w-5 h-5 text-zinc-400 cursor-pointer" />
-                    </div>
+              <div key={customer.phone} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:bg-white/50 transition-all duration-300">
+                <div className="flex items-center gap-4">
+                    <div onClick={() => handleCustomerClick(customer)} className="w-12 h-12 bg-gradient-to-br from-zinc-800 to-zinc-950 text-white rounded-xl flex items-center justify-center font-semibold text-base flex-shrink-0 cursor-pointer shadow-sm ring-1 ring-black/5">
+                    {getInitials(customer.name)}
+                  </div>
+                  <div onClick={() => handleCustomerClick(customer)} className="flex-1 min-w-0 cursor-pointer">
+                    <h3 className="text-zinc-900 font-black text-base truncate">{customer.name}</h3>
+                    <p className="text-zinc-600 text-sm truncate font-medium">{customer.phone}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {userRole === 'admin' && (
+                      <button onClick={(e) => { e.stopPropagation(); setCustomerToDelete(customer); setDeleteDialogOpen(true); }} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-colors">
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
+                    <ChevronRight onClick={() => handleCustomerClick(customer)} className="w-5 h-5 text-zinc-400 cursor-pointer" />
                   </div>
                 </div>
+              </div>
               ))}
               {/* Infinite scroll sentinel — görünür olunca sonraki cursor sayfası çekilir */}
               {hasMore && (

@@ -42,11 +42,16 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (username, password, rememberMe = false) => {
     try {
+      // Native uygulamada (Capacitor) kullanıcı "beni hatırla"ya basmasa bile
+      // uygulama kapanınca çıkış yapmasın → oturumu kalıcı yap.
+      const isAppMode = localStorage.getItem('is_app_mode') === 'true';
+      const persist = rememberMe || isAppMode;
+
       // BACKEND_URL boş olabilir (same-origin için geçerli)
       const formData = new URLSearchParams();
       formData.append('username', username);
       formData.append('password', password);
-      if (rememberMe) {
+      if (persist) {
         formData.append('scope', 'remember_me');
       }
 
@@ -82,8 +87,8 @@ export const AuthProvider = ({ children }) => {
         });
       }
       
-      // rememberMe durumuna göre localStorage veya sessionStorage kullan
-      if (rememberMe) {
+      // Kalıcı (rememberMe veya native app) → localStorage; aksi halde sessionStorage
+      if (persist) {
         localStorage.setItem('authToken', access_token);
         localStorage.setItem('userRole', role);
       } else {

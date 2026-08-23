@@ -425,3 +425,81 @@ export const getSeoEntry = ({ category, slug, locale }) =>
     (item) =>
       item.category === category && item.slug === slug && item.locale === locale
   );
+
+// ============================================================================
+// SEO domain mimarisi: TR = plannapp.co, UK = plannapp.co.uk (self-canonical).
+// Canonical URL'ler her zaman locale'in SABİT domaininden üretilir; hangi
+// domainden servis edildiğinden bağımsızdır (.com vb. zaten 301 ile kapalı).
+// ============================================================================
+export const SEO_ORIGINS = {
+  tr: "https://plannapp.co",
+  "en-GB": "https://plannapp.co.uk",
+};
+
+export const CATEGORY_PATHS = {
+  vertical: { tr: "cozumler", "en-GB": "solutions" },
+  feature: { tr: "ozellikler", "en-GB": "features" },
+};
+
+// Gerçek eşdeğer TR ↔ EN sayfa çiftleri (hreflang). Eşdeğeri olmayan sayfa
+// bu tabloya EKLENMEZ; sahte hreflang eşleşmesi yasak.
+export const HREFLANG_PAIRS = [
+  ["berber-randevu-programi", "barber-appointment-software"],
+  ["diyetisyen-randevu-programi", "dietitian-appointment-software"],
+  ["dis-klinigi-randevu-programi", "dental-clinic-appointment-software"],
+  ["psikolog-randevu-programi", "psychologist-appointment-software"],
+  ["fizyoterapi-randevu-programi", "physiotherapy-appointment-software"],
+  ["kuafor-randevu-programi", "hair-salon-appointment-software"],
+  ["guzellik-merkezi-randevu-programi", "beauty-salon-appointment-software"],
+  ["protez-tirnak-randevu-programi", "nail-studio-appointment-software"],
+  ["spor-salonu-randevu-programi", "gym-booking-software"],
+  ["ozel-ders-randevu-programi", "private-tutor-booking-software"],
+  ["pilates-studyo-randevu-programi", "pilates-studio-booking-software"],
+  ["hali-yikama-randevu-programi", "carpet-cleaning-scheduling-software"],
+  ["oto-kuafor-randevu-programi", "car-detailing-appointment-software"],
+  ["oto-ekspertiz-randevu-programi", "vehicle-inspection-booking-software"],
+  ["veteriner-randevu-programi", "vet-appointment-software"],
+  ["yapay-zeka-randevu-asistani", "ai-appointment-assistant"],
+  ["whatsapp-randevu-hatirlatma", "whatsapp-appointment-reminders"],
+  ["online-randevu-sayfasi", "online-booking-page"],
+  ["gelir-gider-personel-takibi", "revenue-expenses-staff-tracking"],
+  ["mobil-randevu-uygulamasi", "mobile-appointment-app-pwa"],
+];
+
+export const getSeoPath = (entry) =>
+  `/${CATEGORY_PATHS[entry.category][entry.locale]}/${entry.slug}`;
+
+export const getSeoUrl = (entry) => `${SEO_ORIGINS[entry.locale]}${getSeoPath(entry)}`;
+
+// Verilen kaydın diğer dildeki eşdeğerini döndürür (yoksa null).
+export const getAlternateEntry = (entry) => {
+  if (!entry) return null;
+  const pair = HREFLANG_PAIRS.find(([tr, en]) =>
+    entry.locale === "tr" ? tr === entry.slug : en === entry.slug
+  );
+  if (!pair) return null;
+  const altSlug = entry.locale === "tr" ? pair[1] : pair[0];
+  const altLocale = entry.locale === "tr" ? "en-GB" : "tr";
+  return seoData.find(
+    (item) =>
+      item.category === entry.category &&
+      item.slug === altSlug &&
+      item.locale === altLocale
+  );
+};
+
+// Ana sayfa meta içerikleri (host bazlı: .co → tr, .co.uk → en-GB)
+export const homeSeo = {
+  tr: {
+    locale: "tr",
+    title: "PLANN | Randevu Sistemi ve Online Randevu Uygulaması",
+    metaDescription:
+      "PLANN ile randevularınızı tek takvimde yönetin, müşterilerinize WhatsApp'tan otomatik onay ve hatırlatma gönderin, online randevu sayfanızla 7/24 randevu alın. Kuaför, berber, güzellik salonu ve tüm hizmet işletmeleri için.",
+  },
+  "en-GB": {
+    locale: "en-GB",
+    title: "PLANN | Appointment & Booking Software",
+    metaDescription:
+      "PLANN is appointment and booking software for salons, barbers, beauty businesses and service professionals. Automate WhatsApp confirmations and reminders, take bookings 24/7 and track revenue in one dashboard.",
+  },
+};

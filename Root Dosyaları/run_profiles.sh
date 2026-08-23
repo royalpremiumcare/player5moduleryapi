@@ -77,10 +77,9 @@ profile_warm() {
 
 profile_large() {
   echo "════════ LARGE DATASET PROFİLİ ════════"
-  # ⚠️ GÜVENLİK KİLİDİ: Large profili 100k randevu + ağır legacy payload üretir.
-  # PostHog ile AYNI kutuda çalıştırıldığında belleği taşırıp MongoDB'yi OOM-kill
-  # etti (bkz. k6_analiz_raporu §12). Bu kutuda çalıştırma. İZOLE bir test
-  # sunucusunda ya da PostHog ayrıştıktan (Faz 4) sonra ALLOW_LARGE=1 ile aç.
+  # ⚠️ GÜVENLİK KİLİDİ: Large profili 100k randevu seed eder. Eski limitsiz
+  # payload'lar scriptten çıktı ama 100k doküman + dashboard aggregate hâlâ ağır.
+  # PostHog ile aynı kutuda OOM olmuştu (k6_analiz_raporu §12). ALLOW_LARGE=1 ile aç.
   if [ "${ALLOW_LARGE:-0}" != "1" ]; then
     echo "🚫 Large profili kilitli (bu kutuda OOM riski). Çalıştırmak için: ALLOW_LARGE=1 $0 large"
     echo "   Öneri: İzole test sunucusunda veya PostHog ayrıştıktan sonra."

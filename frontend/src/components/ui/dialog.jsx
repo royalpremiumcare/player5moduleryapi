@@ -12,13 +12,24 @@ const DialogPortal = DialogPrimitive.Portal
 
 const DialogClose = DialogPrimitive.Close
 
-const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
+// `inset-0` bazı WebView'larda safe-area'yı kapsamıyor; o şeritte html'in arka planı
+// (beyaz) görünüyor ve overlay açıkken sırıtıyor. Negatif inset ile şeritlerin
+// üstüne taşıyoruz — safe-area 0 olan platformlarda ekran dışına taşar, etkisi yok.
+const SAFE_AREA_BLEED = {
+  top: "calc(-1 * env(safe-area-inset-top, 0px))",
+  bottom: "calc(-1 * env(safe-area-inset-bottom, 0px))",
+  left: "calc(-1 * env(safe-area-inset-left, 0px))",
+  right: "calc(-1 * env(safe-area-inset-right, 0px))",
+};
+
+const DialogOverlay = React.forwardRef(({ className, style, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
       "fixed inset-0 z-[1100] bg-black/45 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
+    style={{ ...SAFE_AREA_BLEED, ...style }}
     {...props} />
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
@@ -36,8 +47,8 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
         {...props}>
         {children}
         <DialogPrimitive.Close
-          className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-          <X className="h-4 w-4" />
+          className="absolute right-3 top-3 p-1.5 rounded-lg text-zinc-500 opacity-80 ring-offset-background transition-colors hover:opacity-100 hover:bg-zinc-100 hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+          <X className="h-5 w-5" strokeWidth={2.5} />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>

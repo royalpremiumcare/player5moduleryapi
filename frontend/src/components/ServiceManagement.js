@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Briefcase, Edit, Trash2, Plus, ArrowLeft, GripVertical, Tag } from "lucide-react";
+import { Briefcase, Edit, Trash2, Plus, ArrowLeft, GripVertical, Tag, ListChecks, Search, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
@@ -42,7 +42,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const SortableCategoryRow = ({ category, t, onEdit, onDelete }) => {
+const SortableCategoryRow = ({ category, t, serviceCount, onAssign, onEdit, onDelete }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: category.id });
   const style = { transform: CSS.Transform.toString(transform), transition };
   return (
@@ -58,7 +58,18 @@ const SortableCategoryRow = ({ category, t, onEdit, onDelete }) => {
           <GripVertical className="w-4 h-4" />
         </button>
         <Tag className="w-4 h-4 text-indigo-500 flex-shrink-0" />
-        <span className="flex-1 min-w-0 text-sm font-bold text-zinc-900 break-words leading-snug">{category.name}</span>
+        <div className="flex-1 min-w-0">
+          <span className="block text-sm font-bold text-zinc-900 break-words leading-snug">{category.name}</span>
+          <span className="block text-xs text-zinc-500 font-medium mt-0.5">
+            {serviceCount > 0
+              ? t('services.categories.serviceCount', { count: serviceCount })
+              : t('services.categories.noServices')}
+          </span>
+        </div>
+        <Button onClick={() => onAssign(category)} size="sm" variant="outline" className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-lg font-bold shadow-sm h-8 px-2.5">
+          <ListChecks className="w-3.5 h-3.5 sm:mr-1" />
+          <span className="hidden sm:inline text-xs">{t('services.categories.assign')}</span>
+        </Button>
         <Button onClick={() => onEdit(category)} size="sm" variant="outline" className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-lg font-bold shadow-sm h-8 px-2">
           <Edit className="w-3.5 h-3.5" />
         </Button>
@@ -178,6 +189,13 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
   const [formErrors, setFormErrors] = useState({});
   const [settings, setSettings] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  // Minimum online ödeme / kapora eşikleri para birimine göre değişir.
+  // Kaynak: backend financial/money.py (MIN_ONLINE_PAYMENT_MINOR / MIN_DEPOSIT_MINOR).
+  const paymentMinimums = useMemo(() => {
+    const phone = (settings?.support_phone || '').replace(/\s/g, '');
+    const isGbp = phone ? (phone.startsWith('+44') || phone.startsWith('44')) : i18n.language !== 'tr';
+    return isGbp ? { online: 5, deposit: 3 } : { online: 300, deposit: 200 };
+  }, [settings, i18n.language]);
   const [orderedServices, setOrderedServices] = useState([]);
   const [reordering, setReordering] = useState(false);
   // Kategoriler
@@ -188,6 +206,11 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
   const [categoryName, setCategoryName] = useState("");
   const [deleteCategoryDialog, setDeleteCategoryDialog] = useState(null);
   const [savingCategory, setSavingCategory] = useState(false);
+  // Kategoriye toplu hizmet atama
+  const [assignCategory, setAssignCategory] = useState(null);
+  const [assignSelection, setAssignSelection] = useState(new Set());
+  const [assignSearch, setAssignSearch] = useState("");
+  const [savingAssignment, setSavingAssignment] = useState(false);
 
   useEffect(() => {
     setOrderedServices(Array.isArray(services) ? services : []);
@@ -205,12 +228,65 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
     return m;
   }, [categories]);
 
+  const serviceCountByCategory = useMemo(() => {
+    const m = {};
+    (services || []).forEach((s) => {
+      if (s?.category_id) m[s.category_id] = (m[s.category_id] || 0) + 1;
+    });
+    return m;
+  }, [services]);
+
   const loadCategories = async () => {
     try {
       const res = await api.get("/categories");
       setCategories(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       console.error("Kategoriler yüklenemedi:", e);
+    }
+  };
+
+  const openAssignDialog = (category) => {
+    const current = (services || []).filter((s) => s?.category_id === category.id).map((s) => s.id);
+    setAssignSelection(new Set(current));
+    setAssignSearch("");
+    setAssignCategory(category);
+  };
+
+  const toggleAssignService = (serviceId) => {
+    setAssignSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(serviceId)) next.delete(serviceId);
+      else next.add(serviceId);
+      return next;
+    });
+  };
+
+  const assignableServices = useMemo(() => {
+    const term = assignSearch.trim().toLocaleLowerCase('tr');
+    const list = services || [];
+    if (!term) return list;
+    return list.filter((s) => String(s?.name || "").toLocaleLowerCase('tr').includes(term));
+  }, [services, assignSearch]);
+
+  const handleSaveAssignment = async () => {
+    if (!assignCategory) return;
+    setSavingAssignment(true);
+    try {
+      const res = await api.post(`/categories/${assignCategory.id}/services`, {
+        service_ids: Array.from(assignSelection),
+      });
+      const { assigned_count = 0, removed_count = 0 } = res.data || {};
+      toast.success(t('services.categories.assignSaved', {
+        category: assignCategory.name,
+        added: assigned_count,
+        removed: removed_count,
+      }));
+      setAssignCategory(null);
+      onRefresh();
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || t('services.categories.assignFailed', 'Atama kaydedilemedi'));
+    } finally {
+      setSavingAssignment(false);
     }
   };
 
@@ -347,18 +423,20 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       return;
     }
 
-    if (formData.paymentRule === 'online' && price < 300) {
-      setFormErrors({ price: i18n.language === 'tr' ? 'Online ödeme için hizmet fiyatı en az 300₺ olmalıdır.' : 'Service price must be at least £5 for online payment.' });
+    // Uyarı ödeme kuralının altında gösteriliyor; fiyat alanının altında kalırsa
+    // form kaydırıldığında görünmüyordu.
+    if (formData.paymentRule === 'online' && price < paymentMinimums.online) {
+      setFormErrors({ paymentRule: i18n.language === 'tr' ? `Online ödeme için hizmet fiyatı en az ${paymentMinimums.online}₺ olmalıdır.` : `Online payment requires a service price of at least £${paymentMinimums.online}.` });
       return;
     }
-    if (formData.paymentRule === 'deposit' && price < 300) {
-      setFormErrors({ price: i18n.language === 'tr' ? 'Kapora için hizmet fiyatı en az 300₺ olmalıdır.' : 'Service price must be at least £5 for deposit.' });
+    if (formData.paymentRule === 'deposit' && price < paymentMinimums.online) {
+      setFormErrors({ paymentRule: i18n.language === 'tr' ? `Kapora için hizmet fiyatı en az ${paymentMinimums.online}₺ olmalıdır.` : `Taking a deposit requires a service price of at least £${paymentMinimums.online}.` });
       return;
     }
     if (formData.paymentRule === 'deposit') {
       const dep = parseFloat(formData.depositAmount) || 0;
-      if (dep < 200) {
-        setFormErrors({ depositAmount: i18n.language === 'tr' ? 'Kapora tutarı en az 200₺ olmalıdır.' : 'Deposit must be at least £3.' });
+      if (dep < paymentMinimums.deposit) {
+        setFormErrors({ depositAmount: i18n.language === 'tr' ? `Kapora tutarı en az ${paymentMinimums.deposit}₺ olmalıdır.` : `The deposit must be at least £${paymentMinimums.deposit}.` });
         return;
       }
       if (dep > price) {
@@ -509,6 +587,8 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                         key={category.id}
                         category={category}
                         t={t}
+                        serviceCount={serviceCountByCategory[category.id] || 0}
+                        onAssign={openAssignDialog}
                         onEdit={(c) => { setEditingCategory(c); setCategoryName(c.name); setCategoryDialog(true); }}
                         onDelete={setDeleteCategoryDialog}
                       />
@@ -668,14 +748,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 required
                 className={`backdrop-blur-md bg-white/60 border rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.price ? 'border-red-400' : 'border-white/40'}`}
               />
-              {formErrors.price 
-                ? <p className="text-xs text-red-500 font-medium">{formErrors.price}</p>
-                : (formData.paymentRule === 'online' || formData.paymentRule === 'deposit') && (
-                  <p className="text-xs text-zinc-400 font-medium">
-                    {i18n.language === 'tr' ? 'Online ödeme için minimum tutar 300₺' : 'Minimum amount for online payment £5'}
-                  </p>
-                )
-              }
+              {formErrors.price && <p className="text-xs text-red-500 font-medium">{formErrors.price}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="service-duration" className="text-sm font-bold text-zinc-700">{t('services.fields.duration')}</Label>
@@ -696,22 +769,9 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 : <p className="text-xs text-zinc-500 font-medium">{t('services.management.durationNote')}</p>
               }
             </div>
-            {categories.length > 0 && (
-              <div className="space-y-2">
-                <Label htmlFor="service-category" className="text-sm font-bold text-zinc-700">{t('services.categories.label', 'Kategori')}</Label>
-                <select
-                  id="service-category"
-                  value={formData.categoryId}
-                  onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                  className="w-full backdrop-blur-md bg-white/60 border border-white/40 rounded-xl h-11 px-3 text-sm font-medium text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-                >
-                  <option value="">{t('services.categories.none', 'Kategorisiz')}</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {/* Kategori seçimi formdan kaldırıldı; atama kategori kartından yapılacak.
+                `formData.categoryId` yine de taşınıyor — düzenlemede gönderilmezse
+                backend `category_id`'yi unset ediyor ve mevcut atama siliniyor. */}
             {/* Section: Paket Tipi */}
             <div className="flex items-center gap-3 pt-2">
               <h3 className="text-[11px] font-black uppercase tracking-[0.12em] text-zinc-400">
@@ -767,23 +827,25 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               <Label className="text-sm font-bold text-zinc-700">
                 {i18n.language === 'tr' ? 'Ödeme Kuralı' : 'Payment Rule'}
               </Label>
+              {/* Seçim artık geri alınmıyor; fiyat düşükse uyarı seçimin hemen altında çıkıyor. */}
               <select
                 value={formData.paymentRule}
                 onChange={(e) => {
                   const rule = e.target.value;
                   const price = parseFloat(formData.price) || 0;
-                  if (rule === 'online' && price > 0 && price < 300) {
-                    setFormErrors(prev => ({ ...prev, price: i18n.language === 'tr' ? 'Online ödeme için hizmet fiyatı en az 300₺ olmalıdır.' : 'Service price must be at least £5 for online payment.' }));
-                    return;
-                  }
-                  if (rule === 'deposit' && price > 0 && price < 300) {
-                    setFormErrors(prev => ({ ...prev, price: i18n.language === 'tr' ? 'Kapora için hizmet fiyatı en az 300₺ olmalıdır.' : 'Service price must be at least £5 for deposit.' }));
-                    return;
-                  }
-                  setFormErrors(prev => { const { price: _, ...rest } = prev; return rest; });
                   setFormData({ ...formData, paymentRule: rule });
+                  if ((rule === 'online' || rule === 'deposit') && price > 0 && price < paymentMinimums.online) {
+                    setFormErrors(prev => ({
+                      ...prev,
+                      paymentRule: rule === 'online'
+                        ? (i18n.language === 'tr' ? `Online ödeme için hizmet fiyatı en az ${paymentMinimums.online}₺ olmalıdır.` : `Online payment requires a service price of at least £${paymentMinimums.online}.`)
+                        : (i18n.language === 'tr' ? `Kapora için hizmet fiyatı en az ${paymentMinimums.online}₺ olmalıdır.` : `Taking a deposit requires a service price of at least £${paymentMinimums.online}.`),
+                    }));
+                  } else {
+                    setFormErrors(prev => { const { paymentRule: _, ...rest } = prev; return rest; });
+                  }
                 }}
-                className="w-full backdrop-blur-md bg-white/60 border border-white/40 rounded-xl h-11 px-3 text-sm font-medium text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                className={`w-full backdrop-blur-md bg-white/60 border rounded-xl h-11 px-3 text-sm font-medium text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none ${formErrors.paymentRule ? 'border-red-400' : 'border-white/40'}`}
               >
                 <option value="on_site">{i18n.language === 'tr' ? 'Yerinde Ödeme' : 'Pay On Site'}</option>
                 <option value="online">{i18n.language === 'tr' ? 'Tamamı Online Ödeme' : 'Full Online Payment'}</option>
@@ -797,6 +859,16 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                     : (i18n.language === 'tr' ? 'Müşteri ödemeyi işletmede yapar, online ödeme alınmaz.' : 'Customer pays at the venue, no online payment.')
                 }
               </p>
+              {formErrors.paymentRule
+                ? <p className="text-xs text-red-500 font-medium">{formErrors.paymentRule}</p>
+                : (formData.paymentRule === 'online' || formData.paymentRule === 'deposit') && (
+                  <p className="text-xs text-zinc-400 font-medium">
+                    {i18n.language === 'tr'
+                      ? `Online ödeme ve kapora için minimum hizmet fiyatı ${paymentMinimums.online}₺`
+                      : `Online payment and deposits require a minimum service price of £${paymentMinimums.online}.`}
+                  </p>
+                )
+              }
             </div>
 
             {formData.paymentRule === 'deposit' && (
@@ -807,7 +879,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 <Input
                   id="deposit-amount"
                   type="number"
-                  min="200"
+                  min={paymentMinimums.deposit}
                   max={Math.round(parseFloat(formData.price) || 0) || 9999}
                   value={formData.depositAmount}
                   onChange={(e) => {
@@ -820,7 +892,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                     setFormErrors(prev => { const { depositAmount: _, ...rest } = prev; return rest; });
                     setFormData({ ...formData, depositAmount: e.target.value });
                   }}
-                  placeholder={i18n.language === 'tr' ? 'Min 200₺' : 'Min £3'}
+                  placeholder={i18n.language === 'tr' ? `Min ${paymentMinimums.deposit}₺` : `Min £${paymentMinimums.deposit}`}
                   required
                   className={`backdrop-blur-md bg-white/60 border rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium ${formErrors.depositAmount ? 'border-red-400' : 'border-white/40'}`}
                 />
@@ -828,8 +900,8 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                   ? <p className="text-xs text-red-500 font-medium">{formErrors.depositAmount}</p>
                   : <p className="text-xs text-zinc-500 font-medium">
                       {i18n.language === 'tr' 
-                        ? 'Min 200₺. Kalan tutar işletmede ödenir.'
-                        : 'Min £3. Rest is paid at venue.'}
+                        ? `Min ${paymentMinimums.deposit}₺. Kalan tutar işletmede ödenir.`
+                        : `Minimum £${paymentMinimums.deposit}. The rest is paid at the venue.`}
                     </p>
                 }
               </div>
@@ -954,6 +1026,104 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Kategoriye toplu hizmet atama */}
+      <Dialog open={!!assignCategory} onOpenChange={(open) => { if (!open && !savingAssignment) setAssignCategory(null); }}>
+        <DialogContent
+          className="max-w-md max-h-[78dvh] flex flex-col backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="text-xl font-black text-zinc-900">
+              {t('services.categories.assignTitle')}
+            </DialogTitle>
+            <DialogDescription className="text-zinc-600 font-medium">
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-900 mb-1.5">
+                <Tag className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span className="break-words">{assignCategory?.name}</span>
+              </span>
+              <span className="block">{t('services.categories.assignDescription')}</span>
+            </DialogDescription>
+          </DialogHeader>
+
+          {(services || []).length > 8 && (
+            <div className="relative shrink-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <Input
+                value={assignSearch}
+                onChange={(e) => setAssignSearch(e.target.value)}
+                placeholder={t('services.categories.assignSearchPlaceholder')}
+                className="pl-9 backdrop-blur-md bg-white/60 border border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
+              />
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-2 py-1 pr-1">
+            {assignableServices.length === 0 ? (
+              <p className="text-sm text-zinc-500 font-medium text-center py-8">
+                {(services || []).length === 0
+                  ? t('services.categories.assignNoServices')
+                  : t('services.categories.assignNoResults')}
+              </p>
+            ) : (
+              assignableServices.map((service) => {
+                const selected = assignSelection.has(service.id);
+                const otherCategory = service.category_id && service.category_id !== assignCategory?.id
+                  ? categoryNameById[service.category_id]
+                  : null;
+                return (
+                  <button
+                    key={service.id}
+                    type="button"
+                    onClick={() => toggleAssignService(service.id)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${
+                      selected
+                        ? 'bg-zinc-900 border-zinc-900 text-white'
+                        : 'backdrop-blur-md bg-white/50 border-white/40 hover:bg-white/80 text-zinc-900'
+                    }`}
+                  >
+                    <span className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${
+                      selected ? 'bg-white border-white' : 'border-zinc-300'
+                    }`}>
+                      {selected && <Check className="w-3.5 h-3.5 text-zinc-900" strokeWidth={3} />}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-bold break-words leading-snug">{service.name}</span>
+                      {otherCategory && !selected && (
+                        <span className="block text-xs text-zinc-500 font-medium mt-0.5">
+                          {t('services.categories.currentlyIn', { category: otherCategory })}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter className="shrink-0 border-t border-zinc-200 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={savingAssignment}
+              onClick={() => setAssignCategory(null)}
+              className="backdrop-blur-md bg-white/60 border-white/40 hover:bg-white/80 rounded-xl h-11 font-bold"
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveAssignment}
+              disabled={savingAssignment}
+              className="bg-zinc-900 hover:bg-black rounded-xl h-11 font-bold shadow-lg"
+            >
+              {savingAssignment
+                ? t('settings.profile.buttons.saving')
+                : t('services.categories.assignSaveButton', { count: assignSelection.size })}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

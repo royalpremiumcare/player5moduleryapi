@@ -6,6 +6,9 @@ RUN npm install --legacy-peer-deps
 RUN npm install --legacy-peer-deps @capacitor/core @capacitor/haptics
 COPY . .
 RUN npm run build
+# SEO: route bazlı statik head shell'leri üret (crawler ilk HTML sinyalleri).
+# Hata verirse build DÜŞER — sessiz bozulma yok.
+RUN node scripts/generate-seo-html.js
 
 # --- AŞAMA 2: Nginx ---
 FROM nginx:alpine
