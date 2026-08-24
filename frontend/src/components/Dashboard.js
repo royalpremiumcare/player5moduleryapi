@@ -26,6 +26,13 @@ import TourGuide from "../components/TourGuide";
 // --------------------------
 import SwipeableAppointmentCard from "./SwipeableAppointmentCard";
 
+/** Dashboard selamlama: "Fatih Senyüz" → "Fatih" */
+function firstNameOnly(fullName) {
+  const trimmed = String(fullName || "").trim();
+  if (!trimmed) return "";
+  return trimmed.split(/\s+/)[0];
+}
+
 // --- SEANS PLANLAYICI ---
 import SessionPlannerDialog from "./SessionPlannerDialog";
 
@@ -262,7 +269,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         const username = payload.sub || payload.username;
         const fullName = payload.full_name || payload.name;
         setCurrentStaffUsername(username);
-        setCurrentUserName(fullName || username || t('dashboard.userFallback'));
+        setCurrentUserName(firstNameOnly(fullName) || username || t('dashboard.userFallback'));
       } catch (e) { console.error(e); }
     }
   };

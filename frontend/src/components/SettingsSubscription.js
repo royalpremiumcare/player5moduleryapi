@@ -8,6 +8,8 @@ import api from "../api/api";
 import { Capacitor } from '@capacitor/core';
 import { buildWebsiteSubscribeUrl, openWebsiteSubscribe, prefetchWebsiteSubscribeUrl } from "../lib/openWebsiteSubscribe";
 import { openExternalUrl } from "../lib/openExternalUrl";
+import { openPortalInAppBrowser } from "../lib/inAppSubscribe";
+import useInAppSubscribeEnabled from "../hooks/useInAppSubscribeEnabled";
 
 const SettingsSubscription = ({ onNavigate }) => {
   const { t, i18n } = useTranslation();
@@ -15,9 +17,10 @@ const SettingsSubscription = ({ onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const [loadingPortal, setLoadingPortal] = useState(false);
   
-  // App Store Compliance: Mobil uygulamada (Android/iOS) ödeme butonlarını gizle
-  // Sadece native platform kontrolü yap, localStorage kontrolü yapma (web'de ?mode=app ile giriş yapıldığında localStorage'a yazılıyor)
-  const isAppMode = Capacitor.isNativePlatform();
+  const { enabled: inAppEnabled, ready: inAppReady } = useInAppSubscribeEnabled();
+  const isNative = Capacitor.isNativePlatform();
+  const showWebsiteGate = isNative && inAppReady && !inAppEnabled;
+  const showInAppBilling = !isNative || (inAppReady && inAppEnabled);
   const webUrl = i18n.language && i18n.language.toLowerCase().startsWith('en')
     ? 'https://plannapp.co.uk'
     : 'https://plannapp.co';
@@ -29,9 +32,9 @@ const SettingsSubscription = ({ onNavigate }) => {
   }, []);
 
   useEffect(() => {
-    if (!isAppMode) return;
+    if (!showWebsiteGate) return;
     prefetchWebsiteSubscribeUrl(webUrl).then(setWebsiteUrl);
-  }, [isAppMode, webUrl]);
+  }, [showWebsiteGate, webUrl]);
 
   const loadPlanInfo = async () => {
     try {
@@ -56,9 +59,12 @@ const SettingsSubscription = ({ onNavigate }) => {
         throw new Error("Portal URL not received");
       }
 
-      // Native'de sistem tarayıcısı (App.openUrl), web'de yeni sekme.
-      // Üçlü fallback için openExternalUrl (Plan 12.4).
-      openExternalUrl(portalUrl);
+      if (isNative && inAppEnabled) {
+        await openPortalInAppBrowser(portalUrl);
+        setLoadingPortal(false);
+      } else {
+        openExternalUrl(portalUrl);
+      }
     } catch (error) {
       console.error("Portal oluşturma hatası:", error);
       const errorMessage = error.response?.data?.detail || error.message || t('settings.subscriptionPage.portalError');
@@ -179,8 +185,7 @@ const SettingsSubscription = ({ onNavigate }) => {
                 </div>
               )}
 
-              {/* App Store Compliance: Mobil uygulamada ödeme butonlarını gizle */}
-              {!isAppMode && (
+              {showInAppBilling && (
                 <>
                   <Button
                     onClick={() => onNavigate && onNavigate("subscribe")}
@@ -212,8 +217,7 @@ const SettingsSubscription = ({ onNavigate }) => {
                 </>
               )}
               
-              {/* App Mode: Bilgilendirme mesajı */}
-              {isAppMode && (
+              {showWebsiteGate && (
                 <div className="rounded-2xl p-5 border border-gray-200 bg-white">
                   <div className="flex items-start gap-3">
                     <div className="w-12 h-12 rounded-2xl border border-gray-200 flex items-center justify-center bg-white flex-shrink-0">

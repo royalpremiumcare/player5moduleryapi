@@ -1,7 +1,27 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
 import api from '../api/api';
+import i18n from '../i18n';
 import posthog from '../lib/posthog';
+
+function localizeRegisterError(detail) {
+  const raw = String(detail || '').trim();
+  if (!raw) return i18n.t('auth.register.error');
+  const s = raw.toLowerCase();
+  if (s.includes('already registered') || s.includes('zaten kayıtlı')) {
+    return i18n.t('auth.register.errors.emailExists');
+  }
+  if (s.includes('telefon numarası başka') || s.includes('phone number is already')) {
+    return i18n.t('auth.register.errors.phoneExists');
+  }
+  if (s.includes('işletme adı zaten') || s.includes('business name is already')) {
+    return i18n.t('auth.register.errors.orgNameExists');
+  }
+  if (s.includes('geçerli karakter') || s.includes('valid characters')) {
+    return i18n.t('auth.register.errors.orgNameInvalid');
+  }
+  return raw;
+}
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : '';
 
@@ -157,7 +177,9 @@ export const AuthProvider = ({ children }) => {
       };
     } catch (error) {
       console.error('❌ Register-initiate hatası:', error);
-      const errorMessage = error.response?.data?.detail || 'Kayıt başlatılamadı. Lütfen bilgileri kontrol edip tekrar deneyin.';
+      const errorMessage = localizeRegisterError(
+        error.response?.data?.detail || i18n.t('auth.register.error')
+      );
       return { success: false, error: errorMessage };
     }
   };

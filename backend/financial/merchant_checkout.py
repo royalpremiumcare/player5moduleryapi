@@ -951,6 +951,12 @@ async def _route_event(
         from .payout_reconciliation import handle_payout_paid
         return await handle_payout_paid(db, data_object)
 
+    elif event_type == "invoice.payment_failed":
+        # SaaS abonelik dunning — merchant endpoint'ine de düşüyor (Stripe aynı hesabı paylaşıyor).
+        from server import notify_saas_invoice_payment_failed
+        sent = await notify_saas_invoice_payment_failed(db, data_object)
+        return {"handled": True, "event_type": event_type, "grace_email_sent": sent}
+
     else:
         logger.info("Unhandled webhook event type: %s", event_type)
         return {"handled": False, "event_type": event_type}

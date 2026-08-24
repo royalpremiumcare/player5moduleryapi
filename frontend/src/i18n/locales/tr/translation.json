@@ -375,7 +375,13 @@
       "hasAccount": "Zaten hesabınız var mı?",
       "loginLink": "Giriş Yap",
       "success": "Kayıt başarılı! Şimdi giriş yapabilirsiniz.",
-      "error": "Kayıt sırasında bir hata oluştu."
+      "error": "Kayıt sırasında bir hata oluştu.",
+      "errors": {
+        "emailExists": "Bu e-posta adresi zaten kayıtlı.",
+        "phoneExists": "Bu telefon numarası başka bir işletme tarafından kullanılıyor. Lütfen farklı bir numara girin.",
+        "orgNameExists": "Bu işletme adı zaten kullanılıyor veya mevcut bir işletmeyle çok benzer. Lütfen farklı bir işletme adı seçin.",
+        "orgNameInvalid": "İşletme adı geçerli karakter içermelidir."
+      }
     },
     "forgotPassword": {
       "title": "Şifremi Unuttum",
@@ -1120,7 +1126,7 @@
       "nextMonths": "Sonraki aylarda normal fiyattan otomatik olarak tahsilat yapılacaktır.",
       "appointmentsPerMonth": "Randevu / Aylık",
       "currentSubscription": "Mevcut Abonelik",
-      "processing": "Tarayıcıya yönlendiriliyor...",
+      "processing": "Ödeme açılıyor...",
       "startSubscription": "Aboneliği Başlat",
       "switchToYearly": "Yıllığa Geç",
       "switchToMonthly": "Aylığa Geç",
@@ -1128,6 +1134,8 @@
       "plansLoadError": "Planlar yüklenemedi",
       "paymentPageError": "Ödeme sayfası oluşturulamadı",
       "paymentError": "Ödeme işlemi başlatılamadı",
+      "inAppBrowserError": "Ödeme ekranı açılamadı. Lütfen tekrar deneyin.",
+      "paymentMayStillActivate": "Abonelik henüz güncellenmedi. Ödeme yaptıysan birkaç saniye içinde yansır.",
       "subscriptionManagement": "Abonelik Yönetimi",
       "subscriptionInfo": "Abonelik ve faturalandırma işlemleri web sitemiz üzerinden yönetilir. Devam ettiğinizde abonelik sayfasına otomatik olarak yönlendirilirsiniz.",
       "goToWebsite": "Web Sitesine Git",

@@ -46,20 +46,20 @@ def _wrap_branded(body_html: str) -> str:
   <center style="width:100%;background-color:#fbfbfa;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:#fbfbfa;">
       <tr>
-        <td align="center" style="padding:60px 16px;">
-          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;margin:0 auto;background-color:#ffffff;border:1px solid #e5e5e3;box-shadow:0 4px 20px rgba(0,0,0,0.02);">
+        <td align="center" style="padding:40px 12px;">
+          <table role="presentation" width="760" cellpadding="0" cellspacing="0" border="0" style="width:760px;max-width:100%;margin:0 auto;background-color:#ffffff;border:1px solid #e5e5e3;box-shadow:0 4px 20px rgba(0,0,0,0.02);">
             <tr>
-              <td style="padding:60px 50px 40px 50px;text-align:center;border-bottom:1px solid #f2f2f0;">
-                <h1 style="margin:0;font-family:{_BRAND_FONT_SERIF};font-size:30px;font-weight:300;letter-spacing:10px;color:#1a1a1a;text-transform:uppercase;">P L A N N</h1>
+              <td style="padding:40px 36px 28px 36px;text-align:center;border-bottom:1px solid #f2f2f0;">
+                <h1 style="margin:0;font-family:{_BRAND_FONT_SERIF};font-size:28px;font-weight:300;letter-spacing:12px;color:#1a1a1a;text-transform:uppercase;">P L A N N</h1>
               </td>
             </tr>
             <tr>
-              <td style="padding:50px 50px 40px 50px;">
+              <td style="padding:36px 36px 40px 36px;">
                 {body_html}
               </td>
             </tr>
             <tr>
-              <td style="padding:40px 50px;text-align:center;font-family:{_BRAND_FONT_SANS};font-size:10px;letter-spacing:2px;color:#a3a3a0;text-transform:uppercase;border-top:1px solid #f2f2f0;">
+              <td style="padding:28px 36px;text-align:center;font-family:{_BRAND_FONT_SANS};font-size:10px;letter-spacing:2px;color:#a3a3a0;text-transform:uppercase;border-top:1px solid #f2f2f0;">
                 PLANNAPP LTD. ALL RIGHTS RESERVED. &copy; {year}
               </td>
             </tr>
@@ -78,16 +78,17 @@ def _fin_body(*, badge="", statement="", paragraphs=None, meta_rows=None, button
     if badge:
         parts.append(
             f'<div style="font-family:{_BRAND_FONT_SANS};font-size:10px;letter-spacing:3px;'
-            f'text-transform:uppercase;color:#8c8c88;margin:0 0 30px 0;text-align:center;font-weight:500;">{badge}</div>'
+            f'text-transform:uppercase;color:#8c8c88;margin:0 0 20px 0;text-align:left;font-weight:500;">{badge}</div>'
         )
     if statement:
         parts.append(
-            f'<div style="font-family:{_BRAND_FONT_SERIF};font-size:23px;line-height:1.6;color:#1a1a1a;'
-            f'text-align:center;margin:0 0 45px 0;font-weight:400;font-style:italic;">{statement}</div>'
+            f'<div style="font-family:{_BRAND_FONT_SERIF};font-size:20px;line-height:1.45;color:#1a1a1a;'
+            f'text-align:left;margin:0 0 24px 0;font-weight:400;font-style:italic;">{statement}</div>'
         )
     for p in (paragraphs or []):
         parts.append(
-            f'<p style="font-family:{_BRAND_FONT_SERIF};font-size:17px;line-height:1.75;color:#3a3a3a;margin:0 0 20px 0;">{p}</p>'
+            f'<p style="font-family:{_BRAND_FONT_SERIF};font-size:16px;line-height:1.55;color:#3a3a3a;'
+            f'margin:0 0 14px 0;text-align:left;">{p}</p>'
         )
     if meta_rows:
         rows = ""
@@ -107,14 +108,14 @@ def _fin_body(*, badge="", statement="", paragraphs=None, meta_rows=None, button
         parts.append(extra_html)
     if note:
         parts.append(
-            f'<p style="font-family:{_BRAND_FONT_SANS};font-size:13px;line-height:1.6;color:#8c8c88;'
-            f'margin:28px 0 0 0;padding-top:20px;border-top:1px solid #f2f2f0;">{note}</p>'
+            f'<p style="font-family:{_BRAND_FONT_SANS};font-size:13px;line-height:1.55;color:#8c8c88;'
+            f'margin:22px 0 0 0;padding-top:18px;border-top:1px solid #f2f2f0;text-align:left;">{note}</p>'
         )
     if button and button.get("url") and button.get("label"):
         parts.append(
-            f'<div style="text-align:center;margin-top:40px;">'
+            f'<div style="text-align:left;margin-top:28px;">'
             f'<a href="{button["url"]}" target="_blank" style="border:1px solid #1a1a1a;color:#1a1a1a;'
-            f'text-decoration:none;padding:16px 42px;font-family:{_BRAND_FONT_SANS};font-size:11px;'
+            f'text-decoration:none;padding:14px 36px;font-family:{_BRAND_FONT_SANS};font-size:11px;'
             f'font-weight:600;text-transform:uppercase;letter-spacing:3px;display:inline-block;">{button["label"]}</a></div>'
         )
     return "\n".join(parts)

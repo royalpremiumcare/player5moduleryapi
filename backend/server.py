@@ -140,10 +140,10 @@ from operation_audit import log_operation_audit
 
 # Success ve Cancel URL'leri
 PAYMENT_SUCCESS_URL = "https://plannapp.co/"
-PAYMENT_SUCCESS_URL_NATIVE = "plannapp://payment-success"
+PAYMENT_SUCCESS_URL_NATIVE = "plannapp://payment-success?session_id={CHECKOUT_SESSION_ID}"
 # Native app için deep link, web için normal URL
 PAYMENT_CANCEL_URL = "https://plannapp.co/dashboard"
-PAYMENT_CANCEL_URL_NATIVE = "plannapp://dashboard"
+PAYMENT_CANCEL_URL_NATIVE = "plannapp://subscribe"
 
 # --- PUSH NOTIFICATION AYARLARI ---
 VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', 'BB4nvNoHrWlWS6KTM1ybHUZD260l8b7Nnr2bMHvwnbflCJ4OJVd68Dqmw1hpaOFFUNmRFySvP3Ewzm596xjqF7g')
@@ -256,20 +256,20 @@ def _brand_shell(content_html: str, lang: str = "tr") -> str:
   <center style="width:100%;background-color:#fbfbfa;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:#fbfbfa;">
       <tr>
-        <td align="center" style="padding:60px 16px;">
-          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;margin:0 auto;background-color:#ffffff;border:1px solid #e5e5e3;box-shadow:0 4px 20px rgba(0,0,0,0.02);">
+        <td align="center" style="padding:40px 12px;">
+          <table role="presentation" width="760" cellpadding="0" cellspacing="0" border="0" style="width:760px;max-width:100%;margin:0 auto;background-color:#ffffff;border:1px solid #e5e5e3;box-shadow:0 4px 20px rgba(0,0,0,0.02);">
             <tr>
-              <td style="padding:60px 50px 40px 50px;text-align:center;border-bottom:1px solid #f2f2f0;">
-                <h1 style="margin:0;font-family:{_BRAND_FONT_SERIF};font-size:30px;font-weight:300;letter-spacing:10px;color:#1a1a1a;text-transform:uppercase;">P L A N N</h1>
+              <td style="padding:40px 36px 28px 36px;text-align:center;border-bottom:1px solid #f2f2f0;">
+                <h1 style="margin:0;font-family:{_BRAND_FONT_SERIF};font-size:28px;font-weight:300;letter-spacing:12px;color:#1a1a1a;text-transform:uppercase;">P L A N N</h1>
               </td>
             </tr>
             <tr>
-              <td style="padding:50px 50px 40px 50px;">
+              <td style="padding:36px 36px 40px 36px;">
                 {content_html}
               </td>
             </tr>
             <tr>
-              <td style="padding:40px 50px;text-align:center;font-family:{_BRAND_FONT_SANS};font-size:10px;letter-spacing:2px;color:#a3a3a0;text-transform:uppercase;border-top:1px solid #f2f2f0;">
+              <td style="padding:28px 36px;text-align:center;font-family:{_BRAND_FONT_SANS};font-size:10px;letter-spacing:2px;color:#a3a3a0;text-transform:uppercase;border-top:1px solid #f2f2f0;">
                 PLANNAPP LTD. ALL RIGHTS RESERVED. &copy; {year}
               </td>
             </tr>
@@ -297,16 +297,17 @@ def _brand_body(
     if badge:
         parts.append(
             f'<div style="font-family:{_BRAND_FONT_SANS};font-size:10px;letter-spacing:3px;'
-            f'text-transform:uppercase;color:#8c8c88;margin:0 0 30px 0;text-align:center;font-weight:500;">{badge}</div>'
+            f'text-transform:uppercase;color:#8c8c88;margin:0 0 20px 0;text-align:left;font-weight:500;">{badge}</div>'
         )
     if statement:
         parts.append(
-            f'<div style="font-family:{_BRAND_FONT_SERIF};font-size:23px;line-height:1.6;color:#1a1a1a;'
-            f'text-align:center;margin:0 0 45px 0;font-weight:400;font-style:italic;">{statement}</div>'
+            f'<div style="font-family:{_BRAND_FONT_SERIF};font-size:20px;line-height:1.45;color:#1a1a1a;'
+            f'text-align:left;margin:0 0 24px 0;font-weight:400;font-style:italic;">{statement}</div>'
         )
     for p in (paragraphs or []):
         parts.append(
-            f'<p style="font-family:{_BRAND_FONT_SERIF};font-size:17px;line-height:1.75;color:#3a3a3a;margin:0 0 20px 0;">{p}</p>'
+            f'<p style="font-family:{_BRAND_FONT_SERIF};font-size:16px;line-height:1.55;color:#3a3a3a;'
+            f'margin:0 0 14px 0;text-align:left;">{p}</p>'
         )
     if meta_rows:
         # Etiket/değer satırları ince çerçeveli bir kutu içinde (premium meta paneli)
@@ -325,14 +326,14 @@ def _brand_body(
         )
     if note:
         parts.append(
-            f'<p style="font-family:{_BRAND_FONT_SANS};font-size:13px;line-height:1.6;color:#8c8c88;'
-            f'margin:28px 0 0 0;padding-top:20px;border-top:1px solid #f2f2f0;">{note}</p>'
+            f'<p style="font-family:{_BRAND_FONT_SANS};font-size:13px;line-height:1.55;color:#8c8c88;'
+            f'margin:22px 0 0 0;padding-top:18px;border-top:1px solid #f2f2f0;text-align:left;">{note}</p>'
         )
     if button and button.get("url") and button.get("label"):
         parts.append(
-            f'<div style="text-align:center;margin-top:40px;">'
+            f'<div style="text-align:left;margin-top:28px;">'
             f'<a href="{button["url"]}" target="_blank" style="border:1px solid #1a1a1a;color:#1a1a1a;'
-            f'text-decoration:none;padding:16px 42px;font-family:{_BRAND_FONT_SANS};font-size:11px;'
+            f'text-decoration:none;padding:14px 36px;font-family:{_BRAND_FONT_SANS};font-size:11px;'
             f'font-weight:600;text-transform:uppercase;letter-spacing:3px;display:inline-block;">{button["label"]}</a></div>'
         )
     return "\n".join(parts)
@@ -346,7 +347,7 @@ def _brand_email(*, lang: str = "tr", **body_kwargs) -> str:
 def _wrap_brand_email(content_html: str, lang: str = "tr") -> str:
     """Geriye dönük uyum: serbest içerik HTML'ini premium kabuğa sarar."""
     body = (
-        f'<div style="font-family:{_BRAND_FONT_SERIF};font-size:17px;line-height:1.75;color:#3a3a3a;">'
+        f'<div style="font-family:{_BRAND_FONT_SERIF};font-size:16px;line-height:1.55;color:#3a3a3a;text-align:left;">'
         f'{content_html}</div>'
     )
     return _brand_shell(body, lang=lang)
@@ -631,6 +632,304 @@ async def send_activation_nudges(db):
     except Exception as e:
         logging.error(f"send_activation_nudges failed: {e}", exc_info=True)
         return 0
+
+
+BILLING_LIFECYCLE_POLL_SECONDS = int(os.getenv("BILLING_LIFECYCLE_POLL_SECONDS", "120"))
+
+
+async def _org_lifecycle_email_lang(db, org_id: str, admin_user: Optional[dict]) -> str:
+    lang = ((admin_user or {}).get("language") or "").strip().lower()
+    if lang in ("en", "tr"):
+        return lang
+    try:
+        s = await db.settings.find_one({"organization_id": org_id}, {"support_phone": 1})
+        if ((s or {}).get("support_phone") or "").startswith("+44"):
+            return "en"
+    except Exception:
+        pass
+    email = ((admin_user or {}).get("username") or "")
+    return get_email_language(email) if email else "tr"
+
+
+async def _send_one_lifecycle_email(
+    db,
+    *,
+    org_id: str,
+    flag_field: str,
+    at_field: str,
+    builder,
+    lang: str,
+    full_name: str,
+    to_email: str,
+    cta_url: str,
+    now: datetime,
+) -> bool:
+    """Atomic claim + send; başarısızsa flag geri alınır (sonraki tur dener)."""
+    claimed = await db.organization_plans.find_one_and_update(
+        {"organization_id": org_id, flag_field: {"$ne": True}},
+        {"$set": {flag_field: True, at_field: now.isoformat()}},
+    )
+    if claimed is None:
+        return False
+    try:
+        subject, html = builder(_brand_email, lang, full_name, cta_url)
+        ok = await send_email(to_email=to_email, subject=subject, html_content=html, to_name=full_name)
+        if not ok:
+            await db.organization_plans.update_one(
+                {"organization_id": org_id},
+                {"$set": {flag_field: False, at_field: None}},
+            )
+            return False
+        logging.info(f"Billing lifecycle email ({flag_field}) sent org={org_id} to={to_email} lang={lang}")
+        return True
+    except Exception as e:
+        logging.error(f"Billing lifecycle email ({flag_field}) failed org={org_id}: {e}", exc_info=True)
+        await db.organization_plans.update_one(
+            {"organization_id": org_id},
+            {"$set": {flag_field: False, at_field: None}},
+        )
+        return False
+
+
+async def send_billing_lifecycle_emails(db):
+    """Trial bitişi / grace / suspended e-postaları.
+
+    Geçmişe gitmez: ``BILLING_LIFECYCLE_EMAIL_EPOCH`` öncesi biten olaylar
+    atlanır. 17 worker'da tek gönderim için Redis kilit + plan flag'i.
+    """
+    from billing_lifecycle_emails import (
+        billing_email_epoch,
+        cta_for_lang,
+        is_trial_ended_eligible,
+        is_suspended_eligible,
+        is_historical_trial,
+        is_historical_grace,
+        build_trial_ended_email,
+        build_suspended_email,
+    )
+
+    try:
+        now = datetime.now(timezone.utc)
+        redis_client = getattr(getattr(_app_instance, "state", None), "redis_client", None)
+        if redis_client:
+            try:
+                bucket = int(now.timestamp() // BILLING_LIFECYCLE_POLL_SECONDS)
+                lock_key = f"billing_lifecycle_email_lock:{bucket}"
+                if not await redis_client.set(lock_key, "1", nx=True, ex=BILLING_LIFECYCLE_POLL_SECONDS + 15):
+                    logging.debug("Billing lifecycle emails skipped - another worker holds the lock")
+                    return {"trial_ended": 0, "grace": 0, "suspended": 0}
+            except Exception as lock_err:
+                logging.warning(f"Billing lifecycle email lock unavailable, proceeding: {lock_err}")
+
+        epoch = billing_email_epoch()
+        sent = {"trial_ended": 0, "grace": 0, "suspended": 0}
+
+        internal_ids = set()
+        try:
+            async for s in db.settings.find({"is_internal": True}, {"organization_id": 1}):
+                oid = s.get("organization_id")
+                if oid:
+                    internal_ids.add(oid)
+        except Exception:
+            pass
+
+        cursor = db.organization_plans.find(
+            {},
+            {
+                "_id": 0,
+                "organization_id": 1,
+                "plan_id": 1,
+                "status": 1,
+                "trial_end_date": 1,
+                "next_billing_date": 1,
+                "next_payment_date": 1,
+                "quota_reset_date": 1,
+                "stripe_subscription_id": 1,
+                "subscription_id": 1,
+                "hosted_invoice_url": 1,
+                "trial_ended_email_sent": 1,
+                "grace_email_sent": 1,
+                "suspended_email_sent": 1,
+            },
+        )
+        async for plan in cursor:
+            org_id = plan.get("organization_id")
+            if not org_id or org_id in internal_ids:
+                continue
+
+            kind = None
+            # Geçmiş olaylar: flag bas, mail atma (webhook retry / sonraki tur spam olmasın)
+            if is_historical_trial(plan, epoch):
+                await db.organization_plans.update_one(
+                    {"organization_id": org_id, "trial_ended_email_sent": {"$ne": True}},
+                    {"$set": {
+                        "trial_ended_email_sent": True,
+                        "trial_ended_email_skipped": "historical",
+                    }},
+                )
+                continue
+            if is_historical_grace(plan, now, epoch):
+                await db.organization_plans.update_one(
+                    {"organization_id": org_id, "grace_email_sent": {"$ne": True}},
+                    {"$set": {
+                        "grace_email_sent": True,
+                        "grace_email_skipped": "historical",
+                    }},
+                )
+                continue
+
+            if is_trial_ended_eligible(plan, now, epoch):
+                kind = "trial_ended"
+            elif is_suspended_eligible(plan, now, epoch, grace_days=SUBSCRIPTION_GRACE_DAYS):
+                kind = "suspended"
+            if not kind:
+                continue
+
+            admin = await db.users.find_one(
+                {"organization_id": org_id, "role": "admin"},
+                {"username": 1, "full_name": 1, "language": 1},
+            )
+            email = ((admin or {}).get("username") or "").strip()
+            if "@" not in email:
+                logging.warning(f"Billing lifecycle email skipped, no admin email org={org_id} kind={kind}")
+                continue
+            full_name = (admin or {}).get("full_name") or ""
+            lang = await _org_lifecycle_email_lang(db, org_id, admin)
+            pay_override = (plan.get("hosted_invoice_url") or "").strip() or None
+            cta = cta_for_lang(lang, pay_override if kind != "trial_ended" else None)
+
+            if kind == "trial_ended":
+                ok = await _send_one_lifecycle_email(
+                    db, org_id=org_id, flag_field="trial_ended_email_sent",
+                    at_field="trial_ended_email_sent_at", builder=build_trial_ended_email,
+                    lang=lang, full_name=full_name, to_email=email, cta_url=cta, now=now,
+                )
+            else:
+                ok = await _send_one_lifecycle_email(
+                    db, org_id=org_id, flag_field="suspended_email_sent",
+                    at_field="suspended_email_sent_at", builder=build_suspended_email,
+                    lang=lang, full_name=full_name, to_email=email, cta_url=cta, now=now,
+                )
+            if ok:
+                sent[kind] += 1
+
+        if any(sent.values()):
+            logging.info(
+                f"Billing lifecycle emails: trial_ended={sent['trial_ended']} "
+                f"grace={sent['grace']} suspended={sent['suspended']}"
+            )
+        return sent
+    except Exception as e:
+        logging.error(f"send_billing_lifecycle_emails failed: {e}", exc_info=True)
+        return {"trial_ended": 0, "grace": 0, "suspended": 0}
+
+
+async def notify_saas_invoice_payment_failed(db, invoice) -> bool:
+    """Stripe invoice.payment_failed → grace maili (hosted_invoice_url butonda).
+
+    Gerçek: production `handle_stripe_webhook` bu event'i yutuyordu.
+    `stripe_endpoints.py` içindeki kopya mount edilmiyordu. Merchant webhook
+    event'i kaydedip unhandled geçiyordu. Üstüne Stripe 2025-11'de
+    `invoice.subscription` yok; id `parent.subscription_details.subscription`.
+    """
+    from billing_lifecycle_emails import (
+        build_grace_period_email,
+        cta_for_lang,
+        saas_invoice_subscription_id,
+    )
+
+    sub_id = saas_invoice_subscription_id(invoice)
+    if isinstance(sub_id, dict):
+        sub_id = sub_id.get("id")
+    hosted_url = (_stripe_obj_get(invoice, "hosted_invoice_url") or "").strip()
+    customer_email = (_stripe_obj_get(invoice, "customer_email") or "").strip()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    org_plan = None
+    if sub_id:
+        org_plan = await db.organization_plans.find_one({
+            "$or": [
+                {"subscription_id": sub_id},
+                {"stripe_subscription_id": sub_id},
+            ]
+        })
+    if not org_plan and customer_email:
+        admin = await db.users.find_one({"username": customer_email, "role": "admin"})
+        if admin and admin.get("organization_id"):
+            org_plan = await db.organization_plans.find_one(
+                {"organization_id": admin["organization_id"]}
+            )
+    if not org_plan:
+        logging.warning(
+            f"invoice.payment_failed: org bulunamadı sub={sub_id} email={customer_email}"
+        )
+        return False
+
+    organization_id = org_plan.get("organization_id")
+    if hosted_url:
+        await db.organization_plans.update_one(
+            {"organization_id": organization_id},
+            {"$set": {"hosted_invoice_url": hosted_url, "dunning_updated_at": now_iso}},
+        )
+    if org_plan.get("grace_email_sent") is True:
+        logging.info(f"invoice.payment_failed: grace maili zaten gitmiş org={organization_id}")
+        return False
+
+    org_settings = await db.settings.find_one({"organization_id": organization_id}) or {}
+    if org_settings.get("is_internal") is True:
+        return False
+    admin_user = await db.users.find_one(
+        {"organization_id": organization_id, "role": "admin"},
+        {"username": 1, "full_name": 1, "language": 1},
+    ) or {}
+    to_email = customer_email or (admin_user.get("username") or "").strip()
+    if "@" not in to_email:
+        logging.warning(f"invoice.payment_failed: alıcı e-posta yok org={organization_id}")
+        return False
+    lang = (admin_user.get("language") or "").strip().lower()
+    if lang not in ("en", "tr"):
+        phone = (org_settings.get("support_phone") or "")
+        lang = "en" if str(phone).startswith("+44") else "tr"
+    pay_url = hosted_url or cta_for_lang(lang)
+    owner_name = admin_user.get("full_name") or org_settings.get("company_name") or ""
+    subject, html = build_grace_period_email(_brand_email, lang, owner_name, pay_url)
+    ok = await send_email(to_email=to_email, subject=subject, html_content=html, to_name=owner_name)
+    if not ok:
+        return False
+    await db.organization_plans.update_one(
+        {"organization_id": organization_id},
+        {"$set": {
+            "grace_email_sent": True,
+            "grace_email_sent_at": now_iso,
+            "grace_email_lang": lang,
+            "hosted_invoice_url": hosted_url or org_plan.get("hosted_invoice_url"),
+        }},
+    )
+    logging.info(
+        f"invoice.payment_failed: grace maili gitti org={organization_id} to={to_email} "
+        f"hosted_url={bool(hosted_url)}"
+    )
+    try:
+        company = org_settings.get("company_name") or organization_id
+        sa_email = os.environ.get("ADMIN_EMAIL", "fatihsenyuz12@gmail.com")
+        await send_email(
+            to_email=sa_email,
+            subject=f"[Kritik] Abonelik yenileme başarısız: {company}",
+            html_content=_brand_email(
+                lang="tr",
+                badge="Dunning",
+                statement="Abonelik yenileme ödemesi başarısız.",
+                paragraphs=[
+                    f"<strong>{company}</strong> işletmesinin yenilemesi reddedildi.",
+                    f"Alıcı: {to_email}",
+                    "İlk fail — müşteriye grace maili gönderildi.",
+                ],
+            ),
+            to_name="PLANN SuperAdmin",
+        )
+    except Exception:
+        logging.error("invoice.payment_failed: superadmin maili gönderilemedi", exc_info=True)
+    return True
 
 
 # === SMS REMINDER SCHEDULER ===
@@ -1043,6 +1342,24 @@ async def lifespan(app: FastAPI):
                 max_instances=1,
             )
             logging.info("  - Activation Nudge: Enabled (daily 08:00 UTC)")
+
+            async def _run_billing_lifecycle_emails():
+                try:
+                    await send_billing_lifecycle_emails(_nudge_db)
+                except Exception as e:
+                    logging.error(f"billing_lifecycle_emails job failed: {e}", exc_info=True)
+
+            scheduler.add_job(
+                _run_billing_lifecycle_emails,
+                IntervalTrigger(seconds=BILLING_LIFECYCLE_POLL_SECONDS),
+                id='billing_lifecycle_emails_job',
+                replace_existing=True,
+                max_instances=1,
+            )
+            logging.info(
+                f"  - Billing lifecycle emails: Enabled (every {BILLING_LIFECYCLE_POLL_SECONDS}s, "
+                f"epoch-gated, no backfill)"
+            )
         
         # Step 4b: Financial Engine Cron Jobs
         if app.db is not None:
@@ -2927,7 +3244,15 @@ async def _validate_register_input(request: Request, user_in: UserCreate, db) ->
     """
     existing_user = await get_user_from_db(request, user_in.username, db=db)
     if existing_user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This username is already registered.")
+        ui_lang = get_request_language(request)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "This username is already registered."
+                if ui_lang == "en"
+                else "Bu e-posta adresi zaten kayıtlı."
+            ),
+        )
 
     support_phone = (user_in.support_phone or "").strip()
     if support_phone:
@@ -8503,6 +8828,69 @@ async def create_customer_portal_session(
         logger.error(f"Customer Portal oluşturma hatası: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Portal oluşturulamadı: {str(e)}")
 
+
+def _checkout_return_html(status: str, lang: str) -> str:
+    """In-App Browser'da custom scheme (plannapp://) geçersiz sayılır.
+    Stripe geri/başarı yönlendirmesi HTTPS sayfasına düşer; kullanıcı × ile kapatır."""
+    is_success = status == "success"
+    is_en = (lang or "").lower().startswith("en")
+    if is_en:
+        title = "Payment complete" if is_success else "Checkout closed"
+        body = (
+            "Your payment was received. Tap × in the top left to return to PLANN."
+            if is_success
+            else "No charge was made. Tap × in the top left to return to PLANN."
+        )
+    else:
+        title = "Ödeme alındı" if is_success else "Ödeme iptal"
+        body = (
+            "Ödemen alındı. Uygulamaya dönmek için sol üstteki × işaretine dokun."
+            if is_success
+            else "Ödeme alınmadı. Uygulamaya dönmek için sol üstteki × işaretine dokun."
+        )
+    return f"""<!DOCTYPE html>
+<html lang="{'en' if is_en else 'tr'}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>PLANN</title>
+  <style>
+    :root {{ color-scheme: light; }}
+    html, body {{ margin: 0; min-height: 100%; background: #fafafa; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; }}
+    .wrap {{ min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; }}
+    .card {{ width: 100%; max-width: 22rem; background: #fff; border: 1px solid #e4e4e7; border-radius: 1.25rem; padding: 1.75rem 1.5rem; text-align: center; box-shadow: 0 10px 30px -18px rgba(24,24,27,.35); }}
+    .mark {{ display: inline-flex; align-items: center; justify-content: center; margin: 0 auto 1rem; padding: 0.55rem 0.9rem; border-radius: 0.85rem; background: #18181b; color: #fff; font-size: 0.95rem; font-weight: 800; letter-spacing: 0.14em; }}
+    h1 {{ margin: 0 0 0.5rem; font-size: 1.25rem; color: #18181b; }}
+    p {{ margin: 0; font-size: 0.95rem; line-height: 1.45; color: #52525b; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="mark">PLANN</div>
+      <h1>{title}</h1>
+      <p>{body}</p>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+@api_router.get("/checkout-return")
+async def checkout_return_page(
+    request: Request,
+    status: str = Query("cancel"),
+    session_id: Optional[str] = Query(None),
+):
+    lang = (request.headers.get("accept-language") or "tr").split(",")[0].strip()
+    normalized = "success" if str(status).lower() == "success" else "cancel"
+    return HTMLResponse(
+        content=_checkout_return_html(normalized, lang),
+        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"},
+    )
+
+
 @api_router.post("/payments/create-checkout-session")
 async def create_checkout_session(
     request: Request,
@@ -8696,8 +9084,14 @@ async def create_checkout_session(
             # Domain algılama: Host/Origin/Referer üzerinden domain'i çıkar
             domain = _get_domain_from_request(request)
             
-            success_url = PAYMENT_SUCCESS_URL_NATIVE if is_native else f"https://{domain}/?session_id={{CHECKOUT_SESSION_ID}}#/payment-success"
-            cancel_url = PAYMENT_CANCEL_URL_NATIVE if is_native else f"https://{domain}/#/subscribe"
+            # Native: HTTPS dönüş (SFSafariViewController plannapp:// açamaz — "adres geçersiz").
+            # Web: mevcut hash route.
+            if is_native:
+                success_url = f"https://{domain}/api/checkout-return?status=success&session_id={{CHECKOUT_SESSION_ID}}"
+                cancel_url = f"https://{domain}/api/checkout-return?status=cancel"
+            else:
+                success_url = f"https://{domain}/?session_id={{CHECKOUT_SESSION_ID}}#/payment-success"
+                cancel_url = f"https://{domain}/#/subscribe"
             
             logger.info(f"🌐 Domain algılandı: {domain}, cancel_url: {cancel_url}, success_url: {success_url}")
             
@@ -8720,7 +9114,7 @@ async def create_checkout_session(
                 },
                 'success_url': success_url,
                 'cancel_url': cancel_url,
-                'billing_address_collection': 'required',
+                'billing_address_collection': 'auto',
             }
             
             # COUPON_MAP'ten gelen coupon'u uygula (sadece monthly planlar için)
@@ -9628,7 +10022,15 @@ async def handle_stripe_webhook(request: Request):
                                 "created_at": datetime.now(timezone.utc).isoformat(),
                             })
                             logger.info(f"✅ invoice.paid kaydı eklendi: org={org_id} invoice={inv_id} amount={amt} {cur}")
-        
+
+        elif event['type'] == 'invoice.payment_failed':
+            inv = event['data']['object']
+            try:
+                sent = await notify_saas_invoice_payment_failed(db, inv)
+                logger.info(f"invoice.payment_failed handled sent={sent}")
+            except Exception as e:
+                logger.error(f"invoice.payment_failed grace maili hatası: {e}", exc_info=True)
+
         # customer.subscription.updated - Abonelik güncellendi (iptal planlandı)
         elif event['type'] == 'customer.subscription.updated':
             subscription = event['data']['object']

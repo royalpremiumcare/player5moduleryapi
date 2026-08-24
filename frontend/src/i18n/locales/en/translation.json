@@ -375,7 +375,13 @@
       "hasAccount": "Already have an account?",
       "loginLink": "Login",
       "success": "Registration successful! You can now login.",
-      "error": "An error occurred during registration."
+      "error": "An error occurred during registration.",
+      "errors": {
+        "emailExists": "This email is already registered.",
+        "phoneExists": "This phone number is already used by another business. Please enter a different number.",
+        "orgNameExists": "This business name is already taken or too similar to an existing one. Please choose a different name.",
+        "orgNameInvalid": "The business name must contain valid characters."
+      }
     },
     "forgotPassword": {
       "title": "Forgot Password",
@@ -1118,7 +1124,7 @@
       "nextMonths": "In the following months, automatic payment will be made at the regular price.",
       "appointmentsPerMonth": "Appointments / Monthly",
       "currentSubscription": "Current Subscription",
-      "processing": "Redirecting to browser...",
+      "processing": "Opening payment...",
       "startSubscription": "Start Subscription",
       "switchToYearly": "Switch to Yearly",
       "switchToMonthly": "Switch to Monthly",
@@ -1126,6 +1132,8 @@
       "plansLoadError": "Could not load plans",
       "paymentPageError": "Could not create payment page",
       "paymentError": "Could not start payment process",
+      "inAppBrowserError": "Could not open the payment screen. Please try again.",
+      "paymentMayStillActivate": "Your plan is not updated yet. If you paid, it will appear in a few seconds.",
       "subscriptionManagement": "Subscription Management",
       "subscriptionInfo": "Subscription and billing are managed on our website. When you continue, you’ll be redirected to the subscription page automatically.",
       "goToWebsite": "Go to Website",

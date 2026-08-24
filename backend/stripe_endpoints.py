@@ -13,7 +13,12 @@ from stripe_service import create_checkout_session, parse_webhook_event
 from server import (
     get_current_user, UserInDB, PlanUpdateRequest, 
     get_db_from_request, get_plan_info, get_organization_plan,
-    send_email
+    send_email, _brand_email,
+)
+from billing_lifecycle_emails import (
+    build_grace_period_email,
+    build_suspended_email,
+    cta_for_lang,
 )
 
 logger = logging.getLogger(__name__)
@@ -429,8 +434,18 @@ async def handle_stripe_webhook_handler(request: Request) -> Response:
                         customer_email = admin_user.get("username")
 
                 amount_str = f"{amount_due:,.2f}"
+                now_iso = datetime.now(timezone.utc).isoformat()
 
-                # 3a) SuperAdmin bildirimi
+                if hosted_invoice_url:
+                    await db.organization_plans.update_one(
+                        {"organization_id": organization_id},
+                        {"$set": {
+                            "hosted_invoice_url": hosted_invoice_url,
+                            "dunning_updated_at": now_iso,
+                        }},
+                    )
+
+                # 3a) SuperAdmin bildirimi — her fail'de (operasyonel)
                 try:
                     sa_subject = f"[Kritik] Abonelik Yenileme Başarısız: {company_name}"
                     sa_html = f"""
@@ -453,38 +468,44 @@ async def handle_stripe_webhook_handler(request: Request) -> Response:
                 except Exception as e:
                     logger.error(f"invoice.payment_failed: SuperAdmin e-postası gönderilemedi: {e}")
 
-                # 3b) İşletme sahibi bildirimi
-                if customer_email:
+                # 3b) İşletme sahibi — yalnızca ilk fail (Stripe dunning spam'ini kes)
+                already_sent = org_plan.get("grace_email_sent") is True
+                if customer_email and not already_sent:
                     try:
-                        pay_button = ""
-                        if hosted_invoice_url:
-                            pay_button = f"""
-<p style="text-align:center;margin:28px 0;">
-  <a href="{hosted_invoice_url}" target="_blank"
-     style="background-color:#007bff;color:#ffffff;padding:14px 28px;text-decoration:none;border-radius:6px;font-size:16px;font-weight:bold;display:inline-block;">
-    Ödememi Güvenle Tamamla
-  </a>
-</p>
-<p style="font-size:13px;color:#888;word-break:break-all;">Buton çalışmıyorsa: {hosted_invoice_url}</p>
-"""
-                        owner_subject = "PLANN Abonelik Yenilemeniz Hakkında Önemli Bilgilendirme"
-                        owner_html = f"""
-<h2 style="margin-top:0;">Abonelik Yenilemeniz Hakkında</h2>
-<p>Merhaba,</p>
-<p>PLANN abonelik yenileme işleminiz bankanız/kartınız tarafından reddedildiği için tamamlanamadı.</p>
-<p>İşlemlerinizin aksamaması için <strong>3 günlük tolerans süreniz</strong> başlatılmıştır. Bu süreçte randevu almaya devam edebilirsiniz; ancak 3 gün sonunda ödeme tamamlanmazsa sisteminiz geçici olarak kilitlenecektir.</p>
-<p>Bakiyenizi kontrol ettikten sonra aşağıdaki güvenli bağlantı üzerinden ödemenizi manuel olarak anında tamamlayabilirsiniz:</p>
-{pay_button}
-<p style="margin-top:24px;">Teşekkürler,<br/>PLANN Ekibi</p>
-"""
-                        await send_email(
+                        admin_user = await db.users.find_one(
+                            {"organization_id": organization_id, "role": "admin"},
+                            {"full_name": 1, "language": 1, "username": 1},
+                        ) or {}
+                        lang = (admin_user.get("language") or "").strip().lower()
+                        if lang not in ("en", "tr"):
+                            phone = (org_settings.get("support_phone") or "")
+                            lang = "en" if phone.startswith("+44") else "tr"
+                        pay_url = hosted_invoice_url or cta_for_lang(lang)
+                        owner_name = admin_user.get("full_name") or company_name
+                        owner_subject, owner_html = build_grace_period_email(
+                            _brand_email, lang, owner_name, pay_url,
+                        )
+                        sent_ok = await send_email(
                             to_email=customer_email,
                             subject=owner_subject,
                             html_content=owner_html,
-                            to_name=company_name,
+                            to_name=owner_name,
                         )
+                        if sent_ok:
+                            await db.organization_plans.update_one(
+                                {"organization_id": organization_id},
+                                {"$set": {
+                                    "grace_email_sent": True,
+                                    "grace_email_sent_at": now_iso,
+                                    "grace_email_lang": lang,
+                                }},
+                            )
                     except Exception as e:
                         logger.error(f"invoice.payment_failed: İşletme sahibi e-postası gönderilemedi: {e}")
+                elif already_sent:
+                    logger.info(
+                        f"invoice.payment_failed: grace e-postası zaten gitmiş, atlanıyor org={organization_id}"
+                    )
                 else:
                     logger.warning(
                         f"invoice.payment_failed: org={organization_id} için müşteri e-postası "
@@ -510,6 +531,48 @@ async def handle_stripe_webhook_handler(request: Request) -> Response:
                 organization_id = org_plan.get("organization_id")
                 now_iso = datetime.now(timezone.utc).isoformat()
 
+                # Dunning sonrası iptalse (grace maili gitmişse) suspended mailini
+                # düşürmeden ÖNCE gönder; plan trial+canceled olunca scheduler yakalayamaz.
+                if (
+                    org_plan.get("grace_email_sent") is True
+                    and org_plan.get("suspended_email_sent") is not True
+                ):
+                    try:
+                        org_settings = await db.settings.find_one(
+                            {"organization_id": organization_id}
+                        ) or {}
+                        admin_user = await db.users.find_one(
+                            {"organization_id": organization_id, "role": "admin"},
+                            {"username": 1, "full_name": 1, "language": 1},
+                        ) or {}
+                        to_email = (admin_user.get("username") or "").strip()
+                        if "@" in to_email:
+                            lang = (admin_user.get("language") or "").strip().lower()
+                            if lang not in ("en", "tr"):
+                                phone = (org_settings.get("support_phone") or "")
+                                lang = "en" if phone.startswith("+44") else "tr"
+                            pay_url = (
+                                (org_plan.get("hosted_invoice_url") or "").strip()
+                                or cta_for_lang(lang)
+                            )
+                            owner_name = admin_user.get("full_name") or org_settings.get("company_name") or ""
+                            subj, html = build_suspended_email(_brand_email, lang, owner_name, pay_url)
+                            sent_ok = await send_email(
+                                to_email=to_email, subject=subj, html_content=html, to_name=owner_name,
+                            )
+                            if sent_ok:
+                                await db.organization_plans.update_one(
+                                    {"organization_id": organization_id},
+                                    {"$set": {
+                                        "suspended_email_sent": True,
+                                        "suspended_email_sent_at": now_iso,
+                                    }},
+                                )
+                    except Exception as e:
+                        logger.error(
+                            f"customer.subscription.deleted: suspended e-postası gönderilemedi: {e}"
+                        )
+
                 # Planı trial'a düşür, durumu canceled yap ve abonelik kalıntılarını temizle
                 await db.organization_plans.update_one(
                     {"organization_id": organization_id},
@@ -521,7 +584,7 @@ async def handle_stripe_webhook_handler(request: Request) -> Response:
                         "stripe_subscription_id": None,
                         "subscription_id": None,
                         "updated_at": now_iso,
-                    }}
+                    }},
                 )
 
                 logger.info(

@@ -106,7 +106,7 @@ async def create_checkout_session(
             },
             'success_url': settings.PAYMENT_SUCCESS_URL + f'?session_id={{CHECKOUT_SESSION_ID}}',
             'cancel_url': settings.PAYMENT_CANCEL_URL,
-            'billing_address_collection': 'required',
+            'billing_address_collection': 'auto',
         }
         
         # Apply coupon if exists

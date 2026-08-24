@@ -38,6 +38,9 @@ todos:
   - id: faz11-appleads
     content: "Faz 11: Apple Ads entegrasyonu — currency_shield deseniyle zamanlanmış sync, idempotent ingestion, superadmin panelinde raporlama."
     status: pending
+  - id: faz12-inapp-subscribe
+    content: "Faz 12: Mobil içi paket seçimi + Stripe Checkout In-App Browser — feature flag (Apple review), mevcut create_checkout_session, Capacitor Browser, deep link dönüşü. Kod onayı bekliyor."
+    status: pending
 isProject: false
 ---
 
@@ -159,6 +162,10 @@ Sıra: identity soyutlaması → mevcut e-posta kullanıcılarının lazy migrat
 ## Faz 11 — Apple Ads Entegrasyonu (ayrı program)
 
 Mevcut `currency_shield` deseni (zamanlanmış sync + koleksiyon + on-demand tazeleme) bu iş için hazır bir şablon. Credential'lar `backend/.env` üzerinden, frontend'e hiç verilmeden. Gerçek API response şekli doğrulanmadan alan adı veya idempotency anahtarı varsayılmaz.
+
+## Faz 12 — Mobil içi paket seçimi + Stripe Checkout (In-App Browser)
+
+Faz 3'ten bağımsız, Faz 4'ten önce alınabilir. Native'de paket seçimini siteye atmak yerine uygulama içinde göstermek; kartı Stripe Checkout'ta `@capacitor/browser` (SFSafariViewController / Chrome Custom Tabs) ile almak. Apple review için feature flag varsayılan kapalı. Detay ve kod planı: aşağıda "Faz 12 — uygulama planı". Kod yazılmadan Fatih onayı bekleniyor.
 
 ## Her Faz İçin Ortak Kurallar
 
@@ -722,3 +729,116 @@ yeni çağrılar doğrulandı. Prod verisine dokunulmadı.
 
 **Açık kalanlar:** legacy uçlara client telemetrisi (hangi sürüm parametresiz çağırıyor) ve
 k6'da uç bazlı eşikler. İkisi de acil değil.
+
+### Not — `session_only` açılış maliyeti (24 Ağustos 2026, henüz işlenmedi)
+
+Panel profili k6'da (legacy uçlar çıkarılmış, 100k randevu / 100 VU) asıl pencere çağrısı p95
+**623 ms** oldu. Genel `p(95)<2000` yine kaldı (**7,55 sn**); suçlu `/appointments?session_only=true`
+(**p95 10,8 sn**).
+
+Neden: tarih filtresi yok, `session_group_id` index'i yok. Seed'de hiç seans paketi yoktu; her istek
+yine org'un 100k kaydını tarıyor. `App.js` bunu açılışta `start_date` penceresiyle **paralel** atıyor
+— Seanslar sekmesi ve "aktif paket var mı" kontrolü için geçmiş paketler tarih penceresine sığmıyor.
+
+Konuşulacak seçenekler (yapılmadı):
+1. `(organization_id, session_group_id)` sparse index — tarama biter, çağrı durur.
+2. Paketsiz org'da isteği atlamak — frontend'in bunu bilebilmesi lazım (flag veya hafif count ucu).
+3. `session_only`'yi dashboard açılışından çıkarıp Seanslar ekranına ertelemek — nav rozeti gecikebilir.
+
+Karar verilmeden kod yok. OTA **6.3.4** production'da (internal da aynı).
+
+## Faz 12 — Mobil içi paket seçimi + Stripe Checkout (In-App Browser)
+
+**Durum:** kod yazıldı, Internal OTA bekleniyor (24 Ağustos 2026). Production / Apple review kapalı.
+
+Kod:
+- Flag `SHOW_IN_APP_SUBSCRIBE = true` + native'de Capgo kanalı `internal` zorunlu (`production` fail-closed).
+- `PlanPicker.js`, `lib/inAppSubscribe.js` (Browser + browserFinished + confirm/plan poll).
+- Native success_url `plannapp://payment-success?session_id={CHECKOUT_SESSION_ID}`, cancel `plannapp://subscribe`.
+- Production OTA **6.3.4** değişmedi; internal test bundle ayrı yüklenecek (promote yok).
+
+### Neden
+
+Native'de abonelik satın alma siteye (`plannapp.co` / SSO) atılıyor. Kullanıcı uygulamadan çıkıyor, menülerde kayboluyor, şifre sıfırlama döngüsüne giriyor. Strateji: paket seçimi uygulama içinde, kart yalnızca Stripe'ın hosted Checkout'unda.
+
+### Mevcut durum (kodla doğrulandı)
+
+Backend — yeni endpoint gerekmez:
+
+- `POST /api/payments/create-checkout-session` ([backend/server.py](backend/server.py):8506) JWT + `admin`, `PlanUpdateRequest`: `plan_id` zorunlu; `billing_cycle`, `platform`, `currency` opsiyonel. Stripe `mode=subscription`, lookup key (`{plan}_{cycle}_{currency}`), ilk-ay kuponu, `payment_logs` pending. Yanıt: `{ checkout_url, session_id }` — frozen contract, şekil değişmez.
+- `platform` `ios`/`android` ise `success_url = plannapp://payment-success` (session_id yok), `cancel_url = plannapp://dashboard`.
+- `POST /api/payments/confirm-checkout-session` webhook gecikmesine karşı yedek; native başarı URL'inde session_id olmadığı için bugün native bu ucu çağırmıyor — aktivasyon `checkout.session.completed` webhook'una bağlı.
+- Merchant checkout (`financial/merchant_checkout.py`) müşteri ödemesi; bu fazın konusu değil (SaaS abonelik).
+
+Frontend — native'de paket seçici bilinçli kapalı:
+
+- [Subscribe.js](frontend/src/components/Subscribe.js): `Capacitor.isNativePlatform()` → "siteye git" kartı (`openWebsiteSubscribe` + SSO). Web yolu zaten `create-checkout-session` + plan kartları.
+- [SettingsSubscription.js](frontend/src/components/SettingsSubscription.js): native'de "plan değiştir" yok, aynı siteye git CTA.
+- Native checkout bugün `openExternalUrl` → **sistem tarayıcısı** (Safari/Chrome). `Subscribe.js` içinde `Browser.addListener` var ama `Browser` import edilmemiş ve native early-return yüzünden ölü kod.
+
+Altyapı hazır:
+
+- `@capacitor/browser` 7.0.2 `package.json`'da, iOS `Podfile` `CapacitorBrowser`, Android `capacitor.plugins.json` kayıtlı. JS OTA yeter (native 6.3 binary'sinde plugin yoksa `Browser.open` patlar — cihazda bir kez doğrulanır).
+- URL scheme `plannapp://` Info.plist + Android intent-filter'da. Associated domains (`applinks:plannapp.co`) entitlements'ta; mağaza binary'sine henüz girmemiş olabilir (önceki not).
+- [App.js](frontend/src/App.js): `appUrlOpen` `payment-success` → toast + dashboard; `confirm-checkout-session` yalnızca web hash yolunda.
+
+### Hedef akış
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant App as PlanPicker (native)
+  participant API as FastAPI
+  participant Stripe
+  participant Browser as Capacitor Browser
+
+  User->>App: Paket seç (aylık/yıllık)
+  App->>API: POST /payments/create-checkout-session
+  API->>Stripe: Session.create (subscription)
+  Stripe-->>API: session.url
+  API-->>App: checkout_url, session_id
+  App->>Browser: Browser.open(checkout_url)
+  User->>Stripe: Kartı Checkout formunda gir
+  Stripe->>App: plannapp://payment-success?session_id=...
+  App->>Browser: Browser.close()
+  App->>API: POST /payments/confirm-checkout-session
+  Note over API,Stripe: webhook checkout.session.completed zaten planı yazar
+```
+
+Kart asla Capacitor WebView içinde alınmaz (PCI + Apple). In-App Browser = iOS SFSafariViewController / Android Chrome Custom Tabs.
+
+### Kod planı (onay sonrası, bu sırayla)
+
+1. **Feature flag** — [frontend/src/constants/uiFlags.js](frontend/src/constants/uiFlags.js) içine `SHOW_IN_APP_SUBSCRIBE = false`. Apple reviewer production bundle'da eski "siteye git" görür. Internal Capgo kanalında `true` ile test. Production OTA'da flag açmak ayrı onay (review riski). Backend env/DB flag yok: UI JS bundle'da, Apple'ın gördüğü şey kanal + OTA.
+
+2. **`PlanPicker` bileşeni** — [Subscribe.js](frontend/src/components/Subscribe.js) içindeki web plan kartları (aylık/yıllık toggle, `GET /plans` + `GET /plan/current`, `PRICING_DISPLAY`, i18n) yeni `frontend/src/components/PlanPicker.js`'e çıkarılır. Web `Subscribe.js` aynı UI'ı kullanır (davranış değişmez). Native: flag kapalı → mevcut compliance kartı; flag açık → `PlanPicker`. Ayrı kopya fiyat UI'ı yok.
+
+3. **Checkout tetikleme** — `handleStartSubscription` mevcut body'yi korur: `{ plan_id, billing_cycle, platform: ios|android, currency }`. Native + flag: `import { Browser } from '@capacitor/browser'` → `Browser.open({ url: checkout_url, presentationStyle: 'fullscreen' })`. `openExternalUrl` / `openWebsiteSubscribe` bu yolda kullanılmaz. Web: `window.location.href` aynı kalır.
+
+4. **Settings girişi** — [SettingsSubscription.js](frontend/src/components/SettingsSubscription.js): flag açıkken "Plan değiştir" → `onNavigate('subscribe')`. Stripe Customer Portal (`POST /subscription/portal`) native'de de `Browser.open(portal_url)` — aynı sürtünme. Flag kapalıyken siteye git durur.
+
+5. **Dönüş (üç katman, SFSafariViewController custom scheme'i yutabilir)**
+   - Backend (küçük, contract dışı URL string): native `success_url` → `plannapp://payment-success?session_id={CHECKOUT_SESSION_ID}`; native `cancel_url` → `plannapp://subscribe` (dashboard yerine paket ekranı). Response JSON değişmez.
+   - [App.js](frontend/src/App.js) `appUrlOpen`: `payment-success` → `Browser.close()`, session_id varsa `confirm-checkout-session` (org uyumu zaten backend'de), `loadStats`, subscribe/dashboard, toast. Cancel → `Browser.close()`, subscribe'da kal.
+   - `browserFinished` + kısa `GET /plan/current` poll (ör. 3×1.5 sn): kullanıcı Done ile kapatırsa veya scheme açılmazsa webhook yine planı yazar, UI yakalar.
+
+6. **i18n** — yeni metin yoksa mevcut `settings.subscribePage` / `landing.pricing` yeterli. Native'de "Güvenli ödeme — Stripe" zaten var. Gerekirse tek satır: tarayıcı kapandıktan sonra "Abonelik güncelleniyor…".
+
+7. **Kapsam dışı (bilinçli)**
+   - Yeni FastAPI endpoint yok; IAP / StoreKit yok; PayTR native yok; Faz 4 billing state machine yok.
+   - Stripe.js Capacitor WebView'e gömülmez.
+   - `create-checkout-session` response şekli değişmez (alan silme/rename yok).
+   - Mağaza versionCode bump yok — plugin native 6.3'te yoksa o zaman store; associated-domain HTTPS dönüşü sonraki store'a bırakılabilir (scheme yeterli varsayımı, cihazda doğrulanır).
+
+### Test planı (onay + kod sonrası)
+
+- Flag `false`: native hâlâ siteye gider (Apple reviewer yolu).
+- Flag `true` / Capgo internal: paket seç → In-App Browser Stripe test kartı → uygulama içine dönüş → plan `GET /plan/current` ile güncel.
+- İptal / Browser Done: subscribe'da kalır, şifre sıfırlama yok, login kaybolmaz.
+- Web subscribe + checkout birebir aynı (regresyon).
+- Contract: `python -m pytest tests/integration/ -q` (request'e zorunlu alan eklenmez).
+- Cihaz: iOS + Android'de `Browser.open` unimplemented değil.
+
+### Risk notu — Apple 3.1.1
+
+Mevcut gizleme App Store yorumunun savunmacı hali. Yeni akış Guideline 3.1.3(b) multiplatform (web'de de satılan SaaS) + ödeme Safari/Custom Tabs'ta. Flag kapalı default bu riski review'dan ayırır. Flag production'da açılmadan legal/review kararı ayrıca.

@@ -50,6 +50,10 @@ import { useTheme } from "./context/ThemeContext";
 import { useTranslation } from "react-i18next";
 import { PushNotifications } from '@capacitor/push-notifications';
 import { openAppStore } from "@/lib/appStore";
+import {
+  handleCheckoutDeepLink,
+  subscribeCheckoutEvents,
+} from "@/lib/inAppSubscribe";
 
 const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
   ? registerPlugin('FCMTokenPlugin')
@@ -406,27 +410,6 @@ function App() {
     document.addEventListener('visibilitychange', onVis);
     return () => { cancelled = true; document.removeEventListener('visibilitychange', onVis); };
   }, [token, currentUser]);
-
-  // Deep link handling for native apps (Stripe payment success/cancel)
-  useEffect(() => {
-    if (Capacitor.isNativePlatform()) {
-      const handleDeepLink = CapacitorApp.addListener('appUrlOpen', (event) => {
-        console.log('🔗 Deep link received:', event.url);
-        
-        if (event.url.includes('payment-success')) {
-          toast.success("🎉 Ödeme başarılı! Planınız güncellendi.", { duration: 5000 });
-          setCurrentView('dashboard');
-        } else if (event.url.includes('subscribe')) {
-          // Cancel - subscribe sayfasında kal
-          setCurrentView('subscribe');
-        }
-      });
-
-      return () => {
-        handleDeepLink.remove();
-      };
-    }
-  }, []);
 
   // URL routing - path'den view'ı oku ve URL değişikliklerini dinle
   useEffect(() => {
@@ -1022,6 +1005,39 @@ function App() {
     loadAppointmentsRef.current = loadAppointments;
     loadStatsRef.current = loadStats;
   }, [userRole, currentUser, loadAppointments, loadStats]);
+
+  // Deep link handling for native apps (Stripe payment success/cancel)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const handleDeepLink = CapacitorApp.addListener('appUrlOpen', async (event) => {
+      console.log('🔗 Deep link received:', event.url);
+      const parsed = await handleCheckoutDeepLink(event.url);
+      if (parsed.kind === 'success') {
+        setCurrentView('subscribe');
+        setShowForm(false);
+      } else if (parsed.kind === 'cancel') {
+        setCurrentView('subscribe');
+        setShowForm(false);
+      }
+    });
+
+    const unsubCheckout = subscribeCheckoutEvents((event) => {
+      if (event.type === 'upgraded') {
+        toast.success(t('settings.subscribePage.paymentSuccess'), { duration: 5000 });
+        setCurrentView('subscribe');
+        setShowForm(false);
+        if (typeof loadStatsRef.current === 'function') {
+          loadStatsRef.current();
+        }
+      }
+    });
+
+    return () => {
+      handleDeepLink.remove();
+      unsubCheckout();
+    };
+  }, [t]);
   
   // Initialize socket only once on mount
   useEffect(() => {

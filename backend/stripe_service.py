@@ -90,7 +90,7 @@ def create_checkout_session(user_id: str, plan_id: str, price_amount: int, plan_
             success_url=PAYMENT_SUCCESS_URL + f'?session_id={{CHECKOUT_SESSION_ID}}',
             cancel_url=PAYMENT_CANCEL_URL,
             allow_promotion_codes=True,  # Promosyon kodlarına izin ver
-            billing_address_collection='required',  # Fatura adresi zorunlu
+            billing_address_collection='auto',
             # Stripe Tax kaydı yok → otomatik vergi KAPALI (aksi halde checkout hata verir).
             # Vergi kaydı/origin adresi eklenince tekrar {'enabled': True} yapılabilir.
             automatic_tax={'enabled': False},
