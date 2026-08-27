@@ -11,7 +11,9 @@ workflows:
         distribution_type: app_store
         bundle_identifier: "co.plannapp.app"
       node: latest
-      xcode: latest
+      # latest şu an Xcode 26.4.1 — CocoaPods embed script archive'i 65 ile düşürüyor.
+      # 16.4, 6.3 native'in derlendiği aile; iOS IPA için pinliyoruz.
+      xcode: 16.4
       cocoapods: default
     scripts:
       - name: Install dependencies
