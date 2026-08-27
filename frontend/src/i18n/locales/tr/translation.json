@@ -344,7 +344,13 @@
       "noAccount": "Henüz hesabınız yok mu?",
       "createAccount": "Yeni Hesap Oluştur",
       "error": "Kullanıcı adı veya parola hatalı.",
-      "errorGeneric": "Giriş sırasında bir hata oluştu. Lütfen tekrar deneyin."
+      "errorGeneric": "Giriş sırasında bir hata oluştu. Lütfen tekrar deneyin.",
+      "notFound": {
+        "title": "Böyle bir hesap bulamadık",
+        "body": "{{email}} adresiyle kayıtlı bir hesap yok. Yeni bir hesap oluşturmak ister misiniz?",
+        "createAccount": "Hesap Oluştur",
+        "tryAgain": "Tekrar Dene"
+      }
     },
     "register": {
       "title": "PLANN'ı 7 Gün Boyunca Ücretsiz Deneyin",
@@ -1450,18 +1456,18 @@
   },
   "aha": {
     "spotlight": {
-      "badge": "İlk Adım",
-      "title": "Hadi, ilk randevunu birlikte oluşturalım!",
-      "tooltip": "Aşağıdaki + butonuna dokun. Müşterilerinin alacağı o şık WhatsApp onayı saniyeler içinde senin cebine gelsin!",
-      "loading": "Mesajın yola çıkıyor... Gözün telefonda olsun! 👀",
+      "badge": "Nasıl Çalışır?",
+      "title": "Müşterilerinin ne göreceğini sana gösterelim",
+      "tooltip": "Vurgulanan butona dokun. Senin adına örnek bir randevu oluşturup, müşteri onay mesajının aynısını senin WhatsApp numarana göndereceğiz. Böylece süreci tam olarak müşterinin gözünden deneyimleyebilirsin.",
+      "loading": "Örnek randevu oluşturuluyor, WhatsApp mesajı yolda...",
       "tapTarget": "İlk randevunu oluştur"
     },
     "celebration": {
-      "deliveredBadge": "Mesaj İletildi ✅",
-      "title": "Ve mesaj telefonunda! 🎉",
-      "body": "Müşterilerin de tam olarak bu hızda bilgilendirilecek! Şimdi seni kısa bir tura çıkaralım, sistemin kalanı çok daha kolay.",
-      "cta": "60 Saniyelik Turu Başlat 🚀",
-      "autoHint": "Birkaç saniye içinde tur otomatik başlayacak..."
+      "deliveredBadge": "Deneme Tamamlandı",
+      "title": "Telefonuna gelen mesajı gördün mü?",
+      "body": "Bu bir örnek randevuydu ve müşteri olarak sen seçildiğin için mesaj doğrudan sana geldi. Gerçek randevularda aynı onay mesajı otomatik olarak müşterinin telefonuna gider ve senin hiçbir şey yapmana gerek kalmaz. Takviminde oluşan bu örnek randevuyu dilediğin zaman silebilirsin.",
+      "cta": "Turu Başlat",
+      "autoHint": "Tur birkaç saniye içinde otomatik olarak başlayacak..."
     },
     "error": {
       "title": "Ufak bir takılma oldu 🛑",

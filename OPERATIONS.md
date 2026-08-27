@@ -189,7 +189,9 @@ göremez → etkisiz). Doğru kullanım: v6.1 popülasyona yayıldıktan sonra `
 - **Android bump GİT'te yapılır** (PC'de değil). Aksi halde git'teki sürüm ile Play Store'daki
   sürüm drift eder ve force-update politikası yanlış kullanıcıyı kilitler.
   - **SSOT senkronu yapıldı (Ağu 2026):** PC'deki canlı Android projesi git'e alındı. Git artık
-    gerçekle uyumlu — canlı Play Store sürümü `3.1/31`, git bir sonraki release için `3.2/32`.
+    gerçekle uyumlu.
+  - **Güncel sürümler (28 Ağu 2026):** git'te Android `6.4/34`, iOS `6.4/64` — Faz 9 (OTA `atInstall`)
+    için bump edildi, **henüz mağazada değil**. Bir önceki yayınlanan sürüm `6.3/33/63`.
     Ayrıca senkronda git'e taşınanlar: `variables.gradle` compile/target SDK `35→36`,
     `build.gradle` AGP `8.2.1→8.13.2`, gradle wrapper `8.2.1→8.13`, `AndroidManifest.xml`
     izinleri (READ/WRITE_CONTACTS, VIBRATE, RECORD_AUDIO), ve capacitor plugin include'ları
@@ -236,9 +238,16 @@ Web (JS/CSS/HTML) değişikliklerini App Store/Play review beklemeden telefonlar
 yeni store build'i şart.
 
 - **Kurulum (yapıldı):** `@capgo/capacitor-updater` kuruldu; `capacitor.config.json` -> `plugins.CapacitorUpdater`
-  (`autoUpdate: true`, `defaultChannel: "production"`, `appReadyTimeout: 10000`, `directUpdate: false`);
+  (`autoUpdate: "atInstall"`, `defaultChannel: "production"`, `appReadyTimeout: 10000`,
+  `autoSplashscreen: true`, `autoSplashscreenLoader: true`, `autoSplashscreenTimeout: 10000`);
   `ForceUpdateGate` mount'ta `CapacitorUpdater.notifyAppReady()` (native). Android native bağlandı
   (`cap update android`), iOS Codemagic'te `cap sync ios` ile bağlanır.
+- **`atInstall` modu (Faz 9, native 6.4'ten itibaren):** yeni kurulum / mağaza güncellemesi sonrası
+  OTA bundle'ı **ilk açılışta** uygulanır (eskiden bir sonraki açılışa kalıyordu → yeni kullanıcı ilk
+  oturumda bayat arayüz görüyordu). Splash'i Capgo yönetir; bu yüzden `SplashScreen.launchAutoHide: false`
+  ve `@capacitor/splash-screen` plugin'i ZORUNLU. **`launchAutoHide`'ı true yapma / splash plugin'ini
+  kaldırma** — splash açılmazsa uygulama kilitlenir ve yalnız yeni mağaza sürümüyle kurtulur.
+  Emniyet supabı: `ForceUpdateGate` 15 sn sonra `SplashScreen.hide()` çağırır (sağlıklı akışta no-op).
 - **notifyAppReady KRİTİK:** çağrılmazsa Capgo bundle'ı bozuk sayıp `appReadyTimeout` (10s) sonrası son
   sağlam sürüme geri döner (otomatik rollback). `notifyAppReady` `ForceUpdateGate` içinde (App.js'te DEĞİL;
   App.js yalnız auth sonrası mount olur, login ekranında çağrılmaz -> yanlış rollback). Bu çağrıyı SİLME.
@@ -251,7 +260,8 @@ yeni store build'i şart.
 - **Yayın komutları** (API key gizli, Codemagic/lokal env'den; repoya YAZMA):
   ```bash
   cd frontend
-  npm run build                                             # build/ üret
+  npm run build:app          # build/ üret + source map'leri sil (19 MB -> 6,2 MB). `npm run build` DEĞİL:
+                             # map'ler OTA paketini 3 katına çıkarır ve native'de Sentry onları kullanamaz.
   # 1) ÖNCE internal'a yükleyip test cihazında doğrula:
   npx @capgo/cli@latest bundle upload -a "$CAPGO_TOKEN" \
       -c internal --path ./build --bundle <ver>
@@ -263,14 +273,17 @@ yeni store build'i şart.
   # npx @capgo/cli@latest bundle upload -a "$CAPGO_TOKEN" -c production --path ./build --bundle <ver>
   ```
   Not: `--ignore-metadata-check` gerekli çünkü OTA yalnız JS taşır; native plugin'ler zaten store
-  build'inde (62) mevcut, Capgo'nun "yeni native plugin" uyarısı burada güvenle yok sayılır.
+  build'inde (64) mevcut, Capgo'nun "yeni native plugin" uyarısı burada güvenle yok sayılır.
 - **Sürüm uyumu:** OTA bundle'ın native uyumu package.json version'a göre eşleşir; native değişiklik olan
   release'lerde OTA push etme, store build bekle. **Bundle sürümü native `versionName`'den YÜKSEK olmalı**
   (ör. native 6.1 -> bundle 6.1.1); düşükse Capgo teslim etmez (`--bundle <ver>` ile explicit ver).
-- **DURUM (Ağu 2026):** OTA uçtan uca DOĞRULANDI ve PROD'A AÇILDI. `production` kanalı default+public,
-  self-assign kapalı, bundle 6.1.10; `internal` public'ten çıkarıldı, self-assign açık (test-only).
-  Force-update block/soft modalleri, `notifyAppReady` (login öncesi rollback fix), soft "kapat" kalıcılığı
-  tümü cihazda doğrulandı.
+- **DURUM (28 Ağu 2026):** OTA uçtan uca DOĞRULANDI ve PROD'A AÇIK. `production` = default+public,
+  self-assign kapalı, **bundle 6.3.10**; `internal` = public değil, self-assign açık (test-only),
+  **bundle 6.3.11**. Force-update block/soft modalleri, `notifyAppReady` (login öncesi rollback fix),
+  soft "kapat" kalıcılığı tümü cihazda doğrulandı.
+  Sıradaki: native 6.4 mağazaya çıktıktan **sonra** OTA'yı `6.4.1` olarak yükle — `resetWhenUpdate`
+  varsayılan `true` olduğu için yeni native kurulunca indirilmiş bundle'lar silinir ve native'in
+  altındaki sürümler (`6.3.x`) artık teslim edilmez.
 - **Trial:** Capgo hesabı ~15 gün trial; kalıcı kullanım için plan/ücret kararı gerekli.
 
 ### "Sıfırıncı build" gerçeği

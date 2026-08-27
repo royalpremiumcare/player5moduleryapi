@@ -126,12 +126,15 @@ export const AuthProvider = ({ children }) => {
       console.error("Giriş hatası:", error);
 
       let errorMessage = "Giriş sırasında bir hata oluştu.";
+      // Backend 401 gövdesine additive `code` ekler (ör. USER_NOT_FOUND).
+      // `detail` metni değişmediği için eski build'ler etkilenmiyor.
+      const failureCode = error.response?.data?.code || null;
 
       if (error.code === 'ECONNREFUSED' || error.message?.includes('Network Error')) {
         errorMessage = "Backend sunucusuna bağlanılamıyor. Lütfen backend'in çalıştığından emin olun.";
       } else if (error.response) {
         if (error.response.status === 401) {
-          errorMessage = "Kullanıcı adı veya parola hatalı.";
+          errorMessage = i18n.t('auth.login.error');
         } else if (error.response.status === 429) {
           errorMessage = "Çok fazla giriş denemesi. Lütfen birkaç dakika sonra tekrar deneyin.";
         } else if (error.response.status >= 500) {
@@ -151,7 +154,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('userRole');
       sessionStorage.removeItem('authToken');
       sessionStorage.removeItem('userRole');
-      return { success: false, error: errorMessage };
+      return { success: false, error: errorMessage, code: failureCode };
     }
   };
   

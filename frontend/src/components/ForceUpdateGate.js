@@ -48,6 +48,24 @@ const ForceUpdateGate = () => {
     CapacitorUpdater.notifyAppReady().catch(() => { /* web/no-op önemsiz */ });
   }, []);
 
+  // Splash emniyet supabı. `launchAutoHide: false` olduğu için splash'i normalde
+  // Capgo'nun `autoSplashscreen`'i kapatıyor (güncelleme uygulandığında ya da
+  // güncelleme yoksa hemen). O mekanizma çalışmazsa splash sonsuza kadar kalır ve
+  // uygulama yalnızca yeni bir mağaza sürümüyle kurtarılabilir. Bu yüzden
+  // autoSplashscreenTimeout'tan (10 sn) belirgin şekilde SONRA elle kapatıyoruz:
+  // sağlıklı akışta splash zaten kapalı olduğu için bu çağrı no-op'a düşer,
+  // bozuk akışta ise kilitlenmeyi önler. Süreyi kısaltmak indirme sürerken
+  // splash'i açıp eski arayüzü göstermeye başlar — kısaltma.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return undefined;
+    const timer = setTimeout(() => {
+      import("@capacitor/splash-screen")
+        .then(({ SplashScreen }) => SplashScreen.hide())
+        .catch(() => { /* plugin yoksa zaten splash yönetimi native'de */ });
+    }, 15000);
+    return () => clearTimeout(timer);
+  }, []);
+
   const checkAppVersion = useCallback(async () => {
     try {
       if (!Capacitor.isNativePlatform()) return;

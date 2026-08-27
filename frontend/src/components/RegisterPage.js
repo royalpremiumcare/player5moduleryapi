@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Building2, User, Mail, Lock, Phone, Globe, MessageCircle, ArrowLeft } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
@@ -14,8 +14,11 @@ import metaPixel from '../lib/metaPixel';
 
 const RegisterPage = () => { 
     const navigate = useNavigate();
+    const location = useLocation();
     const { register, registerVerify } = useAuth(); 
     const { t, i18n } = useTranslation();
+    // Giriş ekranı "hesap bulunamadı" yönlendirmesinde e-postayı taşır.
+    const prefillEmail = location.state?.prefillEmail || '';
 
     useEffect(() => { window.scrollTo(0, 0); }, []);
 
@@ -36,7 +39,7 @@ const RegisterPage = () => {
     }, [i18n.language]);
 
     const [formData, setFormData] = useState({
-        username: '',
+        username: prefillEmail,
         password: '',
         full_name: '',
         organization_name: '',

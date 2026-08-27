@@ -9,7 +9,7 @@
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 2000,
-      "launchAutoHide": true,
+      "launchAutoHide": false,
       "backgroundColor": "#FFFFFF",
       "androidSplashResourceName": "splash",
       "androidScaleType": "CENTER",
@@ -27,11 +27,13 @@
       "iconColor": "#2563eb"
     },
     "CapacitorUpdater": {
-      "autoUpdate": true,
+      "autoUpdate": "atInstall",
       "defaultChannel": "production",
       "appReadyTimeout": 10000,
       "responseTimeout": 20,
-      "directUpdate": false
+      "autoSplashscreen": true,
+      "autoSplashscreenLoader": true,
+      "autoSplashscreenTimeout": 10000
     }
   }
 }

@@ -47,7 +47,7 @@ from pywebpush import webpush, WebPushException
 
 # (Cache ve Rate Limit importları, sizin projenizden alındı)
 from cache import init_redis, invalidate_cache, cache_result
-from rate_limit import initialize_limiter, rate_limit, LIMITS
+from rate_limit import initialize_limiter, rate_limit, LIMITS, get_client_ip
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
@@ -3992,13 +3992,60 @@ async def funnel_event_sink(
 
 # ============================================================================
 
+# ═══ CONTRACT: v1 (FROZEN — /api/token 401 gövdesi) ═══
+# Sahadaki donmuş mobil build'ler 401'de yalnızca `detail` metnini okuyup gösteriyor.
+# Bu string değiştirilmez. `code` additive bir alan; eski client onu yok sayar.
+LOGIN_UNKNOWN_ACCOUNT_CODE = "USER_NOT_FOUND"
+
+# "Bu e-posta kayıtlı değil" bilgisi IP başına sınırlı sayıda açıklanır.
+# Gerekçe: /register aynı bilgiyi zaten sızdırıyor (bkz. _validate_register_input,
+# limit 10/saat). Bütçe, login'in bundan daha ucuz bir enumeration kanalı olmasını
+# engelliyor — bütçe dolunca yanıt genel 401'e döner.
+LOGIN_DISCLOSE_LIMIT = int(os.environ.get("LOGIN_UNKNOWN_ACCOUNT_DISCLOSE_LIMIT", "10"))
+LOGIN_DISCLOSE_WINDOW_SECONDS = int(os.environ.get("LOGIN_UNKNOWN_ACCOUNT_DISCLOSE_WINDOW", "3600"))
+
+
+def _login_failure_response(code: Optional[str] = None) -> JSONResponse:
+    """401 yanıtı — `detail` sabit, `code` yalnızca yeni client için."""
+    content = {"detail": "Incorrect username or password"}
+    if code:
+        content["code"] = code
+    return JSONResponse(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        content=content,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def _may_disclose_unknown_account(request: Request) -> bool:
+    """IP başına ifşa bütçesi. Redis yoksa fail-closed: ifşa edilmez."""
+    redis_client = (
+        getattr(getattr(request.app, "state", None), "redis_client", None)
+        or getattr(request.app, "redis_client", None)
+    )
+    if redis_client is None:
+        return False
+    try:
+        key = f"plann:login_probe:{get_client_ip(request)}"
+        count = await redis_client.incr(key)
+        if count == 1:
+            await redis_client.expire(key, LOGIN_DISCLOSE_WINDOW_SECONDS)
+        return count <= LOGIN_DISCLOSE_LIMIT
+    except Exception as e:
+        logging.warning(f"Login ifşa bütçesi okunamadı, ifşa kapatıldı: {e}")
+        return False
+
+
 @api_router.post("/token", response_model=Token)
 @rate_limit(LIMITS['login']) 
 async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db = Depends(get_db)):
     try:
         user = await get_user_from_db(request, form_data.username, db=db)
-        if not user or not verify_password(form_data.password, user.hashed_password):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password", headers={"WWW-Authenticate": "Bearer"})
+        if not user:
+            disclose = await _may_disclose_unknown_account(request)
+            return _login_failure_response(LOGIN_UNKNOWN_ACCOUNT_CODE if disclose else None)
+        if not verify_password(form_data.password, user.hashed_password):
+            return _login_failure_response()
         
         # Pending (bekleyen) kullanıcılar giriş yapamaz
         if user.status == "pending":

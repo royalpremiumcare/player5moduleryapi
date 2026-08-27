@@ -15,6 +15,7 @@ const LoginPage = () => {
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isAppMode, setIsAppMode] = useState(false);
+  const [notFoundEmail, setNotFoundEmail] = useState('');
 
   const { login } = useAuth();
 
@@ -62,7 +63,12 @@ const LoginPage = () => {
       const result = await login(username, password, rememberMe);
 
       if (!result.success) {
-        setError(result.error || t('auth.login.error'));
+        // Hesap hiç yoksa hata göstermek yerine kayıt yönlendirmesi teklif et.
+        if (result.code === 'USER_NOT_FOUND') {
+          setNotFoundEmail(username);
+        } else {
+          setError(result.error || t('auth.login.error'));
+        }
         setLoading(false);
       } else {
         // Başarılı giriş
@@ -182,6 +188,37 @@ const LoginPage = () => {
           </div>
         )}
       </div>
+
+      {notFoundEmail && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center px-6"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-sm bg-white rounded-xl border border-[#e5e5e3] shadow-xl p-6 animate-in fade-in">
+            <h2 className="font-serif text-[19px] text-[#1a1a1a] mb-3">
+              {t('auth.login.notFound.title')}
+            </h2>
+            <p className="text-[14px] leading-relaxed text-[#6a6a68] mb-6 break-words">
+              {t('auth.login.notFound.body', { email: notFoundEmail })}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/register', { state: { prefillEmail: notFoundEmail } })}
+              className="w-full h-12 bg-[#1a1a1a] text-white text-[12px] font-semibold uppercase tracking-[0.2em] rounded-lg hover:bg-black transition-colors active:scale-[0.98]"
+            >
+              {t('auth.login.notFound.createAccount')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setNotFoundEmail('')}
+              className="w-full mt-3 h-12 text-[12px] font-semibold uppercase tracking-[0.2em] text-[#8c8c88] hover:text-[#1a1a1a] transition-colors"
+            >
+              {t('auth.login.notFound.tryAgain')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

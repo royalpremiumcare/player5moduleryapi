@@ -1,9 +1,9 @@
 /**
  * Faz 12 — mobil içi abonelik checkout.
  *
- * Native picker `SHOW_IN_APP_SUBSCRIBE` ile açılır. Apple/production bu JS'i
- * almaz (internal OTA); native `defaultChannel: production` yüzünden
- * getChannel() "internal" dönmez — kanal kapısı test cihazını kapatıyordu.
+ * Native picker `SHOW_IN_APP_SUBSCRIBE` ile açılır. Native 6.4 store
+ * build'ine gömüldüğü için Apple review süresince flag KAPALI
+ * (`constants/uiFlags.js`); native'de "siteye git" kartı görünür.
  *
  * Checkout URL'si sistem tarayıcısına değil @capacitor/browser (SFSafariViewController /
  * Chrome Custom Tabs) ile açılır.

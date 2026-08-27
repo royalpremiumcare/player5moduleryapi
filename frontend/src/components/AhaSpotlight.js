@@ -265,7 +265,7 @@ const AhaSpotlight = ({ onTrigger, onFallback, onTargetMissing, onShown, loading
             }}
           >
             <Sparkles size={12} strokeWidth={2.5} />
-            {t('aha.spotlight.badge', 'İlk adım')}
+            {t('aha.spotlight.badge', 'Nasıl Çalışır?')}
           </div>
 
           <h2
@@ -279,7 +279,7 @@ const AhaSpotlight = ({ onTrigger, onFallback, onTargetMissing, onShown, loading
               lineHeight: 1.25,
             }}
           >
-            {t('aha.spotlight.title', 'İlk randevunu birlikte oluşturalım')}
+            {t('aha.spotlight.title', 'Müşterilerinin ne göreceğini sana gösterelim')}
           </h2>
           <p
             style={{
@@ -290,10 +290,10 @@ const AhaSpotlight = ({ onTrigger, onFallback, onTargetMissing, onShown, loading
             }}
           >
             {loading
-              ? t('aha.spotlight.loading', 'Mesajın hazırlanıyor — birkaç saniye…')
+              ? t('aha.spotlight.loading', 'Örnek randevu oluşturuluyor, WhatsApp mesajı yolda...')
               : t(
                   'aha.spotlight.tooltip',
-                  'Vurgulanan + butonuna dokun. Telefonuna saniyeler içinde bir doğrulama mesajı düşecek — müşterilerinin alacağı onayın aynısı.'
+                  'Vurgulanan butona dokun. Senin adına örnek bir randevu oluşturup, müşteri onay mesajının aynısını senin WhatsApp numarana göndereceğiz. Böylece süreci tam olarak müşterinin gözünden deneyimleyebilirsin.'
                 )}
           </p>
 

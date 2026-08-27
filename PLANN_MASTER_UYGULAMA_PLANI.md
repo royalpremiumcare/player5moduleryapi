@@ -15,11 +15,11 @@ todos:
     content: "Faz 3: appointments compound index'leri — (org, appointment_date, appointment_time, id) ve (org, staff_member_id, appointment_date). Öncesi/sonrası explain() ölçümü."
     status: completed
   - id: faz4-billing
-    content: "Faz 4: Billing durum makinesi — invoice.payment_failed webhook, event.id idempotency, hosted_invoice_url endpoint, trial_expired/past_due_grace/suspended ayrımı, BillingGateModal + dashboard notice, draft state."
+    content: "Faz 4: Billing paywall — GET /subscription/payment-link, check_quota 403 state alanı, BillingGateModal + dashboard notice, wizard draft. (invoice.payment_failed + trial/grace/suspended mailleri tamam)"
     status: pending
   - id: faz5-login-intercept
-    content: "Faz 5: Login intercept — email enumeration riski için iki alternatifin karşılaştırmalı sunumu, seçilen yaklaşımın rate limit ve bot koruması ile uygulanması."
-    status: pending
+    content: "Faz 5: Login intercept — şifre denemesi sonrası yönlendirme (401'e additive `code: USER_NOT_FOUND`, IP başına ifşa bütçesi), hesap bulunamadı modalı, e-postanın kayıt formuna taşınması. Canlıda (28 Ağu 2026)."
+    status: completed
   - id: faz6-lock
     content: "Faz 6: Ölü PayTR recurring kodunun temizliği + ortak with_distributed_lock yardımcısı (ownership token, TTL, güvenli release) ve kilitsiz job'lara uygulanması."
     status: pending
@@ -30,17 +30,17 @@ todos:
     content: "Faz 8: Duplicate tespit → rapor → survivor → tüm referansların dry-run merge'ü → onay → kontrollü merge → bütünlük doğrulaması → unique index."
     status: pending
   - id: faz9-capgo
-    content: "Faz 9: Capgo autoUpdate:false + manuel download/set + yüzdeli yükleme ekranı. Native build ve mağaza sürümü gerektirir."
-    status: pending
+    content: "Faz 9: Capgo autoUpdate 'atInstall' + autoSplashscreen + source map'siz mobil paket. Kod hazır ve web'de (28 Ağu 2026); etkin olması için mağaza sürümü 6.4 gerekiyor."
+    status: in_progress
   - id: faz10-auth
-    content: "Faz 10: Auth v2 programı — identity soyutlaması, lazy migration, Google, Apple, secure credential/Face ID, provider-aware fallback. Her adım feature flag arkasında."
+    content: "Faz 10: Auth v2 programı — identity soyutlaması, lazy migration, Google, Apple, secure credential/Face ID, provider-aware fallback. Her adım feature flag arkasında. Google adımından itibaren native build ve mağaza sürümü gerektirir."
     status: pending
   - id: faz11-appleads
     content: "Faz 11: Apple Ads entegrasyonu — currency_shield deseniyle zamanlanmış sync, idempotent ingestion, superadmin panelinde raporlama."
     status: pending
   - id: faz12-inapp-subscribe
-    content: "Faz 12: Mobil içi paket seçimi + Stripe Checkout In-App Browser — feature flag (Apple review), mevcut create_checkout_session, Capacitor Browser, deep link dönüşü. Kod onayı bekliyor."
-    status: pending
+    content: "Faz 12: Mobil içi paket seçimi + Stripe Checkout In-App Browser — PlanPicker, Capacitor Browser, HTTPS checkout-return. Tamamlandı (26 Ağu 2026)."
+    status: completed
 isProject: false
 ---
 
@@ -56,8 +56,8 @@ Uygulamaya geçmeden önce kabul edilmesi gereken düzeltmeler:
 - Reminder distributed lock **zaten var** ([backend/server.py](backend/server.py):667) + randevu bazında Mongo atomic claim ([backend/server.py](backend/server.py):724). Kilitsiz olanlar: `recurring_payment_job`, `tuesday_batch_prepare_cron`, `run_expiry_crons`, `run_sla_monitor_cron`, DLQ retry, settlement/wise job'ları.
 - `customers_org_phone_unique` index'i kodda **zaten deneniyor**, hata alırsa non-unique fallback'e düşüyor ([backend/server.py](backend/server.py):1201-1241). Prod'daki gerçek durum DB'den okunmalı.
 - Randevu-müşteri bağı `customer_id` değil, denormalize `phone` + `customer_name`.
-- Wizard'da debounce zaten var (150 ms); eksik olan empty state ve wizard içinden hizmet oluşturma.
-- `invoice.payment_failed` webhook'u ve `hosted_invoice_url` endpoint'i yok; Stripe Customer Portal ([backend/server.py](backend/server.py):8301) ve mobil→web SSO ([frontend/src/lib/openWebsiteSubscribe.js](frontend/src/lib/openWebsiteSubscribe.js)) var.
+- Wizard'da debounce zaten var (150 ms); empty state ve wizard içinden hizmet oluşturma **Faz 1'de eklendi**.
+- `invoice.payment_failed` production webhook'a bağlandı (26 Ağu 2026); grace mail `hosted_invoice_url` kullanıyor. `GET /api/subscription/payment-link` ve `BillingGateModal` **hâlâ yok** (Faz 4 kalanı). Stripe Customer Portal ve mobil içi paket seçimi (Faz 12) canlıda.
 
 ## Faz 0 — Read-Only Envanter (kod değişikliği yok)
 
@@ -95,24 +95,32 @@ Sorgu şekilleriyle uyuşmayan index'ler tespit edildi. `background` index olara
 
 ## Faz 4 — Billing Durum Makinesi ve Paywall (orta risk)
 
+**Durum (26 Ağustos 2026): kısmen tamam.** E-posta + `invoice.payment_failed` gitti; paywall UI ve makine-okunur `state` açık. Sıradaki iş bu kalan dilim.
+
 Belgenin istediği üç durum backend'de gerçekten ayrıştırılır:
 
 - `trial_expired` — hiç abonelik başlatılmamış, trial bitmiş.
-- `past_due_grace` — ödeme başarısız, `SUBSCRIPTION_GRACE_DAYS = 3` içinde ([backend/server.py](backend/server.py):15356).
+- `past_due_grace` — ödeme başarısız, `SUBSCRIPTION_GRACE_DAYS = 3` içinde ([backend/server.py](backend/server.py):15891).
 - `suspended` — grace bitmiş.
 
-Adımlar:
+Giden (26 Ağu 2026):
 
-1. `invoice.payment_failed` event'ini webhook handler'a ekle ([backend/server.py](backend/server.py):9168) ve `organization_plans` üzerine ödeme durumu yaz. Stripe `event.id` bazlı idempotency guard ekle (şu an yalnızca kısmi dup kontrolü var).
-2. `GET /api/subscription/payment-link` — açık faturanın `hosted_invoice_url`'ini döndürür; yoksa Customer Portal'a düşer.
-3. `check_quota_and_increment` ([backend/server.py](backend/server.py):2243) çıktısını durum koduyla zenginleştir; 403 gövdesine makine-okunur `state` alanı **ekle** (mevcut `detail` string'i aynen korunur — sahadaki donmuş mobil build'ler bozulmaz).
-4. Frontend: tek bir `BillingGateModal` bileşeni, duruma göre metin/CTA değişir. Dashboard bildirimi için mevcut soft banner tasarımı yeniden kullanılır ([frontend/src/components/ForceUpdateModal.js](frontend/src/components/ForceUpdateModal.js):66-99).
-5. Draft state: paywall açıldığında wizard formu saklanır, ödeme sonrası kaldığı yerden devam eder.
-6. Ödeme sonrası state tazeleme: webhook + uygulama foreground'a gelince refresh + kritik aksiyon öncesi backend doğrulaması.
+- Production `handle_stripe_webhook` + merchant `_route_event` → `invoice.payment_failed` → `notify_saas_invoice_payment_failed` (grace mail; CTA = `hosted_invoice_url`).
+- Scheduler (~120s): trial_ended + suspended mailleri. Epoch `BILLING_LIFECYCLE_EMAIL_EPOCH` — geçmişe gitmez.
+- Copy `backend/billing_lifecycle_emails.py` (`TRIAL_ENDED_COPY` / `GRACE_COPY` / `SUSPENDED_COPY`) — Fatih onayladı, kalsın.
+- Flag'ler: `trial_ended_email_sent` / `grace_email_sent` / `suspended_email_sent`. Stripe `event.id` `webhook_events` ile.
 
-## Faz 5 — Login Intercept (orta risk, güvenlik kararı gerektirir)
+Kalan adımlar:
 
-`POST /api/auth/check-email` yok. Eklenecekse email enumeration riski nedeniyle: sıkı rate limit, Turnstile koruması ve yanıtın hesap varlığını doğrudan ifşa etmeyecek şekilde tasarlanması gerekir. Bu fazda önce iki alternatif (açık yanıt vs. koruma katmanlı yanıt) karşılaştırmalı sunulur, sonra uygulanır.
+1. `GET /api/subscription/payment-link` — açık faturanın `hosted_invoice_url`'ini döndürür; yoksa Customer Portal'a düşer.
+2. `check_quota_and_increment` çıktısını durum koduyla zenginleştir; 403 gövdesine makine-okunur `state` alanı **ekle** (mevcut `detail` string'i aynen korunur — sahadaki donmuş mobil build'ler bozulmaz).
+3. Frontend: tek bir `BillingGateModal` bileşeni, duruma göre metin/CTA değişir. Dashboard bildirimi için mevcut soft banner tasarımı yeniden kullanılır ([frontend/src/components/ForceUpdateModal.js](frontend/src/components/ForceUpdateModal.js):66-99).
+4. Draft state: paywall açıldığında wizard formu saklanır, ödeme sonrası kaldığı yerden devam eder.
+5. Ödeme sonrası state tazeleme: webhook + uygulama foreground'a gelince refresh + kritik aksiyon öncesi backend doğrulaması.
+
+## Faz 5 — Login Intercept (tamamlandı, canlıda — 28 Ağustos 2026)
+
+**Karar (Fatih onayı):** belgedeki iki adımlı `check-email` akışı **uygulanmadı**. Yerine şifre denemesi sonrası yönlendirme seçildi — aynı UX faydası, yeni enumeration kanalı açmadan. Ayrıntı: aşağıda "Faz 5 — uygulama notları".
 
 ## Faz 6 — Zamanlanmış Görev Kilitleri (yüksek risk)
 
@@ -149,15 +157,18 @@ Referans güncellenecek alanlar (denormalize telefon/isim taşıyanlar): `appoin
 
 Walk-in/paylaşılan telefon senaryosu (`phone: "0"`) unique index'i engelleyebilir; index kurulmadan önce bu kayıtlar için ayrı strateji kararlaştırılır.
 
-## Faz 9 — Capgo OTA Kontrolü (çok yüksek risk, native build gerektirir)
+## Faz 9 — Capgo OTA Kontrolü (kod hazır — 28 Ağustos 2026; mağaza sürümü 6.4 bekliyor)
 
-- `capacitor.config.json` içinde `autoUpdate: false` + uygulama içinde `download`/`set` + yüzdeli yükleme ekranı.
+Özgün tasarım (`autoUpdate: false` + elle `download`/`set` + yüzdeli ekran) **uygulanmadı**: plugin API'si o günden beri değişti ve aynı sonucu çok daha az riskle veren bir yol açıldı. Ayrıntı: aşağıda "Faz 9 — uygulama notları".
+
+- Ön koşul **doğrulandı**: `cap sync ios` Podfile'a `CapgoCapacitorUpdater` pod'unu ekliyor (git'teki Podfile eskiydi, üretim CI'da yeniden yazılıyor).
 - Bu değişiklik OTA ile gönderilemez; mağaza sürümü gerektirir ve mevcut kullanıcılar mağazadan güncellemeden yeni akışa geçmez.
-- Ön koşul olarak iOS `Podfile`'da Capgo pod'unun `cap sync` ile geldiği doğrulanmalı.
 
-## Faz 10 — Auth v2 (çok yüksek risk, ayrı program)
+## Faz 10 — Auth v2 (çok yüksek risk, ayrı program — Google adımından itibaren native build gerektirir)
 
 Sıra: identity soyutlaması → mevcut e-posta kullanıcılarının lazy migration'ı → Google → Apple → secure credential/Face ID → provider-aware fallback. Her adım ayrı feature flag arkasında, eski `email + password` login'i hiç kapatılmadan. Detaylı migration kuralları belgede zaten tanımlı ve kodla uyumlu bulundu (tek `users` collection, `username` birincil kimlik, bcrypt hash korunur).
+
+**Teslim kanalı — ikiye ayrılıyor.** İlk iki adım (identity soyutlaması + lazy migration) saf backend; mağaza beklemeden ilerler. Üçüncü adımdan (Google) itibaren iş native'e geçiyor: Google Sign-In, Apple Sign-In ve Face ID / secure credential üçü de Capacitor native plugin'i, iOS'ta entitlement ve `Info.plist` girdisi istiyor. Bunlar **OTA ile gönderilemez** — Faz 9 gibi mağaza sürümü gerektirir. Planlama yapılırken bu üç adımın tek bir native release'te toplanması, her biri için ayrı mağaza turu beklememek adına mantıklı.
 
 ## Faz 11 — Apple Ads Entegrasyonu (ayrı program)
 
@@ -165,7 +176,7 @@ Mevcut `currency_shield` deseni (zamanlanmış sync + koleksiyon + on-demand taz
 
 ## Faz 12 — Mobil içi paket seçimi + Stripe Checkout (In-App Browser)
 
-Faz 3'ten bağımsız, Faz 4'ten önce alınabilir. Native'de paket seçimini siteye atmak yerine uygulama içinde göstermek; kartı Stripe Checkout'ta `@capacitor/browser` (SFSafariViewController / Chrome Custom Tabs) ile almak. Apple review için feature flag varsayılan kapalı. Detay ve kod planı: aşağıda "Faz 12 — uygulama planı". Kod yazılmadan Fatih onayı bekleniyor.
+**Tamamlandı (26 Ağustos 2026).** Faz 3'ten bağımsızdı; Faz 4'ten önce alındı. Native'de paket seçimi uygulama içinde; kart Stripe Checkout'ta `@capacitor/browser` (SFSafariViewController / Chrome Custom Tabs). IAP / StoreKit yok. Detay: aşağıda "Faz 12 — uygulama notları".
 
 ## Her Faz İçin Ortak Kurallar
 
@@ -747,98 +758,170 @@ Konuşulacak seçenekler (yapılmadı):
 
 Karar verilmeden kod yok. OTA **6.3.4** production'da (internal da aynı).
 
-## Faz 12 — Mobil içi paket seçimi + Stripe Checkout (In-App Browser)
+## Faz 12 — Mobil içi paket seçimi + Stripe Checkout (tamamlandı, 26 Ağustos 2026)
 
-**Durum:** kod yazıldı, Internal OTA bekleniyor (24 Ağustos 2026). Production / Apple review kapalı.
+**Durum:** kod canlıda. Native 6.4 store build'ine gömüleceği için `SHOW_IN_APP_SUBSCRIBE = false` (Apple review — IAP zorunluluğu). Native'de "siteye git" kartı; web paket seçiciyi göstermeye devam eder. Review geçtikten sonra flag OTA ile tekrar açılabilir.
 
-Kod:
-- Flag `SHOW_IN_APP_SUBSCRIBE = true` + native'de Capgo kanalı `internal` zorunlu (`production` fail-closed).
-- `PlanPicker.js`, `lib/inAppSubscribe.js` (Browser + browserFinished + confirm/plan poll).
-- Native success_url `plannapp://payment-success?session_id={CHECKOUT_SESSION_ID}`, cancel `plannapp://subscribe`.
-- Production OTA **6.3.4** değişmedi; internal test bundle ayrı yüklenecek (promote yok).
+### Yapılanlar
 
-### Neden
+- `PlanPicker.js` — web + native ortak paket seçici. `Subscribe.js` bunu kullanır; flag kapalı native'de eski "siteye git" kartı durur.
+- `lib/inAppSubscribe.js` — `@capacitor/browser`, `browserFinished`, `confirm-checkout-session` + `GET /plan/current` poll.
+- `SettingsSubscription.js` — plan değiştir → subscribe; Customer Portal native'de `Browser.open`.
+- Native Stripe dönüş URL'leri `https://{domain}/api/checkout-return?...` (`plannapp://` SFSafariViewController'da "adres geçersiz" verdi).
+- `GET /api/checkout-return` — In-App Browser kapanış HTML'i. `create-checkout-session` JSON sözleşmesi değişmedi.
+- Checkout `billing_address_collection: 'auto'`.
 
-Native'de abonelik satın alma siteye (`plannapp.co` / SSO) atılıyor. Kullanıcı uygulamadan çıkıyor, menülerde kayboluyor, şifre sıfırlama döngüsüne giriyor. Strateji: paket seçimi uygulama içinde, kart yalnızca Stripe'ın hosted Checkout'unda.
+### Kapsam dışı (bilinçli)
 
-### Mevcut durum (kodla doğrulandı)
+IAP / StoreKit, PayTR native, Faz 4 `BillingGateModal`.
 
-Backend — yeni endpoint gerekmez:
+### Commit
 
-- `POST /api/payments/create-checkout-session` ([backend/server.py](backend/server.py):8506) JWT + `admin`, `PlanUpdateRequest`: `plan_id` zorunlu; `billing_cycle`, `platform`, `currency` opsiyonel. Stripe `mode=subscription`, lookup key (`{plan}_{cycle}_{currency}`), ilk-ay kuponu, `payment_logs` pending. Yanıt: `{ checkout_url, session_id }` — frozen contract, şekil değişmez.
-- `platform` `ios`/`android` ise `success_url = plannapp://payment-success` (session_id yok), `cancel_url = plannapp://dashboard`.
-- `POST /api/payments/confirm-checkout-session` webhook gecikmesine karşı yedek; native başarı URL'inde session_id olmadığı için bugün native bu ucu çağırmıyor — aktivasyon `checkout.session.completed` webhook'una bağlı.
-- Merchant checkout (`financial/merchant_checkout.py`) müşteri ödemesi; bu fazın konusu değil (SaaS abonelik).
+`48ea2960` — Mobil içi abonelik, faturalama e-postaları ve şablon düzeni.
 
-Frontend — native'de paket seçici bilinçli kapalı:
+## Faz 5 — uygulama notları (tamamlandı, canlıda — 28 Ağustos 2026)
 
-- [Subscribe.js](frontend/src/components/Subscribe.js): `Capacitor.isNativePlatform()` → "siteye git" kartı (`openWebsiteSubscribe` + SSO). Web yolu zaten `create-checkout-session` + plan kartları.
-- [SettingsSubscription.js](frontend/src/components/SettingsSubscription.js): native'de "plan değiştir" yok, aynı siteye git CTA.
-- Native checkout bugün `openExternalUrl` → **sistem tarayıcısı** (Safari/Chrome). `Subscribe.js` içinde `Browser.addListener` var ama `Browser` import edilmemiş ve native early-return yüzünden ölü kod.
+### Analiz — belgedeki kurgunun gerçek maliyeti
 
-Altyapı hazır:
+Üç bulgu kararı değiştirdi:
 
-- `@capacitor/browser` 7.0.2 `package.json`'da, iOS `Podfile` `CapacitorBrowser`, Android `capacitor.plugins.json` kayıtlı. JS OTA yeter (native 6.3 binary'sinde plugin yoksa `Browser.open` patlar — cihazda bir kez doğrulanır).
-- URL scheme `plannapp://` Info.plist + Android intent-filter'da. Associated domains (`applinks:plannapp.co`) entitlements'ta; mağaza binary'sine henüz girmemiş olabilir (önceki not).
-- [App.js](frontend/src/App.js): `appUrlOpen` `payment-success` → toast + dashboard; `confirm-checkout-session` yalnızca web hash yolunda.
+1. **Login ve şifre sıfırlama bugün sızdırmıyor.** `/api/token` her iki durumda aynı 401'i veriyor; `forgot-password` bilinçli olarak "eğer kayıtlıysa gönderildi" diyor (`server.py:4693`).
+2. **Ama kayıt akışı zaten sızdırıyor.** `_validate_register_input` var olan e-postada "Bu e-posta adresi zaten kayıtlı." diyor (`server.py:3246`), limit 10/saat. Yani enumeration bugün de mümkün, sadece yavaş. `check-email` yeni bir sızıntı **türü** açmıyor; sızıntıyı 10/saat'ten pratikte sınırsıza indiriyor. Karar noktası buydu.
+3. **Turnstile login'de yok.** Backend'de `verify_turnstile` var ama frontend'de yalnızca `PublicBookingPage` kullanıyor, orada bile soft mode. `check-email`'i korumak sıfırdan iş + native test demekti.
 
-### Hedef akış
+Ayrıca e-postayı ayrı adıma almak şifre yöneticisi otomatik doldurmasını ve iOS/Android keychain akışını bozacaktı — mevcut kullanıcıların tamamı etkilenir, asıl sorunu yaşayan ise yalnızca hiç kayıt olmamış kişi.
 
-```mermaid
-sequenceDiagram
-  participant User
-  participant App as PlanPicker (native)
-  participant API as FastAPI
-  participant Stripe
-  participant Browser as Capacitor Browser
+### Uygulanan çözüm
 
-  User->>App: Paket seç (aylık/yıllık)
-  App->>API: POST /payments/create-checkout-session
-  API->>Stripe: Session.create (subscription)
-  Stripe-->>API: session.url
-  API-->>App: checkout_url, session_id
-  App->>Browser: Browser.open(checkout_url)
-  User->>Stripe: Kartı Checkout formunda gir
-  Stripe->>App: plannapp://payment-success?session_id=...
-  App->>Browser: Browser.close()
-  App->>API: POST /payments/confirm-checkout-session
-  Note over API,Stripe: webhook checkout.session.completed zaten planı yazar
-```
+Tek adımlı form korundu. Şifre denemesi **başarısız olduktan sonra**, e-posta gerçekten kayıtlı değilse "böyle bir hesap bulamadık" modalı çıkıyor ve e-posta kayıt formuna taşınıyor. Enumeration maliyeti şifre denemesiyle aynı seviyede kalıyor (5/dk), üstüne IP başına ifşa bütçesi konuldu.
 
-Kart asla Capacitor WebView içinde alınmaz (PCI + Apple). In-App Browser = iOS SFSafariViewController / Android Chrome Custom Tabs.
+| Katman | Davranış |
+| --- | --- |
+| Hesap yok + bütçe var | 401, `detail` sabit + `code: "USER_NOT_FOUND"` |
+| Hesap yok + bütçe dolu | 401, yalnızca `detail` (genel mesaj) |
+| Hesap var + şifre yanlış | 401, yalnızca `detail` — hiçbir zaman `code` yok |
+| Redis yok / hata | fail-closed, ifşa edilmez |
 
-### Kod planı (onay sonrası, bu sırayla)
+Bütçe: `LOGIN_UNKNOWN_ACCOUNT_DISCLOSE_LIMIT` (varsayılan 10) / `LOGIN_UNKNOWN_ACCOUNT_DISCLOSE_WINDOW` (varsayılan 3600 sn), Redis anahtarı `plann:login_probe:{ip}`. Varsayılan bilinçli olarak `/register`'ın hâlihazırda sızdırdığı 10/saat seviyesine eşit — login yeni ve daha ucuz bir kanal olmuyor.
 
-1. **Feature flag** — [frontend/src/constants/uiFlags.js](frontend/src/constants/uiFlags.js) içine `SHOW_IN_APP_SUBSCRIBE = false`. Apple reviewer production bundle'da eski "siteye git" görür. Internal Capgo kanalında `true` ile test. Production OTA'da flag açmak ayrı onay (review riski). Backend env/DB flag yok: UI JS bundle'da, Apple'ın gördüğü şey kanal + OTA.
+### Sözleşme
 
-2. **`PlanPicker` bileşeni** — [Subscribe.js](frontend/src/components/Subscribe.js) içindeki web plan kartları (aylık/yıllık toggle, `GET /plans` + `GET /plan/current`, `PRICING_DISPLAY`, i18n) yeni `frontend/src/components/PlanPicker.js`'e çıkarılır. Web `Subscribe.js` aynı UI'ı kullanır (davranış değişmez). Native: flag kapalı → mevcut compliance kartı; flag açık → `PlanPicker`. Ayrı kopya fiyat UI'ı yok.
+401 gövdesindeki `detail` metni (`"Incorrect username or password"`) harfi harfine korundu; sahadaki donmuş build'ler onu gösteriyor. `code` additive alan, eski client yok sayıyor. `WWW-Authenticate: Bearer` header'ı da aynı. Endpoint'e `# ═══ CONTRACT: v1 (FROZEN — /api/token 401 gövdesi) ═══` marker'ı eklendi. Yeni endpoint yok, request gövdesi değişmedi.
 
-3. **Checkout tetikleme** — `handleStartSubscription` mevcut body'yi korur: `{ plan_id, billing_cycle, platform: ios|android, currency }`. Native + flag: `import { Browser } from '@capacitor/browser'` → `Browser.open({ url: checkout_url, presentationStyle: 'fullscreen' })`. `openExternalUrl` / `openWebsiteSubscribe` bu yolda kullanılmaz. Web: `window.location.href` aynı kalır.
+### Dokunulan dosyalar
 
-4. **Settings girişi** — [SettingsSubscription.js](frontend/src/components/SettingsSubscription.js): flag açıkken "Plan değiştir" → `onNavigate('subscribe')`. Stripe Customer Portal (`POST /subscription/portal`) native'de de `Browser.open(portal_url)` — aynı sürtünme. Flag kapalıyken siteye git durur.
+| Dosya | Değişiklik |
+| --- | --- |
+| `backend/server.py` | `_login_failure_response`, `_may_disclose_unknown_account`, login akışının ikiye ayrılması, contract marker |
+| `frontend/src/context/AuthContext.js` | 401 gövdesindeki `code` yukarı taşınıyor; 401 mesajı artık i18n (`auth.login.error`) — İngilizce arayüzde Türkçe metin görünüyordu |
+| `frontend/src/components/LoginPage.js` | "hesap bulunamadı" modalı, sayfanın kendi paletiyle |
+| `frontend/src/components/RegisterPage.js` | `location.state.prefillEmail` ile e-posta ön-doldurma |
+| `frontend/src/i18n/locales/{tr,en}/translation.json` | `auth.login.notFound.*` (4 anahtar × 2 dil) |
+| `backend/tests/integration/test_login_intercept.py` | 9 yeni test |
+| `backend/tests/integration/mocks.py` | `FakeRedis.incr` |
 
-5. **Dönüş (üç katman, SFSafariViewController custom scheme'i yutabilir)**
-   - Backend (küçük, contract dışı URL string): native `success_url` → `plannapp://payment-success?session_id={CHECKOUT_SESSION_ID}`; native `cancel_url` → `plannapp://subscribe` (dashboard yerine paket ekranı). Response JSON değişmez.
-   - [App.js](frontend/src/App.js) `appUrlOpen`: `payment-success` → `Browser.close()`, session_id varsa `confirm-checkout-session` (org uyumu zaten backend'de), `loadStats`, subscribe/dashboard, toast. Cancel → `Browser.close()`, subscribe'da kal.
-   - `browserFinished` + kısa `GET /plan/current` poll (ör. 3×1.5 sn): kullanıcı Done ile kapatırsa veya scheme açılmazsa webhook yine planı yazar, UI yakalar.
+### Doğrulama
 
-6. **i18n** — yeni metin yoksa mevcut `settings.subscribePage` / `landing.pricing` yeterli. Native'de "Güvenli ödeme — Stripe" zaten var. Gerekirse tek satır: tarayıcı kapandıktan sonra "Abonelik güncelleniyor…".
+| Kontrol | Sonuç |
+| --- | --- |
+| `tests/integration/` (contract dahil) | 22 passed |
+| Tüm backend suite | 253 passed |
+| Canlı: bilinmeyen hesap | 401 + `code: USER_NOT_FOUND` |
+| Canlı: var olan hesap + yanlış şifre | 401, `code` yok |
+| Redis bütçe anahtarı / TTL | `plann:login_probe:172.18.0.1`, TTL 3584 |
+| `plannapp.co` / `plannapp.co.uk` | 200 / 200 |
+| Canlı bundle | `main.74bd4ece.js`, yeni metinler TR + EN doğrulandı |
+| Container | backend + frontend healthy |
 
-7. **Kapsam dışı (bilinçli)**
-   - Yeni FastAPI endpoint yok; IAP / StoreKit yok; PayTR native yok; Faz 4 billing state machine yok.
-   - Stripe.js Capacitor WebView'e gömülmez.
-   - `create-checkout-session` response şekli değişmez (alan silme/rename yok).
-   - Mağaza versionCode bump yok — plugin native 6.3'te yoksa o zaman store; associated-domain HTTPS dönüşü sonraki store'a bırakılabilir (scheme yeterli varsayımı, cihazda doğrulanır).
+### Fatih'in manuel test edeceği noktalar
 
-### Test planı (onay + kod sonrası)
+1. Hiç kayıtlı olmayan bir e-posta + rastgele şifre ile giriş dene → hata yerine "Böyle bir hesap bulamadık" modalı çıkmalı.
+2. Modaldan **Hesap Oluştur** → kayıt formu açılmalı ve e-posta alanı dolu gelmeli.
+3. Modaldan **Tekrar Dene** → giriş ekranında kalmalı, yazdıkların durmalı.
+4. Kendi hesabın + yanlış şifre → modal **çıkmamalı**, normal "kullanıcı adı veya parola hatalı" mesajı gelmeli.
+5. Doğru şifre → normal giriş, hiçbir değişiklik olmamalı.
+6. Arayüzü İngilizce'ye al, aynı akışı tekrarla → tüm metinler İngilizce olmalı.
+7. Personel (davet edilmiş, henüz şifre belirlememiş) hesabı → modal çıkmamalı.
 
-- Flag `false`: native hâlâ siteye gider (Apple reviewer yolu).
-- Flag `true` / Capgo internal: paket seç → In-App Browser Stripe test kartı → uygulama içine dönüş → plan `GET /plan/current` ile güncel.
-- İptal / Browser Done: subscribe'da kalır, şifre sıfırlama yok, login kaybolmaz.
-- Web subscribe + checkout birebir aynı (regresyon).
-- Contract: `python -m pytest tests/integration/ -q` (request'e zorunlu alan eklenmez).
-- Cihaz: iOS + Android'de `Browser.open` unimplemented değil.
+### Kalan iş
 
-### Risk notu — Apple 3.1.1
+Capgo Internal OTA — Fatih'in manuel testi ve onayından sonra. Değişiklik JS-only, native build gerekmiyor.
 
-Mevcut gizleme App Store yorumunun savunmacı hali. Yeni akış Guideline 3.1.3(b) multiplatform (web'de de satılan SaaS) + ödeme Safari/Custom Tabs'ta. Flag kapalı default bu riski review'dan ayırır. Flag production'da açılmadan legal/review kararı ayrıca.
+## Faz 9 — uygulama notları (kod hazır, 28 Ağustos 2026 — mağaza sürümü bekliyor)
+
+### Tetikleyen sorun
+
+"Yeni kullanıcı uygulamayı mağazadan kurunca güncel arayüzü göremiyor." Sebebi iki katmanlı:
+
+1. Mağazadaki build'in içine gömülü JS eski. Bunu yalnızca yeni bir mağaza sürümü çözer.
+2. Eski `autoUpdate: true` + `directUpdate: false` ayarında Capgo yeni bundle'ı **arka planda indirip bir sonraki açılışta** uyguluyordu. Yani ilk oturum her zaman eski arayüzü gösteriyordu — yeni kullanıcının ilk izlenimi bayat uygulama.
+
+### Planın özgün tasarımı neden uygulanmadı
+
+Plan `autoUpdate: false` + elle `download`/`set` + kendi yüzdeli yükleme ekranımızı öngörüyordu. Kurulu plugin sürümü **7.50.2** bu tasarımı gereksiz kılıyor: `directUpdate` deprecate edilmiş, yerine `autoUpdate` string modları gelmiş (`off` / `atBackground` / `atInstall` / `onLaunch` / `always` / `onlyDownload`).
+
+Manuel mod ayrıca en riskli seçenekti: güncelleme kapısı **eski bundle'ın JS'i** tarafından çalıştırılır, oradaki bir hata tüm kullanıcılarda güncellemeyi kalıcı olarak durdurur ve yalnızca mağaza sürümüyle kurtarılır.
+
+### Uygulanan çözüm
+
+| Ayar | Değer | Gerekçe |
+| --- | --- | --- |
+| `autoUpdate` | `"atInstall"` | Yalnız yeni kurulum / mağaza güncellemesi sonrası anında uygular; günlük açılışlarda `atBackground` gibi davranır |
+| `autoSplashscreen` | `true` | Splash'i plugin yönetir; güncelleme uygulanınca ya da güncelleme yoksa kapatır |
+| `autoSplashscreenLoader` | `true` | Splash üstünde native yükleme göstergesi — kullanıcı donmuş sanmaz |
+| `autoSplashscreenTimeout` | `10000` | Süre dolarsa splash açılır, güncelleme arkaya atılır (**fail-open**) |
+| `SplashScreen.launchAutoHide` | `false` | `autoSplashscreen`'in ön koşulu |
+| `directUpdate` | *kaldırıldı* | Deprecate; string modla çakışmasın |
+
+`@capacitor/splash-screen@7.0.5` kuruldu — `autoSplashscreen` bu plugin olmadan çalışmıyor ve projede kurulu değildi (`capacitor.config.json`'daki `SplashScreen` bloğu ölü konfigdi).
+
+### Kilitlenme riski ve emniyet supabı
+
+`launchAutoHide: false`'un bedeli şu: `autoSplashscreen` herhangi bir sebeple splash'i kapatmazsa uygulama sonsuza kadar splash'te kalır ve **yalnızca yeni bir mağaza sürümüyle** kurtarılabilir. Bu yüzden `ForceUpdateGate` içine zaman sınırlı bir supap kondu: 15 sn sonra (yani `autoSplashscreenTimeout`'un belirgin şekilde ardından) `SplashScreen.hide()` çağrılıyor. Sağlıklı akışta splash zaten kapalı olduğu için no-op'a düşer.
+
+### Source map temizliği — asıl kazanç
+
+Ölçüm: `build/` klasörünün 19 MB'ının **12,5 MB'ı source map**. Bu klasör hem Capgo OTA paketine hem native uygulamanın içine gidiyordu. `atInstall` modunda indirme splash bekletilirken yapıldığı için bu doğrudan ilk açılış süresi demek. Üstelik native tarafta map'lerin faydası **sıfır**: Sentry `capacitor://localhost` adresinden map çekemiyor.
+
+`scripts/strip-sourcemaps.js` + `npm run build:app` eklendi, Codemagic iOS/Android workflow'ları bu script'e geçirildi. Sonuç: **19 MB → 6,2 MB**. Web imajı kendi `npm run build`'ini çalıştırdığı için web tarafı etkilenmedi; Sentry web stack trace'leri map'leri HTTP üzerinden çekmeye devam ediyor.
+
+> **Açık kalan:** native taraf için gerçek Sentry sembolizasyonu yok ve bu değişiklikten önce de yoktu (`Sentry.init` içinde `release`/`dist` yok, `@sentry/cli` kurulu değil, auth token yok). İstenirse ayrı ve küçük bir iş.
+
+### Sürüm ve sözleşme
+
+Native sürüm **6.3/33/63 → 6.4/34/64** (Android `versionName`/`versionCode`, iOS `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`). Backend'e, endpoint'e, response şekline dokunulmadı — API sözleşmesi etkilenmiyor.
+
+### Dokunulan dosyalar
+
+| Dosya | Değişiklik |
+| --- | --- |
+| `frontend/capacitor.config.json` | `autoUpdate: "atInstall"`, `autoSplashscreen(+Loader+Timeout)`, `launchAutoHide: false`, `directUpdate` kaldırıldı |
+| `frontend/src/components/ForceUpdateGate.js` | 15 sn'lik splash emniyet supabı |
+| `frontend/scripts/strip-sourcemaps.js` | yeni — map silme + `sourceMappingURL` referans temizliği |
+| `frontend/package.json` | `@capacitor/splash-screen@^7.0.5`, `build:app` script'i |
+| `codemagic.yaml` | iOS + Android workflow'ları `npm run build:app` kullanıyor |
+| `frontend/android/app/build.gradle`, `ios/App/App.xcodeproj/project.pbxproj` | sürüm bump |
+| `frontend/ios/App/Podfile`, `android/capacitor.settings.gradle` | `cap sync` çıktısı (splash-screen + Capgo pod'u) |
+
+### Doğrulama
+
+| Kontrol | Sonuç |
+| --- | --- |
+| `cap sync android` / `cap sync ios` | 10 plugin, splash-screen dahil |
+| iOS Podfile | `CapgoCapacitorUpdater` + `CapacitorSplashScreen` mevcut |
+| `npm run build:app` | derlendi; 14 map silindi, 12,54 MB düştü |
+| Strip sonrası bundle | `node --check` geçti, CSS sağlam, `sourceMappingURL` referansı 0 |
+| Web deploy | `main.08778b18.js`, `plann_frontend` healthy, iki alan adı da 200 |
+
+### Mağaza yayını — sıradaki adımlar
+
+1. Git'e push → Codemagic iOS + Android workflow'ları (AAB hâlâ e-posta ile geliyor, Play'e manuel yükleniyor).
+2. Mağaza sürümü yayına girdikten **sonra** OTA bundle'ı `6.4.1` olarak yükle. Sebep: `resetWhenUpdate` varsayılan `true` — yeni native kurulunca indirilmiş eski bundle'lar siliniyor; ayrıca native 6.4'ün altındaki bundle'lar (`6.3.x`) artık teslim edilmez.
+3. `atInstall` davranışını test etmek için: test cihazına store build'i kur → internal kanala `6.4.1` yükle → uygulamayı sil ve yeniden kur → splash üstünde yükleme göstergesi çıkmalı ve **ilk açılışta** yeni bundle uygulanmalı.
+
+### Fatih'in manuel test edeceği noktalar
+
+1. Uygulamayı tamamen sil, mağaza/TestFlight build'ini kur → ilk açılışta splash'te yükleme göstergesi görünüyor mu, sonra doğrudan güncel arayüz mü geliyor.
+2. Uçak moduna al, uygulamayı sil-kur → splash 10 sn sonra açılmalı, uygulama **kilitlenmemeli** (fail-open).
+3. Normal günlük kullanım: uygulamayı kapat-aç → splash'te ekstra bekleme olmamalı.
+4. Giriş yapmadan login ekranında bekle → rollback (sayfa kendi kendine yenilenmesi) olmamalı; `notifyAppReady` hâlâ auth'tan bağımsız çalışıyor.

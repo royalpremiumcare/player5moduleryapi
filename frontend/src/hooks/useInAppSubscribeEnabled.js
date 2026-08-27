@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { resolveInAppSubscribeEnabled } from '../lib/inAppSubscribe';
 
-/** SHOW_IN_APP_SUBSCRIBE. Apple ayrımı OTA kanalı (bu bundle production'da yok). */
+/** SHOW_IN_APP_SUBSCRIBE (bkz. constants/uiFlags.js — Apple review için kapalı). */
 export default function useInAppSubscribeEnabled() {
   const [enabled, setEnabled] = useState(false);
   const [ready, setReady] = useState(false);

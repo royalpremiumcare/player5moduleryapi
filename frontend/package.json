@@ -15,6 +15,7 @@
     "@capacitor/haptics": "^7.0.1",
     "@capacitor/ios": "^7.4.4",
     "@capacitor/push-notifications": "^7.0.3",
+    "@capacitor/splash-screen": "^7.0.5",
     "@capacitor/status-bar": "^7.0.0",
     "@capgo/capacitor-updater": "^7.50.2",
     "@dnd-kit/core": "^6.3.1",
@@ -94,6 +95,7 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build",
+    "build:app": "craco build && node scripts/strip-sourcemaps.js",
     "test": "craco test",
     "cap:sync": "npx cap sync",
     "cap:copy": "npx cap copy",

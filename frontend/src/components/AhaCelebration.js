@@ -10,13 +10,13 @@ import { Check } from 'lucide-react';
  *
  * Davranış:
  *  - Mount olunca confetti patlar (lazy import canvas-confetti).
- *  - autoAdvanceMs (default 6500) süresi geri sayım progress bar'ı ile gösterilir.
+ *  - autoAdvanceMs (default 15000) süresi geri sayım progress bar'ı ile gösterilir.
  *  - "Devam et" butonu auto-advance'i bekletmeden hemen geçirir.
  *
  * Props:
  *  - onContinue, onDismiss, autoAdvanceMs
  */
-const AhaCelebration = ({ onContinue, onDismiss, autoAdvanceMs = 6500 }) => {
+const AhaCelebration = ({ onContinue, onDismiss, autoAdvanceMs = 15000 }) => {
   const { t } = useTranslation();
   const [closing, setClosing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -111,13 +111,19 @@ const AhaCelebration = ({ onContinue, onDismiss, autoAdvanceMs = 6500 }) => {
       <div
         style={{
           width: 'min(420px, 100%)',
+          // Gövde metni açıklayıcı olduğu için uzun; kısa ekranlarda (SE gibi)
+          // kart viewport'u aşabiliyor. overflow:hidden yerine dikey scroll →
+          // metin kırpılmaz. overflow shorthand'i overflowY'yi ezdiği için
+          // yatay taşıma ayrı veriliyor.
+          maxHeight: 'calc(100vh - 40px)',
+          overflowY: 'auto',
+          overflowX: 'hidden',
           borderRadius: 22,
           padding: 0,
           textAlign: 'center',
           background: '#ffffff',
           boxShadow: '0 32px 96px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.05)',
           animation: 'aha-celebration-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
-          overflow: 'hidden',
           position: 'relative',
         }}
       >
@@ -175,7 +181,7 @@ const AhaCelebration = ({ onContinue, onDismiss, autoAdvanceMs = 6500 }) => {
               textTransform: 'uppercase',
             }}
           >
-            {t('aha.celebration.deliveredBadge', 'Mesaj iletildi')}
+            {t('aha.celebration.deliveredBadge', 'Deneme Tamamlandı')}
           </div>
 
           <h2
@@ -189,7 +195,7 @@ const AhaCelebration = ({ onContinue, onDismiss, autoAdvanceMs = 6500 }) => {
               lineHeight: 1.25,
             }}
           >
-            {t('aha.celebration.title', 'Mesaj telefonunda 🎉')}
+            {t('aha.celebration.title', 'Telefonuna gelen mesajı gördün mü?')}
           </h2>
           <p
             style={{
@@ -201,7 +207,7 @@ const AhaCelebration = ({ onContinue, onDismiss, autoAdvanceMs = 6500 }) => {
           >
             {t(
               'aha.celebration.body',
-              'Müşterilerin tam bu hızda haber alacak. Şimdi seni 60 saniyelik kısa bir gezintiye çıkaralım — gerisi çok daha kolay.'
+              'Bu bir örnek randevuydu ve müşteri olarak sen seçildiğin için mesaj doğrudan sana geldi. Gerçek randevularda aynı onay mesajı otomatik olarak müşterinin telefonuna gider ve senin hiçbir şey yapmana gerek kalmaz. Takviminde oluşan bu örnek randevuyu dilediğin zaman silebilirsin.'
             )}
           </p>
 
@@ -226,7 +232,7 @@ const AhaCelebration = ({ onContinue, onDismiss, autoAdvanceMs = 6500 }) => {
             onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
           >
-            {t('aha.celebration.cta', 'Hadi turu başlatalım')}
+            {t('aha.celebration.cta', 'Turu Başlat')}
           </button>
 
           {/* Auto-advance progress bar — zinc minimal */}
@@ -258,7 +264,7 @@ const AhaCelebration = ({ onContinue, onDismiss, autoAdvanceMs = 6500 }) => {
                 fontWeight: 500,
               }}
             >
-              {t('aha.celebration.autoHint', 'Birazdan kendiliğinden devam edecek')}
+              {t('aha.celebration.autoHint', 'Tur birkaç saniye içinde otomatik olarak başlayacak...')}
             </p>
           </div>
         </div>

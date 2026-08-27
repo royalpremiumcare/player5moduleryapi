@@ -344,7 +344,13 @@
       "noAccount": "Don't have an account yet?",
       "createAccount": "Create New Account",
       "error": "Invalid username or password.",
-      "errorGeneric": "An error occurred during login. Please try again."
+      "errorGeneric": "An error occurred during login. Please try again.",
+      "notFound": {
+        "title": "We couldn't find that account",
+        "body": "There is no account registered with {{email}}. Would you like to create one?",
+        "createAccount": "Create Account",
+        "tryAgain": "Try Again"
+      }
     },
     "register": {
       "title": "Try PLANN Free for 7 Days",
@@ -1448,18 +1454,18 @@
   },
   "aha": {
     "spotlight": {
-      "badge": "First Step",
-      "title": "Let's set up your first appointment!",
-      "tooltip": "Tap the + button below. The same sleek WhatsApp confirmation your customers will get is about to land on your phone!",
-      "loading": "Your message is on its way... Keep an eye on your phone! 👀",
+      "badge": "How It Works",
+      "title": "Let us show you what your customers will see",
+      "tooltip": "Tap the highlighted button. We'll create a sample appointment on your behalf and send the exact customer confirmation message to your own WhatsApp number. That way you experience the flow through your customer's eyes.",
+      "loading": "Creating your sample appointment, the WhatsApp message is on its way...",
       "tapTarget": "Create your first appointment"
     },
     "celebration": {
-      "deliveredBadge": "Message Delivered ✅",
-      "title": "And it's on your phone! 🎉",
-      "body": "Your customers will be notified exactly this fast! Now let's take a quick 60-second tour to show you how easy the rest is.",
-      "cta": "Start the 60-Second Tour 🚀",
-      "autoHint": "Starting automatically in a few seconds..."
+      "deliveredBadge": "Demo Complete",
+      "title": "Did you see the message on your phone?",
+      "body": "That was a sample appointment, and because you were set as the customer, the message came straight to you. For real appointments the same confirmation goes to your customer's phone automatically, with nothing for you to do. You can delete this sample appointment from your calendar whenever you like.",
+      "cta": "Start the Tour",
+      "autoHint": "The tour will start automatically in a few seconds..."
     },
     "error": {
       "title": "A slight hiccup 🛑",

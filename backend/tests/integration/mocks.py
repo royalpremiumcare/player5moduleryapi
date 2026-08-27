@@ -30,6 +30,11 @@ class FakeRedis:
         for k in keys:
             self._data.pop(k, None)
 
+    async def incr(self, key: str, amount: int = 1):
+        value = int(self._data.get(key) or 0) + amount
+        self._data[key] = value
+        return value
+
     async def expire(self, key: str, seconds: int):
         """TTL prod'da kullanılır; entegrasyon testinde anahtar yeterli."""
         if key not in self._data:
