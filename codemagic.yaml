@@ -46,9 +46,21 @@ workflows:
         script: xcode-project use-profiles
       - name: iOS Uygulamasini (IPA) Derle
         script: |
+          # xcode-project, xcodebuild çıktısını yutup yalnız "Failed to archive" basıyor;
+          # gerçek derleme hatası /tmp/xcodebuild_logs altında kalıyor. Hata durumunda
+          # logu ekrana dökmezsek her denemede kör kalıyoruz.
+          set +e
           xcode-project build-ipa \
             --workspace "frontend/ios/App/App.xcworkspace" \
             --scheme "App"
+          status=$?
+          if [ $status -ne 0 ]; then
+            echo "════════ XCODEBUILD HATA SATIRLARI ════════"
+            grep -hnE "error:|fatal error|The following build commands failed|Command .* failed|Undefined symbol|No such module" /tmp/xcodebuild_logs/*.log 2>/dev/null | tail -80
+            echo "════════ LOGUN SON 150 SATIRI ════════"
+            tail -n 150 /tmp/xcodebuild_logs/*.log 2>/dev/null
+          fi
+          exit $status
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
