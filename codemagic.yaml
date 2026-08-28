@@ -62,7 +62,7 @@ workflows:
 
           for pid in $(python3 -c "import json; d=json.load(open('/tmp/profiles.json')); d=d if isinstance(d,list) else [d]; print('\n'.join(p['id'] for p in d if p.get('id')))" 2>/dev/null); do
             echo "Siliniyor: $pid"
-            app-store-connect profiles delete "$pid" --ignore-not-found </dev/null || true
+            app-store-connect profiles delete "$pid" </dev/null || true
           done
 
           rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision
