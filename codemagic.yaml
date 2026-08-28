@@ -65,7 +65,29 @@ workflows:
             app-store-connect profiles delete "$pid" </dev/null || true
           done
 
-          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision
+          # xcode-project use-profiles İKİ dizini birden tarıyor. Codemagic'in yerleşik
+          # ios_signing adımı script'lerden önce çalışıp kendi sakladığı profili buralara
+          # kuruyor; yalnız birini temizlersek eski dosya hayatta kalıp seçilebiliyor.
+          dump_profiles() {
+            for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                     "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+              for f in "$d/"*.mobileprovision; do
+                [ -e "$f" ] || continue
+                echo "───── $d/$(basename "$f")"
+                security cms -D -i "$f" 2>/dev/null | plutil -p - \
+                  | grep -E '"Name"|"UUID"|"CreationDate"|"application-identifier"|associated-domains' || true
+              done
+            done
+          }
+
+          echo "════════ TEMIZLIK ONCESI KURULU PROFILLER ════════"
+          dump_profiles
+
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                   "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            rm -f "$d/"*.mobileprovision
+          done
+
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
 
           xcode-project use-profiles
@@ -73,13 +95,17 @@ workflows:
           # İndirilen profilde Associated Domains yoksa archive 20 dakika sonra imzalamada
           # patlıyor. Burada erken kesip nedeni açıkça yazmak build süresini boşa harcamıyor.
           echo "════════ INDIRILEN PROVISIONING PROFILLERI ════════"
+          dump_profiles
+
           found_ad=0
-          for f in "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision; do
-            [ -e "$f" ] || continue
-            echo "───── $(basename "$f")"
-            decoded=$(security cms -D -i "$f" 2>/dev/null | plutil -p -)
-            echo "$decoded" | grep -E '"Name"|"UUID"|"CreationDate"|"application-identifier"|associated-domains' || true
-            if echo "$decoded" | grep -q 'associated-domains'; then found_ad=1; fi
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                   "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            for f in "$d/"*.mobileprovision; do
+              [ -e "$f" ] || continue
+              if security cms -D -i "$f" 2>/dev/null | plutil -p - | grep -q 'associated-domains'; then
+                found_ad=1
+              fi
+            done
           done
           if [ "$found_ad" -ne 1 ]; then
             echo "HATA: Indirilen profillerin hicbirinde com.apple.developer.associated-domains yok."
