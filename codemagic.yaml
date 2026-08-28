@@ -43,7 +43,18 @@ workflows:
           cd frontend/ios/App
           pod install --repo-update
       - name: Apple Sertifikalarini Hazirla
-        script: xcode-project use-profiles
+        script: |
+          xcode-project use-profiles
+          # Aynı isimli birden fazla profil varsa Xcode yanlışını seçebiliyor ve hata
+          # mesajı sadece adı söylediği için ayırt edemiyoruz. İndirilen her profilin
+          # kimliğini ve entitlement'larını bas.
+          echo "════════ INDIRILEN PROVISIONING PROFILLERI ════════"
+          for f in "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision; do
+            [ -e "$f" ] || continue
+            echo "───── $(basename "$f")"
+            security cms -D -i "$f" 2>/dev/null | plutil -p - \
+              | grep -E '"Name"|"UUID"|"CreationDate"|"application-identifier"|associated-domains' || true
+          done
       - name: iOS Uygulamasini (IPA) Derle
         script: |
           # xcode-project, xcodebuild çıktısını yutup yalnız "Failed to archive" basıyor;
