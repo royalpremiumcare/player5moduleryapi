@@ -31,3 +31,8 @@ windsurf-diagnostics.txt
 yeni_datalar/
 # Capgo OTA token — ASLA commit edilmez (ota-release.sh buradan okur)
 .capgo.token
+
+# iOS imzalama dosyaları — ASLA commit edilmez (Codemagic App Store Connect API'den çeker)
+*.mobileprovision
+*.p12
+*.cer

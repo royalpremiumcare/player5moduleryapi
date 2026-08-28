@@ -44,17 +44,49 @@ workflows:
           pod install --repo-update
       - name: Apple Sertifikalarini Hazirla
         script: |
+          set -e
+          BUNDLE_ID="co.plannapp.app"
+
+          # App ID'ye yeni bir capability eklendiğinde (bizde Associated Domains) mevcut
+          # profiller o yetkiyi kazanmaz; portalda "regenerate" etmek de API'nin sunduğu
+          # kaydı güvenilir şekilde tazelemiyor. Tek deterministik yol: bundle'a ait tüm
+          # app-store profillerini API'den silip sıfırdan ürettirmek. Yeni profil her zaman
+          # App ID'nin o anki yetkileriyle oluşur.
+          echo "════════ API'NIN GORDUGU PROFILLER ════════"
+          app-store-connect profiles list \
+            --bundle-id-identifier "$BUNDLE_ID" --profile-type IOS_APP_STORE || true
+
+          app-store-connect profiles list \
+            --bundle-id-identifier "$BUNDLE_ID" --profile-type IOS_APP_STORE --json \
+            > /tmp/profiles.json 2>/dev/null || echo '[]' > /tmp/profiles.json
+
+          for pid in $(python3 -c "import json; d=json.load(open('/tmp/profiles.json')); d=d if isinstance(d,list) else [d]; print('\n'.join(p['id'] for p in d if p.get('id')))" 2>/dev/null); do
+            echo "Siliniyor: $pid"
+            app-store-connect profiles delete "$pid" --ignore-not-found </dev/null || true
+          done
+
+          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+
           xcode-project use-profiles
-          # Aynı isimli birden fazla profil varsa Xcode yanlışını seçebiliyor ve hata
-          # mesajı sadece adı söylediği için ayırt edemiyoruz. İndirilen her profilin
-          # kimliğini ve entitlement'larını bas.
+
+          # İndirilen profilde Associated Domains yoksa archive 20 dakika sonra imzalamada
+          # patlıyor. Burada erken kesip nedeni açıkça yazmak build süresini boşa harcamıyor.
           echo "════════ INDIRILEN PROVISIONING PROFILLERI ════════"
+          found_ad=0
           for f in "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision; do
             [ -e "$f" ] || continue
             echo "───── $(basename "$f")"
-            security cms -D -i "$f" 2>/dev/null | plutil -p - \
-              | grep -E '"Name"|"UUID"|"CreationDate"|"application-identifier"|associated-domains' || true
+            decoded=$(security cms -D -i "$f" 2>/dev/null | plutil -p -)
+            echo "$decoded" | grep -E '"Name"|"UUID"|"CreationDate"|"application-identifier"|associated-domains' || true
+            if echo "$decoded" | grep -q 'associated-domains'; then found_ad=1; fi
           done
+          if [ "$found_ad" -ne 1 ]; then
+            echo "HATA: Indirilen profillerin hicbirinde com.apple.developer.associated-domains yok."
+            echo "Apple Developer portalinda $BUNDLE_ID identifier'i icin Associated Domains"
+            echo "capability'sini etkinlestirip kaydedin (Identifiers > PLANN > Capabilities)."
+            exit 1
+          fi
       - name: iOS Uygulamasini (IPA) Derle
         script: |
           # xcode-project, xcodebuild çıktısını yutup yalnız "Failed to archive" basıyor;
