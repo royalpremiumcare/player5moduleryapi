@@ -45,62 +45,35 @@ workflows:
       - name: Apple Sertifikalarini Hazirla
         script: |
           set -e
-          BUNDLE_ID="co.plannapp.app"
 
-          echo "════════ API'NIN GORDUGU PROFILLER ════════"
-          app-store-connect profiles list \
-            --bundle-id-identifier "$BUNDLE_ID" --profile-type IOS_APP_STORE || true
-
-          # Codemagic'in yerleşik ios_signing adımı, hesabın "code signing identities"
-          # deposundaki profil kopyasını script'lerden ÖNCE makineye kuruyor. O kopya
-          # bayatladığında Apple'daki güncel profil hiç indirilmiyor. Bu yüzden kurulu
-          # olanı silip profili doğrudan API'den çekiyoruz. use-profiles iki dizini birden
-          # taradığı için ikisini de temizlemek şart.
-          dump_profiles() {
-            for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
-                     "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
-              for f in "$d/"*.mobileprovision; do
-                [ -e "$f" ] || continue
-                echo "───── $d/$(basename "$f")"
-                security cms -D -i "$f" 2>/dev/null | plutil -p - \
-                  | grep -E '"Name"|"UUID"|"CreationDate"|"application-identifier"|associated-domains' || true
-              done
-            done
-          }
-
-          echo "════════ TEMIZLIK ONCESI KURULU PROFILLER ════════"
-          dump_profiles
-
-          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
-                   "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
-            rm -f "$d/"*.mobileprovision
-          done
-
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
-
-          xcode-project use-profiles
-
-          # İndirilen profilde Associated Domains yoksa archive 20 dakika sonra imzalamada
-          # patlıyor. Burada erken kesip nedeni açıkça yazmak build süresini boşa harcamıyor.
-          echo "════════ INDIRILEN PROVISIONING PROFILLERI ════════"
-          dump_profiles
-
+          # Codemagic'in yerleşik ios_signing adımı, hesabın code signing identities
+          # deposundaki profili script'ler başlamadan önce makineye kuruyor. O depo
+          # bayatlarsa Apple'daki güncel profil hiç kullanılmıyor ve hata mesajı yalnız
+          # profil ADINI söylediği için fark edilmiyor. Döküm hangi dosyanın kurulduğunu
+          # görünür kılıyor; use-profiles iki dizini birden taradığı için ikisine de bak.
+          echo "════════ KURULU PROVISIONING PROFILLER ════════"
           found_ad=0
           for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
                    "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
             for f in "$d/"*.mobileprovision; do
               [ -e "$f" ] || continue
-              if security cms -D -i "$f" 2>/dev/null | plutil -p - | grep -q 'associated-domains'; then
-                found_ad=1
-              fi
+              echo "───── $d/$(basename "$f")"
+              decoded=$(security cms -D -i "$f" 2>/dev/null | plutil -p -)
+              echo "$decoded" | grep -E '"Name"|"UUID"|"CreationDate"|"application-identifier"|associated-domains' || true
+              if echo "$decoded" | grep -q 'associated-domains'; then found_ad=1; fi
             done
           done
+
+          # App.entitlements Associated Domains istiyor. Profilde bu yetki yoksa archive
+          # 20 dakika sonra imzalamada patlıyor; burada erken kesmek süreyi boşa harcamıyor.
           if [ "$found_ad" -ne 1 ]; then
-            echo "HATA: Indirilen profillerin hicbirinde com.apple.developer.associated-domains yok."
-            echo "Apple Developer portalinda $BUNDLE_ID identifier'i icin Associated Domains"
-            echo "capability'sini etkinlestirip kaydedin (Identifiers > PLANN > Capabilities)."
+            echo "HATA: Kurulu profillerin hicbirinde com.apple.developer.associated-domains yok."
+            echo "Codemagic > Settings > Code signing identities > iOS provisioning profiles"
+            echo "listesindeki bayat profili silip 'Fetch profiles' ile guncelini cekin."
             exit 1
           fi
+
+          xcode-project use-profiles
       - name: iOS Uygulamasini (IPA) Derle
         script: |
           # xcode-project, xcodebuild çıktısını yutup yalnız "Failed to archive" basıyor;
