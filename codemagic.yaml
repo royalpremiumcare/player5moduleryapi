@@ -47,27 +47,15 @@ workflows:
           set -e
           BUNDLE_ID="co.plannapp.app"
 
-          # App ID'ye yeni bir capability eklendiğinde (bizde Associated Domains) mevcut
-          # profiller o yetkiyi kazanmaz; portalda "regenerate" etmek de API'nin sunduğu
-          # kaydı güvenilir şekilde tazelemiyor. Tek deterministik yol: bundle'a ait tüm
-          # app-store profillerini API'den silip sıfırdan ürettirmek. Yeni profil her zaman
-          # App ID'nin o anki yetkileriyle oluşur.
           echo "════════ API'NIN GORDUGU PROFILLER ════════"
           app-store-connect profiles list \
             --bundle-id-identifier "$BUNDLE_ID" --profile-type IOS_APP_STORE || true
 
-          app-store-connect profiles list \
-            --bundle-id-identifier "$BUNDLE_ID" --profile-type IOS_APP_STORE --json \
-            > /tmp/profiles.json 2>/dev/null || echo '[]' > /tmp/profiles.json
-
-          for pid in $(python3 -c "import json; d=json.load(open('/tmp/profiles.json')); d=d if isinstance(d,list) else [d]; print('\n'.join(p['id'] for p in d if p.get('id')))" 2>/dev/null); do
-            echo "Siliniyor: $pid"
-            app-store-connect profiles delete "$pid" </dev/null || true
-          done
-
-          # xcode-project use-profiles İKİ dizini birden tarıyor. Codemagic'in yerleşik
-          # ios_signing adımı script'lerden önce çalışıp kendi sakladığı profili buralara
-          # kuruyor; yalnız birini temizlersek eski dosya hayatta kalıp seçilebiliyor.
+          # Codemagic'in yerleşik ios_signing adımı, hesabın "code signing identities"
+          # deposundaki profil kopyasını script'lerden ÖNCE makineye kuruyor. O kopya
+          # bayatladığında Apple'daki güncel profil hiç indirilmiyor. Bu yüzden kurulu
+          # olanı silip profili doğrudan API'den çekiyoruz. use-profiles iki dizini birden
+          # taradığı için ikisini de temizlemek şart.
           dump_profiles() {
             for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
                      "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
