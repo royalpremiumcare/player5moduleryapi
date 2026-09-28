@@ -19,6 +19,7 @@ GET    /admin/staff/{param}/breaks
 POST   /admin/staff/{param}/breaks
 DELETE /admin/staff/{param}/breaks/{param}
 POST   /ai/chat
+GET    /app/config
 GET    /appointments
 POST   /appointments
 POST   /appointments/bulk-package
@@ -26,6 +27,7 @@ POST   /appointments/bulk-session
 POST   /appointments/cancel-selected
 DELETE /appointments/groups/{param}
 DELETE /appointments/{param}
+GET    /appointments/{param}
 PUT    /appointments/{param}
 POST   /appointments/{param}/refund
 GET    /audit-logs
@@ -37,9 +39,11 @@ POST   /categories
 POST   /categories/reorder
 DELETE /categories/{param}
 PUT    /categories/{param}
+POST   /categories/{param}/services
 POST   /contact
 GET    /customers
 POST   /customers
+POST   /customers/bulk
 DELETE /customers/{param}
 PUT    /customers/{param}
 GET    /customers/{param}/history
@@ -121,9 +125,11 @@ PUT    /staff/{param}/days-off
 PUT    /staff/{param}/payment
 PUT    /staff/{param}/services
 PUT    /staff/{param}/toggle-permission
+GET    /stats/analytics
 GET    /stats/dashboard
 GET    /stats/personnel
 POST   /subscription/portal
+PUT    /superadmin/app-config
 POST   /superadmin/broadcast-email
 POST   /superadmin/broadcast-push
 GET    /superadmin/contact-requests
@@ -185,5 +191,5 @@ POST   /upload/image
 GET    /users
 PUT    /users/me
 
-# TOPLAM: 169 distinct endpoint
+# TOPLAM: 175 distinct endpoint
 ```

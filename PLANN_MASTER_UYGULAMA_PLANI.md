@@ -41,6 +41,9 @@ todos:
   - id: faz12-inapp-subscribe
     content: "Faz 12: Mobil içi paket seçimi + Stripe Checkout In-App Browser — PlanPicker, Capacitor Browser, HTTPS checkout-return. Tamamlandı (26 Ağu 2026)."
     status: completed
+  - id: faz13-logo-notif-bugs
+    content: "Faz 13: Canlı bug hotfix — (1–7 önceki) + (8) modal açıkken toast arkada kalıyor (personel ekleme + tüm Dialog/AlertDialog/Sheet smoke). OTA ile gider. Kod hazır (29 Eyl 2026). Fatih iPhone'da test etti; OTA 6.4.2 internal + PROD'a açıldı (29 Eyl 01:30). iOS latest_version=6.4 (soft). 29 Eyl ~02:00: `docker compose up -d --build` ile backend + web (plannapp.co) canlıda; OTA 6.4.3 (toplu rehber aktarımı dahil) PROD'da. Faz 13 kapandı."
+    status: completed
 isProject: false
 ---
 
@@ -177,6 +180,148 @@ Mevcut `currency_shield` deseni (zamanlanmış sync + koleksiyon + on-demand taz
 ## Faz 12 — Mobil içi paket seçimi + Stripe Checkout (In-App Browser)
 
 **Tamamlandı (26 Ağustos 2026).** Faz 3'ten bağımsızdı; Faz 4'ten önce alındı. Native'de paket seçimi uygulama içinde; kart Stripe Checkout'ta `@capacitor/browser` (SFSafariViewController / Chrome Custom Tabs). IAP / StoreKit yok. Detay: aşağıda "Faz 12 — uygulama notları".
+
+## Faz 13 — Canlı Bug Hotfix: Logo, Bildirim, Tarih Seçici (düşük–orta risk — Fatih bildirimi 28 Eylül 2026)
+
+Risk sırasından bağımsız: canlıda görülen ürün bug'ları. Faz 9 mağaza yayını bittikten hemen sonra veya onunla paralel alınabilir; native build **gerekmez** (OTA yeterli). Faz 4'ten önce alınması mantıklı — müşteri ilk izlenimini ve destek kanalını bozuyor.
+
+### 13.1 Online randevu → Bildirimler listesinde yok
+
+**Belirti:** Public booking (`/public/appointments`) ile gelen randevularda push / Socket.IO olayları gidebiliyor olabilir; işletme panelindeki **Bildirimler** bölümünde kayıt görünmüyor.
+
+**İnceleme yolu (kod yazmadan önce):**
+
+1. `POST /public/appointments` → `send_notifications_background` / `emit_to_organization` ([backend/server.py](backend/server.py) ~15371–15494) hangi event'i yayınlıyor (`new_appointment` vs panelin dinlediği event adı).
+2. Frontend `App.js` bildirim state'i: hangi socket event'leri `setNotifications`'a yazılıyor; online/public kaynaklı event orada mı.
+3. Bildirimlerin kalıcı koleksiyona yazılıp yazılmadığı (sayfa yenilenince kaybolma vs hiç oluşmama).
+4. Push giden ama in-app liste boş mu, yoksa ikisi de mi yok — ayrıştır.
+
+**Çıktı:** online randevu, panelden oluşturulan randevuyla aynı şekilde Bildirimler listesinde görünür (okundu/okunmadı + badge).
+
+### 13.2 Logo yükleme — `[object Object]` hatası
+
+**Belirti:** İşletme sahibi Ayarlar / Profil (veya Online Booking) üzerinden logo yüklerken toast: `Logo yüklenemedi: [object Object]` (i18n `settings.profile.logoUploadError`).
+
+**Muhtemel kök:** FastAPI `HTTPException.detail` bazen **string değil dizi/obje** (validation error listesi); frontend `error.response?.data?.detail` doğrudan string interpolasyonuna gidiyor ([SettingsProfile.js](frontend/src/components/SettingsProfile.js) ~219, ~242; [SettingsOnlineBooking.js](frontend/src/components/SettingsOnlineBooking.js) benzer). Sonuç: `[object Object]`.
+
+**İnceleme + düzeltme:**
+
+1. `POST /api/settings/logo` gerçek hata gövdesini yakala (network / log) — yetki, MIME, boyut, path yazma mı.
+2. Frontend'de `detail` için güvenli stringify (string | array | object → okunabilir mesaj); aynı helper galeri upload'da da kullanılsın.
+3. Asıl upload hatasını düzelt (kök sebep neyse: auth, disk, content-type interceptor, nginx body size).
+4. Başarılı yüklemede `logo_url`'in settings'e yazılıp UI preview'ın güncellendiğini doğrula.
+
+### 13.3 Chatwoot canlı destekte logo görünmüyor
+
+**Belirti:** Canlı destek widget'ında işletme / kullanıcı avatarı boş veya PLANN varsayılanı; işletme logosu gelmiyor.
+
+**İnceleme yolu:**
+
+1. `setChatwootUser` `avatar_url` kabul ediyor ([frontend/src/lib/chatwoot.js](frontend/src/lib/chatwoot.js)); `App.js` çağrısında org `logo_url` geçilmiyor olabilir.
+2. Chatwoot absolute HTTPS URL ister — relative `/api/static/logos/...` reddedilir; `getFullLogoUrl` / `BACKEND_URL` ile mutlak URL zorunlu.
+3. CORS / hotlink: Chatwoot CDN'den `plannapp.co` static'e erişebiliyor mu.
+4. Inbox ayarı vs contact avatar ayrımı — hangisinin boş olduğu netleştirilsin.
+
+### 13.4 Logo zinciri genel denetim
+
+Aynı `logo_url` alanı birden fazla yüzeyde kullanılıyor; birinin kırık olması diğerini de bozar:
+
+| Yüzey | Beklenen davranış |
+| --- | --- |
+| Ayarlar profil / online booking upload | Yükle → kaydet → preview |
+| Public booking sayfası header | `business.logo_url` görünür |
+| Merchant panel header / sidebar | Org logosu |
+| Chatwoot contact avatar | Mutlak URL |
+| E-posta / ödeme şablonları | Varsa absolute URL |
+
+Kontrol listesi: relative vs absolute URL, `BACKEND_URL` / CDN, nginx `/api/static/` proxy, dosya diskte var mı, eski kayıtlar broken path mi.
+
+### 13.5 Randevu tarih seçici — ay başlığı kaydırınca güncellenmiyor
+
+**Belirti:** Randevu oluşturma sihirbazında (Adım 3) yatay tarih şeridinde ayın sonuna gelince sonraki ayın günleri görünür; ama üstteki ay başlığı (`MMMM yyyy`) hâlâ eski ayı gösterir. Sonraki ayın bir gününe **tıklayınca** başlık güncellenir. Beklenen: kaydırdıkça (tıklamadan) görünür aya göre başlık otomatik değişsin.
+
+**Kök (kod okuması):** [AppointmentFormWizard.js](frontend/src/components/AppointmentFormWizard.js) ~1498 — başlık yalnızca `formData.appointment_date`'e bağlı:
+
+```js
+format(formData.appointment_date, "MMMM yyyy", { locale: dateLocale })
+```
+
+Şerit `overflow-x-auto` ile kaydırılıyor; `scroll` event'inde ay state'i güncellenmiyor. Gün tıklanınca `setFormData(... appointment_date: date ...)` olduğu için başlık o an değişiyor — yanlışlıkla "tıklayınca sonraki ay açılıyor" gibi hissediliyor.
+
+**Düzeltme yönü:**
+
+1. `dateScrollerRef` üzerinde `scroll` (veya IntersectionObserver) ile viewport'ta ortadaki / baskın günün ayını hesapla.
+2. Ayrı bir `visibleMonth` state'i ile başlığı buna bağla; seçili gün (`appointment_date`) değişmeden ay etiketi güncellenir.
+3. Ay değişiminde kısa bir geçiş (opsiyonel); iOS smooth-scroll ile çakışmasın (mevcut `scrollDatesBy` yorumuna uy).
+4. Public booking tarih seçicisinde aynı desen varsa oraya da uygula.
+
+### 13.6 Personel ekleme — e-posta / kullanıcı adı karışıklığı
+
+**Belirti:** Adminler "Yeni Personel Ekle" modalında e-posta alanına kullanıcı adı yazmaya çalışıyor; davet maili gitmiyor / ekleme başarısız.
+
+**Kök:** Modal etiket olarak profil sayfasının anahtarını paylaşıyor: `t('settings.profile.fields.email')` → TR **"E-posta (Kullanıcı Adı)"** / EN **"Email (Username)"** ([StaffManagement.js](frontend/src/components/StaffManagement.js) ~500). Placeholder hardcoded `ahmet@isletme.com` — işletme domain'i gibi görünüyor, kullanıcı adı çağrışımı güçleniyor.
+
+**Düzeltme:**
+
+1. Personel modalına **ayrı** i18n anahtarı (`staff.fields.email` vb.) — profil sayfasındaki "E-posta (Kullanıcı Adı)" metnine dokunma (login hâlâ username=email; profil bağlamı farklı).
+2. TR: **"E-posta *"** veya **"E-posta (zorunlu)"**; EN: **"Email *"** / **"Email (required)"**. "(Kullanıcı Adı)" ifadesi kaldırılır.
+3. Placeholder: `ahmet@gmail.com` (hardcode yerine i18n `staff.fields.emailPlaceholder` tercih edilir; EN: `ahmet@gmail.com`).
+4. Mevcut `staff.management.inviteEmailNote` metni korunur veya "davet bu adrese gider" vurgusu güçlendirilir.
+5. İsteğe bağlı: client-side basit e-posta format kontrolü + net hata mesajı (kullanıcı adı formatı reddedilsin).
+
+### 13.7 Rehberden "Tümünü Aktar" — uzun sürme uyarısı
+
+**Belirti:** Rehberden müşterilerin tümünü aktarmak çok uzun sürüyor. Kullanıcı işlemin bittiğini sanıp sayfadan çıkıyor / uygulamayı kapatıyor; aktarım yarıda kalabiliyor. Dialog metni şu an yanıltıcı: TR `importAllDesc` = **"Rehberdeki tüm kişileri tek seferde ekler. Hızlı ve pratik."** ([translation.json](frontend/src/i18n/locales/tr/translation.json)).
+
+**Minimum (bu fazda):** performans optimizasyonu değil — bilgilendirme.
+
+1. `importDialog.importAllDesc` (TR/EN) metnini güncelle: işlemin rehber büyüklüğüne göre **birkaç dakika** sürebileceği; aktarım bitene kadar **sayfadan ayrılmamaları / uygulamayı kapatmamaları** gerektiği.
+2. Aktarım sırasında (`importingContacts === true`) buton metninin ötesinde görünür bir bilgi satırı / banner: "Aktarım devam ediyor, lütfen bekleyin ve bu sayfada kalın" (+ mevcut spinner).
+3. İsteğe bağlı: dialog'da "Tümünü Aktar" seçilince onay öncesi kısa uyarı; veya `beforeunload` / Capacitor `appStateChange` ile ayrılma riskinde toast (mobil WebView'da `beforeunload` zayıf — öncelik görünür metin).
+
+**Sonraki (ayrı iş, bu madde değil):** toplu `POST` batch, progress sayacı (`N / M`), arka plan kuyruğu — performans iyileştirmesi Faz 13 kapsamı dışı.
+
+### 13.8 Modal açıkken toast arkada kalıyor
+
+**Belirti:** "Yeni Personel Ekle" modalında bir alan boş bırakılınca doğrulama toast'ı (`staff.management.fillAllFields` vb., [StaffManagement.js](frontend/src/components/StaffManagement.js) ~320–341) modalın **arkasında** çıkıyor; kullanıcı uyarıyı görmüyor, butonun çalışmadığını sanıyor. Aynı sorun Faz 1'de hizmet sihirbazında da yaşanmış ve orada toast yerine alan bazlı hatayla geçici olarak çözülmüştü (bkz. Faz 1 düzeltmesi, "Uyarılar modalın içine alındı").
+
+**Muhtemel kök (kod okuması):**
+
+- [ui/dialog.jsx](frontend/src/components/ui/dialog.jsx): `DialogOverlay` ve `DialogContent` `z-[1100]`, Radix Portal ile doğrudan `body` altına render ediliyor.
+- [App.js](frontend/src/App.js) ~2007: `<Toaster style={{ zIndex: 9999 }} />` App ağacının **içinde** duruyor. Sayısal olarak 9999 > 1100, ama Toaster'ın bir üst elemanı kendi stacking context'ini açıyorsa (transform, `z-index`'li kapsayıcı, `isolate`, `backdrop-filter` vb.) toast o bağlamın içinde hapsolur ve body seviyesindeki dialog'un altında kalır.
+- Radix modal dialog açıkken dışarıdaki her şeye `pointer-events: none` uyguluyor; toast görünse bile tıklanamaz (kapatma / action butonu).
+
+**Düzeltme yönü:**
+
+1. Kök nedeni tarayıcıda doğrula (DevTools'ta Toaster'ın stacking context zinciri).
+2. Toaster'ı stacking context dışına çıkar: body'ye portal et veya App kökünde en dışa taşı; z-index'i dialog / sheet / drawer / alert-dialog katmanlarının (`z-[1100]`) ve alt navigasyonun (`z-1000`) üstüne sabitle. Chatwoot widget'ının (`2147483600`) altında kalması kabul edilebilir.
+3. Toast'a `pointer-events: auto` ver, modal açıkken de kapatılabilsin.
+4. Ayrı `<Toaster>` instance'ları olan sayfalar da aynı kurala uysun: [PublicBookingPage.js](frontend/src/components/PublicBookingPage.js) (5 adet), [RegisterPage.js](frontend/src/components/RegisterPage.js).
+
+**Smoke listesi (tüm modallarda kontrol):** personel ekleme/düzenleme, müşteri ekleme/düzenleme/silme, rehberden aktar dialog'u, hizmet yönetimi, randevu sihirbazı (`fixed z-50` kendi overlay'i), Dashboard ve SetupWizard'daki elle yazılmış `fixed inset-0 z-50` modallar, PaymentRequestDrawer, RefundRequestModal, MerchantPaymentSettings T&C modalı, superadmin drawer'ları. Her birinde boş alanla kaydet → toast modalın **üstünde** ve okunur olmalı.
+
+**Onay kapısı:** Fatih — (a) online randevu → Bildirimler'de görünür, (b) logo yükleme başarılı + toast temiz, (c) Chatwoot'ta logo görünür, (d) public booking header'da logo bozulmamış, (e) tarih şeridini kaydırınca ay başlığı tıklamadan güncellenir, (f) personel eklemede etiket yalnızca e-posta + zorunlu, placeholder `ahmet@gmail.com`, (g) "Tümünü Aktar" metni uzun süre + sayfada kal uyarısı içerir; aktarım sırasında da görünür, (h) modal açıkken doğrulama toast'ı modalın üstünde görünür ve kapatılabilir.
+
+### Faz 13 — uygulama notları (29 Eylül 2026 — backend + web + OTA 6.4.3 canlıda)
+
+Doğrulanan kök nedenler ve yapılanlar:
+
+| Madde | Gerçek kök neden | Değişiklik |
+| --- | --- | --- |
+| 13.1 | Online randevular 4 farklı `source` ile kaydediliyor (`public_booking`, `_code_verified`, `_verified`, `_wa_verified`); panel yalnız tam `public_booking` eşleşmesine bakıyordu. 15 Ağustos'tan beri gelen 20 online randevunun 10'u `_code_verified`. Ayrıca yalnız `Bekliyor` gösterildiği için randevu tamamlanınca bildirim kayboluyordu. | `App.js`: `isOnlineBooking()` önek eşleşmesi (ilk yükleme + socket); durum filtresi yalnız iptal ve ödemesi tamamlanmamışları eler. Backend istatistikteki online/manuel ayrımı da önek eşleşmesine çevrildi (dönen değerler aynı: `public_booking` / `manual`). |
+| 13.2 | Nginx loglarında iPhone Safari'den 4 adet `POST /api/settings/logo → 422`, gövde 140 bayt = multipart'ta `file` parçası **hiç yok** (FastAPI'de birebir yeniden üretildi). 422 `detail` dizisi toast'a string diye basılınca `[object Object]`. | Yeni `lib/imageUpload.js`: dosya yüklemeden önce belleğe okunur, canvas ile küçültülür (logo 1024 px, galeri 1600 px), dosya adıyla Blob olarak gönderilir; okunamazsa net mesaj. Hata metni `formatApiError` ile. Backend: `file` opsiyonel → eksikse okunur 400; uzantı içerik tipinden (JPG/PNG/WEBP/GIF) türetiliyor, PIL doğrulaması. **SVG artık reddediliyor** (static altından script taşıyabilirdi; diskte 1 eski SVG logo duruyor, dokunulmadı). |
+| 13.3 | `setUser` çağrısında `avatar_url` hiç gönderilmiyordu. | `avatar_url` = logonun mutlak https adresi. |
+| 13.4 | Depolama sağlam: `backend_static` kalıcı volume, 7 logo kaydının 7'si diskte, public URL 200. Public booking sayfası logoyu göreli yolla basıyordu (native'de kırılır). | `getLogoUrl` mutlak adrese çevirir. |
+| 13.5 | Başlık yalnız seçili güne bağlıydı. | Scroll'u izleyen `visibleMonthKey`: seçili gün ekrandaysa onun ayı, değilse görünen günlerin çoğunluğunun ayı. **Ek (Fatih testi, 29 Eyl):** şerit sabit 60 gündü (Kasım sonunda bitiyordu, uzaması için son güne tıklamak gerekiyordu). Artık sona bir ekran kala 60'ar gün eklenir (üst sınır 730 gün); uzayınca seçili güne geri zıplamaz. OTA internal 6.4.2. |
+| 13.6 | Modal, profil sayfasının "E-posta (Kullanıcı Adı)" anahtarını paylaşıyordu. | `staff.fields.emailRequired` / `emailPlaceholder` (`ahmet@gmail.com`); profil metnine dokunulmadı. |
+| 13.7 | Kişiler tek tek `POST` ediliyor. | Açıklama metni güncellendi; aktarım sırasında `N / M` sayaçlı, ilerleme çubuklu "sayfadan ayrılmayın" kutusu. Hız iyileştirmesi yapılmadı. |
+| 13.8 | `#app-wrapper` `position: fixed` → kendi stacking context'i; içindeki Toaster z-index'ten bağımsız olarak body'deki Radix modallarının (`z-[1100]`) altında kalıyordu. | `ui/sonner.jsx` Toaster'ı body'ye portal eder, z 2000 + `pointer-events: auto`. Toast'a dokunmak modalı kapatmasın diye Dialog/Sheet/Drawer'a `keepOpenOnToastInteract`. Elle yazılmış `fixed z-50` modallar #app-wrapper içinde olduğu için otomatik düzeldi. PublicBooking/Register'daki ayrı Toaster'lar fixed kapsayıcıda değil, dokunulmadı. |
+
+Doğrulama: `py_compile` OK, `tests/integration/` 22/22, logo endpoint hata yolları (dosya yok / SVG / sahte PNG / boş dosya) okunur 400 dönüyor, `npm run build` temiz.
+
+**13.9 "Randevular yüklenemedi" toast'ı 4–5 kez, detaysız (eklendi 29 Eyl 2026):** İnternet yavaş/kapalıyken App.js açılış yüklemesi + Calendar'ın kendi yüklemesi + dönüşte art arda gelen `focus` ve `visibilitychange` her biri ayrı toast atıyordu. Yeni [lib/loadError.js](frontend/src/lib/loadError.js) `showLoadError`: bağlantı yok / zaman aşımı (20 sn) / sunucu hatası ayrımıyla `errors.loadFailed.*` metni ("Randevular yüklenemedi. Lütfen internet bağlantınızı kontrol edin."), sonner `id` ile tek kopya (bağlantı hataları tüm konular için ortak id). focus+visibility 2 sn içinde tek yenilemeye indirildi; `online` event'inde toast kapanır ve veriler yeniden yüklenir. App (randevular, hizmetler), Calendar, StaffManagement, Finance bu helper'a geçti. Test için demo hesap: `demo.test@plannapp.co` (Plann Demo Kuaför, 5 örnek randevu, `reminder_sent: true`). OTA: internal **6.3.13** (Faz 13 + 13.9).
+
+**13.10 Rehberden toplu aktarım hızlandırma (29 Eyl 2026):** Kişi başına ayrı `POST /customers` (≈4 kişi/sn; Fatih'in 813 kişilik aktarımı 14 dk) + her kişide `customer_added` socket'i → açık ekranlarda liste yenileme fırtınası. Yeni additive `POST /api/customers/bulk` (≤500/istek, rate limit 60/dk): tekrar kuralı tekli uç noktayla ortak `_customer_phone_variants`, randevu+müşteri kontrolü tek `distinct` sorgusu, `insert_many`, müşteri başına audit (flag açıksa), tek socket olayı. İstemci 200'lük gruplar gönderir; 404/405'te eski tek tek yola düşer. Canlı ölçüm: 1.000 kişi 0,14 sn. Testler: `tests/integration/test_customers_bulk.py` (8 test), toplam 30/30. Backend canlıda (Faz 13 backend dahil); OTA **6.4.3** internal'da Fatih doğruladı (813 kişi saniyeler içinde), prod'a açılmadan önce kontrol: deploy sonrası müşteri yazılan tek işletme demo, başka işletmeye taşan kayıt 0, `organization_id`'siz kayıt 0 → 6.4.3 PROD'da.
 
 ## Her Faz İçin Ortak Kurallar
 

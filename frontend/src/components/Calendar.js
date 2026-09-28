@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
+import { showLoadError, APPOINTMENTS_LOAD_TIMEOUT_MS } from "@/lib/loadError";
 import { useAuth } from "../context/AuthContext";
 import { io } from "socket.io-client";
 import SessionPlannerDialog from "./SessionPlannerDialog";
@@ -219,7 +220,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
         params.staff_member_id = selectedStaffFilter;
       }
 
-      const response = await api.get("/appointments", { params });
+      const response = await api.get("/appointments", { params, timeout: APPOINTMENTS_LOAD_TIMEOUT_MS });
       let filteredAppointments = (response.data || []).map(apt => ({
         ...apt,
         date: apt.appointment_date || apt.date,
@@ -235,7 +236,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
 
       setAppointments(filteredAppointments);
     } catch (error) {
-      toast.error(t('calendar.loadingError'));
+      showLoadError("appointments", error, t);
     } finally {
       setLoading(false);
     }

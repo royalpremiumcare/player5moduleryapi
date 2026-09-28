@@ -284,6 +284,16 @@ yeni store build'i şart.
   Sıradaki: native 6.4 mağazaya çıktıktan **sonra** OTA'yı `6.4.1` olarak yükle — `resetWhenUpdate`
   varsayılan `true` olduğu için yeni native kurulunca indirilmiş bundle'lar silinir ve native'in
   altındaki sürümler (`6.3.x`) artık teslim edilmez.
+- **DURUM (29 Eyl 2026):** App Store'da iOS native **6.4** yayında (28 Ağu'dan beri; aktif iOS cihazların
+  tümü 6.4.0), Play'de hâlâ **6.3**. `production` = `internal` = **6.4.3** (toplu rehber aktarımı, `POST /customers/bulk`;
+  Fatih doğruladı, çapraz-işletme kontrolü temiz, 29 Eyl ~02:00 prod'a açıldı). Önceki prod: **6.4.2** (Faz 13 + 13.9 + sonsuz tarih şeridi;
+  Fatih iPhone'da doğruladı, 29 Eyl 01:30 prod'a açıldı). 6.3.x paketleri iOS 6.4'e gitmez ("Cannot
+  revert under native version"). Sonraki yükleme **≥ 6.4.4**. Geri alma: `channel set production
+  --bundle 6.3.12` yalnız Android 6.3'ü geri alır; iOS 6.4 cihazlar 6.3.x'i reddeder, orada geri alma
+  = düzeltilmiş yeni bir ≥ 6.4.3 bundle. Force-update: `latest_version.ios = 6.4`
+  (soft), `android = 6.3`; `min_supported_version` her iki platformda 6.3. Test cihazlarının
+  internal bağı zamanla kaybolabiliyor; `POST https://api.capgo.app/device {app_id, device_id, channel}`
+  ile yeniden bağlanır. Capgo aynı içerikli paketi ikinci sürüm adıyla kabul etmez ("same bundle content").
 - **Trial:** Capgo hesabı ~15 gün trial; kalıcı kullanım için plan/ücret kararı gerekli.
 
 ### "Sıfırıncı build" gerçeği

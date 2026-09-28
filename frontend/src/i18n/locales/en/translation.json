@@ -44,6 +44,17 @@
     "generic": "An error occurred. Please try again.",
     "network": "Network error. Please check your connection.",
     "server": "Server error. Please try again later.",
+    "loadFailed": {
+      "network": "Couldn't load {{subject}}. Please check your internet connection.",
+      "timeout": "Couldn't load {{subject}} — your connection is very slow. Please check your internet connection and try again.",
+      "server": "Couldn't load {{subject}}. The server couldn't be reached, please try again shortly."
+    },
+    "loadSubject": {
+      "appointments": "appointments",
+      "services": "services",
+      "staff": "staff details",
+      "finance": "finance data"
+    },
     "unauthorized": "You are not authorised to perform this action.",
     "notFound": "The requested item could not be found.",
     "sessionExpired": "Your session has expired. Please log in again.",
@@ -609,7 +620,9 @@
       "title": "Import from Contacts",
       "desc": "How would you like to import your customers from contacts?",
       "importAll": "Import All",
-      "importAllDesc": "Adds all contacts from your phone at once. Quick and practical.",
+      "importAllDesc": "Adds all contacts from your phone at once. Depending on the size of your contacts this may take a few minutes; stay on this page until it finishes.",
+      "inProgressTitle": "Import in progress ({{done}}/{{total}})",
+      "inProgressDesc": "This may take a few minutes. Please stay on this page and don't close the app.",
       "importSelect": "Import Selected",
       "importSelectDesc": "Choose which contacts to add. More controlled.",
       "addSelected": "Add Selected ({{count}})"
@@ -984,6 +997,8 @@
     "fields": {
       "name": "Full Name",
       "email": "Email",
+      "emailRequired": "Email (required)",
+      "emailPlaceholder": "ahmet@gmail.com",
       "phone": "Phone",
       "role": "Role",
       "services": "Services"
@@ -1201,6 +1216,8 @@
       "companyNameRequired": "Company Name cannot be empty.",
       "logoUploaded": "Logo uploaded",
       "logoUploadError": "Could not upload logo: {{error}}",
+      "imageUploadError": "Could not upload image: {{error}}",
+      "fileUnreadable": "The selected file couldn't be read. Download the photo to your device and select it again.",
       "settingsSaved": "Settings saved successfully",
       "settingsSaveError": "Could not save settings. Please check all fields.",
       "linkCopied": "Link copied!",

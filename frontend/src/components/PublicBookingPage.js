@@ -469,7 +469,8 @@ const PublicBookingPage = () => {
 
   const getLogoUrl = (logoUrl) => {
     if (!logoUrl) return null;
-    return logoUrl;
+    if (logoUrl.startsWith('http')) return logoUrl;
+    return `${BACKEND_URL}${logoUrl}`;
   };
 
   useEffect(() => {

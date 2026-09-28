@@ -44,6 +44,17 @@
     "generic": "Bir hata oluştu. Lütfen tekrar deneyin.",
     "network": "Bağlantı hatası. Lütfen bağlantınızı kontrol edin.",
     "server": "Sunucu hatası. Lütfen daha sonra tekrar deneyin.",
+    "loadFailed": {
+      "network": "{{subject}} yüklenemedi. Lütfen internet bağlantınızı kontrol edin.",
+      "timeout": "{{subject}} yüklenemedi, bağlantınız çok yavaş. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.",
+      "server": "{{subject}} yüklenemedi. Sunucuya ulaşılamadı, lütfen biraz sonra tekrar deneyin."
+    },
+    "loadSubject": {
+      "appointments": "Randevular",
+      "services": "Hizmetler",
+      "staff": "Personel bilgileri",
+      "finance": "Finans verileri"
+    },
     "unauthorized": "Bu işlemi gerçekleştirme yetkiniz yok.",
     "notFound": "İstenen öğe bulunamadı.",
     "sessionExpired": "Oturumunuz sona erdi. Lütfen tekrar giriş yapın.",
@@ -611,7 +622,9 @@
       "title": "Rehberden Aktar",
       "desc": "Müşterilerinizi rehberden nasıl aktarmak istersiniz?",
       "importAll": "Tümünü Aktar",
-      "importAllDesc": "Rehberdeki tüm kişileri tek seferde ekler. Hızlı ve pratik.",
+      "importAllDesc": "Rehberdeki tüm kişileri tek seferde ekler. Rehberin büyüklüğüne göre birkaç dakika sürebilir; aktarım bitene kadar bu sayfadan ayrılmayın.",
+      "inProgressTitle": "Aktarım devam ediyor ({{done}}/{{total}})",
+      "inProgressDesc": "Bu işlem birkaç dakika sürebilir. Lütfen bu sayfadan ayrılmayın ve uygulamayı kapatmayın.",
       "importSelect": "Seçerek Aktar",
       "importSelectDesc": "Listeden istediklerinizi seçip eklersiniz. Daha kontrollü.",
       "addSelected": "Seçilenleri Ekle ({{count}})"
@@ -986,6 +999,8 @@
     "fields": {
       "name": "Ad Soyad",
       "email": "E-posta",
+      "emailRequired": "E-posta (zorunlu)",
+      "emailPlaceholder": "ahmet@gmail.com",
       "phone": "Telefon",
       "role": "Rol",
       "services": "Hizmetler"
@@ -1203,6 +1218,8 @@
       "companyNameRequired": "İşletme Adı boş bırakılamaz.",
       "logoUploaded": "Logo yüklendi",
       "logoUploadError": "Logo yüklenemedi: {{error}}",
+      "imageUploadError": "Görsel yüklenemedi: {{error}}",
+      "fileUnreadable": "Seçilen dosya okunamadı. Fotoğrafı cihazınıza indirip tekrar seçin.",
       "settingsSaved": "Ayarlar başarıyla kaydedildi",
       "settingsSaveError": "Ayarlar kaydedilemedi. Lütfen tüm alanları kontrol edin.",
       "linkCopied": "Link kopyalandı!",

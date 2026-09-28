@@ -3,6 +3,7 @@ import { io } from "socket.io-client";
 import { Search, Phone, MessageSquare, ChevronRight, Plus, ArrowLeft, Trash2, Import, Users, CheckSquare, X, Edit2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
+import { formatApiError } from "@/lib/apiError";
 import { useAuth } from "../context/AuthContext";
 import useDebounce from "../hooks/useDebounce";
 
@@ -11,6 +12,17 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Contacts } from '@capacitor-community/contacts';
 const ContactPicker = registerPlugin('ContactPickerPlugin');
 // ------------------------------------------
+
+// Backend /customers/bulk en fazla 500 kabul eder; 200'lük grup ilerleme çubuğunu akıcı tutar.
+const CONTACT_IMPORT_CHUNK = 200;
+
+const normalizeContactPhone = (raw) => {
+  let cleanPhone = String(raw || '').replace(/\D/g, "");
+  if (cleanPhone.length === 10) cleanPhone = '90' + cleanPhone;
+  else if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) cleanPhone = '90' + cleanPhone.substring(1);
+  else if (cleanPhone.length === 13 && cleanPhone.startsWith('090')) cleanPhone = cleanPhone.substring(1);
+  return cleanPhone;
+};
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,6 +85,7 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
   
   // --- REHBER ENTEGRASYONU STATE'LERİ ---
   const [importingContacts, setImportingContacts] = useState(false);
+  const [importProgress, setImportProgress] = useState(null);
   const [showImportChoiceDialog, setShowImportChoiceDialog] = useState(false);
   const [showContactSelectionDialog, setShowContactSelectionDialog] = useState(false);
   
@@ -582,32 +595,61 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
   );
 
   const saveContactsBatch = async (contactList) => {
-    toast.info(`${contactList.length} kişi işleniyor...`);
     let successCount = 0;
     let duplicateCount = 0;
     let lastError = null;
+    let done = 0;
+    setImportProgress({ done: 0, total: contactList.length });
 
-    for (const contact of contactList) {
-      let cleanPhone = contact.phone.replace(/\D/g, "");
-      if (cleanPhone.length === 10) cleanPhone = '90' + cleanPhone;
-      else if (cleanPhone.length === 11 && cleanPhone.startsWith('0')) cleanPhone = '90' + cleanPhone.substring(1);
-      else if (cleanPhone.length === 12 && cleanPhone.startsWith('90')) { /* already correct */ }
-      else if (cleanPhone.length === 13 && cleanPhone.startsWith('090')) cleanPhone = cleanPhone.substring(1);
+    const prepared = contactList.map((contact) => ({
+      name: (contact.name || '').trim(),
+      phone: normalizeContactPhone(contact.phone),
+    }));
 
-      if (cleanPhone.length >= 10) {
-        try {
-          await api.post("/customers", { name: contact.name.trim(), phone: cleanPhone });
-          successCount++;
-        } catch (e) {
-          const detail = e.response?.data?.detail || '';
-          if (detail.includes('zaten var') || e.response?.status === 400) {
-            duplicateCount++;
-          } else {
-            lastError = detail || e.message;
+    const saveOneByOne = async (items) => {
+      for (const contact of items) {
+        if (contact.phone.length >= 10) {
+          try {
+            await api.post("/customers", contact);
+            successCount++;
+          } catch (e) {
+            const detail = e.response?.data?.detail || '';
+            if ((typeof detail === 'string' && detail.includes('zaten var')) || e.response?.status === 400) {
+              duplicateCount++;
+            } else {
+              lastError = formatApiError(e, t, t('customers.addError'));
+            }
+            console.log(`Contact import error for ${contact.name} (${contact.phone}):`, detail);
           }
-          console.log(`Contact import error for ${contact.name} (${cleanPhone}):`, detail);
+        }
+        done++;
+        setImportProgress({ done, total: contactList.length });
+      }
+    };
+
+    try {
+      for (let i = 0; i < prepared.length; i += CONTACT_IMPORT_CHUNK) {
+        const chunk = prepared.slice(i, i + CONTACT_IMPORT_CHUNK);
+        try {
+          const res = await api.post("/customers/bulk", { contacts: chunk });
+          successCount += res.data?.created || 0;
+          duplicateCount += res.data?.duplicates || 0;
+          done += chunk.length;
+          setImportProgress({ done, total: contactList.length });
+        } catch (e) {
+          const status = e.response?.status;
+          if (status === 404 || status === 405) {
+            await saveOneByOne(prepared.slice(i));
+            break;
+          }
+          lastError = formatApiError(e, t, t('customers.addError'));
+          console.log("Bulk contact import error:", e.response?.data?.detail || e.message);
+          done += chunk.length;
+          setImportProgress({ done, total: contactList.length });
         }
       }
+    } finally {
+      setImportProgress(null);
     }
 
     if (successCount > 0) {
@@ -1034,6 +1076,21 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
                   </>
                 )}
               </Button>
+
+              {importProgress && (
+                <div role="status" className="bg-white rounded-xl border border-zinc-200 shadow-md p-4 animate-in fade-in">
+                  <p className="text-sm font-bold text-zinc-900">
+                    {t('customers.importDialog.inProgressTitle', { done: importProgress.done, total: importProgress.total })}
+                  </p>
+                  <p className="text-xs text-zinc-600 font-medium mt-1">{t('customers.importDialog.inProgressDesc')}</p>
+                  <div className="mt-3 h-1.5 w-full rounded-full bg-zinc-100 overflow-hidden">
+                    <div
+                      className="h-full bg-zinc-900 transition-all"
+                      style={{ width: `${importProgress.total ? Math.round((importProgress.done / importProgress.total) * 100) : 0}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

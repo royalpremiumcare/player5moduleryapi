@@ -40,6 +40,8 @@ const publicApi = axios.create({
 // Sihirbaz içi hizmet formu — ServiceManagement.js'teki form ile aynı alanlar.
 // Müşteri listesi sayfa boyutu — liste sonuna gelindikçe sonraki sayfa çekilir.
 const CUSTOMER_PAGE_SIZE = 30;
+const DATE_STRIP_CHUNK = 60;
+const DATE_STRIP_MAX = 730;
 
 const SERVICE_FORM_DEFAULTS = {
   name: "",
@@ -990,6 +992,8 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel, onServ
 
   // --- MEMOIZED COMPUTATIONS (renderStep dışında) ---
 
+  // Şerit kaydırıldıkça sona yaklaşınca DATE_STRIP_CHUNK gün daha eklenir (üst sınır DATE_STRIP_MAX).
+  const [extraDays, setExtraDays] = useState(0);
   const days = useMemo(() => {
     const today = startOfDay(new Date());
     const selected = formData.appointment_date
@@ -997,25 +1001,92 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel, onServ
       : today;
     const windowStart = today <= selected ? today : selected;
     const daysFromStartToSelected = Math.max(0, differenceInCalendarDays(selected, windowStart));
-    const count = Math.max(60, daysFromStartToSelected + 14);
+    const count = Math.min(
+      DATE_STRIP_MAX,
+      Math.max(DATE_STRIP_CHUNK + extraDays, daysFromStartToSelected + 14)
+    );
     return Array.from({ length: count }, (_, i) => addDays(windowStart, i));
-  }, [formData.appointment_date]);
+  }, [formData.appointment_date, extraDays]);
 
+  // Şerit uzadığında seçili güne geri zıplamasın: yalnız adım/seçim değişince ortala.
+  const centeredKeyRef = useRef(null);
   useLayoutEffect(() => {
-    if (step !== 3) return;
+    if (step !== 3) {
+      centeredKeyRef.current = null;
+      return;
+    }
     const scroller = dateScrollerRef.current;
     if (!scroller) return;
     const selected = formData.appointment_date
       ? startOfDay(formData.appointment_date)
       : null;
     if (!selected) return;
+    const centerKey = `${format(selected, "yyyy-MM-dd")}|${appointment?.id || ""}`;
+    if (centeredKeyRef.current === centerKey) return;
     const idx = days.findIndex((d) => isSameDay(d, selected));
     if (idx < 0) return;
     const btn = scroller.children[idx];
     if (btn && typeof btn.scrollIntoView === "function") {
       btn.scrollIntoView({ inline: "center", block: "nearest", behavior: "auto" });
+      centeredKeyRef.current = centerKey;
     }
   }, [step, days, formData.appointment_date, appointment?.id]);
+
+  // Ay başlığı kaydırmayı takip eder. Seçili gün ekrandaysa onun ayı gösterilir
+  // (ayın 29'unda açılışta şeridin çoğu sonraki ay olsa bile başlık seçimle çelişmesin);
+  // seçili gün ekrandan çıkınca görünen günlerin çoğunluğunun ayına geçilir.
+  const [visibleMonthKey, setVisibleMonthKey] = useState(null);
+  useEffect(() => {
+    if (step !== 3) return;
+    const scroller = dateScrollerRef.current;
+    if (!scroller) return;
+    const selected = formData.appointment_date ? startOfDay(formData.appointment_date) : null;
+    const selectedIdx = selected ? days.findIndex((d) => isSameDay(d, selected)) : -1;
+    let frame = 0;
+
+    const update = () => {
+      frame = 0;
+      const left = scroller.scrollLeft;
+      const right = left + scroller.clientWidth;
+      const counts = {};
+      let selectedVisible = false;
+      for (let i = 0; i < scroller.children.length && i < days.length; i++) {
+        const el = scroller.children[i];
+        const start = el.offsetLeft;
+        const end = start + el.offsetWidth;
+        if (end <= left || start >= right) continue;
+        if (i === selectedIdx && start >= left && end <= right) selectedVisible = true;
+        const key = format(days[i], "yyyy-MM");
+        counts[key] = (counts[key] || 0) + 1;
+      }
+      let key = selectedVisible && selected ? format(selected, "yyyy-MM") : null;
+      if (!key) {
+        key = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || (a < b ? -1 : 1))[0] || null;
+      }
+      setVisibleMonthKey((prev) => (prev === key ? prev : key));
+
+      if (
+        scroller.scrollWidth - right < scroller.clientWidth &&
+        days.length < DATE_STRIP_MAX
+      ) {
+        setExtraDays((prev) => prev + DATE_STRIP_CHUNK);
+      }
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    frame = requestAnimationFrame(update);
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [step, days, formData.appointment_date]);
+
+  const headerMonthDate = visibleMonthKey
+    ? new Date(Number(visibleMonthKey.slice(0, 4)), Number(visibleMonthKey.slice(5, 7)) - 1, 1)
+    : formData.appointment_date;
 
   const allSlots = useMemo(
     () => [...new Set([...availableSlots, ...busySlots])].sort(),
@@ -1495,7 +1566,7 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel, onServ
         {/* YATAY TAKVİM */}
         <div>
            <div className="flex justify-between items-center mb-4">
-             <h3 className="font-bold text-zinc-900 uppercase tracking-wider text-sm">{format(formData.appointment_date, "MMMM yyyy", { locale: dateLocale })}</h3>
+             <h3 className="font-bold text-zinc-900 uppercase tracking-wider text-sm">{format(headerMonthDate, "MMMM yyyy", { locale: dateLocale })}</h3>
            </div>
            <div className="relative overflow-hidden py-2 isolate">
              <button

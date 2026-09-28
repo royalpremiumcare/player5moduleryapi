@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { ArrowLeft, Plus, Trash2, Edit2, DollarSign, TrendingUp, TrendingDown, Calendar, X } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
+import { showLoadError } from "@/lib/loadError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,7 +76,7 @@ const Finance = ({ onNavigate }) => {
         setPayroll(response.data);
       }
     } catch (error) {
-      toast.error(t('finance.management.loadingError'));
+      showLoadError("finance", error, t);
     } finally {
       setLoading(false);
     }

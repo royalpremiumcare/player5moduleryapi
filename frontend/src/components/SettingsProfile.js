@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api, { BACKEND_URL } from "../api/api";
 import { useAuth } from "../context/AuthContext";
+import { buildImageFormData, imageUploadErrorText } from "../lib/imageUpload";
 
 // Logo URL'ini full URL'e çevir (native için gerekli)
 const getFullLogoUrl = (logoUrl) => {
@@ -204,19 +205,14 @@ const SettingsProfile = ({ onNavigate }) => {
         const uploadedUrls = [];
 
         for (const file of galleryFiles) {
-          const formData = new FormData();
-          formData.append('file', file);
           try {
-            const res = await api.post("/upload/image", formData, {
-              headers: {
-                'Content-Type': 'multipart/form-data'
-              }
-            });
+            const formData = await buildImageFormData(file);
+            const res = await api.post("/upload/image", formData);
             if (res?.data?.url) {
               uploadedUrls.push(res.data.url);
             }
           } catch (error) {
-            toast.error(t('settings.profile.logoUploadError', { error: error.response?.data?.detail || error.message }));
+            toast.error(t('settings.profile.logoUploadError', { error: imageUploadErrorText(error, t) }));
           }
         }
 
@@ -226,20 +222,13 @@ const SettingsProfile = ({ onNavigate }) => {
       }
 
       if (logoFile) {
-        const formData = new FormData();
-        formData.append('file', logoFile);
-        
         try {
-          const logoResponse = await api.post("/settings/logo", formData, {
-            headers: {
-              'Content-Type': 'multipart/form-data'
-            }
-          });
-          
+          const formData = await buildImageFormData(logoFile, { maxDimension: 1024 });
+          const logoResponse = await api.post("/settings/logo", formData);
           settings.logo_url = logoResponse.data.logo_url;
           toast.success(t('settings.profile.logoUploaded'));
         } catch (error) {
-          toast.error(t('settings.profile.logoUploadError', { error: error.response?.data?.detail || error.message }));
+          toast.error(t('settings.profile.logoUploadError', { error: imageUploadErrorText(error, t) }));
         }
       }
       

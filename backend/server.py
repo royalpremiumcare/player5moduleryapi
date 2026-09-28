@@ -2772,6 +2772,33 @@ def clean_dict_for_audit(data: Optional[dict]) -> Optional[dict]:
             cleaned[key] = value
     return cleaned
 
+def _build_audit_log_doc(
+    organization_id: str,
+    user_id: str,
+    user_full_name: str,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    old_value: Optional[dict] = None,
+    new_value: Optional[dict] = None,
+    ip_address: Optional[str] = None,
+) -> dict:
+    audit_log = AuditLog(
+        organization_id=organization_id,
+        user_id=user_id,
+        user_full_name=user_full_name,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        old_value=clean_dict_for_audit(old_value),
+        new_value=clean_dict_for_audit(new_value),
+        ip_address=ip_address,
+    )
+    doc = audit_log.model_dump()
+    doc['timestamp'] = doc['timestamp'].isoformat()
+    return doc
+
+
 async def create_audit_log(
     db,
     organization_id: str,
@@ -2788,23 +2815,10 @@ async def create_audit_log(
     if not AUDIT_LOGS_ENABLED:
         return
     try:
-        # Clean values
-        cleaned_old = clean_dict_for_audit(old_value)
-        cleaned_new = clean_dict_for_audit(new_value)
-        
-        audit_log = AuditLog(
-            organization_id=organization_id,
-            user_id=user_id,
-            user_full_name=user_full_name,
-            action=action,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            old_value=cleaned_old,
-            new_value=cleaned_new,
-            ip_address=ip_address
+        doc = _build_audit_log_doc(
+            organization_id, user_id, user_full_name, action, resource_type,
+            resource_id, old_value, new_value, ip_address,
         )
-        doc = audit_log.model_dump()
-        doc['timestamp'] = doc['timestamp'].isoformat()
         await db.audit_logs.insert_one(doc)
         logger.info(f"Audit log created: {action} {resource_type} by {user_id}")
     except Exception as e:
@@ -10795,7 +10809,8 @@ async def get_stats_analytics(
     # ── Randevu kırılımları ──
     status_counter = Counter(a.get("status") or "—" for a in appts)
     source_counter = Counter(
-        "public_booking" if (a.get("source") == "public_booking") else "manual" for a in appts
+        # Online randevular doğrulama yoluna göre public_booking_* varyantlarıyla da kaydediliyor.
+        "public_booking" if str(a.get("source") or "").startswith("public_booking") else "manual" for a in appts
     )
     weekday_counter = Counter()
     hour_counter = Counter()
@@ -11597,26 +11612,49 @@ async def complete_onboarding(request: Request, data: OnboardingComplete, curren
         "invited_staff": invited_staff
     }
 
+# Uzantı istemcinin dosya adından değil içerik tipinden türetilir: dosya adı
+# "logo.html" gibi bir şeyse static altından HTML servis edilmesin. SVG bilinçli
+# olarak yok (script taşıyabilir).
+LOGO_CONTENT_TYPES = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+
+
 @api_router.post("/settings/logo")
-async def upload_logo(request: Request, file: UploadFile = File(...), current_user: UserInDB = Depends(get_current_user)):
+async def upload_logo(request: Request, file: Optional[UploadFile] = File(None), current_user: UserInDB = Depends(get_current_user)):
     """Logo upload endpoint"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
-    
-    # File validation
-    if not file.content_type.startswith('image/'):
-        raise HTTPException(status_code=400, detail="Sadece resim dosyaları yüklenebilir")
-    
+
+    # iOS Safari okunamayan dosyayı multipart'tan düşürebiliyor; 422 validation
+    # listesi yerine kullanıcıya okunur bir mesaj dön.
+    if file is None:
+        raise HTTPException(status_code=400, detail="Dosya alınamadı, lütfen görseli tekrar seçin")
+
+    file_extension = LOGO_CONTENT_TYPES.get((file.content_type or "").lower())
+    if not file_extension:
+        raise HTTPException(status_code=400, detail="Sadece JPG, PNG, WEBP veya GIF yüklenebilir")
+
     # File size check (5MB)
     file_content = await file.read()
+    if not file_content:
+        raise HTTPException(status_code=400, detail="Dosya alınamadı, lütfen görseli tekrar seçin")
     if len(file_content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Dosya boyutu 5MB'dan büyük olamaz")
-    
+
+    try:
+        PilImage.open(io.BytesIO(file_content)).verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Dosya geçerli bir görsel değil")
+
     # Save file to static directory
     static_dir = ROOT_DIR / "static" / "logos"
     static_dir.mkdir(parents=True, exist_ok=True)
-    
-    file_extension = file.filename.split('.')[-1]
+
     unique_filename = f"{current_user.organization_id}_{str(uuid.uuid4())[:8]}.{file_extension}"
     file_path = static_dir / unique_filename
     
@@ -11634,9 +11672,12 @@ async def upload_logo(request: Request, file: UploadFile = File(...), current_us
 
 
 @api_router.post("/upload/image")
-async def upload_image(request: Request, file: UploadFile = File(...), current_user: UserInDB = Depends(get_current_user)):
+async def upload_image(request: Request, file: Optional[UploadFile] = File(None), current_user: UserInDB = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+
+    if file is None:
+        raise HTTPException(status_code=400, detail="Dosya alınamadı, lütfen görseli tekrar seçin")
 
     if not file.content_type or not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="Sadece resim dosyaları yüklenebilir")
@@ -12512,6 +12553,31 @@ class CustomerCreate(BaseModel):
     name: str = Field(..., min_length=1, description="Müşteri adı")
     phone: str = Field(..., min_length=10, description="Telefon numarası")
 
+
+CUSTOMER_BULK_MAX = 500
+
+
+class CustomerBulkItem(BaseModel):
+    # Tek geçersiz kişi tüm grubu 422'ye düşürmesin diye alanlar serbest; doğrulama endpoint'te.
+    name: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class CustomerBulkCreate(BaseModel):
+    contacts: List[CustomerBulkItem] = Field(default_factory=list, max_length=CUSTOMER_BULK_MAX)
+
+
+def _customer_phone_variants(clean_phone: str) -> List[str]:
+    """Aynı numaranın DB'de bulunabileceği yazımlar (905…, 5…, 05…)."""
+    variants = [clean_phone]
+    if clean_phone.startswith('90') and len(clean_phone) == 12:
+        variants.append(clean_phone[2:])           # 5362231743
+        variants.append('0' + clean_phone[2:])     # 05362231743
+    elif len(clean_phone) == 10 and not clean_phone.startswith('0'):
+        variants.append('90' + clean_phone)        # 905362231743
+        variants.append('0' + clean_phone)         # 05362231743
+    return variants
+
 @api_router.post("/customers")
 async def create_customer(request: Request, customer_data: CustomerCreate, current_user: UserInDB = Depends(get_current_user)):
     """Yeni müşteri ekle (Sadece admin)"""
@@ -12531,15 +12597,8 @@ async def create_customer(request: Request, customer_data: CustomerCreate, curre
     if len(clean_phone) < 10:
         raise HTTPException(status_code=400, detail="Geçerli bir telefon numarası girin")
     
-    # Telefon varyasyonlarını oluştur (farklı formatlarla kaydedilmiş olabilir)
-    phone_variants = [clean_phone]
-    if clean_phone.startswith('90') and len(clean_phone) == 12:
-        phone_variants.append(clean_phone[2:])           # 5362231743
-        phone_variants.append('0' + clean_phone[2:])     # 05362231743
-    elif len(clean_phone) == 10 and not clean_phone.startswith('0'):
-        phone_variants.append('90' + clean_phone)        # 905362231743
-        phone_variants.append('0' + clean_phone)         # 05362231743
-    
+    phone_variants = _customer_phone_variants(clean_phone)
+
     # Aynı telefon numarasına sahip müşteri var mı kontrol et (randevulardan ve customers collection'ından)
     existing_appointment = await db.appointments.find_one(
         {"organization_id": current_user.organization_id, "phone": {"$in": phone_variants}},
@@ -12601,6 +12660,95 @@ async def create_customer(request: Request, customer_data: CustomerCreate, curre
         "name": name,
         "phone": phone,
         "message": "Müşteri başarıyla eklendi"
+    }
+
+
+@api_router.post("/customers/bulk")
+@rate_limit(LIMITS['customers_bulk'])
+async def create_customers_bulk(request: Request, body: CustomerBulkCreate, current_user: UserInDB = Depends(get_current_user)):
+    """
+    Rehberden toplu müşteri ekleme (sadece admin). Tekrar kuralı POST /customers ile aynı:
+    numaranın herhangi bir yazımı bu organizasyonun randevularında veya müşterilerinde
+    varsa eklenmez. Grup içinde tekrarlanan numaralar da tek kayda indirilir.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+
+    org_id = current_user.organization_id
+    db = await get_db_from_request(request)
+
+    invalid = 0
+    batch_duplicates = 0
+    seen_variants: set = set()
+    candidates = []
+    for item in body.contacts:
+        name = (item.name or "").strip()
+        clean_phone = re.sub(r'\D', '', item.phone or "")
+        if not name or len(clean_phone) < 10:
+            invalid += 1
+            continue
+        variants = _customer_phone_variants(clean_phone)
+        if any(v in seen_variants for v in variants):
+            batch_duplicates += 1
+            continue
+        seen_variants.update(variants)
+        candidates.append((name, clean_phone, variants))
+
+    existing_phones: set = set()
+    if seen_variants:
+        phone_query = {"organization_id": org_id, "phone": {"$in": list(seen_variants)}}
+        existing_phones.update(await db.appointments.distinct("phone", phone_query))
+        existing_phones.update(await db.customers.distinct("phone", phone_query))
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    new_docs = []
+    existing_duplicates = 0
+    for name, clean_phone, variants in candidates:
+        if any(v in existing_phones for v in variants):
+            existing_duplicates += 1
+            continue
+        new_docs.append({
+            "id": str(uuid.uuid4()),
+            "organization_id": org_id,
+            "name": name,
+            "phone": clean_phone,
+            "created_at": now_iso,
+            "notes": "",
+        })
+
+    if new_docs:
+        await db.customers.insert_many([dict(d) for d in new_docs], ordered=False)
+
+        if AUDIT_LOGS_ENABLED:
+            try:
+                ip = request.client.host if request.client else None
+                user_name = current_user.full_name or current_user.username
+                await db.audit_logs.insert_many([
+                    _build_audit_log_doc(org_id, current_user.username, user_name, "CREATE",
+                                         "CUSTOMER", d["id"], None, d, ip)
+                    for d in new_docs
+                ], ordered=False)
+            except Exception as e:
+                logger.error(f"Toplu müşteri audit log yazılamadı: {e}")
+
+        try:
+            await invalidate_cache(request, "customers_list", current_user)
+        except Exception as e:
+            logging.warning(f"Customer cache invalidation failed: {e}")
+
+        try:
+            await emit_to_organization(org_id, 'customer_added', {'bulk': True, 'count': len(new_docs)})
+        except Exception as e:
+            logging.warning(f"Failed to emit customer_added event: {e}")
+
+    logging.info(
+        f"Bulk customers for org {org_id}: created={len(new_docs)} "
+        f"duplicates={existing_duplicates + batch_duplicates} invalid={invalid}"
+    )
+    return {
+        "created": len(new_docs),
+        "duplicates": existing_duplicates + batch_duplicates,
+        "invalid": invalid,
     }
 
 class CustomerUpdate(BaseModel):

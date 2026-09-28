@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api, { BACKEND_URL } from "../api/api";
 import { openExternalUrl } from "../lib/openExternalUrl";
+import { buildImageFormData, imageUploadErrorText } from "../lib/imageUpload";
 
 const getFullUrl = (url) => {
   if (!url) return null;
@@ -62,13 +63,12 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
         setGalleryUploading(true);
         const uploaded = [];
         for (const file of galleryFiles) {
-          const fd = new FormData();
-          fd.append('file', file);
           try {
-            const r = await api.post("/upload/image", fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+            const fd = await buildImageFormData(file);
+            const r = await api.post("/upload/image", fd);
             if (r?.data?.url) uploaded.push(r.data.url);
           } catch (err) {
-            toast.error("Görsel yüklenemedi: " + (err.response?.data?.detail || err.message));
+            toast.error(t('settings.profile.imageUploadError', { error: imageUploadErrorText(err, t) }));
           }
         }
         if (uploaded.length > 0) {
@@ -79,13 +79,12 @@ const SettingsOnlineBooking = ({ onNavigate }) => {
 
       // 2. Logo yükle
       if (logoFile) {
-        const fd = new FormData();
-        fd.append('file', logoFile);
         try {
-          const r = await api.post("/settings/logo", fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+          const fd = await buildImageFormData(logoFile, { maxDimension: 1024 });
+          const r = await api.post("/settings/logo", fd);
           settings.logo_url = r.data.logo_url;
         } catch (err) {
-          toast.error("Logo yüklenemedi: " + (err.response?.data?.detail || err.message));
+          toast.error(t('settings.profile.logoUploadError', { error: imageUploadErrorText(err, t) }));
         }
       }
 

@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import "@/App.css";
-import api from "./api/api"; 
+import api, { BACKEND_URL } from "./api/api";
+
+// Online randevular doğrulama yoluna göre farklı source ile kaydediliyor:
+// public_booking, public_booking_code_verified, public_booking_verified, public_booking_wa_verified.
+const isOnlineBooking = (appt) => String(appt?.source || '').startsWith('public_booking'); 
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { useAuth } from "./context/AuthContext";
@@ -50,6 +54,7 @@ import { useTheme } from "./context/ThemeContext";
 import { useTranslation } from "react-i18next";
 import { PushNotifications } from '@capacitor/push-notifications';
 import { openAppStore } from "@/lib/appStore";
+import { showLoadError, NETWORK_ERROR_TOAST_ID, APPOINTMENTS_LOAD_TIMEOUT_MS } from "@/lib/loadError";
 import {
   handleCheckoutDeepLink,
   subscribeCheckoutEvents,
@@ -258,11 +263,20 @@ function App() {
       
       if (cancelled) return;
 
+      // Chatwoot avatarı kendi sunucusundan indirir; göreli "/api/static/..." yolunu
+      // çözemez, tam https adresi gerekir.
+      const logoUrl = settings.logo_url
+        ? (settings.logo_url.startsWith("http")
+            ? settings.logo_url
+            : `${BACKEND_URL || window.location.origin}${settings.logo_url}`)
+        : undefined;
+
       const chatwootData = {
         name: displayName,
         email: payload.sub,
         phone_number: settings.support_phone || undefined,
         company_name: companyName || undefined,
+        avatar_url: logoUrl,
         identifier_hash: identifierHash,
         custom_attributes: {
           organization_id: payload.org_id,
@@ -605,7 +619,7 @@ function App() {
       const response = await api.get("/services"); 
       setServices(response.data);
     } catch (error) {
-      toast.error("Hizmetler yüklenemedi");
+      showLoadError("services", error);
     } finally {
       setServicesLoading(false);
     }
@@ -629,8 +643,8 @@ function App() {
       const startDate = since.toISOString().slice(0, 10);
 
       const [recentRes, sessionRes] = await Promise.all([
-        api.get("/appointments", { params: { start_date: startDate } }),
-        api.get("/appointments", { params: { session_only: true } }),
+        api.get("/appointments", { params: { start_date: startDate }, timeout: APPOINTMENTS_LOAD_TIMEOUT_MS }),
+        api.get("/appointments", { params: { session_only: true }, timeout: APPOINTMENTS_LOAD_TIMEOUT_MS }),
       ]);
 
       const byId = new Map();
@@ -640,10 +654,13 @@ function App() {
       const allAppointments = Array.from(byId.values());
       setAppointments(allAppointments);
       
-      // 'Bekliyor' durumundaki ve sadece public_booking kaynaklı randevuları bildirim olarak ekle
-      // Adminin kendi oluşturduğu randevular bildirim olarak gösterilmez
-      const pendingAppointments = allAppointments.filter(appt => 
-        appt.status === 'Bekliyor' && appt.source === 'public_booking'
+      // Online randevuları bildirim olarak ekle; adminin kendi oluşturduğu randevular gösterilmez.
+      // Randevu tamamlanınca bildirim kaybolmasın diye durum filtresi yalnız iptalleri
+      // ve ödemesi tamamlanmamış kayıtları eler.
+      const pendingAppointments = allAppointments.filter(appt =>
+        isOnlineBooking(appt) &&
+        !String(appt.status || '').startsWith('İptal') &&
+        !['pending_payment', 'expired'].includes(appt.payment_status)
       );
       
       // Okunmuş bildirimleri localStorage'dan al
@@ -676,7 +693,7 @@ function App() {
       }
     } catch (error) {
       console.error("❌ Randevular yüklenemedi:", error);
-      toast.error("Randevular yüklenemedi");
+      showLoadError("appointments", error);
     }
   }, []);
 
@@ -1104,7 +1121,7 @@ function App() {
           return;
         }
         
-        if (appointment?.source === 'public_booking') {
+        if (isOnlineBooking(appointment)) {
           // In-app notification ekle
           const newNotification = {
             id: appointment.id || Date.now(),
@@ -1244,28 +1261,36 @@ function App() {
   
   // Fallback: visibility and focus events for when user returns to tab
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        loadAppointments();
-        if (userRoleRef.current === 'admin') {
-          loadStats();
-        }
-      }
-    };
-    
-    const handleFocus = () => {
+    // Uygulamaya dönüşte visibilitychange ve focus art arda gelir; tek yenileme yeterli.
+    let lastRefreshAt = 0;
+    const refresh = () => {
+      const now = Date.now();
+      if (now - lastRefreshAt < 2000) return;
+      lastRefreshAt = now;
       loadAppointments();
       if (userRoleRef.current === 'admin') {
         loadStats();
       }
     };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+
+    const handleOnline = () => {
+      toast.dismiss(NETWORK_ERROR_TOAST_ID);
+      lastRefreshAt = 0;
+      refresh();
+    };
     
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', handleOnline);
     
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', handleOnline);
     };
   }, [loadAppointments, loadStats]);
   
@@ -2007,7 +2032,6 @@ function App() {
       <Toaster 
         position="top-center" 
         richColors 
-        style={{ zIndex: 9999 }}
         toastOptions={{
           style: {
             marginTop: 'calc(env(safe-area-inset-top, 0px) + 16px)'

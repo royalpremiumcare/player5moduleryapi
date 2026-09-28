@@ -3,6 +3,7 @@ import { Users, UserPlus, Edit, CheckSquare, Trash2, ArrowLeft, Calendar, Shield
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
+import { showLoadError } from "@/lib/loadError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -87,7 +88,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       setLoading(false);
     } catch (error) {
       console.error("Veri yüklenemedi:", error);
-      toast.error(t('staff.management.loadingError'));
+      showLoadError("staff", error, t);
       setLoading(false);
     }
   };
@@ -99,7 +100,7 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
       setTimeBlocks(response.data?.breaks || []);
     } catch (error) {
       console.error("Zaman blokları yüklenemedi:", error);
-      toast.error(t('staff.management.loadingError'));
+      showLoadError("staff", error, t);
     } finally {
       setLoadingTimeBlocks(false);
     }
@@ -497,13 +498,13 @@ const StaffManagement = ({ onNavigate, currentUser }) => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="username" className="text-sm font-bold text-zinc-700">{t('settings.profile.fields.email')} *</Label>
+                        <Label htmlFor="username" className="text-sm font-bold text-zinc-700">{t('staff.fields.emailRequired')}</Label>
                         <Input
                           id="username"
                           type="email"
                           value={newStaff.username}
                           onChange={(e) => setNewStaff({ ...newStaff, username: e.target.value })}
-                          placeholder="ahmet@isletme.com"
+                          placeholder={t('staff.fields.emailPlaceholder')}
                           className="backdrop-blur-md bg-white/60 border-white/40 rounded-xl h-11 focus:ring-2 focus:ring-zinc-900 font-medium"
                         />
                       </div>
