@@ -577,12 +577,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   )}
                 </div>
               )}
-              {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
-                <span className="ml-auto pl-2 shrink-0 max-w-[40%] inline-flex items-center gap-1 text-xs text-gray-400">
-                  <User className="w-3 h-3 shrink-0" />
-                  <span className="truncate min-w-0">{getStaffName(apt.staff_member_id)}</span>
-                </span>
-              )}
             </div>
             <div className="flex items-center gap-1.5 mb-3">
               <p className="text-sm text-gray-600 truncate min-w-0">{serviceDisplayName(apt)}</p>
@@ -595,6 +589,11 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><WhatsAppIcon className="w-4 h-4" /></button>
               </div>
               <div className="flex items-center gap-2 min-w-0">
+                {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
+                  <span className="min-w-0 max-w-[40vw] sm:max-w-[160px] truncate text-xs text-gray-500 bg-gray-100 rounded-full px-2.5 py-1">
+                    {getStaffName(apt.staff_member_id)}
+                  </span>
+                )}
                 <ScrollSafeDropdown
                   trigger={
                     <button type="button" className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95">
@@ -932,15 +931,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0 flex flex-col">
-                                <div className="flex items-center gap-1.5 mb-1 min-w-0">
-                                  <h4 className="text-base font-bold text-gray-900 truncate min-w-0">{customerDisplayName(apt)}</h4>
-                                  {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
-                                    <span className="ml-auto pl-2 shrink-0 max-w-[40%] inline-flex items-center gap-1 text-xs text-gray-400">
-                                      <User className="w-3 h-3 shrink-0" />
-                                      <span className="truncate min-w-0">{getStaffName(apt.staff_member_id)}</span>
-                                    </span>
-                                  )}
-                                </div>
+                                <h4 className="text-base font-bold text-gray-900 truncate min-w-0 mb-1">{customerDisplayName(apt)}</h4>
                                 <div className="flex items-center gap-1.5 mb-3">
                                   <p className="text-sm text-gray-500 truncate min-w-0">{serviceDisplayName(apt)}</p>
                                   {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 flex-shrink-0 text-amber-500 animate-pulse" />}
@@ -951,6 +942,11 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                                     <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><WhatsAppIcon className="w-4 h-4" /></button>
                                   </div>
                                   <div className="flex items-center gap-2 min-w-0">
+                                    {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
+                                      <span className="min-w-0 max-w-[120px] truncate text-xs text-gray-500 bg-gray-100 rounded-full px-2.5 py-1">
+                                        {getStaffName(apt.staff_member_id)}
+                                      </span>
+                                    )}
                                     <ScrollSafeDropdown
                                       trigger={
                                         <button type="button" className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95">
