@@ -169,12 +169,10 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
       const response = await api.get("/users");
       let staff = (response.data || []).filter(u => u.role === 'staff');
       
-      // Admin'in "hizmet verir" ayarı açıksa admin'i de ekle
+      // Admin'in "hizmet verir" ayarı açıksa tüm admin'leri de ekle (işletmede birden fazla yönetici olabilir)
       if (settings?.admin_provides_service !== false) {
-        const admin = (response.data || []).find(u => u.role === 'admin');
-        if (admin) {
-          staff = [...staff, admin];
-        }
+        const admins = (response.data || []).filter(u => u.role === 'admin');
+        staff = [...staff, ...admins];
       }
       
       setStaffMembers(staff);

@@ -21,7 +21,7 @@ todos:
     content: "Faz 5: Login intercept — şifre denemesi sonrası yönlendirme (401'e additive `code: USER_NOT_FOUND`, IP başına ifşa bütçesi), hesap bulunamadı modalı, e-postanın kayıt formuna taşınması. Canlıda (28 Ağu 2026)."
     status: completed
   - id: faz6-lock
-    content: "Faz 6: Ölü PayTR recurring kodunun temizliği + ortak with_distributed_lock yardımcısı (ownership token, TTL, güvenli release) ve kilitsiz job'lara uygulanması."
+    content: "Faz 6 (ÖNCELİK 1 — 29 Eyl 2026 olayı): Scheduler 17 worker'ın hepsinde çalışıyor; kilitsiz tuesday_batch_prepare_cron aynı idempotency_key ile mükerrer ödeme partisi üretti (4 Ağu ×3 fonlandı; 6 parti awaiting_admin_fund). Veri 29 Eyl'de düzeltildi (Royal bakiye 0, 3 işlem paid_out, 6 parti silindi). 6a: para hareketi yapan job'lara kilit + payout_batches.idempotency_key unique index + parti tutarının rezerve edilen item'lardan hesaplanması + rezerv süresi dolan partinin fonlanmasının engellenmesi. 6b: diğer kilitsiz job'lar, with_distributed_lock yardımcısı, ölü PayTR kodu."
     status: pending
   - id: faz7-phone
     content: "Faz 7: Canonical normalize_phone() ve tüm yeni yazma yollarında devreye alınması; wizard/public'teki isim şartının kaldırılması. Geriye dönük veri dönüşümü yok."
@@ -30,7 +30,7 @@ todos:
     content: "Faz 8: Duplicate tespit → rapor → survivor → tüm referansların dry-run merge'ü → onay → kontrollü merge → bütünlük doğrulaması → unique index."
     status: pending
   - id: faz9-capgo
-    content: "Faz 9: Capgo autoUpdate 'atInstall' + autoSplashscreen + source map'siz mobil paket. Kod hazır ve web'de (28 Ağu 2026); etkin olması için mağaza sürümü 6.4 gerekiyor."
+    content: "Faz 9: Capgo autoUpdate 'atInstall' + autoSplashscreen + source map'siz mobil paket. iOS 6.4 App Store'da (28 Ağu 2026; iTunes'ta sürüm adı '64' görünüyor — ASC'de kontrol et), iOS latest_version=6.4 (soft). Kalan: Android 6.4 AAB → Play, sonra android latest_version=6.4; atInstall cihaz testi."
     status: in_progress
   - id: faz10-auth
     content: "Faz 10: Auth v2 programı — identity soyutlaması, lazy migration, Google, Apple, secure credential/Face ID, provider-aware fallback. Her adım feature flag arkasında. Google adımından itibaren native build ve mağaza sürümü gerektirir."
@@ -44,12 +44,34 @@ todos:
   - id: faz13-logo-notif-bugs
     content: "Faz 13: Canlı bug hotfix — (1–7 önceki) + (8) modal açıkken toast arkada kalıyor (personel ekleme + tüm Dialog/AlertDialog/Sheet smoke). OTA ile gider. Kod hazır (29 Eyl 2026). Fatih iPhone'da test etti; OTA 6.4.2 internal + PROD'a açıldı (29 Eyl 01:30). iOS latest_version=6.4 (soft). 29 Eyl ~02:00: `docker compose up -d --build` ile backend + web (plannapp.co) canlıda; OTA 6.4.3 (toplu rehber aktarımı dahil) PROD'da. Faz 13 kapandı."
     status: completed
+  - id: ops-backlog
+    content: "Operasyon backlog'u (29 Eyl 2026 analizi): Capgo ücretli plan kararı (OTA kanalı krediyle çalışıyor), (org, session_group_id) index, yedeklerin sunucu dışına kopyası, native Sentry sembolizasyonu, repo hijyeni (venv/node_modules takipten çıkar, lead/müşteri CSV'lerini .gitignore'a al), demo hesabı istatistiklerden ayır veya test bitince sil."
+    status: pending
 isProject: false
 ---
 
 # PLANN Master Plan — Doğrulanmış Uygulama Sırası
 
-Belgedeki her madde gerçek kodla karşılaştırıldı. Aşağıdaki sıra **düşük riskten yükseğe** doğrudur ve her faz ayrı onay noktasıdır. Hiçbir faz, bir öncekinin onayı alınmadan başlamaz.
+Belgedeki her madde gerçek kodla karşılaştırıldı. Fazlar başlangıçta **düşük riskten yükseğe** dizildi; her faz ayrı onay noktasıdır. 29 Eylül 2026 analiziyle uygulama sırası aşağıdaki "Güncel durum" tablosuna göre yeniden belirlendi.
+
+## Güncel durum ve sıradaki işler (29 Eylül 2026)
+
+| Faz | Durum |
+| --- | --- |
+| 0, 1, 2, 3, 5, 12, 13 | Tamamlandı, canlıda |
+| 9 | iOS 6.4 App Store'da; Android 6.4 Play'e çıkmadı |
+| 4 | Kısmen: billing e-postaları canlıda; paywall / ödeme linki yok |
+| 6, 7, 8, 10, 11 | Bekliyor (6: ödeme olayı nedeniyle acil) |
+
+Canlı sürümler: backend + web `a7b48b58` (29 Eyl ~02:00), Capgo `production` = `internal` = **6.4.3**. Force-update: `latest_version` iOS 6.4 / Android 6.3, `min_supported_version` iki platformda 6.3.
+
+**Önerilen sıra:** Faz 6a (yalnız para hareketi yapan job'lar — acil) → Capgo plan kararı → Faz 7 → Faz 4 → Android 6.4 → Faz 6b → Faz 8 → Faz 10 → Faz 11. Gerekçe:
+
+1. **Faz 6a:** mükerrer ödeme partisi canlıda gerçekleşti (aşağıda "Olay — mükerrer ödeme partileri"). Mevcut veri düzeltildi, ama kod aynı; işletmelerin cüzdanında eşik üstü bakiye biriktiğinde mükerrer parti yeniden oluşur.
+2. **Capgo:** bu dönemin bütün hotfix'leri OTA ile gitti; hesap krediyle çalışıyor. Kredi biterse her düzeltme mağaza onayı bekler.
+3. **Faz 7:** rehber aktarımı artık saniyeler sürdüğü için içe aktarma hacmi artacak; `0…` (11 hane) varyant açığı ve `_apply_customer_delta`'nın birebir upsert'i hâlâ açık.
+4. **Faz 4:** gelir kalemi — Faz 0'da 75 işletmenin 72'si trial, 1'i Stripe aboneli; paywall ve ödeme linki yok.
+5. **Android 6.4:** Faz 9'un `atInstall` kazancı Android'de ancak 6.4 ile gelir.
 
 ## Doğrulama Notu — Belge ile Kod Arasındaki Farklar
 
@@ -125,7 +147,50 @@ Kalan adımlar:
 
 **Karar (Fatih onayı):** belgedeki iki adımlı `check-email` akışı **uygulanmadı**. Yerine şifre denemesi sonrası yönlendirme seçildi — aynı UX faydası, yeni enumeration kanalı açmadan. Ayrıntı: aşağıda "Faz 5 — uygulama notları".
 
-## Faz 6 — Zamanlanmış Görev Kilitleri (yüksek risk)
+## Faz 6 — Zamanlanmış Görev Kilitleri (yüksek risk — ÖNCELİK 1, 29 Eylül 2026)
+
+### Olay — mükerrer ödeme partileri (tespit ve veri düzeltmesi 29 Eylül 2026)
+
+**Kök neden:** APScheduler her uvicorn worker'ında ayrı başlatılıyor (logda `Step 4 SUCCESS` ×17). `max_instances=1` yalnız süreç içinde geçerli, worker'lar arası koruma değil. `financial/cron_jobs.py`'deki `_acquire_lock` yalnız 4 job'da kullanılıyor (`currency_shield`, `daily_reconciliation`, `wise_auto_convert`, `refund_reconciliation`) ve Redis hatasında `True` döndürüyor (fail-open). Kilitsiz, 17 kez eşzamanlı çalışabilen job'lar: `v2_tuesday_batch_prepare` (`tuesday_batch_prepare_cron`), `settlement_check_job`, `refund_reserve_release_job`, `wise_status_check_job`, `quote_cleanup_job`, `failed_webhook_retry_job`, `v2_expiry_crons`, `v2_refund_sla_monitor`, `v2_dlq_retry`.
+
+**Veride iz** (tek etkilenen işletme: Royal Premium Care, `bd215db0…`):
+
+| Tarih | Parti | Durum | Not |
+| --- | --- | --- | --- |
+| 4 Ağu 23:00 | 3 (aynı `idempotency_key`) | `partial_failure` | Her biri tek işlem içeriyor ama `total_amount_minor` = 1.116.350 (cüzdanın tamamı). 14 Ağu'da üçü de fonlanmış, 3 ayrı Wise transferi: `2311141975`, `2311141995`, `2311142011`. Hata: `Invalid transition: 'available' → 'paid_out'` |
+| 18 Ağu 23:00 | 3 (aynı anahtar) | `awaiting_admin_fund` | Aynı 3 işlem, parti başına bir tane; her parti yine 1.116.350 |
+| 1 Eyl 23:00 | 1 | `awaiting_admin_fund` | Üç işlem tek partide, 1.116.350 |
+| 15 Eyl 23:00 | 2 (aynı anahtar) | `awaiting_admin_fund` | 1 + 2 işlem; iki parti de 1.116.350 |
+
+Parti tutarı içeriğinden bağımsız olarak her seferinde cüzdanın tamamı. Sebep: 17 worker aynı anda üç işlemi toplayıp `total_in_batch`'i hesaplıyor, sonra işlemleri `reserved_for_batch`'e çekmek için yarışıyor; her worker tek işlemi kazanıyor ama partiye tüm toplamı yazıyor. Bekleyen 6 partinin toplamı ₺66.981; gerçek alacak ₺11.163,50.
+
+**`Invalid transition: 'available' → 'paid_out'` sebebi:** 4 Ağu'da `reserved_for_batch`'e alınan işlemler 7 günlük rezerv süresi dolunca 11 Ağu'da `reserve_expiry_rollback` ile `available`'a geri döndü; fonlama 14 Ağu'da yapıldığında işlemler artık rezervde değildi. Aynı döngü her iki haftada bir tekrarlandı (4 Ağu, 18 Ağu, 1 Eyl, 15 Eyl — sıradaki çalışma 29 Eyl 23:00 UTC olacaktı).
+
+İşlemler: `0120335f` ₺5.863,50, `31f57ad2` ₺5.000, `ef05d257` ₺300 = ₺11.163,50 (GBP havuzunda 18.517 pence). Cüzdandaki `total_paid_out_minor` 1.200.000 = Nisan'da başarıyla fonlanan 2 × ₺6.000'lik parti (`aaef080f`, `6248e978`).
+
+**Veri düzeltmesi (29 Eyl 2026 ~02:15, Fatih'in talimatıyla):** Royal Premium Care Fatih'in kendi işletmesi; ₺11.163,50 Wise'tan doğrudan kendisine gönderildi, gerçek bakiye 0.
+
+| Kayıt | Önce | Sonra |
+| --- | --- | --- |
+| 3 işlem | `available` | `paid_out` (`state_history`'e `manual_payout_correction`, `paid_out_at`) |
+| Cüzdan `available_balance_minor` | 1.116.350 | 0 |
+| Cüzdan `total_paid_out_minor` | 1.200.000 | 2.316.350 |
+| Cüzdan `pool_balance_gbp_minor` | 18.517 | 0 |
+| `awaiting_admin_fund` partileri | 6 (`847f202c`, `22b705a7`, `a3717925`, `679b03f9`, `f7a437e2`, `404c3db8`) | silindi |
+| 4 Ağu `partial_failure` partileri (Wise transfer no'lu) | 3 | dokunulmadı — geçmiş kaydı |
+
+Cüzdan değişikliği state machine'in `→ paid_out` kuralıyla aynı alanları etkiler. Tüm yazmalar beklenen mevcut duruma koşullu yapıldı. `financial_audit_log`'a `manual_payout_correction` kaydı düşüldü. Yedek: `/root/backups/financial/royal_payout_fix_20260929_before.json` (cüzdan + 3 işlem + 9 parti). Sonrası: `available` işlem 0, sistem genelinde `awaiting_admin_fund` parti 0 → bu geceki çalışma parti üretmez. Başka işletmeye dokunulmadı.
+
+### Faz 6a — para hareketi yapan job'lar (acil)
+
+1. Ortak `with_distributed_lock` yardımcısı: ownership token + TTL + Lua compare-and-delete ile güvenli release. Para hareketi yapan job'larda Redis erişilemezse **fail-closed** (job atlanır, loglanır).
+2. Kilit: `tuesday_batch_prepare_cron`, `settlement_check_job`, `refund_reserve_release_job`, `wise_status_check_job`, `failed_webhook_retry_job`, `v2_dlq_retry`.
+3. `payout_batches.idempotency_key` üzerine unique index ve parti oluşturmada duplicate-key'i yakalayan idempotent yazım. Kalan 3 `partial_failure` parti aynı anahtarı paylaşıyor; index ya `partialFilterExpression` ile yeni partilere uygulanır ya da bu 3 kaydın anahtarı sonek alır.
+4. Parti tutarı, yalnızca başarıyla rezerve edilen (`reserved_ok`) işlemlerin toplamından hesaplanır.
+5. Rezerv süresi ile fonlama arasındaki çakışma: süresi dolmuş partinin fonlanması engellenmeli (parti `expired`'a çekilir, panelde gösterilmez) ya da süre dolmadan önce fonlama yapılmadıysa parti de işlemlerle birlikte iptal edilmeli. Bugün süre dolunca işlemler geri dönüyor ama parti `awaiting_admin_fund`'da kalıyor.
+6. Test: iki eşzamanlı çağrıda tek parti, Redis yokken job'un atlanması, tutar = item toplamı, reddedilen geçişte tekrar partileme olmaması.
+
+### Faz 6b — kalan job'lar ve temizlik
 
 1. **Ölü PayTR kodunun temizliği:** `check_and_process_recurring_payments` içindeki tanımsız `PAYTR_*` sabitlerine giden yol kaldırılır veya job güvenli şekilde devre dışı bırakılır ([backend/server.py](backend/server.py):795-969). Faz 0'da `card_saved: true` org bulunursa önce bu ele alınır.
 2. Ortak bir `with_distributed_lock` yardımcı fonksiyonu: ownership token + TTL + Lua compare-and-delete ile güvenli release.
@@ -160,7 +225,7 @@ Referans güncellenecek alanlar (denormalize telefon/isim taşıyanlar): `appoin
 
 Walk-in/paylaşılan telefon senaryosu (`phone: "0"`) unique index'i engelleyebilir; index kurulmadan önce bu kayıtlar için ayrı strateji kararlaştırılır.
 
-## Faz 9 — Capgo OTA Kontrolü (kod hazır — 28 Ağustos 2026; mağaza sürümü 6.4 bekliyor)
+## Faz 9 — Capgo OTA Kontrolü (iOS 6.4 App Store'da — 28 Ağustos 2026; Android 6.4 bekliyor)
 
 Özgün tasarım (`autoUpdate: false` + elle `download`/`set` + yüzdeli ekran) **uygulanmadı**: plugin API'si o günden beri değişti ve aynı sonucu çok daha az riskle veren bir yol açıldı. Ayrıntı: aşağıda "Faz 9 — uygulama notları".
 
@@ -279,7 +344,7 @@ format(formData.appointment_date, "MMMM yyyy", { locale: dateLocale })
 2. Aktarım sırasında (`importingContacts === true`) buton metninin ötesinde görünür bir bilgi satırı / banner: "Aktarım devam ediyor, lütfen bekleyin ve bu sayfada kalın" (+ mevcut spinner).
 3. İsteğe bağlı: dialog'da "Tümünü Aktar" seçilince onay öncesi kısa uyarı; veya `beforeunload` / Capacitor `appStateChange` ile ayrılma riskinde toast (mobil WebView'da `beforeunload` zayıf — öncelik görünür metin).
 
-**Sonraki (ayrı iş, bu madde değil):** toplu `POST` batch, progress sayacı (`N / M`), arka plan kuyruğu — performans iyileştirmesi Faz 13 kapsamı dışı.
+**Sonraki (ayrı iş, bu madde değil):** toplu `POST` batch, progress sayacı (`N / M`), arka plan kuyruğu — performans iyileştirmesi Faz 13 kapsamı dışı. *(Güncelleme 29 Eyl: sayaç 13.7'de, toplu `POST` 13.10'da yapıldı; arka plan kuyruğuna gerek kalmadı.)*
 
 ### 13.8 Modal açıkken toast arkada kalıyor
 
@@ -314,21 +379,34 @@ Doğrulanan kök nedenler ve yapılanlar:
 | 13.4 | Depolama sağlam: `backend_static` kalıcı volume, 7 logo kaydının 7'si diskte, public URL 200. Public booking sayfası logoyu göreli yolla basıyordu (native'de kırılır). | `getLogoUrl` mutlak adrese çevirir. |
 | 13.5 | Başlık yalnız seçili güne bağlıydı. | Scroll'u izleyen `visibleMonthKey`: seçili gün ekrandaysa onun ayı, değilse görünen günlerin çoğunluğunun ayı. **Ek (Fatih testi, 29 Eyl):** şerit sabit 60 gündü (Kasım sonunda bitiyordu, uzaması için son güne tıklamak gerekiyordu). Artık sona bir ekran kala 60'ar gün eklenir (üst sınır 730 gün); uzayınca seçili güne geri zıplamaz. OTA internal 6.4.2. |
 | 13.6 | Modal, profil sayfasının "E-posta (Kullanıcı Adı)" anahtarını paylaşıyordu. | `staff.fields.emailRequired` / `emailPlaceholder` (`ahmet@gmail.com`); profil metnine dokunulmadı. |
-| 13.7 | Kişiler tek tek `POST` ediliyor. | Açıklama metni güncellendi; aktarım sırasında `N / M` sayaçlı, ilerleme çubuklu "sayfadan ayrılmayın" kutusu. Hız iyileştirmesi yapılmadı. |
+| 13.7 | Kişiler tek tek `POST` ediliyor. | Açıklama metni güncellendi; aktarım sırasında `N / M` sayaçlı, ilerleme çubuklu "sayfadan ayrılmayın" kutusu. Hız iyileştirmesi ilk turda yapılmadı; **13.10'da toplu uç noktayla çözüldü**. |
 | 13.8 | `#app-wrapper` `position: fixed` → kendi stacking context'i; içindeki Toaster z-index'ten bağımsız olarak body'deki Radix modallarının (`z-[1100]`) altında kalıyordu. | `ui/sonner.jsx` Toaster'ı body'ye portal eder, z 2000 + `pointer-events: auto`. Toast'a dokunmak modalı kapatmasın diye Dialog/Sheet/Drawer'a `keepOpenOnToastInteract`. Elle yazılmış `fixed z-50` modallar #app-wrapper içinde olduğu için otomatik düzeldi. PublicBooking/Register'daki ayrı Toaster'lar fixed kapsayıcıda değil, dokunulmadı. |
 
 Doğrulama: `py_compile` OK, `tests/integration/` 22/22, logo endpoint hata yolları (dosya yok / SVG / sahte PNG / boş dosya) okunur 400 dönüyor, `npm run build` temiz.
 
-**13.9 "Randevular yüklenemedi" toast'ı 4–5 kez, detaysız (eklendi 29 Eyl 2026):** İnternet yavaş/kapalıyken App.js açılış yüklemesi + Calendar'ın kendi yüklemesi + dönüşte art arda gelen `focus` ve `visibilitychange` her biri ayrı toast atıyordu. Yeni [lib/loadError.js](frontend/src/lib/loadError.js) `showLoadError`: bağlantı yok / zaman aşımı (20 sn) / sunucu hatası ayrımıyla `errors.loadFailed.*` metni ("Randevular yüklenemedi. Lütfen internet bağlantınızı kontrol edin."), sonner `id` ile tek kopya (bağlantı hataları tüm konular için ortak id). focus+visibility 2 sn içinde tek yenilemeye indirildi; `online` event'inde toast kapanır ve veriler yeniden yüklenir. App (randevular, hizmetler), Calendar, StaffManagement, Finance bu helper'a geçti. Test için demo hesap: `demo.test@plannapp.co` (Plann Demo Kuaför, 5 örnek randevu, `reminder_sent: true`). OTA: internal **6.3.13** (Faz 13 + 13.9).
+**13.9 "Randevular yüklenemedi" toast'ı 4–5 kez, detaysız (eklendi 29 Eyl 2026):** İnternet yavaş/kapalıyken App.js açılış yüklemesi + Calendar'ın kendi yüklemesi + dönüşte art arda gelen `focus` ve `visibilitychange` her biri ayrı toast atıyordu. Yeni [lib/loadError.js](frontend/src/lib/loadError.js) `showLoadError`: bağlantı yok / zaman aşımı (20 sn) / sunucu hatası ayrımıyla `errors.loadFailed.*` metni ("Randevular yüklenemedi. Lütfen internet bağlantınızı kontrol edin."), sonner `id` ile tek kopya (bağlantı hataları tüm konular için ortak id). focus+visibility 2 sn içinde tek yenilemeye indirildi; `online` event'inde toast kapanır ve veriler yeniden yüklenir. App (randevular, hizmetler), Calendar, StaffManagement, Finance bu helper'a geçti. Test için demo hesap: `demo.test@plannapp.co` (Plann Demo Kuaför, 5 örnek randevu, `reminder_sent: true`). OTA: internal **6.3.13** (Faz 13 + 13.9) — iPhone native 6.4 olduğu için teslim edilmedi, aynı içerik **6.4.1** olarak yeniden yüklendi.
 
-**13.10 Rehberden toplu aktarım hızlandırma (29 Eyl 2026):** Kişi başına ayrı `POST /customers` (≈4 kişi/sn; Fatih'in 813 kişilik aktarımı 14 dk) + her kişide `customer_added` socket'i → açık ekranlarda liste yenileme fırtınası. Yeni additive `POST /api/customers/bulk` (≤500/istek, rate limit 60/dk): tekrar kuralı tekli uç noktayla ortak `_customer_phone_variants`, randevu+müşteri kontrolü tek `distinct` sorgusu, `insert_many`, müşteri başına audit (flag açıksa), tek socket olayı. İstemci 200'lük gruplar gönderir; 404/405'te eski tek tek yola düşer. Canlı ölçüm: 1.000 kişi 0,14 sn. Testler: `tests/integration/test_customers_bulk.py` (8 test), toplam 30/30. Backend canlıda (Faz 13 backend dahil); OTA **6.4.3** internal'da Fatih doğruladı (813 kişi saniyeler içinde), prod'a açılmadan önce kontrol: deploy sonrası müşteri yazılan tek işletme demo, başka işletmeye taşan kayıt 0, `organization_id`'siz kayıt 0 → 6.4.3 PROD'da.
+**13.10 Rehberden toplu aktarım hızlandırma (29 Eyl 2026):** Kişi başına ayrı `POST /customers` (≈4 kişi/sn; Fatih'in 813 kişilik aktarımı 14 dk) + her kişide `customer_added` socket'i → açık ekranlarda liste yenileme fırtınası. Yeni additive `POST /api/customers/bulk` (≤500/istek, rate limit 60/dk): tekrar kuralı tekli uç noktayla ortak `_customer_phone_variants`, randevu+müşteri kontrolü tek `distinct` sorgusu, `insert_many`, müşteri başına audit (flag açıksa), tek socket olayı. İstemci 200'lük gruplar gönderir; 404/405'te eski tek tek yola düşer. Canlı ölçüm: 1.000 kişi 0,14 sn. Testler: `tests/integration/test_customers_bulk.py` (8 test), toplam 30/30. Backend canlıda (Faz 13 backend dahil); OTA **6.4.3** internal'da Fatih doğruladı (813 kişi saniyeler içinde), prod'a açılmadan önce kontrol: deploy sonrası müşteri yazılan tek işletme demo, başka işletmeye taşan kayıt 0, `organization_id`'siz kayıt 0 → 6.4.3 PROD'da. Test sırasında demo hesaba eklenen 813 müşteri silindi.
+
+**13.11 İkinci yönetici "Bilinmiyor" görünüyor (Gözde Nails, 29 Eyl 2026 — PostHog):** İşletmeye yönetici olarak eklenen Gizem'in 6 randevusu takvimde personel adı "Bilinmiyor". Veri doğru (`staff_member_id` = Gizem'in kullanıcı adı). Kök neden: `Calendar.js` ve `Dashboard.js` personel listesini `role === 'staff'` + `find(role === 'admin')` ile kuruyordu → yalnız **ilk** yönetici ekleniyordu; `AppointmentDetail.js` yöneticileri hiç almıyordu. Sihirbaz tüm yöneticileri listelediği için Gizem seçilebiliyordu. Düzeltme: üç yerde tüm yöneticiler (`admin_provides_service` açıkken). İstatistik ekranı zaten `admin`+`staff` çekiyor; Gizem'in randevuları ileri tarihli "Bekliyor" olduğu için personel sekmesinde henüz yok (yalnız tamamlananlar sayılır) — hata değil. Aynı durumdaki diğer işletmeler de düzelir. OTA internal **6.4.5**; web deploy Fatih onayından sonra.
+
+**13.12 İstatistik: Toplam Randevu ve Silinen (29 Eyl 2026):** (a) "Toplam Randevu" aralıktaki tüm randevuları sayıyor (ileri tarihli "Bekliyor" dahil) — Gözde Nails Eylül: 88 = 85 tamamlanan + 3 bekleyen; kullanıcı tamamlananla fark görünce yanlış sandı. Fatih kararı: toplam aynı kalır, ayrı **Bekleyen** kartı eklendi. (b) "Silinen" kartı aslında `Gelmedi` sayısını gösteriyordu; randevular hard-delete edildiği ve audit log prod'da kapalı olduğu için gerçek silme hiç kaydedilmiyordu. Yeni `appointment_deletions` koleksiyonu (index `organization_id + deleted_date`): tekli silme, seans paketi silme ve müşteri silme (randevuları da siler) yolları `_record_appointment_deletions` ile yazar (flag'den bağımsız, hata silmeyi bozmaz). `/api/stats/analytics` `summary`'ye additive `pending_appointments` + `deleted_appointments` (silinme günü İstanbul tarihiyle aralıkta). Frontend 5 kart: Toplam (mobilde tam genişlik), Tamamlanan, Bekleyen, İptal, Silinen; Gelmedi kartı yok (Fatih kararı). **Geçmiş silmeler kurtarılamaz** — sayaç 29 Eyl'den itibaren doluyor. **Düzeltme (Fatih testi: Bekleyen 0):** "Bu hafta/ay/yıl" aralığı bugünde bitiyordu → ileri tarihli randevular hiç sayılmıyordu; asıl şikâyet de buydu (Toplam = Tamamlanan = 85). Artık randevu sayıları (`total_appointments`, `pending_appointments`, `by_status`, iptal/gelmedi oranı) dönemin sonuna kadar; gelir, grafik, müşteri, personel, hizmet bugüne kadar. `range.end` aynı (bugün). Gözde Nails canlı: Bu Ay 88 / 85 / 3, Bu Hafta 22 / 6 / 16, gelir değişmedi.
+
+**Prod (29 Eyl ~23:40, Fatih talimatı):** web deploy (`main.bc5e2fe9.js`, iki alan adı 200) + Capgo `production` = **6.4.6** (iOS ve Android güncelleme sorgusu 6.4.6 dönüyor). 13.11 + 13.12 + abonelik şalteri **açık** olarak prod'da.
+
+**13.13 İstatistik: Tüm Zamanlar + Geçen Yıl (29 Eyl 2026):** `/api/stats/analytics` yeni `range` değerleri: `all_time` (başlangıç = organizasyonun ilk randevu/gider tarihi, bitiş bugün; randevu sayıları son randevu tarihine kadar → ileri tarihli bekleyenler dahil) ve `last_year` (geçen yılın 1 Oca–31 Ara). Bilinmeyen `range` eskisi gibi "bu ay"a düşer; eski build'ler etkilenmez. Ekran varsayılanı `this_year` → **`all_time`**, çip sırası: Tüm Zamanlar, Bugün, Bu Hafta, Bu Ay, Geçen Ay, Bu Yıl, Geçen Yıl. Aylık grafik etiketine yıl eklendi ("Eyl 26") — çok yıllı aralıkta aylar karışmasın. Gözde Nails canlı: Tüm Zamanlar 165 / 129 / 36 bekleyen, 164.900 ₺ (17 Ağu'dan beri). Testler 33/33. Backend canlıda; OTA internal **6.4.7**; web + prod Fatih onayından sonra. **Ek (Fatih testi, Royal Premium Care):** Tüm Zamanlar'da randevu trendi / yeni müşteri / gelir-gider grafiklerinde yalnız ilk ve son ay (Mar 26, Eyl 26) yazılıydı — recharts `minTickGap` aradakileri gizliyordu. Aylık seride ≤ 12 ay → her ay etiketli (`interval={0}`, 10 px); yıl yalnız ilk ayda ve Ocak'ta ("Mar 26, Nis, May…") ki telefona sığsın. Günlük ve > 12 aylık seriler eskisi gibi seyreltilir. OTA internal **6.4.8**. **Ek 2:** sol eksen sayıları yarım görünüyordu — grafiklerde negatif sol margin (`-18/-20/-6`) ekseni SVG dışına itiyordu; Tüm Zamanlar'da değerler 3+ haneye çıkınca belirginleşti. Margin 0, eksen genişliği sayı 32 px / para 40 px. OTA internal **6.4.9**. Testler 33/33 (`test_appointment_deletions.py` +3). Backend canlıda; OTA internal **6.4.6**; web deploy Fatih onayından sonra.
+
+**13.14 Açılış yükleme göstergesi (30 Eyl 2026):** Native splash (`showSpinner: false`) kalktıktan sonra React ilk render'ına kadar ekran boş kalıyordu. `public/index.html`'e yalnız native'de görünen `#boot-splash` eklendi: siyah zemin, ortada "PLANN" (`boot-logo.png`, 12 KB — 790 KB'lık `plannlogo.png` geç boyandığı için kırpılmış kopya), altında dönen beyaz halka. `ForceUpdateGate` ilk render sonrası (çift rAF) `window.__hideBootSplash()` ile 250 ms'de soldurup kaldırır; 10 sn emniyet zamanlayıcısı var. Web'de ilk satırda DOM'dan silinir. Native splash'in **kendi üstünde** spinner göstermek native config (`showSpinner: true`) → sonraki mağaza build'i. OTA internal **6.4.10**; prod Fatih onayından sonra. **Ek (Fatih testi):** spinner yalnız bir an göründü — bekleme native splash'in arkasında geçiyordu. 6.4.11: inline script, yükleme ekranı boyanır boyanmaz `Capacitor.nativePromise('SplashScreen','hide')` ile native splash'i kapatır; JS yüklenirken spinner görünür. İlk kurulumda (`localStorage.plann_boot_seen` yok) yapılmaz, çünkü Capgo `atInstall` güncellemesini native splash arkasında indirir. OTA internal **6.4.11**. **Native (sonraki mağaza build'i, Fatih kararı: native ekran da siyah olsun):** iOS açılışı beyaz zemin + 160 px logoydu, sonra siyah spinner'lı ekran geliyordu. `LaunchScreen.storyboard` zemini siyah, logo genişliği ekranın %75,6'sı (en fazla 351 pt) → "PLANN" yazısı web ekranıyla aynı boyut/konumda; `Splash.imageset` saf siyah zeminle yeniden üretildi (orijinal: `/root/backups/splash-2732x2732.orig.png`); `capacitor.config.json` SplashScreen `backgroundColor` `#FFFFFF` → `#000000`; Android `AppTheme.NoActionBar` `windowBackground` beyaz → siyah (splash sonrası beyaz parlama). Android 12+ sistem splash'i zaten siyah ama logosuz — dairesel ikon maskesi "PLANN"i keser, bu yüzden logo web ekranında geliyor. Spinner native'de değil (`showSpinner` ekran ortasına, yazının üstüne biner), web ekranında. `npx cap copy` yapıldı. Mağaza için: iOS 6.4 yayında olduğundan yeni sürüm numarası gerekir — **6.4.1** gibi 6.4.x seç; 6.5 yapılırsa 6.4.x OTA paketleri o cihazlara gitmez. → iOS **6.4.1 (65)** yapıldı, web canlıda, commit + push; Fatih TestFlight'ta test ediyor.
+
+**Kapanış (29 Eyl ~02:00):** `docker compose up -d --build` ile backend + web canlıda; commit `a7b48b58` (origin/main). `mobile_api_surface.md` yeniden üretildi (175 uç nokta, `POST /customers/bulk` dahil). `OPERATIONS.md`'ye Capgo sürüm durumu, rollback notu, cihaz-kanal bağlama ve force-update değerleri işlendi. Demo hesap (`demo.test@plannapp.co`) hâlâ duruyor — test bitince silinmeli ya da istatistiklerden hariç tutulmalı.
 
 ## Her Faz İçin Ortak Kurallar
 
 - Faz başlar: mevcut durum → değişiklik → test → Fatih manuel testi → onay → Capgo Internal OTA → sonraki faz.
 - Backend'e dokunan her fazda contract testleri çalıştırılır (`tests/integration/`), response modelinden alan silinmez/yeniden adlandırılmaz, POST gövdelerine zorunlu alan eklenmez.
 - DB'ye dokunan fazlarda önce dry-run raporu ve geri yüklenebilir yedek.
-- Prod kanalına geçiş yalnızca tüm fazlar bitip son onay verildikten sonra.
+- Prod kanalına geçiş faz bazında: internal'da Fatih onayı + başka işletmelerin etkilenmediği kontrolü → prod. (Başlangıçtaki "tüm fazlar bitince" kuralı Faz 12/13'te bu şekle dönüştü.)
+- Para hareketi yapan kod (financial/, payout, wallet) değişikliklerinde canlı veriye dokunulmaz; düzeltme gerekiyorsa dry-run raporu + Fatih onayı.
 
 ---
 
@@ -502,7 +580,7 @@ Ayrıca fazlar boyunca dönmeyecek sabit bir referans noktası olarak `/var/back
 - `/var/backups/plann/plann_20260822_204309.archive.gz` — fazlar boyunca dönmeyecek sabit referans yedeği.
 - Prod veritabanına yapılan yazma işlemi: **yok**.
 
-## Faz 1 — Sihirbaz UX (kod yazıldı, deploy edilmedi — 23 Ağustos 2026)
+## Faz 1 — Sihirbaz UX (tamamlandı, canlıda — 23 Ağustos 2026)
 
 Yalnızca frontend. Backend'e, veritabanına, endpoint'lere, response şekillerine **dokunulmadı**.
 
@@ -905,7 +983,7 @@ Karar verilmeden kod yok. OTA **6.3.4** production'da (internal da aynı).
 
 ## Faz 12 — Mobil içi paket seçimi + Stripe Checkout (tamamlandı, 26 Ağustos 2026)
 
-**Durum:** kod canlıda. Native 6.4 store build'ine gömüleceği için `SHOW_IN_APP_SUBSCRIBE = false` (Apple review — IAP zorunluluğu). Native'de "siteye git" kartı; web paket seçiciyi göstermeye devam eder. Review geçtikten sonra flag OTA ile tekrar açılabilir.
+**Durum:** kod canlıda. Native 6.4 store build'ine gömüleceği için `SHOW_IN_APP_SUBSCRIBE = false` (Apple review — IAP zorunluluğu). Native'de "siteye git" kartı; web paket seçiciyi göstermeye devam eder. Review geçtikten sonra flag OTA ile tekrar açılabilir. **29 Eyl 2026:** flag açıldı (`true`); ~23:40 Fatih kararıyla OTA **6.4.6** ile **prod'da** (native'de paket seçimi + Stripe Checkout). Bilinerek alınan risk: Apple 3.1.1 (dijital abonelik = IAP) ve 2.5.2 (review sonrası OTA ile işlev değiştirme) — tespit edilirse sonraki sürümler reddedilebilir veya uygulama kaldırılabilir. Seçenek: yalnız Android'de açmak ya da iOS'ta açmadan önce Apple'ın "reader/multiplatform" istisnalarını değerlendirmek.
 
 ### Yapılanlar
 
@@ -992,7 +1070,15 @@ Bütçe: `LOGIN_UNKNOWN_ACCOUNT_DISCLOSE_LIMIT` (varsayılan 10) / `LOGIN_UNKNOW
 
 Capgo Internal OTA — Fatih'in manuel testi ve onayından sonra. Değişiklik JS-only, native build gerekmiyor.
 
-## Faz 9 — uygulama notları (kod hazır, 28 Ağustos 2026 — mağaza sürümü bekliyor)
+## Faz 9 — uygulama notları (28 Ağustos 2026; iOS 6.4 App Store'da, Android 6.4 bekliyor)
+
+### Durum (29 Eylül 2026)
+
+- **iOS:** 6.4 App Store'da 28 Ağustos'tan beri yayında. iTunes lookup sürümü `64` diye döndürüyor — App Store Connect'te "Version" alanının `6.4` olduğu kontrol edilmeli (force-update karşılaştırması ve kullanıcıya görünen sürüm için). Aktif iOS cihazların tamamı native 6.4.
+- **Android:** Play'de hâlâ 6.3; 6.4 AAB'si Play Console'a yüklenmedi. Android cihazlar 6.3.
+- **Force-update:** `latest_version.ios` = 6.4 (soft, 29 Eyl); `android` = 6.3; `min_supported_version` iki platformda 6.3. Android 6.4 yayına girince `latest_version.android` = 6.4.
+- **OTA geçmişi (29 Eyl):** internal 6.3.13 (iOS native 6.4 altı olduğu için teslim edilmedi) → 6.4.1 (aynı içerik) → 6.4.2 (sonsuz tarih şeridi, internal + prod) → **6.4.3** (toplu rehber aktarımı, internal + prod). Capgo aynı içeriği yeni sürüm numarasıyla kabul etmiyor; gerekirse `build/ota-version.txt` eklenir. Sonraki yükleme ≥ 6.4.4.
+- **Açık:** `atInstall` akışının sil-kur testi (aşağıdaki test listesi) henüz raporlanmadı.
 
 ### Tetikleyen sorun
 

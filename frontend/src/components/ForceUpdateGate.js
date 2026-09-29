@@ -48,6 +48,14 @@ const ForceUpdateGate = () => {
     CapacitorUpdater.notifyAppReady().catch(() => { /* web/no-op önemsiz */ });
   }, []);
 
+  // index.html'deki açılış yükleme ekranı: ilk ekran boyandıktan sonra kaldır.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (typeof window.__hideBootSplash === "function") window.__hideBootSplash();
+    }));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   // Splash emniyet supabı. `launchAutoHide: false` olduğu için splash'i normalde
   // Capgo'nun `autoSplashscreen`'i kapatıyor (güncelleme uygulandığında ya da
   // güncelleme yoksa hemen). O mekanizma çalışmazsa splash sonsuza kadar kalır ve

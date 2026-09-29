@@ -1588,6 +1588,9 @@ async def lifespan(app: FastAPI):
             await app.db.contact_requests.create_index([("created_at", -1)])
             await app.db.contact_requests.create_index([("status", 1)])
 
+            # Silinen randevu kayıtları (istatistikte "Silinen" sayacı)
+            await app.db.appointment_deletions.create_index([("organization_id", 1), ("deleted_date", 1)])
+
             # Pazarlama Otopilotu — görev kuyruğu indeksleri
             try:
                 from marketing_autopilot import ensure_indexes as _ensure_autopilot_indexes
@@ -5087,6 +5090,36 @@ async def _apply_customer_delta(
         )
 
 
+async def _record_appointment_deletions(db, organization_id: str, appointments: list, deleted_by: str, reason: str):
+    """Hard-delete edilen randevuların hafif kaydı — istatistikteki "Silinen" sayacı buradan okunur.
+
+    Silme akışını asla bozmaz; audit log flag'inden bağımsız her zaman yazılır.
+    """
+    if not appointments:
+        return
+    try:
+        now_utc = datetime.now(timezone.utc)
+        deleted_date = now_utc.astimezone(ZoneInfo("Europe/Istanbul")).date().isoformat()
+        docs = [
+            {
+                "id": str(uuid.uuid4()),
+                "organization_id": organization_id,
+                "appointment_id": a.get("id"),
+                "appointment_date": a.get("appointment_date"),
+                "status": a.get("status"),
+                "staff_member_id": a.get("staff_member_id"),
+                "deleted_at": now_utc.isoformat(),
+                "deleted_date": deleted_date,
+                "deleted_by": deleted_by,
+                "reason": reason,
+            }
+            for a in appointments
+        ]
+        await db.appointment_deletions.insert_many(docs, ordered=False)
+    except Exception as exc:
+        logger.warning(f"appointment_deletions kaydı yazılamadı org={organization_id[:8] if organization_id else '?'} reason={reason}: {exc}")
+
+
 # === APPOINTMENTS ROUTES ===
 @api_router.delete("/appointments/groups/{session_group_id}")
 async def delete_session_group(
@@ -5115,6 +5148,7 @@ async def delete_session_group(
 
     # 1) Randevuları sil
     del_result = await db.appointments.delete_many(base_query)
+    await _record_appointment_deletions(db, org_id, apts, current_user.username, "session_group_delete")
 
     # 2) Bağlı transaction'ları sil (legacy "transactions" koleksiyonu)
     try:
@@ -5197,6 +5231,10 @@ async def delete_appointment(request: Request, appointment_id: str, current_user
         raise HTTPException(status_code=404, detail="Randevu bulunamadı")
     
     result = await db.appointments.delete_one(query)
+    if result.deleted_count:
+        await _record_appointment_deletions(
+            db, current_user.organization_id, [appointment], current_user.username, "appointment_delete"
+        )
     
     # Randevuyla ilişkili transaction'ları da sil
     try:
@@ -10633,6 +10671,11 @@ def _resolve_stats_range(range_key: str, start: Optional[str], end: Optional[str
         return last_prev.replace(day=1), last_prev
     if range_key == "this_year":
         return today.replace(month=1, day=1), today
+    if range_key == "last_year":
+        return today.replace(year=today.year - 1, month=1, day=1), today.replace(year=today.year - 1, month=12, day=31)
+    if range_key == "all_time":
+        # Başlangıç endpoint'te organizasyonun ilk kaydına çekilir.
+        return today, today
     if range_key == "custom" and start and end:
         try:
             s = datetime.strptime(start, "%Y-%m-%d").date()
@@ -10668,7 +10711,38 @@ async def get_stats_analytics(
     tz = ZoneInfo("Europe/Istanbul")
     org = current_user.organization_id
     start_d, end_d = _resolve_stats_range(range_key, start, end, tz)
+    all_time_last_s = None
+    if range_key == "all_time":
+        first_appt_doc, last_appt_doc, first_exp_doc = await asyncio.gather(
+            db.appointments.find_one({"organization_id": org, "appointment_date": {"$type": "string", "$ne": ""}},
+                                     {"_id": 0, "appointment_date": 1}, sort=[("appointment_date", 1)]),
+            db.appointments.find_one({"organization_id": org, "appointment_date": {"$type": "string", "$ne": ""}},
+                                     {"_id": 0, "appointment_date": 1}, sort=[("appointment_date", -1)]),
+            db.expenses.find_one({"organization_id": org, "date": {"$type": "string", "$ne": ""}},
+                                 {"_id": 0, "date": 1}, sort=[("date", 1)]),
+        )
+        firsts = [d for d in (
+            (first_appt_doc or {}).get("appointment_date"), (first_exp_doc or {}).get("date"),
+        ) if d]
+        try:
+            start_d = min(start_d, datetime.strptime(min(firsts)[:10], "%Y-%m-%d").date()) if firsts else start_d
+        except ValueError:
+            pass
+        all_time_last_s = (last_appt_doc or {}).get("appointment_date")
     start_s, end_s = start_d.isoformat(), end_d.isoformat()
+    # "Bu hafta/ay/yıl" aralığı bugünde biter (gelir/grafik gerçekleşene göre); randevu sayıları
+    # ise dönemin ileri tarihli (Bekliyor) randevularını da içermeli.
+    if range_key == "this_week":
+        period_end_d = start_d + timedelta(days=6)
+    elif range_key == "this_month":
+        period_end_d = (start_d.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    elif range_key == "this_year":
+        period_end_d = start_d.replace(month=12, day=31)
+    else:
+        period_end_d = end_d
+    period_end_s = period_end_d.isoformat()
+    if all_time_last_s and all_time_last_s[:10] > period_end_s:
+        period_end_s = all_time_last_s[:10]
     span_days = (end_d - start_d).days + 1
     granularity = "month" if span_days > 92 else "day"
     base = {"organization_id": org}
@@ -10685,7 +10759,7 @@ async def get_stats_analytics(
 
     async def _appts_in_range():
         return await db.appointments.find(
-            {**base, "appointment_date": {"$gte": start_s, "$lte": end_s}}, appt_fields
+            {**base, "appointment_date": {"$gte": start_s, "$lte": period_end_s}}, appt_fields
         ).to_list(100000)
 
     async def _expenses_in_range():
@@ -10717,10 +10791,16 @@ async def get_stats_analytics(
             base, {"_id": 0, "phone": 1, "created_at": 1}
         ).to_list(100000)
 
-    appts, expenses, services, staff_users, first_appt, customers_docs = await asyncio.gather(
+    async def _deleted_in_range():
+        return await db.appointment_deletions.count_documents(
+            {**base, "deleted_date": {"$gte": start_s, "$lte": end_s}}
+        )
+
+    period_appts, expenses, services, staff_users, first_appt, customers_docs, deleted_count = await asyncio.gather(
         _appts_in_range(), _expenses_in_range(), _services_all(),
-        _staff_all(), _first_appt_agg(), _customers_all(),
+        _staff_all(), _first_appt_agg(), _customers_all(), _deleted_in_range(),
     )
+    appts = [a for a in period_appts if (a.get("appointment_date") or "") <= end_s]
 
     svc_rule = {s["id"]: (s.get("payment_rule") or "on_site") for s in services}
     staff_name = {u["username"]: (u.get("full_name") or u["username"]) for u in staff_users}
@@ -10752,7 +10832,7 @@ async def get_stats_analytics(
     total_income = sum(_amount(a) for a in completed)
     total_expense = sum(float(e.get("amount") or 0) for e in expenses)
     completed_count = len(completed)
-    total_appts = len(appts)
+    total_appts = len(period_appts)
 
     # ── Zaman serisi (gelir / gider / net / randevu) ──
     def _bucket(d_str):
@@ -10807,7 +10887,7 @@ async def get_stats_analytics(
     ]
 
     # ── Randevu kırılımları ──
-    status_counter = Counter(a.get("status") or "—" for a in appts)
+    status_counter = Counter(a.get("status") or "—" for a in period_appts)
     source_counter = Counter(
         # Online randevular doğrulama yoluna göre public_booking_* varyantlarıyla da kaydediliyor.
         "public_booking" if str(a.get("source") or "").startswith("public_booking") else "manual" for a in appts
@@ -10970,6 +11050,8 @@ async def get_stats_analytics(
             "net_profit": round(total_income - total_expense, 2),
             "total_appointments": total_appts,
             "completed_appointments": completed_count,
+            "pending_appointments": status_counter.get("Bekliyor", 0),
+            "deleted_appointments": deleted_count,
             "total_customers": total_customers,
             "new_customers": new_customers,
             "avg_ticket": round(total_income / completed_count, 2) if completed_count else 0,
@@ -12828,6 +12910,10 @@ async def delete_customer(request: Request, phone: str, current_user: UserInDB =
     appointment_query = {"phone": phone, "organization_id": current_user.organization_id}
     appointments_to_delete = await db.appointments.find(appointment_query, {"_id": 0}).to_list(1000)
     appointment_result = await db.appointments.delete_many(appointment_query)
+    if appointment_result.deleted_count:
+        await _record_appointment_deletions(
+            db, current_user.organization_id, appointments_to_delete, current_user.username, "customer_delete"
+        )
     
     # Transaction'ları da sil (eğer varsa)
     transaction_result = await db.transactions.delete_many(appointment_query)

@@ -35,7 +35,7 @@ const AppointmentDetail = ({ appointmentId, userRole, canViewAll, onClose }) => 
       if (userRole === "admin" || canViewAll) {
         try {
           const staffRes = await api.get("/users");
-          setStaffMembers((staffRes.data || []).filter((u) => u.role === "staff"));
+          setStaffMembers((staffRes.data || []).filter((u) => u.role === "staff" || u.role === "admin"));
         } catch (_) { /* personel adı opsiyonel */ }
       }
     } catch (e) {

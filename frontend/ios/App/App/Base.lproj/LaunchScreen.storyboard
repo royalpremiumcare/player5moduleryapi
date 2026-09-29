@@ -17,17 +17,18 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="Splash" translatesAutoresizingMaskIntoConstraints="NO" id="snD-IY-ifK">
-                                <rect key="frame" x="107.5" y="253.5" width="160" height="160"/>
+                                <rect key="frame" x="45.5" y="192" width="284" height="284"/>
                                 <constraints>
-                                    <constraint firstAttribute="width" constant="160" id="w1b-ID-001"/>
-                                    <constraint firstAttribute="height" constant="160" id="h1b-ID-001"/>
+                                    <constraint firstAttribute="width" relation="lessThanOrEqual" constant="351" id="wmx-ID-001"/>
+                                    <constraint firstAttribute="width" secondItem="snD-IY-ifK" secondAttribute="height" multiplier="1:1" id="asp-ID-001"/>
                                 </constraints>
                             </imageView>
                         </subviews>
-                        <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                        <color key="backgroundColor" white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <constraints>
                             <constraint firstItem="snD-IY-ifK" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="cx1-ID-001"/>
                             <constraint firstItem="snD-IY-ifK" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="cy1-ID-001"/>
+                            <constraint firstItem="snD-IY-ifK" firstAttribute="width" secondItem="Ze5-6b-2t3" secondAttribute="width" multiplier="0.756" priority="750" id="wrl-ID-001"/>
                         </constraints>
                     </view>
                 </viewController>

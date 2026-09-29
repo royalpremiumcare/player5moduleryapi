@@ -1519,11 +1519,13 @@
     "loadError": "İstatistikler yüklenemedi",
     "noData": "Veri yok",
     "range": {
+      "allTime": "Tüm Zamanlar",
       "today": "Bugün",
       "thisWeek": "Bu Hafta",
       "thisMonth": "Bu Ay",
       "lastMonth": "Geçen Ay",
-      "thisYear": "Bu Yıl"
+      "thisYear": "Bu Yıl",
+      "lastYear": "Geçen Yıl"
     },
     "tabs": {
       "appointments": "Randevular",
@@ -1538,6 +1540,7 @@
       "cancellationRate": "İptal Oranı",
       "noshowRate": "Gelmedi Oranı",
       "cancelled": "İptal Olan",
+      "pending": "Bekleyen",
       "deleted": "Silinen",
       "totalCustomers": "Toplam Müşteri",
       "newCustomers": "Yeni Müşteri",

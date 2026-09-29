@@ -25,9 +25,16 @@ const STATUS_COLORS = {
 
 const MODE_COLORS = { on_site: "#71717a", online: "#3b82f6", deposit: "#f59e0b" };
 
+// Aylık seride (≤ 12 ay) her ay etiketlensin; daha yoğun serilerde recharts seyreltsin
+const timeAxisProps = (data, count, gap = 16) => (
+  data?.range?.granularity === "month" && count <= 12
+    ? { interval: 0, minTickGap: 0, tick: { fontSize: 10, fill: "#a1a1aa" } }
+    : { minTickGap: gap, tick: { fontSize: 11, fill: "#a1a1aa" } }
+);
+
 const Statistics = ({ userRole, onNavigate, settings }) => {
   const { t, i18n } = useTranslation();
-  const [range, setRange] = useState("this_year");
+  const [range, setRange] = useState("all_time");
   const [tab, setTab] = useState("appointments");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -71,23 +78,27 @@ const Statistics = ({ userRole, onNavigate, settings }) => {
       : ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
   ), [i18n.language]);
 
-  const fmtLabel = useCallback((label) => {
+  const fmtLabel = useCallback((label, index = 0) => {
     if (!label) return "";
     if (label.length === 7) {
       const [y, m] = label.split("-");
       const d = new Date(Number(y), Number(m) - 1, 1);
-      return d.toLocaleDateString(i18n.language === "en" ? "en-GB" : "tr-TR", { month: "short" });
+      // Yıl yalnız ilk ayda ve Ocak'ta — her ay yazılırken eksen telefona sığsın
+      const withYear = index === 0 || m === "01";
+      return d.toLocaleDateString(i18n.language === "en" ? "en-GB" : "tr-TR", withYear ? { month: "short", year: "2-digit" } : { month: "short" });
     }
     const d = new Date(label);
     return d.toLocaleDateString(i18n.language === "en" ? "en-GB" : "tr-TR", { day: "2-digit", month: "short" });
   }, [i18n.language]);
 
   const ranges = [
+    { id: "all_time", label: t("stats.range.allTime", "Tüm Zamanlar") },
     { id: "today", label: t("stats.range.today", "Bugün") },
     { id: "this_week", label: t("stats.range.thisWeek", "Bu Hafta") },
     { id: "this_month", label: t("stats.range.thisMonth", "Bu Ay") },
     { id: "last_month", label: t("stats.range.lastMonth", "Geçen Ay") },
     { id: "this_year", label: t("stats.range.thisYear", "Bu Yıl") },
+    { id: "last_year", label: t("stats.range.lastYear", "Geçen Yıl") },
   ];
 
   const tabs = [
@@ -190,8 +201,8 @@ const Statistics = ({ userRole, onNavigate, settings }) => {
 
 /* ─── Ortak sunum bileşenleri ─────────────────────────────────────────── */
 
-const KpiCard = ({ label, value, sub, accent = "text-zinc-900", icon: Icon }) => (
-  <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-4">
+const KpiCard = ({ label, value, sub, accent = "text-zinc-900", icon: Icon, className = "" }) => (
+  <div className={`bg-white rounded-2xl border border-zinc-100 shadow-sm p-4 ${className}`}>
     <div className="flex items-center justify-between">
       <p className="text-xs font-medium text-zinc-500">{label}</p>
       {Icon && <Icon className="w-4 h-4 text-zinc-300" />}
@@ -251,27 +262,28 @@ const AppointmentsTab = ({ data, s, ts, t, fmtLabel, weekdayLabels }) => {
   const hours = (data.appointments?.by_hour || []).map((x) => ({
     name: `${String(x.hour).padStart(2, "0")}`, count: x.count,
   }));
-  const trend = ts.map((x) => ({ name: fmtLabel(x.label), Randevu: x.appointments }));
+  const trend = ts.map((x, i) => ({ name: fmtLabel(x.label, i), Randevu: x.appointments }));
 
   const statusSum = (names) => (data.appointments?.by_status || [])
     .filter((x) => names.includes(x.status))
     .reduce((sum, x) => sum + x.count, 0);
   const cancelledCount = statusSum(["İptal", "İptal Edildi"]);
-  const deletedCount = statusSum(["Gelmedi"]);
+  const pendingCount = s.pending_appointments ?? statusSum(["Bekliyor"]);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={t("stats.kpi.totalAppointments", "Toplam Randevu")} value={s.total_appointments ?? 0} icon={CalendarDays} />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <KpiCard className="col-span-2 lg:col-span-1" label={t("stats.kpi.totalAppointments", "Toplam Randevu")} value={s.total_appointments ?? 0} icon={CalendarDays} />
         <KpiCard label={t("stats.kpi.completed", "Tamamlanan")} value={s.completed_appointments ?? 0} accent="text-emerald-600" />
+        <KpiCard label={t("stats.kpi.pending", "Bekleyen")} value={pendingCount} accent="text-amber-600" />
         <KpiCard label={t("stats.kpi.cancelled", "İptal Olan")} value={cancelledCount} accent="text-red-600" />
-        <KpiCard label={t("stats.kpi.deleted", "Silinen")} value={deletedCount} accent="text-zinc-600" />
+        <KpiCard label={t("stats.kpi.deleted", "Silinen")} value={s.deleted_appointments ?? 0} accent="text-zinc-600" />
       </div>
 
       <ChartCard title={t("stats.chart.appointmentTrend", "Randevu Trendi")}>
         {trend.length ? (
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={trend} margin={{ left: -18, right: 6, top: 6 }}>
+            <AreaChart data={trend} margin={{ left: 0, right: 6, top: 6 }}>
               <defs>
                 <linearGradient id="apptGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.25} />
@@ -279,8 +291,8 @@ const AppointmentsTab = ({ data, s, ts, t, fmtLabel, weekdayLabels }) => {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} minTickGap={16} />
-              <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} allowDecimals={false} width={34} />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} {...timeAxisProps(data, (data.timeseries || []).length)} />
+              <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
               <Tooltip contentStyle={tooltipStyle} />
               <Area type="monotone" dataKey="Randevu" stroke="#3b82f6" strokeWidth={2} fill="url(#apptGrad)" />
             </AreaChart>
@@ -326,10 +338,10 @@ const AppointmentsTab = ({ data, s, ts, t, fmtLabel, weekdayLabels }) => {
         <ChartCard title={t("stats.chart.byWeekday", "Haftanın Günü")}>
           {weekday.some((x) => x.count > 0) ? (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={weekday} margin={{ left: -20, right: 6, top: 6 }}>
+              <BarChart data={weekday} margin={{ left: 0, right: 6, top: 6 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} allowDecimals={false} width={34} />
+                <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
                 <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "#fafafa" }} formatter={(v) => [v, t("stats.tooltip.appointments", "Randevu")]} />
                 <Bar dataKey="count" fill="#6366f1" radius={[6, 6, 0, 0]} maxBarSize={38} />
               </BarChart>
@@ -340,10 +352,10 @@ const AppointmentsTab = ({ data, s, ts, t, fmtLabel, weekdayLabels }) => {
         <ChartCard title={t("stats.chart.byHour", "Saat Dağılımı")}>
           {hours.some((x) => x.count > 0) ? (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={hours} margin={{ left: -20, right: 6, top: 6 }}>
+              <BarChart data={hours} margin={{ left: 0, right: 6, top: 6 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} minTickGap={8} />
-                <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} allowDecimals={false} width={34} />
+                <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
                 <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "#fafafa" }} formatter={(v) => [v, t("stats.tooltip.appointments", "Randevu")]} />
                 <Bar dataKey="count" fill="#14b8a6" radius={[6, 6, 0, 0]} maxBarSize={26} />
               </BarChart>
@@ -363,7 +375,7 @@ const CustomersTab = ({ data, s, t, fmtLabel, formatMoney }) => {
     { name: t("stats.customers.new", "Yeni"), value: nvr.new, color: "#3b82f6" },
     { name: t("stats.customers.returning", "Geri Dönen"), value: nvr.returning, color: "#10b981" },
   ];
-  const series = (data.customers?.new_series || []).map((x) => ({ name: fmtLabel(x.label), Yeni: x.count }));
+  const series = (data.customers?.new_series || []).map((x, i) => ({ name: fmtLabel(x.label, i), Yeni: x.count }));
   const top = data.customers?.top || [];
 
   return (
@@ -377,7 +389,7 @@ const CustomersTab = ({ data, s, t, fmtLabel, formatMoney }) => {
       <ChartCard title={t("stats.chart.newCustomerTrend", "Yeni Müşteri Trendi")}>
         {series.length ? (
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={series} margin={{ left: -18, right: 6, top: 6 }}>
+            <AreaChart data={series} margin={{ left: 0, right: 6, top: 6 }}>
               <defs>
                 <linearGradient id="custGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.25} />
@@ -385,8 +397,8 @@ const CustomersTab = ({ data, s, t, fmtLabel, formatMoney }) => {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} minTickGap={16} />
-              <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} allowDecimals={false} width={34} />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} {...timeAxisProps(data, (data.timeseries || []).length)} />
+              <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
               <Tooltip contentStyle={tooltipStyle} />
               <Area type="monotone" dataKey="Yeni" stroke="#3b82f6" strokeWidth={2} fill="url(#custGrad)" />
             </AreaChart>
@@ -437,7 +449,7 @@ const CustomersTab = ({ data, s, t, fmtLabel, formatMoney }) => {
 /* ─── KASA ────────────────────────────────────────────────────────────── */
 
 const KasaTab = ({ data, s, ts, t, fmtLabel, formatMoney, shortNum }) => {
-  const incExp = ts.map((x) => ({ name: fmtLabel(x.label), Gelir: x.income, Gider: x.expense }));
+  const incExp = ts.map((x, i) => ({ name: fmtLabel(x.label, i), Gelir: x.income, Gider: x.expense }));
   const modeLabels = {
     on_site: t("stats.mode.onSite", "Yerinde"),
     online: t("stats.mode.online", "Tamamı Online"),
@@ -462,7 +474,7 @@ const KasaTab = ({ data, s, ts, t, fmtLabel, formatMoney, shortNum }) => {
         {incExp.length ? (
           <>
             <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={incExp} margin={{ left: -6, right: 6, top: 6 }}>
+              <AreaChart data={incExp} margin={{ left: 0, right: 6, top: 6 }}>
                 <defs>
                   <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#10b981" stopOpacity={0.25} />
@@ -474,8 +486,8 @@ const KasaTab = ({ data, s, ts, t, fmtLabel, formatMoney, shortNum }) => {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} minTickGap={16} />
-                <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} width={44} tickFormatter={shortNum} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} {...timeAxisProps(data, (data.timeseries || []).length)} />
+                <YAxis tick={{ fontSize: 11, fill: "#a1a1aa" }} axisLine={false} tickLine={false} width={40} tickFormatter={shortNum} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatMoney(v)} />
                 <Area type="monotone" dataKey="Gelir" stroke="#10b981" strokeWidth={2} fill="url(#incGrad)" />
                 <Area type="monotone" dataKey="Gider" stroke="#ef4444" strokeWidth={2} fill="url(#expGrad)" />

@@ -1517,11 +1517,13 @@
     "loadError": "Failed to load statistics",
     "noData": "No data",
     "range": {
+      "allTime": "All Time",
       "today": "Today",
       "thisWeek": "This Week",
       "thisMonth": "This Month",
       "lastMonth": "Last Month",
-      "thisYear": "This Year"
+      "thisYear": "This Year",
+      "lastYear": "Last Year"
     },
     "tabs": {
       "appointments": "Appointments",
@@ -1536,7 +1538,8 @@
       "cancellationRate": "Cancellation Rate",
       "noshowRate": "No-show Rate",
       "cancelled": "Cancelled",
-      "deleted": "Removed",
+      "pending": "Pending",
+      "deleted": "Deleted",
       "totalCustomers": "Total Customers",
       "newCustomers": "New Customers",
       "returning": "Returning",

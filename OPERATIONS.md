@@ -288,11 +288,13 @@ yeni store build'i şart.
   tümü 6.4.0), Play'de hâlâ **6.3**. `production` = `internal` = **6.4.3** (toplu rehber aktarımı, `POST /customers/bulk`;
   Fatih doğruladı, çapraz-işletme kontrolü temiz, 29 Eyl ~02:00 prod'a açıldı). Önceki prod: **6.4.2** (Faz 13 + 13.9 + sonsuz tarih şeridi;
   Fatih iPhone'da doğruladı, 29 Eyl 01:30 prod'a açıldı). 6.3.x paketleri iOS 6.4'e gitmez ("Cannot
-  revert under native version"). Sonraki yükleme **≥ 6.4.4**. Geri alma: `channel set production
+  revert under native version"). Sonraki yükleme **≥ 6.4.12**. Geri alma: `channel set production
   --bundle 6.3.12` yalnız Android 6.3'ü geri alır; iOS 6.4 cihazlar 6.3.x'i reddeder, orada geri alma
   = düzeltilmiş yeni bir ≥ 6.4.3 bundle. Force-update: `latest_version.ios = 6.4`
-  (soft), `android = 6.3`; `min_supported_version` her iki platformda 6.3. Test cihazlarının
-  internal bağı zamanla kaybolabiliyor; `POST https://api.capgo.app/device {app_id, device_id, channel}`
+  (soft), `android = 6.3`; `min_supported_version` her iki platformda 6.3. **internal = 6.4.11** (30 Eyl ~00:10: 6.4.7 istatistik Tüm Zamanlar varsayılan + Geçen Yıl; 6.4.8 aylık grafikte her ay etiketli; 6.4.9 sol eksen sayıları kesilmiyor; 6.4.10 native splash sonrası siyah yükleme ekranı + spinner; 6.4.11 native splash erken kapanır, spinner JS yüklenirken görünür — ilk kurulum hariç). Native açılış ekranı siyah + PLANN (storyboard/config) kodda hazır, **sonraki mağaza build'inde** yayına girer; o build'in sürümü 6.4.x olmalı (6.5 yapılırsa 6.4.x OTA'lar gitmez). iOS projesi **6.4.1 (65)**'e çekildi (30 Eyl), TestFlight'ta test ediliyor; web aynı gün canlıya alındı (6.4.7–6.4.11 içeriği). **production = 6.4.6** (29 Eyl ~23:40, Fatih kararı): 6.4.4
+  (`SHOW_IN_APP_SUBSCRIBE = true` — native'de paket seçimi + Stripe Checkout, **Apple 3.1.1 riski bilerek alındı**)
+  + 6.4.5 çoklu yönetici adı (13.11) + istatistik Bekleyen/Silinen kartları (13.12). Önceki prod: 6.4.3. Şalteri
+  kapatmak gerekirse (ör. Apple uyarısı): flag `false` → yeni bundle (≥ 6.4.12) → production'a bağla. Test cihazlarının internal bağı zamanla kaybolabiliyor; `POST https://api.capgo.app/device {app_id, device_id, channel}`
   ile yeniden bağlanır. Capgo aynı içerikli paketi ikinci sürüm adıyla kabul etmez ("same bundle content").
 - **Trial:** Capgo hesabı ~15 gün trial; kalıcı kullanım için plan/ücret kararı gerekli.
 

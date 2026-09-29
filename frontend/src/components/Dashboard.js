@@ -243,8 +243,8 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       const res = await api.get("/users");
       let staff = (res.data || []).filter(u => u.role === 'staff');
       if (settings?.admin_provides_service !== false) {
-        const admin = (res.data || []).find(u => u.role === 'admin');
-        if (admin) staff = [...staff, admin];
+        const admins = (res.data || []).filter(u => u.role === 'admin');
+        staff = [...staff, ...admins];
       }
       setStaffMembers(staff);
     } catch (e) { console.error(e); }
