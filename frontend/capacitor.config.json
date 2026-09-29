@@ -13,9 +13,7 @@
       "backgroundColor": "#000000",
       "androidSplashResourceName": "splash",
       "androidScaleType": "CENTER",
-      "showSpinner": true,
-      "iosSpinnerStyle": "large",
-      "spinnerColor": "#FFFFFF",
+      "showSpinner": false,
       "splashFullScreen": true,
       "splashImmersive": true
     },
