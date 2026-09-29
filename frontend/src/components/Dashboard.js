@@ -589,12 +589,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><WhatsAppIcon className="w-4 h-4" /></button>
               </div>
               <div className="flex items-center gap-2 min-w-0">
-                {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
-                  <span className="inline-flex items-center gap-1.5 text-gray-700 min-w-0 max-w-[42vw] sm:max-w-[170px]">
-                    <User className="w-3.5 h-3.5 shrink-0 text-gray-500" />
-                    <span className="text-[13px] font-semibold truncate">{getStaffName(apt.staff_member_id)}</span>
-                  </span>
-                )}
                 <ScrollSafeDropdown
                   trigger={
                     <button type="button" className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95">
@@ -628,6 +622,12 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 <p className="font-medium">{apt.notes}</p>
               </div>
             )}
+          </div>
+        )}
+        {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
+          <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center gap-1.5 min-w-0 text-xs text-gray-500">
+            <User className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+            <span className="truncate">{getStaffName(apt.staff_member_id)}</span>
           </div>
         )}
       </div>
@@ -943,12 +943,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                                     <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><WhatsAppIcon className="w-4 h-4" /></button>
                                   </div>
                                   <div className="flex items-center gap-2 min-w-0">
-                                    {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
-                                      <span className="inline-flex items-center gap-1.5 text-gray-700 min-w-0 max-w-[140px]">
-                                        <User className="w-3.5 h-3.5 shrink-0 text-gray-500" />
-                                        <span className="text-[13px] font-semibold truncate">{getStaffName(apt.staff_member_id)}</span>
-                                      </span>
-                                    )}
                                     <ScrollSafeDropdown
                                       trigger={
                                         <button type="button" className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95">
@@ -982,6 +976,12 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                                     <p className="font-medium break-words leading-relaxed min-w-0">{apt.notes}</p>
                                   </div>
                                 )}
+                              </div>
+                            )}
+                            {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
+                              <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center gap-1.5 min-w-0 text-xs text-gray-500">
+                                <User className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                                <span className="truncate">{getStaffName(apt.staff_member_id)}</span>
                               </div>
                             )}
                           </div>
