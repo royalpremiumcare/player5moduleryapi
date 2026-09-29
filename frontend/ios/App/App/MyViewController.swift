@@ -24,6 +24,10 @@ class MyViewController: CAPBridgeViewController {
         super.viewDidLoad()
         if let webView = self.webView as? WKWebView {
             webView.allowsBackForwardNavigationGestures = true
+            // Sayfa ilk boyanana kadar (ör. ilk kurulumda Capgo paketi uygulayıp yeniden yüklerken)
+            // WKWebView beyaz görünmesin. html/body zeminini tema veriyor, uygulama içi etkilenmez.
+            webView.isOpaque = false
+            webView.backgroundColor = .black
         }
         showBootSpinner()
     }
