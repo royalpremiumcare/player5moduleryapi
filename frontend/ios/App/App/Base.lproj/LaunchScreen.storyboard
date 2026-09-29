@@ -16,10 +16,10 @@
                         <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="Splash" translatesAutoresizingMaskIntoConstraints="NO" id="snD-IY-ifK">
-                                <rect key="frame" x="45.5" y="192" width="284" height="284"/>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" horizontalCompressionResistancePriority="250" verticalCompressionResistancePriority="250" image="Splash" translatesAutoresizingMaskIntoConstraints="NO" id="snD-IY-ifK">
+                                <rect key="frame" x="22.5" y="161" width="330" height="330"/>
                                 <constraints>
-                                    <constraint firstAttribute="width" relation="lessThanOrEqual" constant="351" id="wmx-ID-001"/>
+                                    <constraint firstAttribute="width" constant="345" priority="999" id="wmx-ID-001"/>
                                     <constraint firstAttribute="width" secondItem="snD-IY-ifK" secondAttribute="height" multiplier="1:1" id="asp-ID-001"/>
                                 </constraints>
                             </imageView>
@@ -28,7 +28,7 @@
                         <constraints>
                             <constraint firstItem="snD-IY-ifK" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="cx1-ID-001"/>
                             <constraint firstItem="snD-IY-ifK" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="cy1-ID-001"/>
-                            <constraint firstItem="snD-IY-ifK" firstAttribute="width" secondItem="Ze5-6b-2t3" secondAttribute="width" multiplier="0.756" priority="750" id="wrl-ID-001"/>
+                            <constraint firstItem="snD-IY-ifK" firstAttribute="width" relation="lessThanOrEqual" secondItem="Ze5-6b-2t3" secondAttribute="width" multiplier="0.88" id="wrl-ID-001"/>
                         </constraints>
                     </view>
                 </viewController>

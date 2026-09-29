@@ -5,6 +5,7 @@ import WebKit
 class MyViewController: CAPBridgeViewController {
     // LaunchScreen.storyboard kök view'ının tag'i; splash eklentisi bu storyboard'u açılış ekranı olarak kullanır.
     private static let launchSplashTag = 7001
+    private static let bootSpinnerSize: CGFloat = 30
 
     private var bootSpinner: UIView?
     private var bootSpinnerTimer: Timer?
@@ -35,8 +36,8 @@ class MyViewController: CAPBridgeViewController {
     // public/index.html'deki #boot-splash halkasıyla aynı boyut, renk, konum ve hız:
     // native splash web ekranına devrettiğinde halka aynı yerde dönmeye devam eder.
     private func showBootSpinner() {
-        let size: CGFloat = 26
-        let lineWidth: CGFloat = 2.5
+        let size: CGFloat = Self.bootSpinnerSize
+        let lineWidth: CGFloat = 2.8
         let ring = UIView(frame: CGRect(x: 0, y: 0, width: size, height: size))
         ring.isUserInteractionEnabled = false
 
@@ -80,7 +81,8 @@ class MyViewController: CAPBridgeViewController {
         guard let ring = bootSpinner else { return }
         let bounds = view.bounds
         let top = bounds.midY + min(bounds.width * 0.16, 72)
-        ring.frame = CGRect(x: bounds.midX - 13, y: top, width: 26, height: 26)
+        let size = Self.bootSpinnerSize
+        ring.frame = CGRect(x: bounds.midX - size / 2, y: top, width: size, height: size)
         view.bringSubviewToFront(ring)
     }
 

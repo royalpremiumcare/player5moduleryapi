@@ -182,11 +182,13 @@
         transition: opacity 250ms ease-out;
       }
       #boot-splash.boot-splash--hide { opacity: 0; pointer-events: none; }
-      #boot-splash img { width: min(56vw, 260px); height: auto; }
+      /* Ölçüler LaunchScreen.storyboard (logo 345pt, en fazla %88 genişlik) ve
+         MyViewController.swift halkasıyla (30pt) aynı; birini değiştirirsen ikisini de değiştir. */
+      #boot-splash img { width: min(65vw, 255px); height: auto; position: relative; top: -2px; }
       #boot-splash .boot-splash__spinner {
         position: absolute; left: 50%; top: calc(50% + min(16vw, 72px));
-        margin-left: -13px; width: 26px; height: 26px; border-radius: 50%;
-        border: 2.5px solid rgba(255, 255, 255, 0.18); border-top-color: #fff;
+        margin-left: -15px; width: 30px; height: 30px; border-radius: 50%;
+        border: 2.8px solid rgba(255, 255, 255, 0.18); border-top-color: #fff;
         animation: boot-splash-spin 0.8s linear infinite;
       }
       @keyframes boot-splash-spin { to { transform: rotate(360deg); } }
