@@ -577,6 +577,12 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   )}
                 </div>
               )}
+              {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
+                <span className="ml-auto pl-2 shrink-0 max-w-[40%] inline-flex items-center gap-1 text-xs text-gray-400">
+                  <User className="w-3 h-3 shrink-0" />
+                  <span className="truncate min-w-0">{getStaffName(apt.staff_member_id)}</span>
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1.5 mb-3">
               <p className="text-sm text-gray-600 truncate min-w-0">{serviceDisplayName(apt)}</p>
@@ -622,12 +628,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 <p className="font-medium">{apt.notes}</p>
               </div>
             )}
-          </div>
-        )}
-        {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
-          <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center gap-1.5 min-w-0 text-xs text-gray-500">
-            <User className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-            <span className="truncate">{getStaffName(apt.staff_member_id)}</span>
           </div>
         )}
       </div>
@@ -932,7 +932,15 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0 flex flex-col">
-                                <h4 className="text-base font-bold text-gray-900 truncate min-w-0 mb-1">{customerDisplayName(apt)}</h4>
+                                <div className="flex items-center gap-1.5 mb-1 min-w-0">
+                                  <h4 className="text-base font-bold text-gray-900 truncate min-w-0">{customerDisplayName(apt)}</h4>
+                                  {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
+                                    <span className="ml-auto pl-2 shrink-0 max-w-[40%] inline-flex items-center gap-1 text-xs text-gray-400">
+                                      <User className="w-3 h-3 shrink-0" />
+                                      <span className="truncate min-w-0">{getStaffName(apt.staff_member_id)}</span>
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="flex items-center gap-1.5 mb-3">
                                   <p className="text-sm text-gray-500 truncate min-w-0">{serviceDisplayName(apt)}</p>
                                   {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 flex-shrink-0 text-amber-500 animate-pulse" />}
@@ -976,12 +984,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                                     <p className="font-medium break-words leading-relaxed min-w-0">{apt.notes}</p>
                                   </div>
                                 )}
-                              </div>
-                            )}
-                            {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
-                              <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center gap-1.5 min-w-0 text-xs text-gray-500">
-                                <User className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                                <span className="truncate">{getStaffName(apt.staff_member_id)}</span>
                               </div>
                             )}
                           </div>
