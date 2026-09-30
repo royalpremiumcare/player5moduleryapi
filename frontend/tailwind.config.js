@@ -10,7 +10,7 @@ module.exports = {
   theme: {
   	extend: {
   		fontFamily: {
-  			appointment: ['"Figtree Variable"', ...defaultTheme.fontFamily.sans]
+  			appointment: ['-apple-system', 'BlinkMacSystemFont', ...defaultTheme.fontFamily.sans]
   		},
   		borderRadius: {
   			lg: 'var(--radius)',

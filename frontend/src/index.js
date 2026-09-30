@@ -4,7 +4,6 @@ import { HashRouter, BrowserRouter } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { HelmetProvider } from 'react-helmet-async';
 import * as Sentry from '@sentry/react';
-import '@fontsource-variable/figtree';
 import './index.css';
 import './i18n'; // i18n configuration
 import AppRouter from './AppRouter';
