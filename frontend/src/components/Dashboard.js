@@ -560,7 +560,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               <p className="truncate min-w-0 text-[16px] text-zinc-700">{serviceDisplayName(apt)}</p>
             </div>
             {staffName && (
-              <p className="flex items-center gap-1 min-w-0 mt-1 text-[14px] leading-5 text-zinc-500">
+              <p className="flex items-center justify-end gap-1 min-w-0 mt-1 text-[14px] leading-5 text-zinc-500">
                 <User className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
                 <span className="truncate">{staffName}</span>
               </p>
