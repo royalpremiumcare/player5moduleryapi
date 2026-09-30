@@ -521,9 +521,16 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       <div className={`relative bg-white py-3 ${isCancelled ? 'opacity-50' : ''} ${(hasNote || hasMulti) ? 'cursor-pointer' : ''}`}>
         <div className="flex gap-3">
           <span className={`w-1 rounded-full shrink-0 ${barClass}`} />
-          <div className="w-14 shrink-0 self-center text-center tabular-nums">
+          <div className="w-14 shrink-0 self-center flex flex-col items-center tabular-nums">
             <p className="text-[17px] leading-6 font-semibold text-zinc-900">{apt.appointment_time}</p>
             <p className="text-[15px] leading-5 text-zinc-500">{calculateEndTime(apt.appointment_time, apt.service_duration)}</p>
+            {hasMulti && (
+              <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-zinc-700 bg-zinc-100 rounded-full px-1.5 py-0.5">
+                <Layers className="w-3 h-3" />
+                <span>{apt.services.length}</span>
+                <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+              </span>
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 min-w-0">
@@ -535,9 +542,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   : isCancelled ? <X className="w-4 h-4 shrink-0 text-red-600" />
                   : <Clock className="w-4 h-4 shrink-0 text-orange-500" />
               )}
-              <div className="ml-auto pl-2 -my-1 flex items-center gap-1 shrink-0">
-                <button type="button" onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><Phone className="w-3.5 h-3.5" /></button>
-                <button type="button" onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><WhatsAppIcon className="w-3.5 h-3.5" /></button>
+              <div className="ml-auto pl-2 -my-1 shrink-0">
                 <ScrollSafeDropdown
                   trigger={
                     <button type="button" className="w-8 h-8 rounded-full text-zinc-400 flex items-center justify-center hover:bg-zinc-100 active:scale-95 transition-all">
@@ -549,22 +554,19 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 </ScrollSafeDropdown>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
-              {hasMulti && (
-                <span className="inline-flex items-center gap-0.5 shrink-0 text-[11px] font-semibold text-zinc-600 bg-zinc-100 rounded-full px-1.5 py-0.5">
-                  <Layers className="w-3 h-3" />
-                  <span>{apt.services.length}</span>
-                  <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                </span>
+            <p className="truncate min-w-0 mt-0.5 text-[16px] text-zinc-700">{serviceDisplayName(apt)}</p>
+            <div className="flex items-center gap-2 min-w-0 mt-2">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button type="button" onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><Phone className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><WhatsAppIcon className="w-3.5 h-3.5" /></button>
+              </div>
+              {staffName && (
+                <p className="ml-auto flex items-center justify-end gap-1 min-w-0 text-[14px] leading-5 text-zinc-500">
+                  <User className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+                  <span className="truncate">{staffName}</span>
+                </p>
               )}
-              <p className="truncate min-w-0 text-[16px] text-zinc-700">{serviceDisplayName(apt)}</p>
             </div>
-            {staffName && (
-              <p className="flex items-center justify-end gap-1 min-w-0 mt-1 text-[14px] leading-5 text-zinc-500">
-                <User className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
-                <span className="truncate">{staffName}</span>
-              </p>
-            )}
           </div>
         </div>
         {isExpanded && (hasMulti || hasNote) && (
