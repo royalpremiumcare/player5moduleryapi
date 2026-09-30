@@ -538,10 +538,10 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                       <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                     </span>
                   )}
-                  <p className="truncate min-w-0 text-[15px] text-zinc-600">{serviceDisplayName(apt)}</p>
+                  <p className="truncate min-w-0 text-[16px] text-zinc-600">{serviceDisplayName(apt)}</p>
                 </div>
                 {staffName && (
-                  <p className="flex items-center gap-1 min-w-0 mt-1.5 text-[13px] leading-[18px] text-zinc-500">
+                  <p className="flex items-center gap-1 min-w-0 mt-1.5 text-[14px] leading-5 text-zinc-500">
                     <User className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
                     <span className="truncate">{staffName}</span>
                   </p>
