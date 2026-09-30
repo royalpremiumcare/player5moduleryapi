@@ -1544,7 +1544,7 @@ function App() {
             // max(..., 15px) ile boşluğu düşürdük, daha ince ve şık bir görünüm elde ettik
             // + 5px ile de ikonların çok dibine yapışmamasını sağlamaya devam ediyoruz
             paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 15px) + 5px)', 
-            fontFamily: 'Inter, sans-serif' 
+            fontFamily: "'Figtree Variable', sans-serif" 
           }}
         >
           {/* pt-0 yaparak logo ve ikonların header içindeki konumunu yukarı çektik */}
@@ -1552,7 +1552,7 @@ function App() {
             <div className="flex items-center justify-between">
               {/* Sol Bölüm: PLANN Logosu */}
               <div className="flex-shrink-0">
-                <h1 className="text-xl font-bold text-gray-900" style={{ fontFamily: 'Inter, sans-serif' }}>
+                <h1 className="text-xl font-bold text-gray-900" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
                   PLANN
                 </h1>
               </div>

@@ -48,7 +48,7 @@ const HelpCenter = ({ onNavigate }) => {
   return (
     <div
       className="min-h-screen bg-gray-50 pb-20"
-      style={{ fontFamily: "Inter, sans-serif" }}
+      style={{ fontFamily: "'Figtree Variable', sans-serif" }}
     >
       <div className="px-4 pt-6 pb-4">
         <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
@@ -76,7 +76,7 @@ const HelpCenter = ({ onNavigate }) => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-800"
-                style={{ fontFamily: "Inter, sans-serif" }}
+                style={{ fontFamily: "'Figtree Variable', sans-serif" }}
               />
             </div>
           </div>
@@ -113,7 +113,7 @@ const HelpCenter = ({ onNavigate }) => {
                         <div
                           className="text-gray-700 leading-relaxed"
                           dangerouslySetInnerHTML={{ __html: faq.answer }}
-                          style={{ fontFamily: "Inter, sans-serif" }}
+                          style={{ fontFamily: "'Figtree Variable', sans-serif" }}
                         />
                       </div>
                     )}

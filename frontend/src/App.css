@@ -29,7 +29,7 @@ html, body {
 .App {
   min-height: 100dvh;
   background: #ffffff;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Figtree Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 /* Custom Scrollbar */

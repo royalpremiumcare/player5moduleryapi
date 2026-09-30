@@ -284,7 +284,7 @@ const LocationSettings = ({ onNavigate }) => {
 
   if (!apiKey) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "Inter, sans-serif" }}>
+      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
         <div className="px-4 pt-6 pb-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <h2 className="text-lg font-bold text-gray-900">{t('settings.locationPage.title')}</h2>
@@ -304,7 +304,7 @@ const LocationSettings = ({ onNavigate }) => {
 
   if (loadError) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "Inter, sans-serif" }}>
+      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
         <div className="px-4 pt-6 pb-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <h2 className="text-lg font-bold text-gray-900">{t('settings.locationPage.title')}</h2>
@@ -321,7 +321,7 @@ const LocationSettings = ({ onNavigate }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "Inter, sans-serif" }}>
+    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
       <div className="px-4 pt-6 pb-4">
         <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
           <div className="mb-4">

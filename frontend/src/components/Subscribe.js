@@ -12,7 +12,7 @@ import PlanPicker from "./PlanPicker";
 const WebsiteSubscribeFallback = ({ onNavigate, webUrl, appWebsiteUrl }) => {
   const { t } = useTranslation();
   return (
-    <div className="min-h-screen bg-white pb-20 flex items-center justify-center" style={{ fontFamily: "Inter, sans-serif" }}>
+    <div className="min-h-screen bg-white pb-20 flex items-center justify-center" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
       <div className="px-4 w-full max-w-md">
         <Card className="bg-white shadow-xl border border-gray-200 rounded-3xl p-8 mx-auto text-center">
           <div>
@@ -68,7 +68,7 @@ const Subscribe = ({ onNavigate, currentUser, settings }) => {
 
   if (isNative && !ready) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "Inter, sans-serif" }}>
+      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
         <div className="px-4 pt-6 pb-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <p className="text-sm text-gray-600">{t("settings.subscribePage.loading")}</p>

@@ -834,7 +834,7 @@ const Calendar = ({ onEditAppointment, onNewAppointment }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
       <div className="px-2 sm:px-4 pt-3 sm:pt-6 pb-2 sm:pb-4">
         <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-3 sm:p-6 overflow-visible">
           {/* Header Controls */}

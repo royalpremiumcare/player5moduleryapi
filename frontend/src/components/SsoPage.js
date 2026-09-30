@@ -47,7 +47,7 @@ const SsoPage = () => {
   }, [location.search]);
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-4" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen bg-white flex items-center justify-center px-4" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
       <div className="w-full max-w-md text-center">
         {error ? (
           <div className="text-sm text-red-600 font-semibold">{error}</div>

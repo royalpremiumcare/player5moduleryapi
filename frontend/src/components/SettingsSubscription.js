@@ -75,7 +75,7 @@ const SettingsSubscription = ({ onNavigate }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
+      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
         <div className="px-4 pt-6 pb-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <p className="text-sm text-gray-600">{t('settings.subscriptionPage.loading')}</p>
@@ -95,7 +95,7 @@ const SettingsSubscription = ({ onNavigate }) => {
   const quotaRemaining = isUnlimited ? null : Math.max(0, planInfo.quota_limit - planInfo.quota_usage);
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
       {/* KART 1: Abonelik Bilgisi */}
       <div className="px-4 pt-6 pb-4">
         <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">

@@ -193,7 +193,7 @@ const PlanPicker = ({ onNavigate, currentUser, settings }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "Inter, sans-serif" }}>
+      <div className="min-h-screen bg-gray-50 pb-20" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
         <div className="px-4 pt-6 pb-4">
           <Card className="bg-white shadow-md border border-gray-200 rounded-xl p-6">
             <p className="text-sm text-gray-600">{t("settings.subscribePage.loading")}</p>
@@ -204,7 +204,7 @@ const PlanPicker = ({ onNavigate, currentUser, settings }) => {
   }
 
   return (
-    <div className="min-h-screen bg-[#fafafa] pb-20" style={{ fontFamily: "Inter, sans-serif" }}>
+    <div className="min-h-screen bg-[#fafafa] pb-20" style={{ fontFamily: "'Figtree Variable', sans-serif" }}>
       <div className="container mx-auto px-4 pt-6">
         <button
           onClick={() => onNavigate && onNavigate("settings")}
