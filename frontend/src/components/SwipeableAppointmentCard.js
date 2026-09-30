@@ -445,7 +445,7 @@ const SwipeableAppointmentCard = ({
 
   return (
     <div
-      className="relative overflow-hidden rounded-xl"
+      className="relative overflow-hidden"
       style={{ touchAction: 'pan-y' }}
     >
       {/* Sol aksiyon (sağa swipe sonucu görünür) — Düzenle (mavi) */}

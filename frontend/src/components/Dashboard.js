@@ -505,6 +505,75 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     });
   }, [appointments, today]);
 
+  const appointmentListClass = "bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden [&>*:last-child_.apt-divider]:hidden";
+
+  // Liste satırı (iOS Takvim tarzı): bugün/yarın ve gelecek randevular aynı satırı kullanır.
+  const renderAppointmentRow = (apt, { name, barClass, isCancelled, isCompleted, isExpanded, hasNote, hasMulti, menuItems }) => {
+    const staffName = (userRole === 'admin' || canViewAll) ? getStaffName(apt.staff_member_id) : null;
+    return (
+      <div className={`relative bg-white px-4 py-3 transition-colors hover:bg-zinc-50 ${isCancelled ? 'opacity-50' : ''} ${(hasNote || hasMulti) ? 'cursor-pointer' : ''}`}>
+        <div className="flex gap-3">
+          <span className={`w-1 rounded-full shrink-0 ${barClass}`} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className={`truncate min-w-0 text-[17px] text-zinc-900 ${isCancelled ? 'line-through' : ''}`}>{name}</p>
+              {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 shrink-0 text-amber-500" />}
+              <SessionBadge number={apt.session_number} total={apt.session_total} />
+              {SHOW_APPOINTMENT_CARD_STATUS && (
+                isCompleted ? <Check className="w-4 h-4 shrink-0 text-green-600" />
+                  : isCancelled ? <X className="w-4 h-4 shrink-0 text-red-600" />
+                  : <Clock className="w-4 h-4 shrink-0 text-orange-500" />
+              )}
+              <span className="ml-auto pl-2 shrink-0 text-[15px] text-zinc-500 tabular-nums">
+                {apt.appointment_time}–{calculateEndTime(apt.appointment_time, apt.service_duration)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 min-w-0 mt-1">
+              {hasMulti && (
+                <span className="inline-flex items-center gap-0.5 shrink-0 text-[11px] font-semibold text-zinc-600 bg-zinc-100 rounded-full px-1.5 py-0.5">
+                  <Layers className="w-3 h-3" />
+                  <span>{apt.services.length}</span>
+                  <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                </span>
+              )}
+              <p className="truncate min-w-0 text-[15px] text-zinc-500">{serviceDisplayName(apt)}</p>
+              <div className="ml-auto pl-2 flex items-center gap-1 shrink-0">
+                {staffName && <span className="mr-1 max-w-[72px] sm:max-w-[140px] truncate text-xs text-zinc-400">{staffName}</span>}
+                <button type="button" onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><Phone className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><WhatsAppIcon className="w-3.5 h-3.5" /></button>
+                <ScrollSafeDropdown
+                  trigger={
+                    <button type="button" className="w-8 h-8 -mr-2 rounded-full text-zinc-400 flex items-center justify-center hover:bg-zinc-100 active:scale-95 transition-all">
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  }
+                >
+                  {menuItems}
+                </ScrollSafeDropdown>
+              </div>
+            </div>
+          </div>
+        </div>
+        {isExpanded && (hasMulti || hasNote) && (
+          <div className="mt-3 ml-4 space-y-2 animate-in slide-in-from-top-1 fade-in duration-200">
+            {hasMulti && (
+              <div className="bg-zinc-50 p-3 rounded-lg min-w-0">
+                {renderServiceBreakdown(apt)}
+              </div>
+            )}
+            {hasNote && (
+              <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm min-w-0">
+                <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                <p className="font-medium break-words leading-relaxed min-w-0">{apt.notes}</p>
+              </div>
+            )}
+          </div>
+        )}
+        <span className="apt-divider absolute bottom-0 right-0 left-8 h-px bg-zinc-100" />
+      </div>
+    );
+  };
+
   const renderAppointmentCard = (apt) => {
     const isCancelled = apt.status === "İptal" || apt.status === "İptal Edildi" || apt.status === "Cancelled" || apt.status === t('dashboard.status.cancelled');
     const isCompleted = apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed');
@@ -536,101 +605,27 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     const handleSwipeDelete = () => setDeleteDialog(apt);
     const handleCardTap = () => { if (hasNote || hasMulti) toggleNote(apt.id); };
 
-    const cardInner = (
-      <div
-        key={apt.id}
-        className={`bg-white rounded-xl p-4 border border-gray-200 border-l-4 shadow-sm hover:bg-white/60 hover:border-t-gray-300 hover:border-r-gray-300 hover:border-b-gray-300 hover:shadow-xl hover:shadow-black/10 active:scale-[0.99] transition-all duration-300 ${isCancelled ? 'opacity-60' : ''} ${(hasNote || hasMulti) ? 'cursor-pointer' : ''} ${apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'border-l-amber-400' : apt.status === "Tamamlandı" || apt.status === t('dashboard.status.completed') ? 'border-l-green-500' : isCancelled ? 'border-l-red-500' : 'border-l-gray-300'}`}
-      >
-        <div className="flex gap-4">
-          <div className="flex items-stretch border-r border-gray-100 pr-4">
-            <div className="relative flex flex-col items-center justify-center min-w-[48px]">
-              <span className="text-xl font-black text-gray-900">{apt.appointment_time}</span>
-              <span className="text-[13px] md:text-[15px] text-gray-500 font-medium">{calculateEndTime(apt.appointment_time, apt.service_duration)}</span>
-              {hasMulti && (
-                <span className="absolute -bottom-1.5 inset-x-0 flex justify-center translate-x-[3px]">
-                  <span className="inline-flex items-center gap-1 text-[11px] md:text-xs font-bold text-zinc-700 bg-zinc-100 rounded-full px-1.5 py-0.5 md:px-2 md:py-1">
-                    <Layers className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                    <span>{apt.services.length}</span>
-                    <ChevronDown className={`w-3 h-3 md:w-3.5 md:h-3.5 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                  </span>
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 mb-1">
-              <h3 className={`text-base font-bold text-gray-900 truncate min-w-0 ${isCancelled ? 'line-through text-gray-400' : ''}`}>{apt.customer_name}</h3>
-              {SHOW_APPOINTMENT_CARD_STATUS && (
-                <div className="shrink-0">
-                  {isCompleted ? (
-                    <div className="bg-green-100 p-1.5 rounded-full shadow-sm">
-                      <Check className="w-4 h-4 text-green-600" />
-                    </div>
-                  ) : isCancelled ? (
-                    <div className="bg-red-100 p-1.5 rounded-full shadow-sm">
-                      <X className="w-4 h-4 text-red-600" />
-                    </div>
-                  ) : (
-                    <div className="bg-orange-100 p-1.5 rounded-full shadow-sm animate-pulse">
-                      <Clock className="w-4 h-4 text-orange-600" />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5 mb-3">
-              <p className="text-sm text-gray-600 truncate min-w-0">{serviceDisplayName(apt)}</p>
-              {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 flex-shrink-0 text-amber-500 animate-pulse" />}
-              <SessionBadge number={apt.session_number} total={apt.session_total} />
-            </div>
-            <div className="flex items-center justify-between mt-auto">
-              <div className="flex gap-2">
-                <button onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><Phone className="w-4 h-4" /></button>
-                <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><WhatsAppIcon className="w-4 h-4" /></button>
-              </div>
-              <div className="flex items-center gap-2 min-w-0">
-                {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
-                  <span className="min-w-0 max-w-[40vw] sm:max-w-[160px] truncate text-xs text-gray-500 bg-gray-100 rounded-full px-2.5 py-1">
-                    {getStaffName(apt.staff_member_id)}
-                  </span>
-                )}
-                <ScrollSafeDropdown
-                  trigger={
-                    <button type="button" className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95">
-                      <MoreVertical className="w-5 h-5" />
-                    </button>
-                  }
-                >
-                  {!isCancelled && !isCompleted && (
-                    ['paid', 'deposit_paid'].includes(apt.payment_status)
-                      ? <DropdownMenuItem onClick={() => setCancelRefundDialog(apt)} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
-                      : <DropdownMenuItem onClick={() => handleStatusChange(apt.id, t('dashboard.status.cancelled'))} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> {t('common.edit')}</DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> {t('common.delete')}</DropdownMenuItem>
-                </ScrollSafeDropdown>
-              </div>
-            </div>
-          </div>
-        </div>
-        {isExpanded && (hasMulti || hasNote) && (
-          <div className="mt-3 pt-3 border-t border-dashed border-gray-200 animate-in slide-in-from-top-1 fade-in duration-200 space-y-3">
-            {hasMulti && (
-              <div className="bg-zinc-50 p-3 rounded-lg shadow-sm">
-                {renderServiceBreakdown(apt)}
-              </div>
-            )}
-            {hasNote && (
-              <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm shadow-sm">
-                <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
-                <p className="font-medium">{apt.notes}</p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
+    const statusBar = apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'bg-amber-400'
+      : isCompleted ? 'bg-green-500'
+      : isCancelled ? 'bg-red-500'
+      : 'bg-gray-300';
+    const cardInner = renderAppointmentRow(apt, {
+      name: apt.customer_name,
+      barClass: statusBar,
+      isCancelled, isCompleted, isExpanded, hasNote, hasMulti,
+      menuItems: (
+        <>
+          {!isCancelled && !isCompleted && (
+            ['paid', 'deposit_paid'].includes(apt.payment_status)
+              ? <DropdownMenuItem onClick={() => setCancelRefundDialog(apt)} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
+              : <DropdownMenuItem onClick={() => handleStatusChange(apt.id, t('dashboard.status.cancelled'))} className="text-red-600"><X className="w-4 h-4 mr-2"/> {t('common.cancel')}</DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={() => onEditAppointment(apt)}><Edit className="w-4 h-4 mr-2"/> {t('common.edit')}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setDeleteDialog(apt)} className="text-red-600"><Trash2 className="w-4 h-4 mr-2"/> {t('common.delete')}</DropdownMenuItem>
+        </>
+      ),
+    });
 
     return (
       <SwipeableAppointmentCard
@@ -799,23 +794,23 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             shouldSplit ? (
               <>
                 {/* Mobil/App: öğleden önce-sonra ayrımı gizli, tek liste */}
-                <div className="space-y-4 md:hidden">
+                <div className={`${appointmentListClass} md:hidden`}>
                   {filteredToday.map(apt => renderAppointmentCard(apt))}
                 </div>
                 {/* Masaüstü (web): öğleden önce / öğleden sonra 2 sütun */}
                 <div className="hidden md:grid md:grid-cols-2 md:gap-6">
-                  <div className="space-y-4">
+                  <div>
                     <div className="flex items-center gap-2 text-sm font-bold text-orange-600 uppercase tracking-wider mb-4"><Sun className="w-4 h-4" /> {t('dashboard.todayFlow.beforeNoon')}</div>
-                    {morningAppointments.length > 0 ? morningAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
+                    {morningAppointments.length > 0 ? <div className={appointmentListClass}>{morningAppointments.map(apt => renderAppointmentCard(apt))}</div> : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
                   </div>
-                  <div className="space-y-4">
+                  <div>
                     <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase tracking-wider mb-4"><Moon className="w-4 h-4" /> {t('dashboard.todayFlow.afterNoon')}</div>
-                    {afternoonAppointments.length > 0 ? afternoonAppointments.map(apt => renderAppointmentCard(apt)) : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
+                    {afternoonAppointments.length > 0 ? <div className={appointmentListClass}>{afternoonAppointments.map(apt => renderAppointmentCard(apt))}</div> : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
                   </div>
                 </div>
               </>
             ) : (
-              <div className="space-y-4">
+              <div className={appointmentListClass}>
                 {filteredToday.map(apt => renderAppointmentCard(apt))}
               </div>
             )
@@ -841,24 +836,24 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               return (
                 <>
                   {/* Mobil: her zaman tek liste */}
-                  <div className="space-y-4 md:hidden">
+                  <div className={`${appointmentListClass} md:hidden`}>
                     {filteredTomorrow.map(apt => renderAppointmentCard(apt))}
                   </div>
                   {/* Masaüstü: split varsa 2 sütun */}
                   <div className="hidden md:block">
                     {tomorrowShouldSplit ? (
                       <div className="grid grid-cols-2 gap-6">
-                        <div className="space-y-4">
+                        <div>
                           <div className="flex items-center gap-2 text-sm font-bold text-orange-600 uppercase tracking-wider mb-4"><Sun className="w-4 h-4" /> {t('dashboard.todayFlow.beforeNoon')}</div>
-                          {tomorrowMorning.map(apt => renderAppointmentCard(apt))}
+                          <div className={appointmentListClass}>{tomorrowMorning.map(apt => renderAppointmentCard(apt))}</div>
                         </div>
-                        <div className="space-y-4">
+                        <div>
                           <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase tracking-wider mb-4"><Moon className="w-4 h-4" /> {t('dashboard.todayFlow.afterNoon')}</div>
-                          {tomorrowAfternoon.map(apt => renderAppointmentCard(apt))}
+                          <div className={appointmentListClass}>{tomorrowAfternoon.map(apt => renderAppointmentCard(apt))}</div>
                         </div>
                       </div>
                     ) : (
-                      <div className="space-y-4">
+                      <div className={appointmentListClass}>
                         {filteredTomorrow.map(apt => renderAppointmentCard(apt))}
                       </div>
                     )}
@@ -883,7 +878,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                     </span>
                     <span className="text-xs md:text-sm font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full shadow-sm whitespace-nowrap">{group.items.length} {t('common.appointments')}</span>
                   </div>
-                  <div className="space-y-3">
+                  <div className={appointmentListClass}>
                     {group.items.map((apt) => (
                       (() => {
                         const hasNote = apt.notes && apt.notes.trim().length > 0;
@@ -910,80 +905,22 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                             handleStatusChange(apt.id, t('dashboard.status.cancelled'));
                           }
                         };
-                        const upcomingInner = (
-                          <div
-                            className={`bg-white rounded-xl p-4 border border-gray-200 border-l-4 border-l-indigo-600 shadow-sm hover:shadow-md active:scale-[0.99] transition-all duration-200 ${(hasNote || hasMulti) ? 'cursor-pointer' : ''}`}
-                          >
-                            <div className="flex gap-4">
-                              <div className="flex items-stretch border-r border-gray-100 pr-3">
-                                <div className="relative flex flex-col items-center justify-center min-w-[46px]">
-                                  <span className="text-xl font-black text-gray-900 tabular-nums">{apt.appointment_time}</span>
-                                  <span className="text-[13px] md:text-[15px] text-gray-500 font-medium tabular-nums">{calculateEndTime(apt.appointment_time, apt.service_duration)}</span>
-                                  {hasMulti && (
-                                    <span className="absolute -bottom-1.5 inset-x-0 flex justify-center translate-x-[3px]">
-                                      <span className="inline-flex items-center gap-1 text-[11px] md:text-xs font-bold text-zinc-700 bg-zinc-100 rounded-full px-1.5 py-0.5 md:px-2 md:py-1">
-                                        <Layers className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                                        <span>{apt.services.length}</span>
-                                        <ChevronDown className={`w-3 h-3 md:w-3.5 md:h-3.5 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                                      </span>
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex-1 min-w-0 flex flex-col">
-                                <h4 className="text-base font-bold text-gray-900 truncate min-w-0 mb-1">{customerDisplayName(apt)}</h4>
-                                <div className="flex items-center gap-1.5 mb-3">
-                                  <p className="text-sm text-gray-500 truncate min-w-0">{serviceDisplayName(apt)}</p>
-                                  {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 flex-shrink-0 text-amber-500 animate-pulse" />}
-                                </div>
-                                <div className="flex items-center justify-between gap-2 mt-auto">
-                                  <div className="flex gap-2 shrink-0">
-                                    <button onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><Phone className="w-4 h-4" /></button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-all hover:scale-105 active:scale-95 shadow-sm hover:shadow-md"><WhatsAppIcon className="w-4 h-4" /></button>
-                                  </div>
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    {(userRole === 'admin' || canViewAll) && getStaffName(apt.staff_member_id) && (
-                                      <span className="min-w-0 max-w-[120px] truncate text-xs text-gray-500 bg-gray-100 rounded-full px-2.5 py-1">
-                                        {getStaffName(apt.staff_member_id)}
-                                      </span>
-                                    )}
-                                    <ScrollSafeDropdown
-                                      trigger={
-                                        <button type="button" className="p-2 hover:bg-gray-50 rounded-lg text-gray-400 transition-all hover:scale-105 active:scale-95">
-                                          <MoreVertical className="w-5 h-5" />
-                                        </button>
-                                      }
-                                    >
-                                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}>
-                                        <Edit className="w-4 h-4 mr-2" /> {t('common.edit')}
-                                      </DropdownMenuItem>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDeleteDialog(apt); }} className="text-red-600">
-                                        <Trash2 className="w-4 h-4 mr-2" /> {t('common.delete')}
-                                      </DropdownMenuItem>
-                                    </ScrollSafeDropdown>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {isExpanded && (hasMulti || hasNote) && (
-                              <div className="mt-3 pt-3 border-t border-dashed border-gray-100 animate-in slide-in-from-top-1 fade-in duration-200 space-y-3">
-                                {hasMulti && (
-                                  <div className="bg-zinc-50 p-3 rounded-lg min-w-0">
-                                    {renderServiceBreakdown(apt)}
-                                  </div>
-                                )}
-                                {hasNote && (
-                                  <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-lg text-amber-900 text-sm min-w-0">
-                                    <FileText className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
-                                    <p className="font-medium break-words leading-relaxed min-w-0">{apt.notes}</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
+                        const upcomingInner = renderAppointmentRow(apt, {
+                          name: customerDisplayName(apt),
+                          barClass: 'bg-indigo-600',
+                          isCancelled: isCancelledU, isCompleted: isCompletedU, isExpanded, hasNote, hasMulti,
+                          menuItems: (
+                            <>
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}>
+                                <Edit className="w-4 h-4 mr-2" /> {t('common.edit')}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDeleteDialog(apt); }} className="text-red-600">
+                                <Trash2 className="w-4 h-4 mr-2" /> {t('common.delete')}
+                              </DropdownMenuItem>
+                            </>
+                          ),
+                        });
                         return (
                           <SwipeableAppointmentCard
                             key={apt.id}
