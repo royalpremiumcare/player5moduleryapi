@@ -524,7 +524,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   : isCancelled ? <X className="w-4 h-4 shrink-0 text-red-600" />
                   : <Clock className="w-4 h-4 shrink-0 text-orange-500" />
               )}
-              <span className="ml-auto pl-2 shrink-0 text-[15px] text-zinc-500 tabular-nums">
+              <span className="ml-auto pl-2 shrink-0 text-[15px] text-zinc-700 tabular-nums">
                 {apt.appointment_time}–{calculateEndTime(apt.appointment_time, apt.service_duration)}
               </span>
             </div>
@@ -538,9 +538,9 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                       <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                     </span>
                   )}
-                  <p className="truncate min-w-0 text-[15px] text-zinc-500">{serviceDisplayName(apt)}</p>
+                  <p className="truncate min-w-0 text-[15px] text-zinc-600">{serviceDisplayName(apt)}</p>
                 </div>
-                {staffName && <p className="truncate mt-0.5 text-xs text-zinc-400">{staffName}</p>}
+                {staffName && <p className="truncate mt-0.5 text-[13px] leading-[18px] text-zinc-500">{staffName}</p>}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button type="button" onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><Phone className="w-3.5 h-3.5" /></button>
