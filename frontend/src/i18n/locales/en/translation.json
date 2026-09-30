@@ -442,7 +442,18 @@
       "noAppointmentsShort": "No appointments",
       "beforeNoon": "AM",
       "afterNoon": "PM",
-      "allStaff": "All Staff"
+      "allStaff": "All Staff",
+      "emptyTitle": "No appointments today",
+      "emptySubtitle": "Share your booking link so clients can book your free times themselves.",
+      "addAppointment": "Add appointment",
+      "shareBookingLink": "Share booking link",
+      "linkCopied": "Booking link copied",
+      "linkCopyError": "Couldn't copy the link",
+      "freeSlot": "{{duration}} free",
+      "freeSlotAdd": "Book",
+      "durationMinutes": "{{m}} min",
+      "durationHours": "{{h}} h",
+      "durationHoursMinutes": "{{h}} h {{m}} min"
     },
     "tomorrowAppointments": {
       "title": "Tomorrow's Appointments"

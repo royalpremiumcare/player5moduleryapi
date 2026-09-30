@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import io from "socket.io-client";
 import {
   Calendar, Clock, Phone, Edit, Trash2, Check, X,
-  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee, TrendingUp, CalendarDays, ChevronDown, Layers
+  MoreVertical, User, LayoutDashboard, Sun, Moon, FileText, Coffee, TrendingUp, CalendarDays, ChevronDown, Layers, Plus, Share
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
@@ -25,6 +25,8 @@ import {
 import TourGuide from "../components/TourGuide"; 
 // --------------------------
 import SwipeableAppointmentCard from "./SwipeableAppointmentCard";
+import { WH_DAY_MAP, normalizeWorkingHours } from "../lib/sessionScheduling";
+import { computeFreeSlots, timeToMinutes, minutesToTime } from "../lib/freeSlots";
 
 /** Dashboard selamlama: "Fatih Senyüz" → "Fatih" */
 function firstNameOnly(fullName) {
@@ -112,7 +114,7 @@ const WhatsAppIcon = ({ className }) => (
   </svg>
 );
 
-const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate, onOpenChat, activationState, ahaOverlayActive = false, forceStartTour, onForceStartTourConsumed }) => {
+const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onNewAppointmentAt, onRefresh, onNavigate, onOpenChat, activationState, ahaOverlayActive = false, forceStartTour, onForceStartTourConsumed }) => {
   const { token, canViewAll } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
@@ -120,6 +122,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [settings, setSettings] = useState(null);
   const [staffMembers, setStaffMembers] = useState([]);
+  const [staffMembersLoaded, setStaffMembersLoaded] = useState(false);
   /** Admin + staff — kartlarda isim çözümlemesi için (settings'ten bağımsız yüklenir) */
   const [staffDirectory, setStaffDirectory] = useState([]);
   const [currentStaffUsername, setCurrentStaffUsername] = useState(null);
@@ -255,6 +258,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       }
       setStaffMembers(staff);
     } catch (e) { console.error(e); }
+    finally { setStaffMembersLoaded(true); }
   };
 
   // Kart üzerinde isim çözümlemesi için TÜM personel + admin'i settings'ten
@@ -438,6 +442,85 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const shouldSplit = morningAppointments.length > 0 && afternoonAppointments.length > 0;
 
   const isCancelledStatus = (s) => s === 'İptal' || s === 'İptal Edildi' || s === 'Cancelled';
+
+  // --- BOŞ ZAMAN SATIRLARI ---
+  // Tek bir personelin günü görünürken anlamlı: çok personelli işletmede "Tümü"
+  // seçiliyken bir kişinin boşluğu diğerinin randevusuyla karışırdı.
+  const freeSlotScope = useMemo(() => {
+    if (userRole === 'admin' || canViewAll) {
+      if (staffFilter !== "all") return { staffId: staffFilter, allStaff: false };
+      if (!staffMembersLoaded || staffMembers.length > 1) return null;
+      return { staffId: staffMembers[0]?.username || null, allStaff: true };
+    }
+    return currentStaffUsername ? { staffId: currentStaffUsername, allStaff: false } : null;
+  }, [userRole, canViewAll, staffFilter, staffMembersLoaded, staffMembers, currentStaffUsername]);
+
+  const freeSlots = useMemo(() => {
+    if (!freeSlotScope) return [];
+    const dayName = WH_DAY_MAP[new Date().getDay()];
+    const day = normalizeWorkingHours(settings)?.[dayName];
+    if (!day?.enabled) return [];
+    const { staffId, allStaff } = freeSlotScope;
+    const staff = staffId ? staffDirectory.find(s => s.username === staffId) : null;
+    if ((staff?.days_off || []).includes(dayName)) return [];
+
+    const breaks = staff ? (staff.breaks || []).filter(b => b.date === today) : (staffId === currentStaffUsername ? todayBreaks : []);
+    const busy = [
+      ...appointments
+        .filter(apt => (apt.appointment_date || apt.date) === today && apt.appointment_time && !isCancelledStatus(apt.status))
+        .filter(apt => allStaff || !apt.staff_member_id || apt.staff_member_id === staffId)
+        .map(apt => [apt.appointment_time, apt.service_duration]),
+      ...breaks.map(b => ({ start: b.start_time, end: b.end_time })),
+    ];
+    return computeFreeSlots({ openTime: day.start, closeTime: day.end, busy, nowTime: nowMinute.slice(11) });
+  }, [freeSlotScope, settings, staffDirectory, appointments, todayBreaks, today, nowMinute, currentStaffUsername]);
+
+  const todayItems = [
+    ...filteredToday.map(apt => ({ key: apt.id, start: timeToMinutes(apt.appointment_time), apt })),
+    ...freeSlots.map(gap => ({ key: `free-${gap.start}`, start: gap.start, gap })),
+  ].sort((a, b) => a.start - b.start || (a.gap ? 1 : 0) - (b.gap ? 1 : 0));
+  const morningItems = todayItems.filter(item => item.start < 12 * 60);
+  const afternoonItems = todayItems.filter(item => item.start >= 12 * 60);
+
+  const formatFreeDuration = (mins) => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (!h) return t('dashboard.todayFlow.durationMinutes', { m });
+    if (!m) return t('dashboard.todayFlow.durationHours', { h });
+    return t('dashboard.todayFlow.durationHoursMinutes', { h, m });
+  };
+
+  const handleFreeSlotClick = (gap) => {
+    const prefill = { appointment_date: today, appointment_time: minutesToTime(gap.bookAt), staff_member_id: freeSlotScope?.staffId || "" };
+    if (onNewAppointmentAt) onNewAppointmentAt(prefill);
+    else onNewAppointment();
+  };
+
+  const bookingLink = useMemo(() => {
+    if (!settings?.slug) return null;
+    const clean = (settings.support_phone || "").replace(/\s/g, "");
+    const domain = (clean.startsWith('+44') || clean.startsWith('44')) ? 'plannapp.co.uk' : 'plannapp.co';
+    return `https://${domain}/${settings.slug}`;
+  }, [settings]);
+
+  // Android WebView'da Web Share API yok → panoya kopyala
+  const handleShareBookingLink = async () => {
+    if (!bookingLink) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: settings?.company_name || undefined, url: bookingLink });
+        return;
+      } catch (e) {
+        if (e?.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(bookingLink);
+      toast.success(t('dashboard.todayFlow.linkCopied'));
+    } catch (e) {
+      toast.error(t('dashboard.todayFlow.linkCopyError'));
+    }
+  };
 
   const filteredTomorrow = appointments.filter(apt => {
     const aptDate = apt.appointment_date || apt.date;
@@ -662,6 +745,31 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     );
   };
 
+  const renderFreeSlotRow = (gap) => (
+    <div key={`free-${gap.start}`} className="relative flex gap-3 py-2.5 font-appointment">
+      <span className="w-1 shrink-0" />
+      <div className="w-14 shrink-0 self-center flex flex-col items-center tabular-nums">
+        <p className="text-[15px] leading-5 text-zinc-400">{minutesToTime(gap.start)}</p>
+        <p className="text-[13px] leading-4 text-zinc-400">{minutesToTime(gap.end)}</p>
+      </div>
+      <span className="w-px shrink-0 border-l border-dashed border-zinc-300" />
+      <button
+        type="button"
+        onClick={() => handleFreeSlotClick(gap)}
+        className="flex-1 min-w-0 flex items-center justify-between gap-2 rounded-xl border border-dashed border-zinc-300 bg-zinc-50/60 px-3 py-2.5 text-left hover:bg-zinc-100 active:scale-[0.98] transition-all"
+      >
+        <span className="min-w-0 truncate text-[15px] text-zinc-500">{t('dashboard.todayFlow.freeSlot', { duration: formatFreeDuration(gap.end - gap.start) })}</span>
+        <span className="shrink-0 inline-flex items-center gap-1 text-[13px] font-semibold text-zinc-900">
+          <Plus className="w-4 h-4" strokeWidth={2.5} />
+          {t('dashboard.todayFlow.freeSlotAdd')}
+        </span>
+      </button>
+      <span className="apt-divider absolute bottom-0 right-0 left-4 h-px bg-zinc-200" />
+    </div>
+  );
+
+  const renderTodayItem = (item) => (item.gap ? renderFreeSlotRow(item.gap) : renderAppointmentCard(item.apt));
+
   return (
     <div className="min-h-screen bg-white pb-24 font-sans selection:bg-gray-200">
       
@@ -806,31 +914,58 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           </div>
 
           {filteredToday.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 bg-white rounded-2xl border border-dashed border-gray-200 shadow-sm">
-              <p className="text-sm text-gray-400 font-medium">{t('dashboard.todayFlow.noAppointments')}</p>
+            <div className="flex flex-col items-center text-center pt-6 pb-8 px-4">
+              <div className="w-14 h-14 rounded-full bg-zinc-100 flex items-center justify-center">
+                <Calendar className="w-6 h-6 text-zinc-500" strokeWidth={1.8} />
+              </div>
+              <p className="mt-4 text-[17px] font-semibold text-zinc-900">{t('dashboard.todayFlow.emptyTitle')}</p>
+              {bookingLink && (
+                <p className="mt-1 max-w-sm text-[15px] leading-snug text-zinc-500">{t('dashboard.todayFlow.emptySubtitle')}</p>
+              )}
+              <button
+                type="button"
+                onClick={() => onNewAppointment()}
+                className="mt-6 w-full max-w-sm h-12 rounded-xl bg-zinc-900 hover:bg-black text-white text-[15px] font-bold shadow-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+              >
+                <Plus className="w-4 h-4" strokeWidth={2.5} />
+                {t('dashboard.todayFlow.addAppointment')}
+              </button>
+              {bookingLink && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleShareBookingLink}
+                    className="mt-3 w-full max-w-sm h-12 rounded-xl bg-white border border-zinc-200 text-zinc-900 text-[15px] font-semibold flex items-center justify-center gap-2 hover:bg-zinc-50 active:scale-[0.98] transition-all"
+                  >
+                    <Share className="w-4 h-4" />
+                    {t('dashboard.todayFlow.shareBookingLink')}
+                  </button>
+                  <p className="mt-3 text-[13px] text-zinc-400 break-all">{bookingLink.replace(/^https?:\/\//, "")}</p>
+                </>
+              )}
             </div>
           ) : (
             shouldSplit ? (
               <>
                 {/* Mobil/App: öğleden önce-sonra ayrımı gizli, tek liste */}
                 <div className={`${appointmentListClass} md:hidden`}>
-                  {filteredToday.map(apt => renderAppointmentCard(apt))}
+                  {todayItems.map(renderTodayItem)}
                 </div>
                 {/* Masaüstü (web): öğleden önce / öğleden sonra 2 sütun */}
                 <div className="hidden md:grid md:grid-cols-2 md:gap-6">
                   <div>
                     <div className="flex items-center gap-2 text-sm font-bold text-orange-600 uppercase tracking-wider mb-4"><Sun className="w-4 h-4" /> {t('dashboard.todayFlow.beforeNoon')}</div>
-                    {morningAppointments.length > 0 ? <div className={appointmentListClass}>{morningAppointments.map(apt => renderAppointmentCard(apt))}</div> : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
+                    {morningItems.length > 0 ? <div className={appointmentListClass}>{morningItems.map(renderTodayItem)}</div> : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
                   </div>
                   <div>
                     <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase tracking-wider mb-4"><Moon className="w-4 h-4" /> {t('dashboard.todayFlow.afterNoon')}</div>
-                    {afternoonAppointments.length > 0 ? <div className={appointmentListClass}>{afternoonAppointments.map(apt => renderAppointmentCard(apt))}</div> : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
+                    {afternoonItems.length > 0 ? <div className={appointmentListClass}>{afternoonItems.map(renderTodayItem)}</div> : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
                   </div>
                 </div>
               </>
             ) : (
               <div className={appointmentListClass}>
-                {filteredToday.map(apt => renderAppointmentCard(apt))}
+                {todayItems.map(renderTodayItem)}
               </div>
             )
           )}

@@ -442,7 +442,18 @@
       "noAppointmentsShort": "Randevu yok",
       "beforeNoon": "Öğleden Önce",
       "afterNoon": "Öğleden Sonra",
-      "allStaff": "Tüm Personel"
+      "allStaff": "Tüm Personel",
+      "emptyTitle": "Bugün randevun yok",
+      "emptySubtitle": "Rezervasyon linkini paylaş, müşterilerin boş saatlerinden kendileri randevu alsın.",
+      "addAppointment": "Randevu ekle",
+      "shareBookingLink": "Rezervasyon linkini paylaş",
+      "linkCopied": "Rezervasyon linki kopyalandı",
+      "linkCopyError": "Link kopyalanamadı",
+      "freeSlot": "{{duration}} boş",
+      "freeSlotAdd": "Randevu",
+      "durationMinutes": "{{m}} dk",
+      "durationHours": "{{h}} saat",
+      "durationHoursMinutes": "{{h}} saat {{m}} dk"
     },
     "tomorrowAppointments": {
       "title": "Yarının Randevuları"
