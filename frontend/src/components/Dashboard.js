@@ -505,13 +505,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     });
   }, [appointments, today]);
 
-  const appointmentListClass = "bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden [&>*:last-child_.apt-divider]:hidden";
+  const appointmentListClass = "[&>*:last-child_.apt-divider]:hidden";
 
   // Liste satırı (iOS Takvim tarzı): bugün/yarın ve gelecek randevular aynı satırı kullanır.
   const renderAppointmentRow = (apt, { name, barClass, isCancelled, isCompleted, isExpanded, hasNote, hasMulti, menuItems }) => {
     const staffName = (userRole === 'admin' || canViewAll) ? getStaffName(apt.staff_member_id) : null;
     return (
-      <div className={`relative bg-white px-4 py-3 transition-colors hover:bg-zinc-50 ${isCancelled ? 'opacity-50' : ''} ${(hasNote || hasMulti) ? 'cursor-pointer' : ''}`}>
+      <div className={`relative bg-white py-3 ${isCancelled ? 'opacity-50' : ''} ${(hasNote || hasMulti) ? 'cursor-pointer' : ''}`}>
         <div className="flex gap-3">
           <span className={`w-1 rounded-full shrink-0 ${barClass}`} />
           <div className="flex-1 min-w-0">
@@ -528,22 +528,26 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 {apt.appointment_time}–{calculateEndTime(apt.appointment_time, apt.service_duration)}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 min-w-0 mt-1">
-              {hasMulti && (
-                <span className="inline-flex items-center gap-0.5 shrink-0 text-[11px] font-semibold text-zinc-600 bg-zinc-100 rounded-full px-1.5 py-0.5">
-                  <Layers className="w-3 h-3" />
-                  <span>{apt.services.length}</span>
-                  <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                </span>
-              )}
-              <p className="truncate min-w-0 text-[15px] text-zinc-500">{serviceDisplayName(apt)}</p>
-              <div className="ml-auto pl-2 flex items-center gap-1 shrink-0">
-                {staffName && <span className="mr-1 max-w-[72px] sm:max-w-[140px] truncate text-xs text-zinc-400">{staffName}</span>}
+            <div className="flex items-center gap-2 min-w-0 mt-1">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {hasMulti && (
+                    <span className="inline-flex items-center gap-0.5 shrink-0 text-[11px] font-semibold text-zinc-600 bg-zinc-100 rounded-full px-1.5 py-0.5">
+                      <Layers className="w-3 h-3" />
+                      <span>{apt.services.length}</span>
+                      <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                    </span>
+                  )}
+                  <p className="truncate min-w-0 text-[15px] text-zinc-500">{serviceDisplayName(apt)}</p>
+                </div>
+                {staffName && <p className="truncate mt-0.5 text-xs text-zinc-400">{staffName}</p>}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
                 <button type="button" onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><Phone className="w-3.5 h-3.5" /></button>
                 <button type="button" onClick={(e) => { e.stopPropagation(); handleWhatsApp(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><WhatsAppIcon className="w-3.5 h-3.5" /></button>
                 <ScrollSafeDropdown
                   trigger={
-                    <button type="button" className="w-8 h-8 -mr-2 rounded-full text-zinc-400 flex items-center justify-center hover:bg-zinc-100 active:scale-95 transition-all">
+                    <button type="button" className="w-8 h-8 rounded-full text-zinc-400 flex items-center justify-center hover:bg-zinc-100 active:scale-95 transition-all">
                       <MoreVertical className="w-4 h-4" />
                     </button>
                   }
@@ -569,7 +573,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
             )}
           </div>
         )}
-        <span className="apt-divider absolute bottom-0 right-0 left-8 h-px bg-zinc-100" />
+        <span className="apt-divider absolute bottom-0 right-0 left-4 h-px bg-zinc-200" />
       </div>
     );
   };
@@ -644,7 +648,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/50 pb-24 font-sans selection:bg-gray-200">
+    <div className="min-h-screen bg-white pb-24 font-sans selection:bg-gray-200">
       
       {/* --- TUR BİLEŞENİ --- */}
       <TourGuide run={runTour} steps={tourSteps} onFinish={handleTourFinish} />
