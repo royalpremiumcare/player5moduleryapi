@@ -518,7 +518,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const renderAppointmentRow = (apt, { name, barClass, isCancelled, isCompleted, isExpanded, hasNote, hasMulti, menuItems }) => {
     const staffName = (userRole === 'admin' || canViewAll) ? getStaffName(apt.staff_member_id) : null;
     return (
-      <div className={`relative bg-white py-3 ${isCancelled ? 'opacity-50' : ''} ${(hasNote || hasMulti) ? 'cursor-pointer' : ''}`}>
+      <div className={`relative bg-white py-3 font-appointment ${isCancelled ? 'opacity-50' : ''} ${(hasNote || hasMulti) ? 'cursor-pointer' : ''}`}>
         <div className="flex gap-3">
           <span className={`w-1 rounded-full shrink-0 ${barClass}`} />
           <div className="w-14 shrink-0 self-center flex flex-col items-center tabular-nums">
