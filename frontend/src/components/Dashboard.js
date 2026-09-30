@@ -167,6 +167,13 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const today = format(new Date(), "yyyy-MM-dd");
   const tomorrow = format(addDays(new Date(), 1), "yyyy-MM-dd");
 
+  // Saati gelen bekleyen randevuların çizgisi sayfa yenilenmeden nefes almaya başlasın
+  const [nowMinute, setNowMinute] = useState(() => format(new Date(), "yyyy-MM-dd HH:mm"));
+  useEffect(() => {
+    const id = setInterval(() => setNowMinute(format(new Date(), "yyyy-MM-dd HH:mm")), 15000);
+    return () => clearInterval(id);
+  }, []);
+
   // --- HELPERS ---
   const calculateEndTime = (startTime, duration) => {
     if (!startTime || !duration) return null;
@@ -611,7 +618,10 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     const handleSwipeDelete = () => setDeleteDialog(apt);
     const handleCardTap = () => { if (hasNote || hasMulti) toggleNote(apt.id); };
 
-    const statusBar = apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending') ? 'bg-amber-400'
+    const isPending = apt.status === "Bekliyor" || apt.status === t('dashboard.status.pending');
+    const aptDate = apt.appointment_date || apt.date;
+    const isDue = isPending && aptDate && apt.appointment_time && `${aptDate} ${apt.appointment_time}` <= nowMinute;
+    const statusBar = isPending ? (isDue ? 'bg-amber-400 motion-safe:animate-breathe' : 'bg-amber-400')
       : isCompleted ? 'bg-green-500'
       : isCancelled ? 'bg-red-500'
       : 'bg-gray-300';
