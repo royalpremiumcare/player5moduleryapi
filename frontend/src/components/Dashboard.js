@@ -535,7 +535,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <span className="w-px shrink-0 bg-zinc-200" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 min-w-0">
-              <p className="truncate min-w-0 text-[17px] text-zinc-900">{name}</p>
+              <p className="truncate min-w-0 text-[16px] text-zinc-900">{name}</p>
               {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 shrink-0 text-amber-500" />}
               <SessionBadge number={apt.session_number} total={apt.session_total} />
               {SHOW_APPOINTMENT_CARD_STATUS && (
@@ -555,7 +555,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 </ScrollSafeDropdown>
               </div>
             </div>
-            <p className="truncate min-w-0 mt-0.5 text-[16px] text-zinc-700">{serviceDisplayName(apt)}</p>
+            <p className="truncate min-w-0 mt-0.5 text-[15px] text-zinc-700">{serviceDisplayName(apt)}</p>
             <div className="flex items-center gap-2 min-w-0 mt-2">
               <div className="flex items-center gap-1.5 shrink-0">
                 <button type="button" onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><Phone className="w-3.5 h-3.5" /></button>
