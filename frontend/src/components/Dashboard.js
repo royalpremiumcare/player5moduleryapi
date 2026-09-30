@@ -540,7 +540,12 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                   )}
                   <p className="truncate min-w-0 text-[15px] text-zinc-600">{serviceDisplayName(apt)}</p>
                 </div>
-                {staffName && <p className="truncate mt-0.5 text-[13px] leading-[18px] text-zinc-500">{staffName}</p>}
+                {staffName && (
+                  <p className="flex items-center gap-1 min-w-0 mt-0.5 text-[13px] leading-[18px] text-zinc-500">
+                    <User className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+                    <span className="truncate">{staffName}</span>
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button type="button" onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><Phone className="w-3.5 h-3.5" /></button>
