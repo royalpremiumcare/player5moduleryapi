@@ -538,14 +538,8 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                       <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                     </span>
                   )}
-                  <p className="truncate min-w-0 text-[16px] text-zinc-600">{serviceDisplayName(apt)}</p>
+                  <p className="truncate min-w-0 text-[16px] text-zinc-700">{serviceDisplayName(apt)}</p>
                 </div>
-                {staffName && (
-                  <p className="flex items-center gap-1 min-w-0 mt-1.5 text-[14px] leading-5 text-zinc-500">
-                    <User className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
-                    <span className="truncate">{staffName}</span>
-                  </p>
-                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button type="button" onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><Phone className="w-3.5 h-3.5" /></button>
@@ -561,6 +555,14 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 </ScrollSafeDropdown>
               </div>
             </div>
+            {staffName && (
+              <div className="flex justify-end mt-1">
+                <p className="flex items-center gap-1 min-w-0 max-w-[70%] text-[14px] leading-5 text-zinc-500">
+                  <User className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+                  <span className="truncate">{staffName}</span>
+                </p>
+              </div>
+            )}
           </div>
         </div>
         {isExpanded && (hasMulti || hasNote) && (
