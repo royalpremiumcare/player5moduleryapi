@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   CalendarDays, Users, Wallet, UserCog, Package, TrendingUp, TrendingDown,
-  ArrowLeft, Loader2,
+  ArrowLeft, Loader2, ChevronDown, Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../api/api";
@@ -32,9 +32,156 @@ const timeAxisProps = (data, count, gap = 16) => (
     : { minTickGap: gap, tick: { fontSize: 11, fill: "#a1a1aa" } }
 );
 
+const toISODate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const parseISODate = (str) => {
+  const [y, m, d] = str.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+
+// iOS menü tarzı tarih aralığı seçici; "custom" seçilince başlangıç/bitiş paneli açılır.
+const RangePicker = ({ ranges, value, customRange, onChange }) => {
+  const { t, i18n } = useTranslation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [draft, setDraft] = useState({ start: "", end: "" });
+  const locale = i18n.language === "en" ? "en-GB" : "tr-TR";
+
+  useEffect(() => {
+    if (!menuOpen && !sheetOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") { setMenuOpen(false); setSheetOpen(false); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen, sheetOpen]);
+
+  let label = ranges.find((r) => r.id === value)?.label || "";
+  if (value === "custom" && customRange) {
+    const s = parseISODate(customRange.start);
+    const e = parseISODate(customRange.end);
+    const withYear = s.getFullYear() !== e.getFullYear() || e.getFullYear() !== new Date().getFullYear();
+    const opts = { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) };
+    label = `${s.toLocaleDateString(locale, opts)} – ${e.toLocaleDateString(locale, opts)}`;
+  }
+
+  const handleSelect = (id) => {
+    setMenuOpen(false);
+    if (id === "custom") {
+      const today = new Date();
+      setDraft(customRange || { start: toISODate(new Date(today.getFullYear(), today.getMonth(), 1)), end: toISODate(today) });
+      setSheetOpen(true);
+      return;
+    }
+    onChange(id, null);
+  };
+
+  const handleApply = () => {
+    if (!draft.start || !draft.end) return;
+    const [start, end] = draft.start <= draft.end ? [draft.start, draft.end] : [draft.end, draft.start];
+    setSheetOpen(false);
+    onChange("custom", { start, end });
+  };
+
+  return (
+    <div className="relative mb-4 sm:max-w-sm">
+      <button
+        type="button"
+        onClick={() => setMenuOpen(true)}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        className="w-full h-14 px-6 rounded-full bg-white border border-zinc-100 shadow-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+      >
+        <span className="truncate text-[17px] font-semibold text-zinc-900">{label}</span>
+        <ChevronDown className="w-5 h-5 shrink-0 text-zinc-500" />
+      </button>
+
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+          <div
+            role="menu"
+            className="absolute top-0 left-3 right-3 z-50 origin-top py-2 rounded-[28px] bg-white/80 backdrop-blur-xl border border-white/70 shadow-[0_12px_40px_rgba(0,0,0,0.18)] animate-in fade-in zoom-in-95 duration-150"
+          >
+            {ranges.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={value === r.id}
+                onClick={() => handleSelect(r.id)}
+                className="w-full h-12 flex items-center gap-3 px-5 text-left text-[17px] text-zinc-900 hover:bg-black/5 active:bg-black/5 transition-colors"
+              >
+                <span className="w-5 shrink-0">{value === r.id && <Check className="w-5 h-5" strokeWidth={2.5} />}</span>
+                <span className="truncate">{r.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {sheetOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center animate-in fade-in duration-150"
+          onClick={() => setSheetOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl shadow-lg p-5 animate-in slide-in-from-bottom-4 duration-200"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 20px)" }}
+          >
+            <h3 className="text-[17px] font-semibold text-zinc-900 text-center mb-4">{t("stats.range.custom", "Özel Aralık")}</h3>
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <label className="block min-w-0">
+                <span className="block text-xs font-medium text-zinc-500 mb-1">{t("common.start", "Başlangıç")}</span>
+                <input
+                  type="date"
+                  value={draft.start}
+                  max={draft.end || undefined}
+                  onChange={(e) => setDraft((d) => ({ ...d, start: e.target.value }))}
+                  className="w-full min-w-0 h-12 px-3 rounded-xl border border-zinc-300 bg-white text-[16px] text-zinc-900 appearance-none focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                />
+              </label>
+              <label className="block min-w-0">
+                <span className="block text-xs font-medium text-zinc-500 mb-1">{t("common.end", "Bitiş")}</span>
+                <input
+                  type="date"
+                  value={draft.end}
+                  min={draft.start || undefined}
+                  onChange={(e) => setDraft((d) => ({ ...d, end: e.target.value }))}
+                  className="w-full min-w-0 h-12 px-3 rounded-xl border border-zinc-300 bg-white text-[16px] text-zinc-900 appearance-none focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                />
+              </label>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setSheetOpen(false)}
+                className="h-12 rounded-xl bg-white border border-zinc-200 text-zinc-900 font-semibold hover:bg-zinc-50 active:scale-[0.98] transition-all"
+              >
+                {t("common.cancel", "İptal")}
+              </button>
+              <button
+                type="button"
+                onClick={handleApply}
+                disabled={!draft.start || !draft.end}
+                className="h-12 rounded-xl bg-zinc-900 hover:bg-black text-white font-bold shadow-lg disabled:opacity-40 active:scale-[0.98] transition-all"
+              >
+                {t("stats.range.apply", "Uygula")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Statistics = ({ userRole, onNavigate, settings }) => {
   const { t, i18n } = useTranslation();
   const [range, setRange] = useState("all_time");
+  const [customRange, setCustomRange] = useState(null);
   const [tab, setTab] = useState("appointments");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -61,14 +208,15 @@ const Statistics = ({ userRole, onNavigate, settings }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get("/stats/analytics", { params: { range } });
+      const params = range === "custom" && customRange ? { range, ...customRange } : { range };
+      const res = await api.get("/stats/analytics", { params });
       setData(res.data);
     } catch (err) {
       toast.error(err.response?.data?.detail || t("stats.loadError", "İstatistikler yüklenemedi"));
     } finally {
       setLoading(false);
     }
-  }, [range, t]);
+  }, [range, customRange, t]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -92,14 +240,20 @@ const Statistics = ({ userRole, onNavigate, settings }) => {
   }, [i18n.language]);
 
   const ranges = [
-    { id: "all_time", label: t("stats.range.allTime", "Tüm Zamanlar") },
     { id: "today", label: t("stats.range.today", "Bugün") },
     { id: "this_week", label: t("stats.range.thisWeek", "Bu Hafta") },
     { id: "this_month", label: t("stats.range.thisMonth", "Bu Ay") },
     { id: "last_month", label: t("stats.range.lastMonth", "Geçen Ay") },
     { id: "this_year", label: t("stats.range.thisYear", "Bu Yıl") },
     { id: "last_year", label: t("stats.range.lastYear", "Geçen Yıl") },
+    { id: "all_time", label: t("stats.range.allTime", "Tüm Zamanlar") },
+    { id: "custom", label: t("stats.range.custom", "Özel Aralık") },
   ];
+
+  const handleRangeChange = (id, custom) => {
+    if (custom) setCustomRange(custom);
+    setRange(id);
+  };
 
   const tabs = [
     { id: "appointments", label: t("stats.tabs.appointments", "Randevular"), icon: CalendarDays },
@@ -128,21 +282,7 @@ const Statistics = ({ userRole, onNavigate, settings }) => {
         </div>
 
         {/* Tarih aralığı seçici */}
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 mb-4 no-scrollbar">
-          {ranges.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => setRange(r.id)}
-              className={`shrink-0 px-4 h-9 rounded-full text-sm font-medium transition-colors border ${
-                range === r.id
-                  ? "bg-zinc-900 text-white border-zinc-900"
-                  : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+        <RangePicker ranges={ranges} value={range} customRange={customRange} onChange={handleRangeChange} />
 
         {/* Sekmeler */}
         <div className="flex gap-1 overflow-x-auto pb-1 mb-5 border-b border-zinc-200 no-scrollbar">

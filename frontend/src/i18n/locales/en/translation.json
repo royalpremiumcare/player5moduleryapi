@@ -1523,7 +1523,9 @@
       "thisMonth": "This Month",
       "lastMonth": "Last Month",
       "thisYear": "This Year",
-      "lastYear": "Last Year"
+      "lastYear": "Last Year",
+      "custom": "Custom Range",
+      "apply": "Apply"
     },
     "tabs": {
       "appointments": "Appointments",
