@@ -522,8 +522,8 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
         <div className="flex gap-3">
           <span className={`w-1 rounded-full shrink-0 ${barClass}`} />
           <div className="w-14 shrink-0 self-center flex flex-col items-center tabular-nums">
-            <p className="text-[17px] leading-6 font-semibold text-zinc-900">{apt.appointment_time}</p>
-            <p className="text-[15px] leading-5 text-zinc-500">{calculateEndTime(apt.appointment_time, apt.service_duration)}</p>
+            <p className="text-[19px] leading-6 font-semibold text-zinc-900">{apt.appointment_time}</p>
+            <p className="text-[16px] leading-5 text-zinc-500">{calculateEndTime(apt.appointment_time, apt.service_duration)}</p>
             {hasMulti && (
               <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-zinc-700 bg-zinc-100 rounded-full px-1.5 py-0.5">
                 <Layers className="w-3 h-3" />
@@ -532,6 +532,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               </span>
             )}
           </div>
+          <span className="w-px shrink-0 bg-zinc-200" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 min-w-0">
               <p className="truncate min-w-0 text-[17px] text-zinc-900">{name}</p>
