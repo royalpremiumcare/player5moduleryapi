@@ -448,12 +448,7 @@
       "addAppointment": "Add appointment",
       "shareBookingLink": "Share booking link",
       "linkCopied": "Booking link copied",
-      "linkCopyError": "Couldn't copy the link",
-      "freeSlot": "{{duration}} free",
-      "freeSlotAdd": "Book",
-      "durationMinutes": "{{m}} min",
-      "durationHours": "{{h}} h",
-      "durationHoursMinutes": "{{h}} h {{m}} min"
+      "linkCopyError": "Couldn't copy the link"
     },
     "tomorrowAppointments": {
       "title": "Tomorrow's Appointments"

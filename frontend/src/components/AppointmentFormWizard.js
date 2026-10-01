@@ -75,7 +75,7 @@ function parseLocalAppointmentDate(value) {
   return new Date(value);
 }
 
-const AppointmentFormWizard = ({ services, appointment, prefill = null, onSave, onCancel, onServiceCreated, servicesLoading = false }) => {
+const AppointmentFormWizard = ({ services, appointment, onSave, onCancel, onServiceCreated, servicesLoading = false }) => {
   const { userRole, canViewAll } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
@@ -104,16 +104,15 @@ const AppointmentFormWizard = ({ services, appointment, prefill = null, onSave, 
   const [settings, setSettings] = useState(null);
   
   // Form Verileri
-  const prefillRef = useRef(appointment ? null : prefill);
-  const [formData, setFormData] = useState(() => ({
+  const [formData, setFormData] = useState({
     customer_name: "",
     phone: "",
     service_id: "",
-    appointment_date: prefillRef.current?.appointment_date ? parseLocalAppointmentDate(prefillRef.current.appointment_date) : new Date(),
-    appointment_time: prefillRef.current?.appointment_time || "",
-    staff_member_id: prefillRef.current?.staff_member_id || "",
+    appointment_date: new Date(),
+    appointment_time: "",
+    staff_member_id: "",
     notes: "",
-  }));
+  });
 
   // Çoklu hizmet seçimi (feature flag arkasında, yalnızca yeni randevuda)
   const [selectedServiceIds, setSelectedServiceIds] = useState([]);
@@ -433,15 +432,6 @@ const AppointmentFormWizard = ({ services, appointment, prefill = null, onSave, 
     }
   }, [effectiveServiceIds, allStaff, settings]);
 
-  // Ön-doldurulan personel seçilen hizmeti veremiyorsa "fark etmez"e düş
-  useEffect(() => {
-    const staffId = prefillRef.current?.staff_member_id;
-    if (!staffId || (userRole === 'staff' && !canViewAll)) return;
-    if (effectiveServiceIds.length === 0 || allStaff.length === 0 || !settings) return;
-    if (qualifiedStaff.some((s) => s.username === staffId)) return;
-    setFormData((prev) => (prev.staff_member_id === staffId ? { ...prev, staff_member_id: "" } : prev));
-  }, [qualifiedStaff, effectiveServiceIds, allStaff, settings, userRole, canViewAll]);
-
   // --- API CALLS ---
 
   const loadCurrentUser = async () => {
@@ -486,14 +476,8 @@ const AppointmentFormWizard = ({ services, appointment, prefill = null, onSave, 
         const orgId = JSON.parse(atob(token.split('.')[1])).org_id;
         res = await publicApi.get(`/public/availability/${orgId}`, { params });
       }
-      const slots = res.data.available_slots || [];
-      setAvailableSlots(slots);
+      setAvailableSlots(res.data.available_slots || []);
       setBusySlots(res.data.busy_slots || []);
-      // Ön-doldurulan saat seçilen hizmete yetmiyorsa seçili bırakma
-      const prefillTime = prefillRef.current?.appointment_time;
-      if (prefillTime && !slots.includes(prefillTime)) {
-        setFormData((prev) => (prev.appointment_time === prefillTime ? { ...prev, appointment_time: "" } : prev));
-      }
     } catch (e) {
       console.error(e);
       setAvailableSlots([]);

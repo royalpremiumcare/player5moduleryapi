@@ -448,12 +448,7 @@
       "addAppointment": "Randevu ekle",
       "shareBookingLink": "Rezervasyon linkini paylaş",
       "linkCopied": "Rezervasyon linki kopyalandı",
-      "linkCopyError": "Link kopyalanamadı",
-      "freeSlot": "{{duration}} boş",
-      "freeSlotAdd": "Randevu",
-      "durationMinutes": "{{m}} dk",
-      "durationHours": "{{h}} saat",
-      "durationHoursMinutes": "{{h}} saat {{m}} dk"
+      "linkCopyError": "Link kopyalanamadı"
     },
     "tomorrowAppointments": {
       "title": "Yarının Randevuları"

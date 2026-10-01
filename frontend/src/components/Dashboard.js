@@ -25,8 +25,6 @@ import {
 import TourGuide from "../components/TourGuide"; 
 // --------------------------
 import SwipeableAppointmentCard from "./SwipeableAppointmentCard";
-import { WH_DAY_MAP, normalizeWorkingHours } from "../lib/sessionScheduling";
-import { computeFreeSlots, timeToMinutes, minutesToTime } from "../lib/freeSlots";
 
 /** Dashboard selamlama: "Fatih Senyüz" → "Fatih" */
 function firstNameOnly(fullName) {
@@ -114,7 +112,7 @@ const WhatsAppIcon = ({ className }) => (
   </svg>
 );
 
-const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onNewAppointmentAt, onRefresh, onNavigate, onOpenChat, activationState, ahaOverlayActive = false, forceStartTour, onForceStartTourConsumed }) => {
+const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate, onOpenChat, activationState, ahaOverlayActive = false, forceStartTour, onForceStartTourConsumed }) => {
   const { token, canViewAll } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
@@ -122,7 +120,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [settings, setSettings] = useState(null);
   const [staffMembers, setStaffMembers] = useState([]);
-  const [staffMembersLoaded, setStaffMembersLoaded] = useState(false);
   /** Admin + staff — kartlarda isim çözümlemesi için (settings'ten bağımsız yüklenir) */
   const [staffDirectory, setStaffDirectory] = useState([]);
   const [currentStaffUsername, setCurrentStaffUsername] = useState(null);
@@ -258,7 +255,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       }
       setStaffMembers(staff);
     } catch (e) { console.error(e); }
-    finally { setStaffMembersLoaded(true); }
   };
 
   // Kart üzerinde isim çözümlemesi için TÜM personel + admin'i settings'ten
@@ -443,59 +439,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
   const isCancelledStatus = (s) => s === 'İptal' || s === 'İptal Edildi' || s === 'Cancelled';
 
-  // --- BOŞ ZAMAN SATIRLARI ---
-  // Tek bir personelin günü görünürken anlamlı: çok personelli işletmede "Tümü"
-  // seçiliyken bir kişinin boşluğu diğerinin randevusuyla karışırdı.
-  const freeSlotScope = useMemo(() => {
-    if (userRole === 'admin' || canViewAll) {
-      if (staffFilter !== "all") return { staffId: staffFilter, allStaff: false };
-      if (!staffMembersLoaded || staffMembers.length > 1) return null;
-      return { staffId: staffMembers[0]?.username || null, allStaff: true };
-    }
-    return currentStaffUsername ? { staffId: currentStaffUsername, allStaff: false } : null;
-  }, [userRole, canViewAll, staffFilter, staffMembersLoaded, staffMembers, currentStaffUsername]);
-
-  const freeSlots = useMemo(() => {
-    if (!freeSlotScope) return [];
-    const dayName = WH_DAY_MAP[new Date().getDay()];
-    const day = normalizeWorkingHours(settings)?.[dayName];
-    if (!day?.enabled) return [];
-    const { staffId, allStaff } = freeSlotScope;
-    const staff = staffId ? staffDirectory.find(s => s.username === staffId) : null;
-    if ((staff?.days_off || []).includes(dayName)) return [];
-
-    const breaks = staff ? (staff.breaks || []).filter(b => b.date === today) : (staffId === currentStaffUsername ? todayBreaks : []);
-    const busy = [
-      ...appointments
-        .filter(apt => (apt.appointment_date || apt.date) === today && apt.appointment_time && !isCancelledStatus(apt.status))
-        .filter(apt => allStaff || !apt.staff_member_id || apt.staff_member_id === staffId)
-        .map(apt => [apt.appointment_time, apt.service_duration]),
-      ...breaks.map(b => ({ start: b.start_time, end: b.end_time })),
-    ];
-    return computeFreeSlots({ openTime: day.start, closeTime: day.end, busy, nowTime: nowMinute.slice(11) });
-  }, [freeSlotScope, settings, staffDirectory, appointments, todayBreaks, today, nowMinute, currentStaffUsername]);
-
-  const todayItems = [
-    ...filteredToday.map(apt => ({ key: apt.id, start: timeToMinutes(apt.appointment_time), apt })),
-    ...freeSlots.map(gap => ({ key: `free-${gap.start}`, start: gap.start, gap })),
-  ].sort((a, b) => a.start - b.start || (a.gap ? 1 : 0) - (b.gap ? 1 : 0));
-  const morningItems = todayItems.filter(item => item.start < 12 * 60);
-  const afternoonItems = todayItems.filter(item => item.start >= 12 * 60);
-
-  const formatFreeDuration = (mins) => {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    if (!h) return t('dashboard.todayFlow.durationMinutes', { m });
-    if (!m) return t('dashboard.todayFlow.durationHours', { h });
-    return t('dashboard.todayFlow.durationHoursMinutes', { h, m });
-  };
-
-  const handleFreeSlotClick = (gap) => {
-    const prefill = { appointment_date: today, appointment_time: minutesToTime(gap.bookAt), staff_member_id: freeSlotScope?.staffId || "" };
-    if (onNewAppointmentAt) onNewAppointmentAt(prefill);
-    else onNewAppointment();
-  };
-
   const bookingLink = useMemo(() => {
     if (!settings?.slug) return null;
     const clean = (settings.support_phone || "").replace(/\s/g, "");
@@ -618,7 +561,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <span className="w-px shrink-0 bg-zinc-200" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 min-w-0">
-              <p className="truncate min-w-0 text-[16px] text-zinc-900">{name}</p>
+              <p className="truncate min-w-0 text-[17px] text-zinc-900">{name}</p>
               {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 shrink-0 text-amber-500" />}
               <SessionBadge number={apt.session_number} total={apt.session_total} />
               {SHOW_APPOINTMENT_CARD_STATUS && (
@@ -638,7 +581,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
                 </ScrollSafeDropdown>
               </div>
             </div>
-            <p className="truncate min-w-0 mt-0.5 text-[15px] text-zinc-700">{serviceDisplayName(apt)}</p>
+            <p className="truncate min-w-0 mt-0.5 text-[16px] text-zinc-700">{serviceDisplayName(apt)}</p>
             <div className="flex items-center gap-2 min-w-0 mt-2">
               <div className="flex items-center gap-1.5 shrink-0">
                 <button type="button" onClick={(e) => { e.stopPropagation(); handleCall(apt.phone); }} className="w-8 h-8 rounded-full bg-zinc-100 text-zinc-600 flex items-center justify-center hover:bg-zinc-200 active:scale-95 transition-all"><Phone className="w-3.5 h-3.5" /></button>
@@ -744,31 +687,6 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       </SwipeableAppointmentCard>
     );
   };
-
-  const renderFreeSlotRow = (gap) => (
-    <div key={`free-${gap.start}`} className="relative flex gap-3 py-2.5 font-appointment">
-      <span className="w-1 shrink-0" />
-      <div className="w-14 shrink-0 self-center flex flex-col items-center tabular-nums">
-        <p className="text-[15px] leading-5 text-zinc-400">{minutesToTime(gap.start)}</p>
-        <p className="text-[13px] leading-4 text-zinc-400">{minutesToTime(gap.end)}</p>
-      </div>
-      <span className="w-px shrink-0 border-l border-dashed border-zinc-300" />
-      <button
-        type="button"
-        onClick={() => handleFreeSlotClick(gap)}
-        className="flex-1 min-w-0 flex items-center justify-between gap-2 rounded-xl border border-dashed border-zinc-300 bg-zinc-50/60 px-3 py-2.5 text-left hover:bg-zinc-100 active:scale-[0.98] transition-all"
-      >
-        <span className="min-w-0 truncate text-[15px] text-zinc-500">{t('dashboard.todayFlow.freeSlot', { duration: formatFreeDuration(gap.end - gap.start) })}</span>
-        <span className="shrink-0 inline-flex items-center gap-1 text-[13px] font-semibold text-zinc-900">
-          <Plus className="w-4 h-4" strokeWidth={2.5} />
-          {t('dashboard.todayFlow.freeSlotAdd')}
-        </span>
-      </button>
-      <span className="apt-divider absolute bottom-0 right-0 left-4 h-px bg-zinc-200" />
-    </div>
-  );
-
-  const renderTodayItem = (item) => (item.gap ? renderFreeSlotRow(item.gap) : renderAppointmentCard(item.apt));
 
   return (
     <div className="min-h-screen bg-white pb-24 font-sans selection:bg-gray-200">
@@ -949,23 +867,23 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
               <>
                 {/* Mobil/App: öğleden önce-sonra ayrımı gizli, tek liste */}
                 <div className={`${appointmentListClass} md:hidden`}>
-                  {todayItems.map(renderTodayItem)}
+                  {filteredToday.map(apt => renderAppointmentCard(apt))}
                 </div>
                 {/* Masaüstü (web): öğleden önce / öğleden sonra 2 sütun */}
                 <div className="hidden md:grid md:grid-cols-2 md:gap-6">
                   <div>
                     <div className="flex items-center gap-2 text-sm font-bold text-orange-600 uppercase tracking-wider mb-4"><Sun className="w-4 h-4" /> {t('dashboard.todayFlow.beforeNoon')}</div>
-                    {morningItems.length > 0 ? <div className={appointmentListClass}>{morningItems.map(renderTodayItem)}</div> : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
+                    {morningAppointments.length > 0 ? <div className={appointmentListClass}>{morningAppointments.map(apt => renderAppointmentCard(apt))}</div> : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
                   </div>
                   <div>
                     <div className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase tracking-wider mb-4"><Moon className="w-4 h-4" /> {t('dashboard.todayFlow.afterNoon')}</div>
-                    {afternoonItems.length > 0 ? <div className={appointmentListClass}>{afternoonItems.map(renderTodayItem)}</div> : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
+                    {afternoonAppointments.length > 0 ? <div className={appointmentListClass}>{afternoonAppointments.map(apt => renderAppointmentCard(apt))}</div> : <div className="p-4 text-center bg-gray-50 rounded-xl text-gray-400 text-xs italic shadow-sm">{t('dashboard.todayFlow.noAppointmentsShort')}</div>}
                   </div>
                 </div>
               </>
             ) : (
               <div className={appointmentListClass}>
-                {todayItems.map(renderTodayItem)}
+                {filteredToday.map(apt => renderAppointmentCard(apt))}
               </div>
             )
           )}

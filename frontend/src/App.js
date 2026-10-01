@@ -96,9 +96,6 @@ function App() {
   const pushActionListenerBound = useRef(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [newAppointmentPrefill, setNewAppointmentPrefill] = useState(null);
-  // Form hangi yoldan kapanırsa kapansın ön-doldurma bir sonraki açılışa taşınmasın
-  useEffect(() => { if (!showForm) setNewAppointmentPrefill(null); }, [showForm]);
   const [chatOpen, setChatOpen] = useState(false);
   const [settings, setSettings] = useState(null);
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
@@ -1483,7 +1480,7 @@ function App() {
     posthog.track('aha_modal_dismissed_without_choice');
   }, []);
 
-  const openNewAppointmentForm = (prefill) => {
+  const handleNewAppointment = () => {
     // Aha modunda klasik form yerine endpoint'i tetikle
     if (
       userRole === 'admin' &&
@@ -1494,12 +1491,8 @@ function App() {
       return;
     }
     setSelectedAppointment(null);
-    setNewAppointmentPrefill(prefill);
     setShowForm(true);
   };
-  const handleNewAppointment = () => openNewAppointmentForm(null);
-  // Dashboard boş zaman satırı: tarih/saat/personel dolu açılır
-  const handleNewAppointmentAt = (prefill) => openNewAppointmentForm(prefill);
 
 
   return (
@@ -1647,7 +1640,6 @@ function App() {
             onForceStartTourConsumed={() => setForceStartTour(false)}
             onEditAppointment={handleEditAppointment}
             onNewAppointment={handleNewAppointment}
-            onNewAppointmentAt={handleNewAppointmentAt}
             onNavigate={(view) => {
               setCurrentView(view);
               setShowForm(false);
@@ -1667,7 +1659,6 @@ function App() {
             services={services}
             servicesLoading={servicesLoading}
             appointment={selectedAppointment}
-            prefill={selectedAppointment ? null : newAppointmentPrefill}
             onServiceCreated={loadServices}
             onSave={handleAppointmentSaved}
             onCancel={() => {
