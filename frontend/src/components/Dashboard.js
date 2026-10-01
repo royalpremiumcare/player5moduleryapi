@@ -561,7 +561,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
           <span className="w-px shrink-0 bg-zinc-200" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 min-w-0">
-              <p className="truncate min-w-0 text-[17px] text-zinc-900">{name}</p>
+              <p className="truncate min-w-0 text-base font-bold text-zinc-900">{name}</p>
               {hasNote && !isExpanded && <FileText className="w-3.5 h-3.5 shrink-0 text-amber-500" />}
               <SessionBadge number={apt.session_number} total={apt.session_total} />
               {SHOW_APPOINTMENT_CARD_STATUS && (
