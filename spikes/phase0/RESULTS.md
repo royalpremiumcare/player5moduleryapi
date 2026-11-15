@@ -53,3 +53,13 @@
    - **(c)** Content-only updates use priority 5, which is exempt from the budget per Apple; priority 10 is kept for start, the PROCESSING transition and end.
    - **(d)** Pilot QA must not burst-test on the owner's phone.
    - **Open:** measure the reset time (retry a single start on 2026-11-16).
+10. **The throttle is per device, not per app** (fresh iPhone 11 / iOS 26.1, build 1009, 00:32 TR). While the two throttled phones still dropped every start, a third device accepted starts immediately. One user's busy phone cannot starve another user's phone.
+11. **Lock Screen ordering** (same device, build 1009):
+    - Without `relevance-score`, iOS stacks cards in **start order, oldest on top** (Mehmet then Ayşe).
+    - A later start with `relevance-score: 100` was placed **on top** (Can B. above both), so **relevance-score controls Lock Screen order**.
+    - The server should send relevance on start and on every phase change: processing 100, upcoming `50 − minutes_to_start/10` (floor 1), terminal 0.
+12. **Build 1009 visual renders on device:**
+    - processing: 6 pt strip, green-dot pill, "Bitmesine kalan" countdown, `scaleEffect`-thickened green bar;
+    - upcoming: "Başlamasına kalan" + amber bar.
+
+    The earlier "missing" upcoming/processing cards on the two main phones were caused by the throttle (item 9), not by the view.

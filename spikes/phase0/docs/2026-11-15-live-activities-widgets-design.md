@@ -437,7 +437,9 @@ The owner reviewed the options on iPhone 11 (iOS 26.0) and iPhone 16 Plus (iOS 2
 
 **Not possible on iOS:** a "breathing" strip. Live Activities allow no repeating animations; only timers, progress views and push-driven content transitions animate. The 6 pt strip, the green dot and the moving bar carry "live".
 
-**Ordering:** with no relevance score, iOS stacked cards in start order (oldest on top). The server sends `relevance-score` (processing 100, upcoming 50 − minutes/10, terminal 0). Device verification is pending (build 1009 test).
+**Ordering [V, Phase 0]:** with no relevance score, iOS stacks cards in start order (oldest on top). A start carrying `relevance-score: 100` was placed above older cards (iOS 26.1). The server sends `relevance-score` on start and on each phase change: processing 100, upcoming `50 − minutes_to_start/10` (floor 1), terminal 0.
+
+**Start budget [V, Phase 0]:** push-to-start is throttled **per device** after a burst (~13 starts/h observed). The planner applies a per-device budget; see RESULTS item 9.
 
 **Spike source:** `frontend/ios/App/PlannSpikeWidgets/AppointmentLiveActivity.swift` on the spike branch is the reference implementation for plan Task 16.
 
