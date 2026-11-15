@@ -92,3 +92,9 @@
     - All three appeared, with **three sounds**, and the Lock Screen order was **processing (100) → upcoming 48 → upcoming 46**, above the older terminal cards.
     - This also confirms the budget refilled on this device.
     - **Rule for the slot model:** when several cards must alert at the same moment, send at most **one** alerted push. The others go silent, because each alerted push sounds separately.
+21. **Slot-model day transition, end to end** (first iPhone 11 / iOS 26.0, 01:17 TR). Three existing cards were switched **in the same second** at **priority 10**, with relevance kept and an alert on **one** card only:
+    - top → Zehra B. processing (100, alert);
+    - middle → Murat K. upcoming (49);
+    - bottom → Selin D. upcoming (46).
+
+    **All three switched, a single sound played, and the order was correct.** This validates the D12 transition recipe: simultaneous switches go at priority 10, with at most one alerted push per batch and relevance on every push.
