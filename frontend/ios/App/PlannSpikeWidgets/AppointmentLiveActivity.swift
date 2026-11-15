@@ -1,5 +1,6 @@
 // PHASE 0 SPIKE — throwaway. Extension deployment target is 16.2, so no availability guards needed.
-// Visual review build: design option "C · Dev sayaç" on a white card (owner review 2026-11-15).
+// Visual review build: the "first white version" (owner choice 2026-11-15, after option C was too large):
+// white card, 4 pt status bar on the left, name + time first, compact timer row, thin progress bar.
 // Rules carried from Phase 0 findings: terminal phases render NO live timer; compact leading uses the
 // PLANN "P" mark instead of a generic clock glyph.
 import ActivityKit
@@ -9,16 +10,18 @@ import WidgetKit
 private enum PC {
     static let ink = Color(red: 10 / 255, green: 10 / 255, blue: 11 / 255)           // #0A0A0B
     static let secondary = Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255)     // #52525B
-    static let amber = Color(red: 217 / 255, green: 119 / 255, blue: 6 / 255)        // #D97706
-    static let amberText = Color(red: 180 / 255, green: 83 / 255, blue: 9 / 255)     // #B45309
+    static let muted = Color(red: 113 / 255, green: 113 / 255, blue: 122 / 255)      // #71717A
+    static let amberBar = Color(red: 217 / 255, green: 119 / 255, blue: 6 / 255)     // #D97706
+    static let amberText = Color(red: 180 / 255, green: 83 / 255, blue: 9 / 255)    // #B45309
     static let amberDot = Color(red: 245 / 255, green: 158 / 255, blue: 11 / 255)    // #F59E0B
-    static let green = Color(red: 21 / 255, green: 128 / 255, blue: 61 / 255)        // #15803D
+    static let greenBar = Color(red: 22 / 255, green: 163 / 255, blue: 74 / 255)     // #16A34A
+    static let greenText = Color(red: 21 / 255, green: 128 / 255, blue: 61 / 255)    // #15803D
     static let greenSoft = Color(red: 74 / 255, green: 222 / 255, blue: 128 / 255)   // #4ADE80 (on black)
-    static let greenBg = Color(red: 220 / 255, green: 252 / 255, blue: 231 / 255)    // #DCFCE7
-    static let red = Color(red: 185 / 255, green: 28 / 255, blue: 28 / 255)          // #B91C1C
+    static let redBar = Color(red: 220 / 255, green: 38 / 255, blue: 38 / 255)       // #DC2626
+    static let redText = Color(red: 185 / 255, green: 28 / 255, blue: 28 / 255)      // #B91C1C
     static let redSoft = Color(red: 248 / 255, green: 113 / 255, blue: 113 / 255)    // #F87171 (on black)
-    static let redBg = Color(red: 254 / 255, green: 226 / 255, blue: 226 / 255)      // #FEE2E2
-    static let hairline = Color(red: 241 / 255, green: 238 / 255, blue: 232 / 255)   // #F1EEE8
+    static let track = Color(red: 237 / 255, green: 235 / 255, blue: 230 / 255)      // #EDEBE6
+    static let trackDone = Color(red: 214 / 255, green: 211 / 255, blue: 206 / 255)  // #D6D3CE
 }
 
 private enum Look { case upcoming, starting, processing, overdue, completed, cancelled }
@@ -41,24 +44,12 @@ private func processingRange(_ s: PlannAppointmentAttributes.ContentState) -> Cl
     return s.startDate...end
 }
 
-private func caption(_ l: Look, _ s: PlannAppointmentAttributes.ContentState) -> String {
+private func barColor(_ l: Look) -> Color {
     switch l {
-    case .upcoming: return "Başlamasına"
-    case .starting: return "Başlıyor"
-    case .processing: return "İşlemde · geçen"
-    case .overdue: return "Bitiş \(s.endLabel)"
-    case .completed: return "Bitiş \(s.endLabel)"
-    case .cancelled: return "Randevu"
-    }
-}
-
-private func captionColor(_ l: Look, onDark: Bool) -> Color {
-    switch l {
-    case .upcoming, .starting: return onDark ? PC.amberDot : PC.amberText
-    case .processing: return onDark ? .white : PC.ink
-    case .overdue: return onDark ? .gray : PC.secondary
-    case .completed: return onDark ? PC.greenSoft : PC.green
-    case .cancelled: return onDark ? PC.redSoft : PC.red
+    case .upcoming, .starting, .processing: return PC.amberBar
+    case .overdue: return PC.muted
+    case .completed: return PC.greenBar
+    case .cancelled: return PC.redBar
     }
 }
 
@@ -66,18 +57,25 @@ private func titleLine(_ s: PlannAppointmentAttributes.ContentState) -> String {
     s.customerDisplay ?? s.serviceName
 }
 
-private func detailLine(_ s: PlannAppointmentAttributes.ContentState) -> String {
+private func firstName(_ s: PlannAppointmentAttributes.ContentState) -> String {
+    let t = titleLine(s)
+    return t.split(separator: " ").first.map(String.init) ?? t
+}
+
+private func serviceLine(_ s: PlannAppointmentAttributes.ContentState) -> String {
     var parts: [String] = []
     if s.customerDisplay != nil { parts.append(s.serviceName) }
     if let staff = s.staffName, !staff.isEmpty { parts.append(staff) }
-    return parts.isEmpty ? "" : " · " + parts.joined(separator: " · ")
+    return parts.joined(separator: " · ")
 }
 
 struct AppointmentLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PlannAppointmentAttributes.self) { context in
-            LockScreenView(state: context.state, isStale: context.isStale)
-                .padding(16)
+            LockScreenCard(state: context.state, isStale: context.isStale)
+                .padding(.leading, 14)
+                .padding(.trailing, 16)
+                .padding(.vertical, 14)
                 .activityBackgroundTint(Color.white)
                 .activitySystemActionForegroundColor(PC.ink)
                 .widgetURL(URL(string: "plannapp://la-spike"))
@@ -85,215 +83,292 @@ struct AppointmentLiveActivity: Widget {
             let l = lookFor(context.state, context.isStale)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Badge(look: l, state: context.state, ink: .white, markSize: 16)
-                        .frame(width: 52, height: 52)
-                        .padding(.leading, 4)
-                }
-                DynamicIslandExpandedRegion(.center) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(caption(l, context.state))
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(captionColor(l, onDark: true))
-                        BigValue(look: l, state: context.state, size: 30, ink: .white)
+                    HStack(spacing: 10) {
+                        IslandMark(look: l, size: 30)
+                        Text(titleLine(context.state))
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 4)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text("\(context.state.startLabel)–\(context.state.endLabel)")
+                        .font(.system(size: 15, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundColor(.white)
+                        .padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack(alignment: .firstTextBaseline) {
-                        IslandTitle(state: context.state)
-                        Spacer(minLength: 8)
-                        Text("\(context.state.startLabel)–\(context.state.endLabel)")
-                            .font(.system(size: 14, weight: .semibold))
-                            .monospacedDigit()
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(serviceLine(context.state))
+                            .font(.system(size: 14))
                             .foregroundColor(.gray)
+                            .lineLimit(1)
+                        TimerRow(look: l, state: context.state, onDark: true, valueSize: 24)
+                        ProgressLine(look: l, state: context.state, onDark: true)
                     }
-                    .padding(.top, 4)
+                    .padding(.horizontal, 4)
                 }
             } compactLeading: {
-                CompactMark(look: l)
+                HStack(spacing: 6) {
+                    IslandMark(look: l, size: 21)
+                    Text(firstName(context.state))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                }
             } compactTrailing: {
                 CompactValue(look: l, state: context.state)
             } minimal: {
-                Badge(look: l, state: context.state, ink: .white, markSize: 9)
+                IslandMark(look: l, size: 21)
             }
             .widgetURL(URL(string: "plannapp://la-spike"))
         }
     }
 }
 
-private struct LockScreenView: View {
+// MARK: - Lock Screen card
+
+private struct LockScreenCard: View {
     let state: PlannAppointmentAttributes.ContentState
     let isStale: Bool
 
     var body: some View {
         let l = lookFor(state, isStale)
-        let titleColor: Color = (l == .cancelled) ? PC.secondary : PC.ink
-        let title: Text = Text(titleLine(state)).font(.system(size: 15, weight: .bold)).foregroundColor(titleColor)
-        let detail: Text = Text(detailLine(state)).font(.system(size: 15, weight: .medium)).foregroundColor(PC.secondary)
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 14) {
-                Badge(look: l, state: state, ink: PC.ink, markSize: 20)
-                    .frame(width: 60, height: 60)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(caption(l, state))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(captionColor(l, onDark: false))
-                    BigValue(look: l, state: state, size: 44, ink: PC.ink)
+        HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(barColor(l))
+                .frame(width: 4)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("PLANN")
+                        .font(.system(size: 11, weight: .bold))
+                        .tracking(0.9)
+                        .foregroundColor(PC.secondary)
+                    Spacer()
+                    StatusLabel(look: l)
                 }
-                Spacer(minLength: 0)
-            }
-            Rectangle()
-                .fill(PC.hairline)
-                .frame(height: 1)
-            HStack(alignment: .firstTextBaseline) {
-                (title + detail)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Text(l == .processing ? "–\(state.endLabel)" : state.startLabel)
-                    .font(.system(size: 14, weight: .semibold))
-                    .monospacedDigit()
+                NameRow(look: l, state: state)
+                Text(serviceLine(state))
+                    .font(.system(size: 14))
                     .foregroundColor(PC.secondary)
+                    .lineLimit(1)
+                switch l {
+                case .completed:
+                    FinalRow(symbol: "checkmark.circle", color: PC.greenText,
+                             text: "Tamamlandı · \(state.endLabel)")
+                case .cancelled:
+                    FinalRow(symbol: "xmark.circle", color: PC.redText, text: "Randevu iptal edildi")
+                default:
+                    TimerRow(look: l, state: state, onDark: false, valueSize: 24)
+                        .padding(.top, 2)
+                    ProgressLine(look: l, state: state, onDark: false)
+                }
             }
         }
     }
 }
 
-private struct IslandTitle: View {
-    let state: PlannAppointmentAttributes.ContentState
-
-    var body: some View {
-        let title: Text = Text(titleLine(state)).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-        let detail: Text = Text(detailLine(state)).font(.system(size: 15, weight: .medium)).foregroundColor(.gray)
-        (title + detail)
-            .lineLimit(1)
-    }
-}
-
-/// The big number (or terminal word). Terminal phases never render a live timer.
-private struct BigValue: View {
+private struct NameRow: View {
     let look: Look
     let state: PlannAppointmentAttributes.ContentState
-    let size: CGFloat
-    let ink: Color
 
     var body: some View {
-        Group {
-            switch look {
-            case .upcoming, .processing:
-                Text(state.startDate, style: .timer)
-                    .font(.system(size: size, weight: .heavy))
-                    .monospacedDigit()
-            case .starting:
-                Text(state.startLabel)
-                    .font(.system(size: size, weight: .heavy))
-                    .monospacedDigit()
-            case .overdue:
-                Text("Süre doldu")
-                    .font(.system(size: size * 0.7, weight: .heavy))
-            case .completed:
-                Text("Tamamlandı")
-                    .font(.system(size: size * 0.75, weight: .heavy))
-            case .cancelled:
-                Text("İptal edildi")
-                    .font(.system(size: size * 0.75, weight: .heavy))
-            }
+        let cancelled = (look == .cancelled)
+        let nameColor: Color = cancelled ? PC.secondary : PC.ink
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(titleLine(state))
+                .font(.system(size: 18, weight: .bold))
+                .strikethrough(cancelled)
+                .foregroundColor(nameColor)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text("\(state.startLabel)–\(state.endLabel)")
+                .font(.system(size: 15, weight: .semibold))
+                .monospacedDigit()
+                .strikethrough(cancelled)
+                .foregroundColor(nameColor)
         }
-        .foregroundColor(ink)
-        .lineLimit(1)
-        .minimumScaleFactor(0.6)
-        .multilineTextAlignment(.leading)
     }
 }
 
-/// Left badge: live ring for upcoming/processing, static symbol for the rest.
-private struct Badge: View {
+private struct StatusLabel: View {
     let look: Look
-    let state: PlannAppointmentAttributes.ContentState
-    let ink: Color
-    let markSize: CGFloat
 
     var body: some View {
-        ZStack {
-            switch look {
-            case .upcoming:
-                ProgressView(timerInterval: leadRange(state), countsDown: false) {
-                    EmptyView()
-                } currentValueLabel: {
-                    EmptyView()
-                }
-                .progressViewStyle(.circular)
-                .tint(PC.amber)
-                Text("P")
-                    .font(.system(size: markSize, weight: .heavy))
-                    .foregroundColor(ink)
-            case .processing:
-                ProgressView(timerInterval: processingRange(state), countsDown: false) {
-                    EmptyView()
-                } currentValueLabel: {
-                    EmptyView()
-                }
-                .progressViewStyle(.circular)
-                .tint(ink)
+        switch look {
+        case .upcoming, .starting:
+            Text("Sıradaki")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(PC.amberText)
+        case .processing:
+            HStack(spacing: 5) {
                 Circle()
                     .fill(PC.amberDot)
-                    .frame(width: markSize * 0.7, height: markSize * 0.7)
-            case .starting:
-                Circle()
-                    .stroke(PC.amber, lineWidth: max(2, markSize * 0.25))
-                Text("P")
-                    .font(.system(size: markSize, weight: .heavy))
-                    .foregroundColor(ink)
-            case .overdue:
-                Circle()
-                    .stroke(Color.gray.opacity(0.4), lineWidth: max(2, markSize * 0.25))
-                Image(systemName: "hourglass")
-                    .font(.system(size: markSize, weight: .semibold))
-                    .foregroundColor(.gray)
-            case .completed:
-                Circle()
-                    .fill(PC.greenBg)
-                Image(systemName: "checkmark")
-                    .font(.system(size: markSize + 4, weight: .bold))
-                    .foregroundColor(PC.green)
-            case .cancelled:
-                Circle()
-                    .fill(PC.redBg)
-                Image(systemName: "xmark")
-                    .font(.system(size: markSize + 2, weight: .bold))
-                    .foregroundColor(PC.red)
+                    .frame(width: 6, height: 6)
+                Text("İşlemde")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
             }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(PC.ink))
+        case .overdue:
+            Text("Süre doldu")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(PC.secondary)
+        case .completed:
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                Text("Tamamlandı")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundColor(PC.greenText)
+        case .cancelled:
+            Text("İptal edildi")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(PC.redText)
         }
     }
 }
 
-private struct CompactMark: View {
+private struct FinalRow: View {
+    let symbol: String
+    let color: Color
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(color)
+            Text(text)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(PC.ink)
+                .lineLimit(1)
+        }
+        .padding(.top, 4)
+    }
+}
+
+/// Label on the left, value on the right. Only upcoming/processing render a live timer.
+private struct TimerRow: View {
     let look: Look
+    let state: PlannAppointmentAttributes.ContentState
+    let onDark: Bool
+    let valueSize: CGFloat
+
+    var body: some View {
+        let labelColor: Color = (look == .overdue) ? (onDark ? .gray : PC.secondary) : (onDark ? PC.amberDot : PC.amberText)
+        let valueColor: Color = onDark ? .white : PC.ink
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(labelColor)
+            Spacer(minLength: 8)
+            value
+                .font(.system(size: valueSize, weight: .bold))
+                .monospacedDigit()
+                .foregroundColor(valueColor)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+        }
+    }
+
+    private var label: String {
+        switch look {
+        case .upcoming: return "Başlamasına"
+        case .starting: return "Başlıyor"
+        case .processing: return "Geçen süre"
+        case .overdue: return "Bitiş"
+        case .completed: return "Tamamlandı"
+        case .cancelled: return "İptal edildi"
+        }
+    }
+
+    private var value: Text {
+        switch look {
+        case .upcoming, .processing: return Text(state.startDate, style: .timer)
+        case .starting: return Text(state.startLabel)
+        case .overdue, .completed: return Text(state.endLabel)
+        case .cancelled: return Text("")
+        }
+    }
+}
+
+private struct ProgressLine: View {
+    let look: Look
+    let state: PlannAppointmentAttributes.ContentState
+    let onDark: Bool
+
+    var body: some View {
+        switch look {
+        case .upcoming:
+            ProgressView(timerInterval: leadRange(state), countsDown: false) {
+                EmptyView()
+            } currentValueLabel: {
+                EmptyView()
+            }
+            .tint(onDark ? PC.amberDot : PC.amberBar)
+        case .processing:
+            ProgressView(timerInterval: processingRange(state), countsDown: false) {
+                EmptyView()
+            } currentValueLabel: {
+                EmptyView()
+            }
+            .tint(onDark ? PC.amberDot : PC.amberBar)
+        case .starting:
+            Capsule()
+                .fill(onDark ? PC.amberDot : PC.amberBar)
+                .frame(height: 4)
+        default:
+            Capsule()
+                .fill(onDark ? Color.gray.opacity(0.5) : PC.trackDone)
+                .frame(height: 4)
+        }
+    }
+}
+
+// MARK: - Dynamic Island pieces (always on black)
+
+private struct IslandMark: View {
+    let look: Look
+    let size: CGFloat
 
     var body: some View {
         ZStack {
             switch look {
             case .completed:
                 Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: size * 0.9))
                     .foregroundColor(PC.greenSoft)
             case .cancelled:
                 Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: size * 0.9))
                     .foregroundColor(PC.redSoft)
             case .processing:
                 Circle()
                     .fill(PC.amberDot)
-                    .frame(width: 22, height: 22)
                 Text("P")
-                    .font(.system(size: 12, weight: .heavy))
+                    .font(.system(size: size * 0.5, weight: .heavy))
                     .foregroundColor(.black)
+            case .overdue:
+                Circle()
+                    .stroke(Color.gray, lineWidth: 2)
+                Text("P")
+                    .font(.system(size: size * 0.5, weight: .heavy))
+                    .foregroundColor(.gray)
             default:
                 Circle()
                     .stroke(PC.amberDot, lineWidth: 2)
-                    .frame(width: 21, height: 21)
                 Text("P")
-                    .font(.system(size: 12, weight: .heavy))
+                    .font(.system(size: size * 0.5, weight: .heavy))
                     .foregroundColor(.white)
             }
         }
+        .frame(width: size, height: size)
     }
 }
 
