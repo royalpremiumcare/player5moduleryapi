@@ -21,7 +21,39 @@
 		F1B2C3D4E5F60718A9B0C1E2 /* MyViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1E1 /* MyViewController.swift */; };
 		F1B2C3D4E5F60718A9B0C1F0 /* ContactPickerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1F1 /* ContactPickerPlugin.swift */; };
 		F1B2C3D4E5F60718A9B0C1F2 /* ContactPickerPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1F3 /* ContactPickerPlugin.m */; };
+		A1B2C3D4E5F6071800000002 /* PlannAppointmentAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000001 /* PlannAppointmentAttributes.swift */; };
+		A1B2C3D4E5F6071800000003 /* PlannAppointmentAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000001 /* PlannAppointmentAttributes.swift */; };
+		A1B2C3D4E5F6071800000005 /* LASpikeLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000004 /* LASpikeLog.swift */; };
+		A1B2C3D4E5F6071800000007 /* LASpikeObservers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000006 /* LASpikeObservers.swift */; };
+		A1B2C3D4E5F6071800000009 /* LASpikeDebugViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000008 /* LASpikeDebugViewController.swift */; };
+		A1B2C3D4E5F6071800000011 /* PlannSpikeWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000010 /* PlannSpikeWidgetsBundle.swift */; };
+		A1B2C3D4E5F6071800000013 /* AppointmentLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000012 /* AppointmentLiveActivity.swift */; };
+		A1B2C3D4E5F6071800000016 /* PlannSpikeWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800000015 /* PlannSpikeWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A1B2C3D4E5F607180000001D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1B2C3D4E5F6071800000018;
+			remoteInfo = PlannSpikeWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A1B2C3D4E5F607180000001C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A1B2C3D4E5F6071800000016 /* PlannSpikeWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -43,6 +75,14 @@
 		F1B2C3D4E5F60718A9B0C1E1 /* MyViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyViewController.swift; sourceTree = "<group>"; };
 		F1B2C3D4E5F60718A9B0C1F1 /* ContactPickerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactPickerPlugin.swift; sourceTree = "<group>"; };
 		F1B2C3D4E5F60718A9B0C1F3 /* ContactPickerPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ContactPickerPlugin.m; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000001 /* PlannAppointmentAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannAppointmentAttributes.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000004 /* LASpikeLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LASpikeLog.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000006 /* LASpikeObservers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LASpikeObservers.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000008 /* LASpikeDebugViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LASpikeDebugViewController.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000010 /* PlannSpikeWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannSpikeWidgetsBundle.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000012 /* AppointmentLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentLiveActivity.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A1B2C3D4E5F6071800000015 /* PlannSpikeWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PlannSpikeWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,6 +91,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F607180000001A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -69,6 +116,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3061FED79650016851F /* App */,
+				A1B2C3D4E5F6071800000017 /* PlannSpikeWidgets */,
 				504EC3051FED79650016851F /* Products */,
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
@@ -79,6 +127,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				A1B2C3D4E5F6071800000015 /* PlannSpikeWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -99,6 +148,10 @@
 				F1B2C3D4E5F60718A9B0C1E1 /* MyViewController.swift */,
 				F1B2C3D4E5F60718A9B0C1F1 /* ContactPickerPlugin.swift */,
 				F1B2C3D4E5F60718A9B0C1F3 /* ContactPickerPlugin.m */,
+				A1B2C3D4E5F6071800000001 /* PlannAppointmentAttributes.swift */,
+				A1B2C3D4E5F6071800000004 /* LASpikeLog.swift */,
+				A1B2C3D4E5F6071800000006 /* LASpikeObservers.swift */,
+				A1B2C3D4E5F6071800000008 /* LASpikeDebugViewController.swift */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
@@ -114,6 +167,16 @@
 			name = Pods;
 			sourceTree = "<group>";
 		};
+		A1B2C3D4E5F6071800000017 /* PlannSpikeWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F6071800000010 /* PlannSpikeWidgetsBundle.swift */,
+				A1B2C3D4E5F6071800000012 /* AppointmentLiveActivity.swift */,
+				A1B2C3D4E5F6071800000014 /* Info.plist */,
+			);
+			path = PlannSpikeWidgets;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -125,16 +188,35 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				A1B2C3D4E5F607180000001C /* Embed Foundation Extensions */,
 				9592DBEFFC6D2A0C8D5DEB22 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A1B2C3D4E5F607180000001E /* PBXTargetDependency */,
 			);
 			name = App;
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A1B2C3D4E5F6071800000018 /* PlannSpikeWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3D4E5F607180000001F /* Build configuration list for PBXNativeTarget "PlannSpikeWidgets" */;
+			buildPhases = (
+				A1B2C3D4E5F6071800000019 /* Sources */,
+				A1B2C3D4E5F607180000001A /* Frameworks */,
+				A1B2C3D4E5F607180000001B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PlannSpikeWidgets;
+			productName = PlannSpikeWidgets;
+			productReference = A1B2C3D4E5F6071800000015 /* PlannSpikeWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -149,6 +231,10 @@
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
 						ProvisioningStyle = Automatic;
+					};
+					A1B2C3D4E5F6071800000018 = {
+						CreatedOnToolsVersion = 26.0;
+						ProvisioningStyle = Manual;
 					};
 				};
 			};
@@ -168,6 +254,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				A1B2C3D4E5F6071800000018 /* PlannSpikeWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -184,6 +271,13 @@
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
 				F1B2C3D4E5F60718A9B0C1D2 /* GoogleService-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F607180000001B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -236,10 +330,32 @@
 				F1B2C3D4E5F60718A9B0C1E2 /* MyViewController.swift in Sources */,
 				F1B2C3D4E5F60718A9B0C1F0 /* ContactPickerPlugin.swift in Sources */,
 				F1B2C3D4E5F60718A9B0C1F2 /* ContactPickerPlugin.m in Sources */,
+				A1B2C3D4E5F6071800000002 /* PlannAppointmentAttributes.swift in Sources */,
+				A1B2C3D4E5F6071800000005 /* LASpikeLog.swift in Sources */,
+				A1B2C3D4E5F6071800000007 /* LASpikeObservers.swift in Sources */,
+				A1B2C3D4E5F6071800000009 /* LASpikeDebugViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F6071800000019 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F6071800000011 /* PlannSpikeWidgetsBundle.swift in Sources */,
+				A1B2C3D4E5F6071800000013 /* AppointmentLiveActivity.swift in Sources */,
+				A1B2C3D4E5F6071800000003 /* PlannAppointmentAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A1B2C3D4E5F607180000001E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1B2C3D4E5F6071800000018 /* PlannSpikeWidgets */;
+			targetProxy = A1B2C3D4E5F607180000001D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -383,6 +499,11 @@
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-weak_framework",
+					ActivityKit,
+				);
 				MARKETING_VERSION = 6.4.2;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = co.plannapp.app;
@@ -406,10 +527,61 @@
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-weak_framework",
+					ActivityKit,
+				);
 				MARKETING_VERSION = 6.4.2;
 				PRODUCT_BUNDLE_IDENTIFIER = co.plannapp.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A1B2C3D4E5F6071800000020 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 70;
+				DEVELOPMENT_TEAM = 9V42VGDN9U;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PlannSpikeWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 6.4.2;
+				PRODUCT_BUNDLE_IDENTIFIER = co.plannapp.app.widgets;
+				PRODUCT_BUNDLE_PACKAGE_TYPE = "XPC!";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A1B2C3D4E5F6071800000021 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 70;
+				DEVELOPMENT_TEAM = 9V42VGDN9U;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PlannSpikeWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 6.4.2;
+				PRODUCT_BUNDLE_IDENTIFIER = co.plannapp.app.widgets;
+				PRODUCT_BUNDLE_PACKAGE_TYPE = "XPC!";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -432,6 +604,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1B2C3D4E5F607180000001F /* Build configuration list for PBXNativeTarget "PlannSpikeWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4E5F6071800000020 /* Debug */,
+				A1B2C3D4E5F6071800000021 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

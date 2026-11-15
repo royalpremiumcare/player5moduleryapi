@@ -100,6 +100,146 @@ workflows:
         submit_to_testflight: true
         submit_to_app_store: false
 
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # PHASE 0 SPIKE — Live Activities. YALNIZ spike/phase0-live-activities dalında var.
+  # TestFlight'a yükler, App Store'a GÖNDERMEZ. Bu build'i App Store incelemesine
+  # göndermeyin. Elle başlatılır (triggering yok).
+  # ═══════════════════════════════════════════════════════════════════════════════
+  ios-spike-phase0:
+    name: PLANN iOS SPIKE Phase0 Live Activities (TestFlight only)
+    max_build_duration: 120
+    integrations:
+      app_store_connect: "PLANN_API"
+    environment:
+      groups:
+        - env.production
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: "co.plannapp.app"
+      vars:
+        SPIKE_MARKETING_VERSION: "6.4.90"
+        WIDGET_BUNDLE_ID: "co.plannapp.app.widgets"
+      node: latest
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install dependencies
+        script: |
+          cd frontend
+          npm install --legacy-peer-deps
+      - name: Create env and build
+        script: |
+          cd frontend
+          echo "REACT_APP_BACKEND_URL=https://plannapp.co" > .env.production
+          echo "REACT_APP_GOOGLE_MAPS_API_KEY=$REACT_APP_GOOGLE_MAPS_API_KEY" >> .env.production
+          echo "REACT_APP_POSTHOG_KEY=$REACT_APP_POSTHOG_KEY" >> .env.production
+          echo "REACT_APP_POSTHOG_HOST=$REACT_APP_POSTHOG_HOST" >> .env.production
+          echo "REACT_APP_META_PIXEL_ID=$REACT_APP_META_PIXEL_ID" >> .env.production
+          echo "REACT_APP_CHATWOOT_BASE_URL=$REACT_APP_CHATWOOT_BASE_URL" >> .env.production
+          echo "REACT_APP_CHATWOOT_WEBSITE_TOKEN=$REACT_APP_CHATWOOT_WEBSITE_TOKEN" >> .env.production
+          REACT_APP_BACKEND_URL=https://plannapp.co npm run build:app
+      - name: Sync Capacitor
+        script: |
+          cd frontend
+          npx cap sync ios
+      - name: Install CocoaPods
+        script: |
+          cd frontend/ios/App
+          pod install --repo-update
+      - name: Spike sürüm numarası
+        script: |
+          set -e
+          # Spike, production sürüm trenini işgal etmesin diye ayrı bir pazarlama sürümü kullanır.
+          SPIKE_BUILD=$((1000 + ${BUILD_NUMBER:-0}))
+          PBX="frontend/ios/App/App.xcodeproj/project.pbxproj"
+          sed -i '' -E "s/MARKETING_VERSION = [0-9.]+;/MARKETING_VERSION = ${SPIKE_MARKETING_VERSION};/g" "$PBX"
+          sed -i '' -E "s/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = ${SPIKE_BUILD};/g" "$PBX"
+          grep -E "MARKETING_VERSION|CURRENT_PROJECT_VERSION" "$PBX" | sort | uniq -c
+      - name: Widget extension profili (yoksa oluştur)
+        script: |
+          set -e
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+          echo "ASC API env (yalnız isimler):"; env | grep -o '^APP_STORE_CONNECT_[A-Z_]*' | sort || true
+
+          app_id_of() {
+            security cms -D -i "$1" 2>/dev/null | python3 -c 'import plistlib,sys; p=plistlib.load(sys.stdin.buffer); print(p["Entitlements"]["application-identifier"])' 2>/dev/null || true
+          }
+          have=0
+          for d in "$PROFILES_DIR" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            for f in "$d/"*.mobileprovision; do
+              [ -e "$f" ] || continue
+              case "$(app_id_of "$f")" in *".${WIDGET_BUNDLE_ID}") have=1; echo "Mevcut widget profili: $f";; esac
+            done
+          done
+
+          if [ "$have" -eq 0 ]; then
+            echo "Widget profili yok → App Store Connect API ile oluşturuluyor"
+            BID=$(app-store-connect bundle-ids list --bundle-id-identifier "$WIDGET_BUNDLE_ID" --strict-match-identifier --platform IOS --json \
+                  | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")')
+            if [ -z "$BID" ]; then
+              BID=$(app-store-connect bundle-ids create "$WIDGET_BUNDLE_ID" --name "PLANN Widgets" --platform IOS --json \
+                    | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+              echo "Bundle ID oluşturuldu: $BID"
+            fi
+            CERTS=$(app-store-connect certificates list --type DISTRIBUTION IOS_DISTRIBUTION --json \
+                    | python3 -c 'import sys,json; print(" ".join(c["id"] for c in json.load(sys.stdin)))')
+            if [ -z "$CERTS" ]; then echo "HATA: dağıtım sertifikası bulunamadı"; exit 1; fi
+            app-store-connect profiles create "$BID" --certificate-ids $CERTS --type IOS_APP_STORE \
+              --name "PLANN Widgets AppStore" --save --profiles-dir "$PROFILES_DIR" || {
+                echo "HATA: profil API ile oluşturulamadı (API anahtarı yetkisi?)."
+                echo "Elle: developer.apple.com > Identifiers > + > App IDs > ${WIDGET_BUNDLE_ID};"
+                echo "Profiles > + > App Store Connect > ${WIDGET_BUNDLE_ID}; sonra Codemagic > Code signing identities > Fetch profiles."
+                exit 1
+              }
+          fi
+      - name: Apple Sertifikalarini Hazirla
+        script: |
+          set -e
+          echo "════════ KURULU PROVISIONING PROFILLER ════════"
+          found_ad=0
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                   "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            for f in "$d/"*.mobileprovision; do
+              [ -e "$f" ] || continue
+              echo "───── $d/$(basename "$f")"
+              decoded=$(security cms -D -i "$f" 2>/dev/null | plutil -p -)
+              echo "$decoded" | grep -E '"Name"|"UUID"|"application-identifier"|associated-domains' || true
+              if echo "$decoded" | grep -q 'associated-domains'; then found_ad=1; fi
+            done
+          done
+          if [ "$found_ad" -ne 1 ]; then
+            echo "HATA: Kurulu profillerin hicbirinde com.apple.developer.associated-domains yok."
+            exit 1
+          fi
+          xcode-project use-profiles
+      - name: iOS Uygulamasini (IPA) Derle
+        script: |
+          set +e
+          xcode-project build-ipa \
+            --workspace "frontend/ios/App/App.xcworkspace" \
+            --scheme "App"
+          status=$?
+          if [ $status -ne 0 ]; then
+            echo "════════ XCODEBUILD HATA SATIRLARI ════════"
+            grep -hnE "error:|fatal error|The following build commands failed|Command .* failed|Undefined symbol|No such module|Provisioning profile|requires a provisioning profile" /tmp/xcodebuild_logs/*.log 2>/dev/null | tail -80
+            echo "════════ LOGUN SON 150 SATIRI ════════"
+            tail -n 150 /tmp/xcodebuild_logs/*.log 2>/dev/null
+          fi
+          exit $status
+      - name: IPA içeriği (S4 kanıtı)
+        script: |
+          IPA=$(ls build/ios/ipa/*.ipa | head -1)
+          unzip -l "$IPA" | grep -E "PlugIns/.*appex/(Info.plist|PlannSpikeWidgets)$" || { echo "HATA: appex IPA içinde yok"; exit 1; }
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false
+
   android-capacitor-workflow:
     name: PLANN Android Build
     max_build_duration: 60
