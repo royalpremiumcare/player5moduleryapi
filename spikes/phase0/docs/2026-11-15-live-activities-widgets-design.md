@@ -391,6 +391,46 @@ The JWT lives in WebView `localStorage` [V `App.js:1064`]. The native token call
 
 ---
 
+## 3A. D12 · Slot model **[owner choice 2026-11-16; supersedes per-appointment activities in §3–§4]**
+
+Validated end to end on devices (RESULTS items 13–24).
+
+**Idea:** a device has a fixed number of long-lived Live Activities (**slots**). Their **content** moves through the day's appointments. No activity is created per appointment.
+
+| | Staff | Owner / manager |
+|---|---|---|
+| Slots | 1 | 1–5, **default 3**. A 5th card stacks on 6.1" screens. |
+| Scope | own appointments | D2c: "Sadece benim" / "Tüm personel" (unassigned are included for the owner) |
+
+**Assignment (each sweep, per device):**
+- Visible = processing appointments, plus upcoming ones within the lead window (30 min).
+- Order: processing first (earliest end), then upcoming (earliest start); take N.
+- **Keep stable:** an appointment already in a slot stays in that slot. Free or completed slots take the next ones.
+- A finished appointment's slot shows "Tamamlandı" only until it is reassigned. On the last appointment of the day for that device, the slot gets `end` with `dismissal-date` = now + 15 min (owner may change this; see open question).
+
+**Pushes:**
+- **Start:** each slot starts **once per day**, at the lead time of its first appointment, plus at most one restart for the 8 h limit. Push-to-start budget (~13/h/device) is therefore never at risk.
+- **Switch / phase change:** **priority 10**, silent. Priority-5 updates to *different* activities coalesce while the device sleeps (RESULTS 17); priority 10 delivered 90/90 (RESULTS 22).
+- **Cosmetic edits** (name or service changed): priority 5.
+- **`relevance-score` on every push:** processing 100; upcoming `50 − minutes_to_start/10` (floor 1); completed 0. Without it, a card falls to the bottom (RESULTS 14).
+- **Sound:** "Randevu başladı" is optional, and there is **at most one alerted push per device per sweep**. Each alerted push sounds separately (RESULTS 20).
+
+**User dismissal:** a slot the user swipes away is not restarted that day. The appointments remain in the widget and the app.
+
+**Offline:** the card renders from its own dates (countdown, "Başlıyor", "Süre doldu"). On reconnect APNs delivers the latest push (RESULTS 15).
+
+**Activity attributes:** `slotId` + `orgId`, not `appointmentId`. `ContentState` gains `appointmentId`, which drives the deep link `plannapp://appointment/<id>`.
+
+**Removed by D12:**
+- per-appointment start / limit / fallback juggling;
+- D11 preemption;
+- the cap-5 planner;
+- start-budget handling, which reduces to a guard.
+
+The per-appointment model (§3–§4) stays documented as the fallback design.
+
+**Open (owner):** day-end dismissal of the final cards: immediately, 5 min, **15 min (current)**, or until swiped (iOS max 4 h).
+
 ## 6. Live Activity & Dynamic Island design
 
 ### 6.0 Owner-approved visual (device-reviewed 2026-11-15, spike builds 1006–1009) **[decided]**

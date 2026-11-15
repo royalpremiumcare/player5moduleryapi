@@ -108,3 +108,16 @@
     - **4 compact cards fit fully** on iPhone 11; larger screens are untested.
     - **Recommendation:** owner slots configurable 1–5, **default 3**. Note in Settings that on smaller phones a 5th card may be stacked.
     - 5 also leaves zero headroom under the per-app cap (eviction on restart works; item S3), and none under a possible global cap shared with other apps.
+24. **Slot model, live end-to-end simulation** (2026-11-16 01:35–01:45 TR; owner = first iPhone 11 / iOS 26.0 with 3 slots, staff Elif = iPhone 16 Plus / iOS 26.6 with 1 slot; `spikes/phase0/sim_day.py`).
+    - Setup: a compressed morning of 5 appointments across 3 staff, with lead 120 s standing in for 30 min.
+    - The slots opened **once** (4 starts in total).
+    - Every later change was a priority-10 update with relevance (17 pushes, all accepted).
+
+    **Owner confirmed on device: "everything happened as written."**
+    - Processing cards stayed on top.
+    - Finished appointments' cards switched **silently** to the next appointment.
+    - One sound per "Randevu başladı": 5 on the owner phone, 2 on Elif's.
+    - Elif saw only her own appointments (Ayşe, Burak).
+    - At day end all cards showed "Tamamlandı" and were ended with `dismissal-date` = now + 15 min. They remained visible as designed.
+
+    **Behaviour worth keeping:** when all slots are busy with processing appointments, an upcoming one enters only when a slot frees, so processing outranks upcoming.
