@@ -551,7 +551,7 @@ owner devices: every fallback_notify carries thread_id = "plann-overflow-<YYYY-M
 - Create: `frontend/src/native/useLiveActivities.js` with `useLiveActivities({token, currentUser})`. When the plugin is available and the user is logged in, it calls `register` once per login, calls `reconcile` on mount and on `visibilitychange→visible`, and calls `unregister` on logout.
 - Modify: `frontend/src/App.js` mounts the hook next to `useWidgetSnapshotSync`. `frontend/src/components/Settings.js` adds two groups:
 - admin-only org settings: `live_activity_enabled`, `live_activity_lead_minutes` (5–120), `lock_screen_name_mode`, `live_activity_start_time_notice`;
-- a per-user "Kilit ekranı kapsamı: Tüm işletme / Yalnızca bana atananlar" control, shown only to admins and to staff with `can_view_all_appointments`, which saves `users.live_activity_scope` through a new `PUT /api/live-activities/scope`.
+- a per-user **"Canlı bildirimler: Sadece benim randevularım / Tüm personelin randevuları"** control (owner decision 2026-11-16, D2c), shown to the **owner and to the manager role** (staff with `can_view_all_appointments`). It saves `users.live_activity_scope` (`own` | `all`) through a new `PUT /api/live-activities/scope`. Defaults: owner `all`, manager `own`. Test: `scope option visible for owner and manager, hidden for plain staff`.
 
 Both use the existing settings save flow.
 - **Required (owner decision 2026-11-15): Live Activity consent onboarding** (spec §5.6).
