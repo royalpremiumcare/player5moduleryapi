@@ -46,6 +46,7 @@ def parse_args():
     p.add_argument("--priority", choices=["5", "10"], default="10")
     p.add_argument("--dismiss-now", action="store_true", help="end: dismissal-date = now (else now + 15 min)")
     p.add_argument("--relevance", type=float, default=None, help="aps relevance-score (Lock Screen order / Dynamic Island pick)")
+    p.add_argument("--alert", action="store_true", help="update: attach an alert (sound + banner) for any phase")
     p.add_argument("--customer", default="Spike K.")
     p.add_argument("--service", default="Saç Kesimi")
     p.add_argument("--staff", default=None)
@@ -89,6 +90,8 @@ def build_message(a) -> messaging.Message:
         aps["stale-date"] = int(cs["startEpoch"] if a.phase == "upcoming" else cs["endEpoch"])
         if a.phase == "processing" and not a.no_alert:
             alert = messaging.ApsAlert(title="Randevu başladı", body=f"{a.customer} · {a.service}")
+        elif a.alert:
+            alert = messaging.ApsAlert(title="Sıradaki randevu", body=f"{a.customer} · {a.service} · {cs['startLabel']}")
     else:  # end
         aps["dismissal-date"] = now if a.dismiss_now else now + 900
 
