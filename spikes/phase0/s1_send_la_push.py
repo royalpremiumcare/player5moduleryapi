@@ -45,6 +45,7 @@ def parse_args():
     p.add_argument("--no-alert", action="store_true", help="omit alert (Apple requires one for start; test the failure)")
     p.add_argument("--priority", choices=["5", "10"], default="10")
     p.add_argument("--dismiss-now", action="store_true", help="end: dismissal-date = now (else now + 15 min)")
+    p.add_argument("--relevance", type=float, default=None, help="aps relevance-score (Lock Screen order / Dynamic Island pick)")
     p.add_argument("--customer", default="Spike K.")
     p.add_argument("--service", default="Saç Kesimi")
     p.add_argument("--staff", default=None)
@@ -73,6 +74,8 @@ def build_message(a) -> messaging.Message:
     start = datetime.fromtimestamp(a.start_epoch, TR) if a.start_epoch else datetime.now(TR) + timedelta(seconds=a.starts_in)
     cs = content_state(a, start)
     aps: dict = {"timestamp": now, "event": a.event, "content-state": cs}
+    if a.relevance is not None:
+        aps["relevance-score"] = a.relevance
     alert = None
     if a.event == "start":
         aps["attributes-type"] = "PlannAppointmentAttributes"
