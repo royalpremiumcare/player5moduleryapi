@@ -87,3 +87,8 @@
     - The update budget is therefore far larger than the push-to-start burst limit (~13/h).
     - A 5-staff owner with 3 cards needs ~40 priority-10 switches per *day*, spread out, which is well inside the observed tolerance.
     - **Design consequence:** a multi-card model is viable if card *switches* go at priority 10, with priority 5 only for cosmetic changes. Starts stay rare (1–2 per card per day).
+20. **Ordering via relevance on start, iOS 26.0** (first iPhone 11, 01:15 TR, ~47 min after its last throttled start):
+    - Three alerted push-to-starts were sent in **reverse** priority order, ~4 s apart: upcoming 46, then upcoming 48, then processing 100.
+    - All three appeared, with **three sounds**, and the Lock Screen order was **processing (100) → upcoming 48 → upcoming 46**, above the older terminal cards.
+    - This also confirms the budget refilled on this device.
+    - **Rule for the slot model:** when several cards must alert at the same moment, send at most **one** alerted push. The others go silent, because each alerted push sounds separately.
