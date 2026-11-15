@@ -98,3 +98,8 @@
     - bottom → Selin D. upcoming (46).
 
     **All three switched, a single sound played, and the order was correct.** This validates the D12 transition recipe: simultaneous switches go at priority 10, with at most one alerted push per batch and relevance on every push.
+22. **Multi-card priority-10 stress** (first iPhone 11 / iOS 26.0, 01:18–01:20 TR, `frequent_pushes_enabled=false`).
+    - 30 rounds, each sending **simultaneous silent priority-10 updates to 3 cards**: **90 updates in ~2 min**.
+    - **All three cards ended at 30**, with no sound and the order kept.
+    - Together with item 19 (40 updates to one card), this shows the update budget is not a practical constraint for the slot model; a real salon day needs ~1–2 orders of magnitude fewer.
+    - The binding limit is **push-to-start** (~13/h/device, refilling within ~35 min), which the slot model avoids by starting each card once per day.
