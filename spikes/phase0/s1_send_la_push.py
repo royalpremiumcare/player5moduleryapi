@@ -87,8 +87,8 @@ def build_message(a) -> messaging.Message:
             alert = messaging.ApsAlert(title="Sıradaki randevu", body=f"Spike K. · Saç Kesimi · {cs['startLabel']}")
     elif a.event == "update":
         aps["stale-date"] = int(cs["startEpoch"] if a.phase == "upcoming" else cs["endEpoch"])
-        if a.phase == "processing":
-            alert = messaging.ApsAlert(title="Randevu başladı", body="Spike K. · Saç Kesimi")
+        if a.phase == "processing" and not a.no_alert:
+            alert = messaging.ApsAlert(title="Randevu başladı", body=f"{a.customer} · {a.service}")
     else:  # end
         aps["dismissal-date"] = now if a.dismiss_now else now + 900
 
