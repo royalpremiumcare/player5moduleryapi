@@ -168,7 +168,6 @@ private struct NameRow: View {
         HStack(alignment: .center, spacing: 8) {
             Text(titleLine(state))
                 .font(.system(size: 17, weight: .bold))
-                .strikethrough(cancelled)
                 .foregroundColor(nameColor)
                 .lineLimit(1)
             Spacer(minLength: 4)
@@ -183,7 +182,6 @@ private struct SubRow: View {
     let state: PlannAppointmentAttributes.ContentState
 
     var body: some View {
-        let cancelled = (look == .cancelled)
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(serviceLine(state))
                 .font(.system(size: 13))
@@ -193,7 +191,6 @@ private struct SubRow: View {
             Text("\(state.startLabel)–\(state.endLabel)")
                 .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
-                .strikethrough(cancelled)
                 .foregroundColor(PC.secondary)
         }
     }
@@ -363,6 +360,7 @@ private struct ProgressLine: View {
                 EmptyView()
             }
             .tint(onDark ? PC.amberDot : PC.amberBar)
+            .scaleEffect(x: 1, y: 1.6, anchor: .center)
         case .processing:
             ProgressView(timerInterval: processingRange(state), countsDown: false) {
                 EmptyView()
@@ -370,14 +368,15 @@ private struct ProgressLine: View {
                 EmptyView()
             }
             .tint(onDark ? PC.greenSoft : PC.greenBar)
+            .scaleEffect(x: 1, y: 1.6, anchor: .center)
         case .starting:
             Capsule()
                 .fill(onDark ? PC.amberDot : PC.amberBar)
-                .frame(height: 4)
+                .frame(height: 6)
         default:
             Capsule()
                 .fill(onDark ? Color.gray.opacity(0.5) : PC.trackDone)
-                .frame(height: 4)
+                .frame(height: 6)
         }
     }
 }
