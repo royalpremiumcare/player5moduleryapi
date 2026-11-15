@@ -255,7 +255,7 @@ private struct StatusLabel: View {
         case .processing:
             HStack(spacing: 5) {
                 Circle()
-                    .fill(PC.amberDot)
+                    .fill(PC.greenSoft)
                     .frame(width: 6, height: 6)
                 Text("İşlemde")
                     .font(.system(size: 12, weight: .semibold))
