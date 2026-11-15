@@ -73,3 +73,11 @@
     - Silent priority-5 updates set processing Mehmet to 100 and upcoming Ece to 48 (`50 − 20 min/10`).
     - The Lock Screen order became Mehmet (processing) → Ece → Ayşe (no score).
     - There was no sound or banner, confirming that **ordering and content can be maintained silently**.
+17. **Priority-5 coalescing across activities** (fresh iPhone 11 / iOS 26.1, 00:50–00:53 TR).
+    - Three priority-5 updates with alerts, sent within one second to **three different activities** while the phone was idle: **only the last one was applied** (version check in the app snapshot), and there was a single sound.
+    - Re-sending the two lost updates at **priority 10** (silent) applied both immediately, in the correct order.
+    - Interpretation, consistent with APNs store-and-forward: while the device defers low-priority pushes, only the **most recent** Live Activity push per app topic survives.
+    - **Design consequence:**
+      - multiple activities per device cannot rely on priority-5 updates landing;
+      - **a single activity per device turns "latest wins" into the desired semantics**, because only the current state matters;
+      - when several updates must land together, use priority 10, which is budgeted, so do it sparingly.
