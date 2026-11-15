@@ -103,6 +103,7 @@ class _Stats:
     claim_lost: int = 0
     skipped: int = 0
     expired_starts: int = 0
+    owner_changed: int = 0
     errors: int = 0
 
     def as_dict(self) -> dict:
@@ -153,6 +154,14 @@ async def _load_slot_appointments(db, org: _Org, slots: list[dict]) -> None:
     by_id = {a.get("id"): a for a in found}
     for aid in missing:
         org.apts_by_id[aid] = by_id.get(aid)
+
+
+async def _same_owner(db, device: dict) -> bool:
+    """True when the device row still belongs to the user/org the sweep planned for."""
+    current = await db.live_activity_devices.find_one(
+        {"device_id": device["device_id"]}, {"_id": 0, "user_id": 1, "organization_id": 1}
+    )
+    return current is not None and all(current.get(k) == device.get(k) for k in ("user_id", "organization_id"))
 
 
 async def _expire_lost_starts(db, device_id: str, slots: list[dict], now_epoch: float, stats: _Stats) -> bool:
@@ -248,6 +257,14 @@ async def _execute(db, org: _Org, device: dict, slot: dict | None, action: Actio
     claim = dict(device_id=device_id, slot_index=action.slot_index)
     if not await registry.claim_slot(db, **claim, expect_version=expect, set_fields=fields):
         stats.claim_lost += 1  # another sweep or a device report got there first
+        return
+    # A first-use slot index is claimed by insert, which no version bump can stop, so the
+    # owner is checked once more right before the push leaves (re-owned phone, logout).
+    if not await _same_owner(db, device):
+        stats.owner_changed += 1
+        logger.info("live activity %s dropped for %s:%s: device owner changed or device removed",
+                    action.kind, device_id, action.slot_index)
+        await registry.claim_slot(db, **claim, expect_version=new_version, set_fields={"state": "ended"})
         return
 
     result = await transport.send(fcm_token=device["fcm_token"], la_token=la_token, aps=aps,

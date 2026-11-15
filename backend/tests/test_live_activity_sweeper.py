@@ -456,3 +456,47 @@ async def test_owner_change_during_sweep_sends_nothing_for_old_owner(monkeypatch
     assert t.sent == []                    # nothing of ali's reaches veli's phone
     assert stats["claim_lost"] == 2
     assert {s["state"] for s in db.live_activity_slots.docs} == {"ended"}
+
+
+async def test_owner_change_during_sweep_fresh_slot_index_sends_nothing(monkeypatch):
+    # No slot rows yet: the start's claim is an insert, which no version bump can stop.
+    db = await make_db(users=[user("ali"), user("veli")], devices=[device("d1", "ali", day=TODAY)],
+                       apts=[apt("a", "10:20")])
+    real = registry.slots_for_device
+    reowned = []
+
+    async def snapshot_then_reown(db_, device_id):
+        slots = await real(db_, device_id)
+        if not reowned:
+            await registry.upsert_device(
+                db_, device_id="d1", organization_id=ORG, user_id="id-veli", username="veli",
+                os_version="18.1", app_build="100", fcm_token="fcm-d1", push_to_start_token="pts-d1",
+                activities_enabled=True)
+            reowned.append(True)
+        return slots
+
+    monkeypatch.setattr(registry, "slots_for_device", snapshot_then_reown)
+    t = RecordingTransport()
+    stats = await sweep(db, t)
+    assert reowned
+    assert t.sent == []                       # ali's appointment never reaches veli's phone
+    assert stats["owner_changed"] == 1
+    assert slot(db, "d1", 1)["state"] == "ended"
+    assert dev(db, "d1")["start_log"] == []   # a start that was never sent is not counted
+    assert dev(db, "d1")["day"] is None       # reset by the re-own; the unsent start did not reopen it
+
+
+async def test_device_gone_before_send_sends_nothing(monkeypatch):
+    db = await make_db(users=[user("ali")], devices=[device("d1", "ali")], apts=[apt("a", "10:20")])
+    real = registry.slots_for_device
+
+    async def snapshot_then_delete(db_, device_id):
+        slots = await real(db_, device_id)
+        db_.live_activity_devices.docs.clear()   # logout removed the device mid-sweep
+        return slots
+
+    monkeypatch.setattr(registry, "slots_for_device", snapshot_then_delete)
+    t = RecordingTransport()
+    await sweep(db, t)
+    assert t.sent == []
+    assert slot(db, "d1", 1)["state"] == "ended"
