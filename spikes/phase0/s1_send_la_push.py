@@ -45,6 +45,9 @@ def parse_args():
     p.add_argument("--no-alert", action="store_true", help="omit alert (Apple requires one for start; test the failure)")
     p.add_argument("--priority", choices=["5", "10"], default="10")
     p.add_argument("--dismiss-now", action="store_true", help="end: dismissal-date = now (else now + 15 min)")
+    p.add_argument("--customer", default="Spike K.")
+    p.add_argument("--service", default="Saç Kesimi")
+    p.add_argument("--staff", default=None)
     p.add_argument("--send", action="store_true", help="deliver for real (default: validate only)")
     p.add_argument("--print-only", action="store_true", help="print encoded JSON and exit, no network")
     return p.parse_args()
@@ -58,9 +61,9 @@ def content_state(a, start: datetime) -> dict:
         "endEpoch": end.timestamp(),
         "startLabel": start.astimezone(TR).strftime("%H:%M"),
         "endLabel": end.astimezone(TR).strftime("%H:%M"),
-        "customerDisplay": "Spike K.",
-        "serviceName": "Saç Kesimi",
-        "staffName": None,
+        "customerDisplay": a.customer,
+        "serviceName": a.service,
+        "staffName": a.staff,
         "version": a.version,
     }
 
