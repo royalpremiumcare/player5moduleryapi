@@ -1,6 +1,14 @@
 # PLANN Live Activities & Home Screen Widgets — Revised Design
 
-Status: **Revision 2: direction approved; Phase 0 partially executed; awaiting device spikes.**
+Status: **Revision 3: Phase 0 executed on devices (iPhone 11 / iOS 26.0, iPhone 16 Plus / iOS 26.6); awaiting owner approval to start Phase 1.**
+
+**Revision 3 changes (Phase 0 device results, 2026-11-15; details in `spikes/phase0/RESULTS.md` and `PHASE0_REPORT.md`):**
+- The per-app cap is 5; the default is `observed_cap = 5` (§4.1, §4.2).
+- The server never push-starts over the cap, because over-limit starts are silently dropped (§4.2 rule 1a).
+- Swap means end, then start: ended activities are evicted by iOS (§4.2 rule 1b, D11).
+- Background and force-quit token delivery is verified (§5.4), so D10 broadcast channels are deferred.
+- The consent prompt timing varies, and the onboarding copy says "if iOS asks" (§5.6).
+- The compact Dynamic Island shows the PLANN mark (§6).
 Date: 2026-11-15
 
 **Revision 2 changes (from the owner's review):**
@@ -232,7 +240,10 @@ After a device reboot, ActivityKit restores the activities and the app reconcile
 - **[V]** `globalMaximumExceeded`: "The device reached the maximum number of ongoing Live Activities."
 - **[V]** `visibility`: thrown when starting from the background.
 - **[V]** Apple documents **no numeric maximum**. "The system limits the number of simultaneous ongoing Live Activities. Scheduled Live Activities count towards this limit."
-- **[A]** One developer forum report hit `targetMaximumExceeded` at 5 push-started activities. This is anecdotal; it is used only as a test case, never as a constant.
+- **[V, Phase 0]** The per-app cap is **5 non-ended activities** on both iPhone 11 / iOS 26.0 and iPhone 16 Plus / iOS 26.6. Local requests 6–12 threw `targetMaximumExceeded` (not `globalMaximumExceeded`). Stale activities count toward the cap.
+- **[V, Phase 0]** A **push-to-start over the cap is silently dropped**: FCM accepts it, nothing appears, the app gets no callback or log, and it is **not queued** (it never appeared after a slot freed).
+- **[V, Phase 0]** An activity that was **ended but is still visible** (`dismissal-date` in the future) **does not block** a start. iOS dismissed it in the same instant the new push-started activity appeared (+2 s).
+- **[A]** The global (device-wide) limit with other apps' activities was not measured.
 - **[V]** A failed **push-to-start** is not reported to the server. The device only logs it.
 
 ### 4.2 Strategy [R], Revision 2: reconciliation, no time-based failure inference
@@ -260,9 +271,10 @@ After a device reboot, ActivityKit restores the activities and the app reconcile
 5. login and logout.
 
 **Rules:**
-1. **Slots are known, not guessed.** `free_slots = observed_cap − reported_active − start_sent_unresolved` when a cap has been observed; otherwise unbounded. Unresolved starts *consume* a slot, which is conservative and prevents bursts.
-   - `observed_cap` is learned only from **device-reported limit errors** (local start errors, or S3-confirmed log signals).
-   - It is cleared after 24 h or on an OS change. No Apple constant is assumed.
+1. **Slots are counted by the server.** `free_slots = observed_cap − |rows in {start_sent, scheduled_local, active}|`. Ended rows do not count (see 1b). Unresolved starts *consume* a slot, which is conservative and prevents bursts.
+   - `observed_cap` defaults to **5** [V Phase 0]. It is lowered by **device-reported limit errors** (local start errors) and reset to 5 after 24 h or on an OS change.
+   - **1a. Never push-start over the cap.** Over-limit starts vanish without any signal [V Phase 0], so the server-side count is authoritative. Appointments that don't fit get the fallback notification (rule 4).
+   - **1b. Swap = end, then start [R, D11].** When a higher-priority appointment (PROCESSING, or UPCOMING sooner than the lowest-priority live row) needs a slot at the cap, the planner ends the lowest-priority live row with the normal `dismissal-date` and push-starts the new one on the **next sweeper pass**. Eviction was verified with a 9 s gap; back-to-back delivery order is [A]. The preempted appointment is the farthest away. It is not notified at preemption; it becomes re-eligible when a slot frees, and rule 4 applies if it never gets one.
 2. **Priority:** §3.1 order. The highest-priority eligible appointments get the free slots.
 3. **No time-based failure.** `start_sent` stays unresolved until a device report resolves it to `active`, `absent`, `limit_failed`, `disabled` or `dismissed_by_user`. Nothing is re-sent while it is unresolved, which also prevents duplicate activities.
 4. **Fallback notification** (at most one per device × appointment, `notified` flag) is sent when there is **evidence** the activity is not shown:
@@ -276,7 +288,7 @@ After a device reboot, ActivityKit restores the activities and the app reconcile
 6. **User dismissal is respected.** A `dismissed_by_user` activity is never restarted and does not trigger a notification. The appointment remains in the widget.
 7. **Disabled:** `areActivitiesEnabled=false` → notifications only until the device reports it re-enabled.
 
-**Residual gap (D9).** A push-to-start can fail silently because *another app* filled the device-wide limit, and the device may not report before the appointment. The server then has `start_sent` with no evidence either way. Options:
+**Residual gap (D9).** PLANN's own per-app cap is now fully server-countable (rule 1a). The remaining gap is narrower: a push-to-start can fail silently because *another app* filled the device-wide limit (not measured), and the device may not report before the appointment. The server then has `start_sent` with no evidence either way. Options:
 - **M1 [recommended]:** one redundant "Randevu başladı · Ayşe K. · Saç Kesimi" notification **at appointment start** only for rows still unresolved. This does not claim failure; it is a second channel at the moment that matters, and it is suppressed when the activity was confirmed.
 - **M2:** accept the gap; the widget still lists it.
 - **M3:** always send a lead-time notification as well as the Live Activity (noisy).
@@ -285,7 +297,8 @@ After a device reboot, ActivityKit restores the activities and the app reconcile
 - **(a)** `stale-date = end` and a stale view "Süre doldu";
 - **(b)** the device ends it on the next reconcile;
 - **(c)** the system's 8 h cap;
-- **(d) [evaluate after S2]** on iOS 18+, start with `input-push-channel` (one channel per appointment) so the server can update or end via broadcast without any per-activity token. This requires direct APNs channel management. FCM support for channels is unverified, so it would use the `ApnsDirectTransport` (§5.2) and the Broadcast capability.
+- **[V Phase 0]** S2 showed the update token arrives 2–3 s after a push-to-start, **even when the app was force-quit** (iOS cold-launches it in the background). The no-token case is therefore an edge case, and (a)–(c) suffice for the MVP.
+- **(d) [deferred, D10]** on iOS 18+, start with `input-push-channel` (one channel per appointment) so the server can update or end via broadcast without any per-activity token. This requires direct APNs channel management. FCM support for channels is unverified, so it would use the `ApnsDirectTransport` (§5.2) and the Broadcast capability.
 
 ### 4.3 Update budget
 
@@ -320,7 +333,7 @@ After a device reboot, ActivityKit restores the activities and the app reconcile
 
 - **[V]** FCM docs: `apns.live_activity_token` accepts "either a push token or push-to-start token from Apple"; the `aps` payload goes in `apns.payload`; Live Activities require iOS 16.1, remote start iOS 17.2. The Python Admin SDK exposes `APNSConfig(live_activity_token=…)`.
 - **Why:** this reuses the credentials and code path already in production (`messaging.send`, `server.py:2982-3006`) and adds no new dependency and no new key handling in the backend.
-- **[A, spike S1]** The Firebase project's APNs configuration must be an **APNs Auth Key (.p8)**, which Apple's token-based connection requires for Live Activities. Confirm this in the Firebase console. Also confirm that `firebase_admin 7.1.0` `APNSConfig` accepts `live_activity_token` and sets `apns-push-type: liveactivity` and `apns-topic: co.plannapp.app.push-type.liveactivity` [V header values], or that we pass those in `APNSConfig.headers`.
+- **[V, Phase 0 S1]** Push-to-start, update and end via `firebase_admin` `APNSConfig(live_activity_token=…)` + `Aps(custom_data=…)` on project `plann-54bd6` worked on iOS 26.0 and 26.6 TestFlight builds (production APNs). The original pre-test note follows: the Firebase project's APNs configuration must be an **APNs Auth Key (.p8)**, which Apple's token-based connection requires for Live Activities. Confirm this in the Firebase console. Also confirm that `firebase_admin 7.1.0` `APNSConfig` accepts `live_activity_token` and sets `apns-push-type: liveactivity` and `apns-topic: co.plannapp.app.push-type.liveactivity` [V header values], or that we pass those in `APNSConfig.headers`.
 - **Fallback transport (designed, not built):** a `LiveActivityTransport` interface with an `ApnsDirectTransport` using `httpx` + `h2` (both already installed [V]) and a .p8 key from env. It is used only if spike S1 fails.
 
 ### 5.3 Payloads (content-state encoded with default `JSONDecoder` rules, no custom strategies [V])
@@ -350,18 +363,20 @@ ContentState (Codable, ≤ 4 KB total with attributes [V]):
 ### 5.4 Background & permission realities
 
 - **[V]** Starting locally from the background throws `visibility` (except via `LiveActivityIntent`). That is why push-to-start is the only reliable background path.
-- **[A, spike S2]** After a push-to-start, iOS launches the app in the background long enough to deliver `pushTokenUpdates`. The Capacitor WebView is not needed for this: the native plugin posts the token itself using a **dedicated short-lived device credential** (§5.7), not the JS auth token.
+- **[V, Phase 0 S2]** After a push-to-start, iOS delivers `pushTokenUpdates` in the background: 1 s after the activity appeared with the app backgrounded, and with the app **force-quit** iOS cold-launched it (`didFinishLaunching`, `applicationState == .background`) and delivered the token 2–3 s after the send. The token was then used for a remote update successfully. The Capacitor WebView is not needed for this: the native plugin posts the token itself using a **dedicated short-lived device credential** (§5.7), not the JS auth token.
 - If the user disables Live Activities, `activityEnablementUpdates` → `areActivitiesEnabled = false` → reported to the server → notification fallback.
 - **[V, Phase 0, iOS 26.0, 2026-11-15]** iOS shows **two separate consent prompts**:
   1. after the first (local) Live Activity: "PLANN canlı etkinliklerine izin verilsin mi?";
   2. when the app **first starts an activity remotely** (push-to-start): "PLANN canlı etkinliklerine izin vermeyi sürdürmek istiyor musunuz?", with options "İzin Verme" / "Her Zaman İzin Ver".
+  - **[V, Phase 0] The timing of prompt 2 varies.** On iPhone 11 / iOS 26.0 it appeared on the first remote start. On iPhone 16 Plus / iOS 26.6 it did not appear then, and appeared later during a local start. The copy must therefore not promise *when* it appears.
+
   If the user answers "İzin Verme", later push-started activities are blocked silently; the server learns this only from device reports and falls back to notifications.
 
 ### 5.6 Required onboarding step: explain the Live Activity consent prompts **[R: required for production, owner decision 2026-11-15]**
 
 Before the first Live Activity can appear (local or remote), PLANN shows a short **native-feeling explainer screen**, once per device and re-showable from Settings:
 - **What:** "Randevularınız kilit ekranında ve Dynamic Island'da geri sayımla görünecek."
-- **Why:** shown before the system prompt. It warns that iOS will ask twice, and that the second question ("izin vermeyi sürdürmek istiyor musunuz?") should be answered **"Her Zaman İzin Ver"**.
+- **Why:** shown before the system prompt. It says iOS will ask for permission, and *may later* ask again ("izin vermeyi sürdürmek istiyor musunuz?"). If it does, choose **"Her Zaman İzin Ver"**. Do not say "you will now be asked twice", because the timing varies [V Phase 0].
 - **Trigger:** after login on iOS 16.2+ when the org has `live_activity_enabled` and the user has ≥ 1 eligible appointment today. **Never on cold start before login.**
 - **Recovery:** if `areActivitiesEnabled == false` or the device reports blocked remote starts, Settings shows a banner "Canlı etkinlikler kapalı" with a deep link to iOS Settings (`UIApplication.openSettingsURLString`).
 - **Copy:** TR/EN, in the app's existing tone; light/dark; no new dependencies.
@@ -394,13 +409,14 @@ Dynamic Island compact          minimal          expanded
  ┌─────────┐   ┌──────┐          ┌──┐           ┌───────────────────────────────────┐
  │ ◔ Ayşe  │   │12:41 │          │◔ │           │ Ayşe K.                  14:30    │
  └─────────┘   └──────┘          └──┘           │ Saç Kesimi                        │
- leading: phase glyph +          ring =         │ Başlamasına 12:41 ▓▓▓▓░░░         │
+ leading: PLANN mark +          ring =         │ Başlamasına 12:41 ▓▓▓▓░░░         │
  first name; trailing:           progress of    └───────────────────────────────────┘
  countdown / elapsed             lead→start or
                                  start→end
 COMPLETED (final, ~15 min): "✓ Tamamlandı · 15:15"   CANCELLED: "✕ İptal edildi" (red bar)
 ```
 
+- **Compact leading = the PLANN mark** (template image asset in the extension), not a generic SF Symbol. The spike's clock glyph was ambiguous next to the system timer.
 - **Terminal phases render NO live timer [V, Phase 0, iOS 26.0].** In the spike, `Text(start, style: .timer)` was shown in every phase, so after a remote `end` (cancelled) the ended card kept counting up from 0 once the start time passed. This is wrong for the user.
   - For `completed`, `cancelled` and `removed`, every presentation (Lock Screen, compact, minimal, expanded) shows only static text: "✕ İptal edildi · 16:34–17:19" / "✓ Tamamlandı · 17:19".
   - Timers render only in `upcoming` (countdown, then the stale "Başlıyor") and `processing` (elapsed + progress).
@@ -598,11 +614,12 @@ Promoted Live Updates and the custom FCM service (S5) stay a later, separately a
 | D2 | Scope defaults | **REVISED and approved**: owner business-wide, staff own, managers per existing permission, optional preference (§3.1) |
 | D2b | Manager (`can_view_all_appointments`) Lock Screen default | own (can switch to business): **confirm** |
 | D9 | Residual silent-failure gap (§4.2) | M1: one start-time notice only for unresolved rows: **decide** |
-| D10 | iOS 18 broadcast channels for token-less updates | decide after S2 results |
+| D10 | iOS 18 broadcast channels for token-less updates | **Defer**: S2 showed per-activity tokens arrive even after force-quit |
+| D11 | Preemption at the cap (§4.2 rule 1b) | Higher-priority appointment ends the lowest-priority live activity, then starts: **decide** |
 | D3 | Duration rule when the two server paths differ | Dashboard rule (`stored service_duration` → service → 30) |
 | D4 | New `live_activity_lead_minutes` (default 30, 5–120) vs reusing `sms_reminder_hours` | New setting |
 | D5 | Widget self-refresh with a scoped key in shared Keychain | Off for v1; revisit after Phase 2 |
-| D6 | Transport: FCM `live_activity_token` vs direct APNs | **APPROVED subject to S1 device test**; FCM success ≠ visible |
+| D6 | Transport: FCM `live_activity_token` vs direct APNs | **APPROVED; S1 passed on device** (iOS 26.0/26.6). FCM success ≠ visible |
 | D7 | Android | **Separate phase after the iOS MVP**: widget + standard notifications; Live Updates later |
 | D8 | REM-1 duplicate transactions, REM-2 duration divergence | **Separate HIGH-priority remediation items** |
 
@@ -615,3 +632,5 @@ Promoted Live Updates and the custom FCM service (S5) stay a later, separately a
 - **S5:** an Android custom FCM service coexisting with `@capacitor/push-notifications`.
 
 The results feed D6 and §4 before Phase 3 starts.
+
+**Results (2026-11-15):** S1 ✅, S2 ✅ (background and force-quit), S3 ✅ (cap 5, silent over-limit drop, ended activities evicted), S4 ✅ (extension signing without App Groups). S5 was code-review only (Android deferred). See `spikes/phase0/PHASE0_REPORT.md`.

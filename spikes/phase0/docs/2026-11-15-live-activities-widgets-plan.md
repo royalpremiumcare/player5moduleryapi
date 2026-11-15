@@ -51,15 +51,20 @@ Native code is added as in-app Capacitor plugins, the same pattern as `FCMTokenP
 ## Phase 0 — Spikes (throwaway, dev build, no merge)
 
 **Status:** kit and partial results are on branch `spike/phase0-live-activities` under `spikes/phase0/` (`RUNBOOK.md`, `RESULTS.md`).
-- S1 and S5 passed offline / by code review;
-- S4 is partially done (the profile lacks App Groups);
-- S2 and S3 have not run and need physical devices.
+**Device results (2026-11-15, iPhone 11 / iOS 26.0 + iPhone 16 Plus / iOS 26.6, TestFlight 6.4.90 (1005)):**
+- S1 ✅ push-to-start, update and end via FCM;
+- S2 ✅ token delivered in background and after force-quit;
+- S3 ✅ cap 5 per app; over-limit push silently dropped; ended activities evicted;
+- S4 ✅ extension signed and uploaded (App Groups still pending for Phase 2);
+- S5: code review only (Android deferred).
+
+See `spikes/phase0/PHASE0_REPORT.md`.
 
 None of Tasks 1–19 starts before the owner approves the Phase 0 results.
 
-- [ ] **S1 FCM Live Activity transport.** In the Firebase console, confirm that an APNs Auth Key (.p8) is configured. From a script, send `messaging.Message(token=<fcm>, apns=APNSConfig(live_activity_token=<push_to_start>, headers={"apns-push-type":"liveactivity","apns-topic":"co.plannapp.app.push-type.liveactivity","apns-priority":"10"}, payload=APNSPayload(aps=Aps(custom_data={...})))`. Pass: an activity starts on iOS 17.2+.
-- [ ] **S2 Background token wake.** With the app force-quit, push-to-start, then confirm that the native `pushTokenUpdates` handler runs and its HTTP POST reaches a request-bin. Test on 17.2 and 18.x.
-- [ ] **S3 Concurrency.** Start activities locally and by push until failure, on 2 devices. Record the count, the error case (local) and the device log (push). Do not hard-code the result.
+- [x] **S1 FCM Live Activity transport.** In the Firebase console, confirm that an APNs Auth Key (.p8) is configured. From a script, send `messaging.Message(token=<fcm>, apns=APNSConfig(live_activity_token=<push_to_start>, headers={"apns-push-type":"liveactivity","apns-topic":"co.plannapp.app.push-type.liveactivity","apns-priority":"10"}, payload=APNSPayload(aps=Aps(custom_data={...})))`. Pass: an activity starts on iOS 17.2+.
+- [x] **S2 Background token wake.** With the app force-quit, push-to-start, then confirm that the native `pushTokenUpdates` handler runs and its HTTP POST reaches a request-bin. Test on 17.2 and 18.x.
+- [x] **S3 Concurrency.** Start activities locally and by push until failure, on 2 devices. Record the count, the error case (local) and the device log (push). Do not hard-code the result.
 - [ ] **S4 Codemagic signing.** Archive the App + empty `PlannWidgets` extension with the App Group through `codemagic.yaml` on a branch.
 - [ ] **S5 Android FCM service.** Confirm that a custom `FirebaseMessagingService` subclassing the `@capacitor/push-notifications` service still delivers JS push events.
 
@@ -186,7 +191,7 @@ def test_tz_parameter_respected():
   - `async record_token(db, *, device_id, appointment_id, activity_id, update_token) -> bool` (`start_sent`/`scheduled_local`/`absent` → `active`, sets `token_received_at`)
   - `async apply_device_report(db, *, device_id, activities: list[dict], active_count: int, activities_enabled: bool, limit_errors: list[dict], now) -> dict`. The report is a **complete** list. Listed `.active` → `active`; listed `.dismissed` (not server-ended) → `dismissed_by_user`; `start_sent` rows **not listed** → `absent`; limit errors → `limit_failed` + `set_observed_cap`; disabled → device `activities_enabled=False`. Returns the changed rows.
   - `async rows_for_org(db, org_id, states: set[str]) -> list[dict]`
-  - `async set_observed_cap(db, device_id, cap: int, now) -> None`
+  - `async set_observed_cap(db, device_id, cap: int, now) -> None` (column default 5)
 
 - [ ] **Step 1: Failing tests:**
   - `test_claim_is_compare_and_set` (two concurrent `claim_transition(expect="upcoming", new="processing")` produce exactly one True);
@@ -242,8 +247,9 @@ for row in LIVE whose appointment not desired or desired.phase in {COMPLETED, CA
     end(reason; dismissal immediate for removed/reassigned/rescheduled_out, else soon)
     # an unresolved start_sent is ended too: the end is harmless if the activity never existed
 eligible = desired with phase in {UPCOMING, PROCESSING}, sorted by priority_key
-cap   = device.observed_cap if learned < 24h ago (from device-reported limit errors only) else ∞
-slots = cap − |LIVE rows after ends|
+cap   = device.observed_cap (default 5 [V Phase 0]; lowered by device-reported limit errors; reset to 5 after 24h / OS change)
+slots = cap − |LIVE rows after ends|            # ended rows never count: iOS evicts them [V Phase 0]
+# never emit a push-to-start when slots == 0: over-limit starts are silently dropped [V Phase 0]
 for d in eligible:
     row = rows.get(d.appointment_id)
     if row.state in LIVE:            update if content != row.content (prio 10 iff phase changed, else 5); continue
@@ -252,6 +258,8 @@ for d in eligible:
        or (no push_to_start_token and os < 26 and not device.foreground):        fallback_notify once; continue
     if row.state in {absent, limit_failed} or row is None:
         if slots > 0 and attempts < max_attempts: start (prio 10); slots -= 1
+        elif preempt_enabled and (victim := lowest-priority LIVE row with priority_key worse than d):
+            end(victim, reason="preempted", dismissal soon); start d on the NEXT pass   # D11; swap = end then start
         else: fallback_notify once                                               # evidence or no slot, never time
 if start_time_notice:
     for row in start_sent where d.phase == PROCESSING and not row.notified: start_time_notice once
@@ -260,7 +268,11 @@ owner devices: every fallback_notify carries thread_id = "plann-overflow-<YYYY-M
 
 - [ ] **Step 1: Failing tests:**
   - `test_six_concurrent_cap_three_priority_order` (3 `start` actions for the 3 highest priority, 3 `fallback_notify`);
-  - `test_no_cap_known_tries_all`;
+  - `test_default_cap_is_five` (8 eligible, no learned cap: exactly 5 `start`, 3 `fallback_notify`);
+  - `test_never_start_when_no_slot`;
+  - `test_ended_rows_do_not_consume_slots`;
+  - `test_preempt_ends_lowest_then_starts_next_pass` (D11);
+  - `test_preempt_disabled_falls_back`;
   - `test_unconfirmed_start_never_marked_failed_by_time` (a `start_sent` row 3 h old produces no `fallback_notify` and no resend);
   - `test_unconfirmed_start_consumes_slot`;
   - `test_absent_report_triggers_restart_or_fallback`;
@@ -489,7 +501,8 @@ owner devices: every fallback_notify carries thread_id = "plann-overflow-<YYYY-M
 - [ ] **Step 1: Failing tests:**
   - `testDecodesBackendGoldenFixture` (decodes `backend/tests/contracts/live_activity_content_state.json`, copied into the test bundle by a build phase);
   - `testRelevanceProcessingBeatsUpcoming` (`relevanceScore(for:)` returns 100 vs < 100);
-  - `testTerminalPhasesHaveNoTimer` (completed/cancelled/removed: no `.timer`/`timerInterval` view in any family; a Phase 0 finding, spec §6).
+  - `testTerminalPhasesHaveNoTimer` (completed/cancelled/removed: no `.timer`/`timerInterval` view in any family; a Phase 0 finding, spec §6);
+  - `testCompactLeadingUsesPlannMark` (the asset `PlannMark` is used, not an SF Symbol; spec §6).
 - [ ] **Step 2–4:** FAIL, then implement, then PASS.
 - [ ] **Step 5:** Manual: SwiftUI previews of all four presentations × {upcoming, processing, stale, completed, cancelled}, in light and dark.
 - [ ] **Step 6:** Commit `feat(ios): appointment Live Activity UI`.
@@ -525,7 +538,8 @@ owner devices: every fallback_notify carries thread_id = "plann-overflow-<YYYY-M
   - `testDuplicateAppointmentIdNotStartedTwice`;
   - `testSecretRotatedOnReRegister`;
   - `testReportIsCompleteListIncludingDismissed`;
-  - `testStateChangeEventsDebouncedToOneReport`.
+  - `testStateChangeEventsDebouncedToOneReport`;
+  - `testTokenPostedOnBackgroundLaunchWithoutWebView` (the coordinator posts `pushTokenUpdates` using the Keychain secret when no bridge or WebView exists; spec §5.4, verified S2 behaviour).
 - [ ] **Step 2–4:** FAIL, then implement, then PASS.
 - [ ] **Step 5:** Commit `feat(ios): Live Activity native bridge`.
 
@@ -540,7 +554,7 @@ owner devices: every fallback_notify carries thread_id = "plann-overflow-<YYYY-M
 Both use the existing settings save flow.
 - **Required (owner decision 2026-11-15): Live Activity consent onboarding** (spec §5.6).
   - Create `frontend/src/components/LiveActivityConsentSheet.js`: shown once per device after login on iOS 16.2+ when the org flag is on and the user has an eligible appointment today.
-  - It explains that iOS will ask twice and that the second prompt ("izin vermeyi sürdürmek istiyor musunuz?") should be answered **"Her Zaman İzin Ver"**.
+  - It explains that iOS asks for permission and **may later** ask again ("izin vermeyi sürdürmek istiyor musunuz?"); if it does, answer **"Her Zaman İzin Ver"**. The timing varies by device [V Phase 0], so the copy never says "now".
   - The "seen" flag is stored in `localStorage` (try/catch).
   - Re-showable from Settings, with an "activities disabled" banner that deep-links to iOS Settings.
 - Test: `frontend/src/native/useLiveActivities.test.js` covering:
