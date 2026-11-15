@@ -45,7 +45,8 @@ def effective_scope(
 def slot_count(user: dict, scope: str) -> int:
     if scope == "own" or (user.get("role") == "staff" and not is_manager(user)):
         return 1
-    n = user.get("live_activity_slot_count") or DEFAULT_SLOT_COUNT
+    n = user.get("live_activity_slot_count")
+    n = DEFAULT_SLOT_COUNT if n is None else n
     return max(MIN_SLOTS, min(MAX_SLOTS, n))
 
 

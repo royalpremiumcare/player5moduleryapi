@@ -90,7 +90,7 @@ def test_own_scope_filters_by_staff():
 def test_slot_count_defaults_and_clamp():
     assert slot_count(ADMIN, "all") == 4
     assert slot_count({**ADMIN, "live_activity_slot_count": 9}, "all") == 5
-    assert slot_count({**ADMIN, "live_activity_slot_count": 0}, "all") == 4
+    assert slot_count({**ADMIN, "live_activity_slot_count": 0}, "all") == 1
     assert slot_count({**ADMIN, "live_activity_slot_count": -3}, "all") == 1
     assert slot_count(STAFF, "own") == 1
     assert slot_count({**STAFF, "live_activity_slot_count": 5}, "own") == 1
