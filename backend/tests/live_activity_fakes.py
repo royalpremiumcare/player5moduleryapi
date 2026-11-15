@@ -1,11 +1,13 @@
 """Async Motor stand-ins shared by the Live Activity tests (no dependency added).
 
-Every collection call is atomic (no await inside), so ``asyncio.gather`` interleaves
-only between calls, which is the granularity MongoDB's single-document atomicity gives.
+Every collection call yields to the event loop once and then applies atomically, so
+``asyncio.gather`` interleaves concurrent sweeps between calls, which is the granularity
+MongoDB's single-document atomicity gives.
 ``FakeDB`` creates collections on first access and logs every call in ``db.log``
 as ``(collection, method, args)`` so tests can spy on which collections were touched.
 """
 
+import asyncio
 import copy
 
 from pymongo import ReturnDocument
@@ -52,6 +54,7 @@ class _Cursor:
         return self
 
     async def to_list(self, _length):
+        await asyncio.sleep(0)
         return list(self._docs)
 
     def __aiter__(self):
@@ -79,6 +82,7 @@ class FakeCollection:
         self.log.append((self.name, method, args))
 
     async def create_index(self, keys, unique=False, **_kw):
+        await asyncio.sleep(0)
         self._note("create_index", keys)
         if unique:
             self.unique.append([k if isinstance(k, str) else k[0] for k in keys] if isinstance(keys, list) else [keys])
@@ -111,6 +115,7 @@ class FakeCollection:
         return doc
 
     async def find_one(self, flt, projection=None):
+        await asyncio.sleep(0)
         self._note("find_one", flt, projection)
         for d in self.docs:
             if _match(d, flt):
@@ -122,6 +127,7 @@ class FakeCollection:
         return _Cursor([_project(d, projection) for d in self.docs if _match(d, flt or {})])
 
     async def find_one_and_update(self, flt, update, upsert=False, return_document=ReturnDocument.BEFORE):
+        await asyncio.sleep(0)
         self._note("find_one_and_update", flt, update)
         for d in self.docs:
             if _match(d, flt):
@@ -134,6 +140,7 @@ class FakeCollection:
         return None
 
     async def update_one(self, flt, update, upsert=False):
+        await asyncio.sleep(0)
         self._note("update_one", flt, update)
         for d in self.docs:
             if _match(d, flt):
@@ -144,6 +151,7 @@ class FakeCollection:
         return _Result(0)
 
     async def update_many(self, flt, update):
+        await asyncio.sleep(0)
         self._note("update_many", flt, update)
         n = 0
         for d in self.docs:
