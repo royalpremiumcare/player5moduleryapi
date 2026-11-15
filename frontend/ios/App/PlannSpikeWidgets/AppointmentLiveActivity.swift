@@ -75,7 +75,7 @@ struct AppointmentLiveActivity: Widget {
             LockScreenCard(state: context.state, isStale: context.isStale)
                 .padding(.leading, 14)
                 .padding(.trailing, 16)
-                .padding(.vertical, 14)
+                .padding(.vertical, 12)
                 .activityBackgroundTint(Color.white)
                 .activitySystemActionForegroundColor(PC.ink)
                 .widgetURL(URL(string: "plannapp://la-spike"))
@@ -140,20 +140,9 @@ private struct LockScreenCard: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(barColor(l))
                 .frame(width: 4)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Text("PLANN")
-                        .font(.system(size: 11, weight: .bold))
-                        .tracking(0.9)
-                        .foregroundColor(PC.secondary)
-                    Spacer()
-                    StatusLabel(look: l)
-                }
+            VStack(alignment: .leading, spacing: 4) {
                 NameRow(look: l, state: state)
-                Text(serviceLine(state))
-                    .font(.system(size: 14))
-                    .foregroundColor(PC.secondary)
-                    .lineLimit(1)
+                SubRow(look: l, state: state)
                 switch l {
                 case .completed:
                     FinalRow(symbol: "checkmark.circle", color: PC.greenText,
@@ -161,9 +150,8 @@ private struct LockScreenCard: View {
                 case .cancelled:
                     FinalRow(symbol: "xmark.circle", color: PC.redText, text: "Randevu iptal edildi")
                 default:
-                    TimerRow(look: l, state: state, onDark: false, valueSize: 24)
+                    CompactTimerRow(look: l, state: state)
                         .padding(.top, 2)
-                    ProgressLine(look: l, state: state, onDark: false)
                 }
             }
         }
@@ -177,18 +165,79 @@ private struct NameRow: View {
     var body: some View {
         let cancelled = (look == .cancelled)
         let nameColor: Color = cancelled ? PC.secondary : PC.ink
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             Text(titleLine(state))
-                .font(.system(size: 18, weight: .bold))
+                .font(.system(size: 17, weight: .bold))
                 .strikethrough(cancelled)
                 .foregroundColor(nameColor)
                 .lineLimit(1)
             Spacer(minLength: 4)
+            StatusLabel(look: look)
+        }
+    }
+}
+
+/// Second line: service · staff on the left, time range on the right.
+private struct SubRow: View {
+    let look: Look
+    let state: PlannAppointmentAttributes.ContentState
+
+    var body: some View {
+        let cancelled = (look == .cancelled)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(serviceLine(state))
+                .font(.system(size: 13))
+                .foregroundColor(PC.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
             Text("\(state.startLabel)–\(state.endLabel)")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
                 .strikethrough(cancelled)
-                .foregroundColor(nameColor)
+                .foregroundColor(PC.secondary)
+        }
+    }
+}
+
+/// Third line: "Başlamasına 12:41" then the progress bar filling the rest of the row.
+private struct CompactTimerRow: View {
+    let look: Look
+    let state: PlannAppointmentAttributes.ContentState
+
+    var body: some View {
+        let labelColor: Color = (look == .overdue) ? PC.secondary : PC.amberText
+        HStack(alignment: .center, spacing: 8) {
+            Text(label)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(labelColor)
+                .lineLimit(1)
+                .fixedSize()
+            value
+                .font(.system(size: 20, weight: .bold))
+                .monospacedDigit()
+                .foregroundColor(PC.ink)
+                .lineLimit(1)
+                .frame(width: 74, alignment: .leading)
+            ProgressLine(look: look, state: state, onDark: false)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var label: String {
+        switch look {
+        case .upcoming: return "Başlamasına"
+        case .starting: return "Başlıyor"
+        case .processing: return "Geçen"
+        case .overdue: return "Bitiş"
+        default: return ""
+        }
+    }
+
+    private var value: Text {
+        switch look {
+        case .upcoming, .processing: return Text(state.startDate, style: .timer)
+        case .starting: return Text(state.startLabel)
+        default: return Text(state.endLabel)
         }
     }
 }
@@ -240,16 +289,16 @@ private struct FinalRow: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image(systemName: symbol)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(color)
             Text(text)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(PC.ink)
                 .lineLimit(1)
         }
-        .padding(.top, 4)
+        .padding(.top, 2)
     }
 }
 
