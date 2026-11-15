@@ -401,6 +401,11 @@ Dynamic Island compact          minimal          expanded
 COMPLETED (final, ~15 min): "✓ Tamamlandı · 15:15"   CANCELLED: "✕ İptal edildi" (red bar)
 ```
 
+- **Terminal phases render NO live timer [V, Phase 0, iOS 26.0].** In the spike, `Text(start, style: .timer)` was shown in every phase, so after a remote `end` (cancelled) the ended card kept counting up from 0 once the start time passed. This is wrong for the user.
+  - For `completed`, `cancelled` and `removed`, every presentation (Lock Screen, compact, minimal, expanded) shows only static text: "✕ İptal edildi · 16:34–17:19" / "✓ Tamamlandı · 17:19".
+  - Timers render only in `upcoming` (countdown, then the stale "Başlıyor") and `processing` (elapsed + progress).
+  - Test: Task 16 `testTerminalPhasesHaveNoTimer` (snapshot/view-inspection of each family per phase).
+
 - With multiple activities, iOS chooses which one occupies the Island (minimal for the second) **[V system behaviour; not controllable]**. Each activity has `relevanceScore`: PROCESSING = 100, UPCOMING = 50 − minutes-to-start/10, so the current appointment wins.
 - Tapping the Live Activity opens `plannapp://appointment/<id>` → the existing detail view (`setDetailAppointmentId`).
 - There are no buttons in the activity. Read-only by design, so there is no manual start.

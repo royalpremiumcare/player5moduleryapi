@@ -488,7 +488,8 @@ owner devices: every fallback_notify carries thread_id = "plann-overflow-<YYYY-M
 
 - [ ] **Step 1: Failing tests:**
   - `testDecodesBackendGoldenFixture` (decodes `backend/tests/contracts/live_activity_content_state.json`, copied into the test bundle by a build phase);
-  - `testRelevanceProcessingBeatsUpcoming` (`relevanceScore(for:)` returns 100 vs < 100).
+  - `testRelevanceProcessingBeatsUpcoming` (`relevanceScore(for:)` returns 100 vs < 100);
+  - `testTerminalPhasesHaveNoTimer` (completed/cancelled/removed: no `.timer`/`timerInterval` view in any family; a Phase 0 finding, spec §6).
 - [ ] **Step 2–4:** FAIL, then implement, then PASS.
 - [ ] **Step 5:** Manual: SwiftUI previews of all four presentations × {upcoming, processing, stale, completed, cancelled}, in light and dark.
 - [ ] **Step 6:** Commit `feat(ios): appointment Live Activity UI`.
