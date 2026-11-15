@@ -127,7 +127,8 @@ async def apply_device_report(
         else:
             continue
         await db.live_activity_slots.update_one(
-            {"device_id": device_id, "slot_index": slot["slot_index"]}, {"$set": fields}
+            {"device_id": device_id, "slot_index": slot["slot_index"]},
+            {"$set": fields, "$inc": {"version": 1}},  # a concurrent sweep's claim_slot CAS then fails
         )
         changed.append({**slot, **fields})
     return changed

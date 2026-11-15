@@ -1,137 +1,12 @@
 import asyncio
-import copy
 import hashlib
 from datetime import datetime
 
 import pytest
-from pymongo import ReturnDocument
-from pymongo.errors import DuplicateKeyError
 
 from live_activity import registry
 from live_activity.phase import TR_TZ
-
-
-def _match(doc, flt):
-    for k, v in flt.items():
-        if isinstance(v, dict):
-            for op, arg in v.items():
-                if op == "$in" and doc.get(k) not in arg:
-                    return False
-                if op == "$exists" and (k in doc) != arg:
-                    return False
-                if op == "$lt" and not (k in doc and doc[k] < arg):
-                    return False
-        elif doc.get(k) != v:
-            return False
-    return True
-
-
-class _Cursor:
-    def __init__(self, docs):
-        self._docs = docs
-        self._sort = None
-
-    def sort(self, key, direction=1):
-        self._docs.sort(key=lambda d: d.get(key), reverse=direction < 0)
-        return self
-
-    async def to_list(self, _length):
-        return list(self._docs)
-
-    def __aiter__(self):
-        async def gen():
-            for d in self._docs:
-                yield d
-
-        return gen()
-
-
-class FakeCollection:
-    """Minimal async Motor stand-in. Every call is atomic (no await inside)."""
-
-    def __init__(self):
-        self.docs = []
-        self.unique = []
-
-    async def create_index(self, keys, unique=False, **_kw):
-        if unique:
-            self.unique.append([k if isinstance(k, str) else k[0] for k in keys] if isinstance(keys, list) else [keys])
-        return "idx"
-
-    def _check_unique(self, doc, ignore=None):
-        for fields in self.unique:
-            for other in self.docs:
-                if other is not ignore and all(other.get(f) == doc.get(f) for f in fields):
-                    raise DuplicateKeyError("duplicate key")
-
-    @staticmethod
-    def _apply(doc, update):
-        for k, v in update.get("$set", {}).items():
-            doc[k] = v
-        for k, v in update.get("$inc", {}).items():
-            doc[k] = doc.get(k, 0) + v
-        for k, v in update.get("$push", {}).items():
-            doc.setdefault(k, []).append(v)
-        for k, cond in update.get("$pull", {}).items():
-            lt = cond["$lt"]
-            doc[k] = [x for x in doc.get(k, []) if not x < lt]
-
-    def _insert_from(self, flt, update):
-        doc = {k: v for k, v in flt.items() if not isinstance(v, dict)}
-        doc.update(update.get("$setOnInsert", {}))
-        self._apply(doc, update)
-        self._check_unique(doc)
-        self.docs.append(doc)
-        return doc
-
-    async def find_one(self, flt):
-        for d in self.docs:
-            if _match(d, flt):
-                return copy.deepcopy(d)
-        return None
-
-    def find(self, flt=None):
-        return _Cursor([copy.deepcopy(d) for d in self.docs if _match(d, flt or {})])
-
-    async def find_one_and_update(self, flt, update, upsert=False, return_document=ReturnDocument.BEFORE):
-        for d in self.docs:
-            if _match(d, flt):
-                before = copy.deepcopy(d)
-                self._apply(d, update)
-                return copy.deepcopy(d) if return_document == ReturnDocument.AFTER else before
-        if upsert:
-            doc = self._insert_from(flt, update)
-            return copy.deepcopy(doc) if return_document == ReturnDocument.AFTER else None
-        return None
-
-    async def update_one(self, flt, update, upsert=False):
-        for d in self.docs:
-            if _match(d, flt):
-                self._apply(d, update)
-                return _Result(1)
-        if upsert:
-            self._insert_from(flt, update)
-        return _Result(0)
-
-    async def update_many(self, flt, update):
-        n = 0
-        for d in self.docs:
-            if _match(d, flt):
-                self._apply(d, update)
-                n += 1
-        return _Result(n)
-
-
-class _Result:
-    def __init__(self, n):
-        self.matched_count = n
-        self.modified_count = n
-
-
-class FakeDB:
-    def __init__(self):
-        self.live_activity_devices = FakeCollection()
-        self.live_activity_slots = FakeCollection()
+from tests.live_activity_fakes import FakeDB
 
 
 @pytest.fixture
@@ -271,3 +146,16 @@ async def test_start_log_prunes_older_than_hour(db):
     assert registry.starts_last_hour(dev, 5000.0) == 2
     assert registry.starts_last_hour(dev, 5600.0) == 1
     assert registry.starts_last_hour({}, 5000.0) == 0
+
+
+async def test_report_bumps_version_so_stale_claim_fails(db):
+    await _seed_slot(db)  # version 1
+    await registry.apply_device_report(
+        db, device_id="dev1", slots=[{"slot_index": 1, "activity_id": "act1", "state": "dismissed"}],
+        activities_enabled=True, complete=False, now=NOW)
+    # A sweep that read the slot before the report still holds version 1.
+    stale = await registry.claim_slot(db, device_id="dev1", slot_index=1, expect_version=1,
+                                      set_fields={"state": "start_sent", "appointment_id": "x"})
+    assert stale is False
+    s = (await registry.slots_for_device(db, "dev1"))[0]
+    assert (s["state"], s["version"]) == ("dismissed_by_user", 2)
