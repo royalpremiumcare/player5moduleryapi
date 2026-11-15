@@ -399,7 +399,7 @@ Validated end to end on devices (RESULTS items 13–24).
 
 | | Staff | Owner / manager |
 |---|---|---|
-| Slots | 1 | 1–5, **default 3**. A 5th card stacks on 6.1" screens. |
+| Slots | 1 | 1–5 in Settings, **default 4** (owner decision 2026-11-16: 4 fit fully on a 6.1" iPhone 11; a 5th stacks). |
 | Scope | own appointments | D2c: "Sadece benim" / "Tüm personel" (unassigned are included for the owner) |
 
 **Assignment (each sweep, per device):**
@@ -429,7 +429,7 @@ Validated end to end on devices (RESULTS items 13–24).
 
 The per-appointment model (§3–§4) stays documented as the fallback design.
 
-**Open (owner):** day-end dismissal of the final cards: immediately, 5 min, **15 min (current)**, or until swiped (iOS max 4 h).
+**Day end [decided 2026-11-16]:** final cards stay **15 minutes** (`dismissal-date` = now + 15 min), then iOS removes them. The user may swipe earlier.
 
 ## 6. Live Activity & Dynamic Island design
 
