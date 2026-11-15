@@ -137,9 +137,9 @@ private struct LockScreenCard: View {
     var body: some View {
         let l = lookFor(state, isStale)
         HStack(alignment: .top, spacing: 12) {
-            RoundedRectangle(cornerRadius: 2)
+            RoundedRectangle(cornerRadius: 3)
                 .fill(barColor(l))
-                .frame(width: 4)
+                .frame(width: l == .processing ? 6 : 4)
             VStack(alignment: .leading, spacing: 4) {
                 NameRow(look: l, state: state)
                 SubRow(look: l, state: state)
@@ -225,17 +225,18 @@ private struct CompactTimerRow: View {
 
     private var label: String {
         switch look {
-        case .upcoming: return "Başlamasına"
-        case .starting: return "Başlıyor"
-        case .processing: return "Geçen"
-        case .overdue: return "Bitiş"
+        case .upcoming: return "Başlamasına kalan"
+        case .starting: return "Başlıyor ·"
+        case .processing: return "Bitmesine kalan"
+        case .overdue: return "Süre doldu ·"
         default: return ""
         }
     }
 
     private var value: Text {
         switch look {
-        case .upcoming, .processing: return Text(state.startDate, style: .timer)
+        case .upcoming: return Text(state.startDate, style: .timer)
+        case .processing: return Text(state.endDate, style: .timer)
         case .starting: return Text(state.startLabel)
         default: return Text(state.endLabel)
         }
@@ -328,10 +329,10 @@ private struct TimerRow: View {
 
     private var label: String {
         switch look {
-        case .upcoming: return "Başlamasına"
-        case .starting: return "Başlıyor"
-        case .processing: return "Geçen süre"
-        case .overdue: return "Bitiş"
+        case .upcoming: return "Başlamasına kalan"
+        case .starting: return "Başlıyor ·"
+        case .processing: return "Bitmesine kalan"
+        case .overdue: return "Süre doldu ·"
         case .completed: return "Tamamlandı"
         case .cancelled: return "İptal edildi"
         }
@@ -339,7 +340,8 @@ private struct TimerRow: View {
 
     private var value: Text {
         switch look {
-        case .upcoming, .processing: return Text(state.startDate, style: .timer)
+        case .upcoming: return Text(state.startDate, style: .timer)
+        case .processing: return Text(state.endDate, style: .timer)
         case .starting: return Text(state.startLabel)
         case .overdue, .completed: return Text(state.endLabel)
         case .cancelled: return Text("")
@@ -367,7 +369,7 @@ private struct ProgressLine: View {
             } currentValueLabel: {
                 EmptyView()
             }
-            .tint(onDark ? PC.amberDot : PC.amberBar)
+            .tint(onDark ? PC.greenSoft : PC.greenBar)
         case .starting:
             Capsule()
                 .fill(onDark ? PC.amberDot : PC.amberBar)
@@ -428,10 +430,14 @@ private struct CompactValue: View {
     var body: some View {
         Group {
             switch look {
-            case .upcoming, .processing:
+            case .upcoming:
                 Text(state.startDate, style: .timer)
                     .monospacedDigit()
                     .foregroundColor(PC.amberDot)
+            case .processing:
+                Text(state.endDate, style: .timer)
+                    .monospacedDigit()
+                    .foregroundColor(PC.greenSoft)
             case .starting:
                 Text(state.startLabel)
                     .monospacedDigit()
