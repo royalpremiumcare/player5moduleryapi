@@ -103,3 +103,8 @@
     - **All three cards ended at 30**, with no sound and the order kept.
     - Together with item 19 (40 updates to one card), this shows the update budget is not a practical constraint for the slot model; a real salon day needs ~1–2 orders of magnitude fewer.
     - The binding limit is **push-to-start** (~13/h/device, refilling within ~35 min), which the slot model avoids by starting each card once per day.
+23. **Five cards on a 6.1" screen** (first iPhone 11 / iOS 26.0, 01:22 TR, compact 3-row card, build 1009).
+    - All 5 cards appeared, ordered by relevance. The **5th card was partially stacked** under the 4th: the system collapses when the stack exceeds the free Lock Screen height.
+    - **4 compact cards fit fully** on iPhone 11; larger screens are untested.
+    - **Recommendation:** owner slots configurable 1–5, **default 3**. Note in Settings that on smaller phones a 5th card may be stacked.
+    - 5 also leaves zero headroom under the per-app cap (eviction on restart works; item S3), and none under a possible global cap shared with other apps.
