@@ -537,7 +537,18 @@ owner devices: every fallback_notify carries thread_id = "plann-overflow-<YYYY-M
 - a per-user "Kilit ekranı kapsamı: Tüm işletme / Yalnızca bana atananlar" control, shown only to admins and to staff with `can_view_all_appointments`, which saves `users.live_activity_scope` through a new `PUT /api/live-activities/scope`.
 
 Both use the existing settings save flow.
-- Test: `frontend/src/native/useLiveActivities.test.js` covering `no-op without plugin`, `register once per login`, `unregister on logout`, `reconcile on visible`.
+- **Required (owner decision 2026-11-15): Live Activity consent onboarding** (spec §5.6).
+  - Create `frontend/src/components/LiveActivityConsentSheet.js`: shown once per device after login on iOS 16.2+ when the org flag is on and the user has an eligible appointment today.
+  - It explains that iOS will ask twice and that the second prompt ("izin vermeyi sürdürmek istiyor musunuz?") should be answered **"Her Zaman İzin Ver"**.
+  - The "seen" flag is stored in `localStorage` (try/catch).
+  - Re-showable from Settings, with an "activities disabled" banner that deep-links to iOS Settings.
+- Test: `frontend/src/native/useLiveActivities.test.js` covering:
+  - `no-op without plugin`;
+  - `register once per login`;
+  - `unregister on logout`;
+  - `reconcile on visible`;
+  - `consent sheet shown once after login, never before login`;
+  - `disabled banner when activities_enabled false`.
 
 - [ ] **Step 1–4:** FAIL, then implement, then PASS (`CI=true npx craco test --watchAll=false src/native`).
 - [ ] **Step 5:** Commit `feat: Live Activities client integration and settings`.

@@ -350,10 +350,23 @@ ContentState (Codable, ≤ 4 KB total with attributes [V]):
 ### 5.4 Background & permission realities
 
 - **[V]** Starting locally from the background throws `visibility` (except via `LiveActivityIntent`). That is why push-to-start is the only reliable background path.
-- **[A, spike S2]** After a push-to-start, iOS launches the app in the background long enough to deliver `pushTokenUpdates`. The Capacitor WebView is not needed for this: the native plugin posts the token itself using a **dedicated short-lived device credential** (§5.5), not the JS auth token.
+- **[A, spike S2]** After a push-to-start, iOS launches the app in the background long enough to deliver `pushTokenUpdates`. The Capacitor WebView is not needed for this: the native plugin posts the token itself using a **dedicated short-lived device credential** (§5.7), not the JS auth token.
 - If the user disables Live Activities, `activityEnablementUpdates` → `areActivitiesEnabled = false` → reported to the server → notification fallback.
+- **[V, Phase 0, iOS 26.0, 2026-11-15]** iOS shows **two separate consent prompts**:
+  1. after the first (local) Live Activity: "PLANN canlı etkinliklerine izin verilsin mi?";
+  2. when the app **first starts an activity remotely** (push-to-start): "PLANN canlı etkinliklerine izin vermeyi sürdürmek istiyor musunuz?", with options "İzin Verme" / "Her Zaman İzin Ver".
+  If the user answers "İzin Verme", later push-started activities are blocked silently; the server learns this only from device reports and falls back to notifications.
 
-### 5.5 Native → backend calls without exposing the JWT [R]
+### 5.6 Required onboarding step: explain the Live Activity consent prompts **[R: required for production, owner decision 2026-11-15]**
+
+Before the first Live Activity can appear (local or remote), PLANN shows a short **native-feeling explainer screen**, once per device and re-showable from Settings:
+- **What:** "Randevularınız kilit ekranında ve Dynamic Island'da geri sayımla görünecek."
+- **Why:** shown before the system prompt. It warns that iOS will ask twice, and that the second question ("izin vermeyi sürdürmek istiyor musunuz?") should be answered **"Her Zaman İzin Ver"**.
+- **Trigger:** after login on iOS 16.2+ when the org has `live_activity_enabled` and the user has ≥ 1 eligible appointment today. **Never on cold start before login.**
+- **Recovery:** if `areActivitiesEnabled == false` or the device reports blocked remote starts, Settings shows a banner "Canlı etkinlikler kapalı" with a deep link to iOS Settings (`UIApplication.openSettingsURLString`).
+- **Copy:** TR/EN, in the app's existing tone; light/dark; no new dependencies.
+
+### 5.7 Native → backend calls without exposing the JWT [R]
 
 The JWT lives in WebView `localStorage` [V `App.js:1064`]. The native token callbacks may run with no WebView. So:
 
@@ -490,7 +503,7 @@ Promoted Live Updates and the custom FCM service (S5) stay a later, separately a
 | | Community Live Activity plugins [A: exist on npm; quality and maintenance unverified] | **Custom in-app bridge (recommended)** |
 |---|---|---|
 | Fit | Generic JSON-driven layouts; still require us to write the Widget Extension and attributes | Exact `PlannAppointmentAttributes`, tokens, reconcile and error mapping |
-| Push-to-start/token callbacks without WebView | Usually JS-event-based (needs a live WebView) | Native → backend directly (§5.5) |
+| Push-to-start/token callbacks without WebView | Usually JS-event-based (needs a live WebView) | Native → backend directly (§5.7) |
 | Dependencies | New npm and pod dependency (against CLAUDE.md) | None; same pattern as `FCMTokenPlugin`/`ContactPickerPlugin` registered in `MyViewController.capacitorDidLoad` [V] |
 | Upgrade risk | Third-party lag on Capacitor and iOS majors | Ours to maintain (~400 lines of Swift + ~300 lines of Kotlin) |
 
