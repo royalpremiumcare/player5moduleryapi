@@ -63,3 +63,8 @@
     - upcoming: "Başlamasına kalan" + amber bar.
 
     The earlier "missing" upcoming/processing cards on the two main phones were caused by the throttle (item 9), not by the view.
+13. **Slot feasibility (in-place content switch)** (fresh iPhone 11 / iOS 26.1, build 1009, 00:43–00:44 TR):
+    - A **priority-5 `update`** rewrote an existing activity to a *different appointment* (Can B. processing → Selin D. upcoming) and applied **immediately**, with no banner and no sound.
+    - A second priority-5 update switched it to another appointment in `processing` with an `alert`. It also applied immediately, and the alert **did** produce a banner and sound.
+    - So one long-lived activity can show successive appointments without spending push-to-start budget, and the server decides exactly which transitions make noise.
+14. **`relevance-score` is not sticky.** After an update without `relevance-score`, the card dropped to the **bottom** of the stack. The score must be sent on **every** update, not just on start.
