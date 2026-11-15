@@ -174,6 +174,48 @@ workflows:
           done
 
           if [ "$have" -eq 0 ]; then
+            echo "Widget profili makinede yok → Apple'daki mevcut App Store profili indiriliyor"
+            app-store-connect profiles list --json > /tmp/asc_profiles.json || echo "UYARI: profiles list başarısız"
+            python3 - "$WIDGET_BUNDLE_ID" "$PROFILES_DIR" <<'PY' && have=$(cat /tmp/widget_profile_found 2>/dev/null || echo 0)
+          import base64, json, os, plistlib, re, sys
+          from datetime import datetime, timezone
+          bid, out_dir = sys.argv[1], sys.argv[2]
+          try:
+              items = json.load(open("/tmp/asc_profiles.json"))
+          except Exception as e:
+              print("profiles list okunamadı:", e); items = []
+          best = None
+          for it in items if isinstance(items, list) else []:
+              attrs = it.get("attributes", it)
+              content = attrs.get("profileContent")
+              if not content:
+                  continue
+              raw = base64.b64decode(content)
+              m = re.search(rb"<\?xml.*?</plist>", raw, re.S)
+              if not m:
+                  continue
+              p = plistlib.loads(m.group(0))
+              ent = p.get("Entitlements", {})
+              is_store = "ProvisionedDevices" not in p and not p.get("ProvisionsAllDevices") and not ent.get("get-task-allow")
+              exp = p.get("ExpirationDate")
+              if exp and exp.tzinfo is None:
+                  exp = exp.replace(tzinfo=timezone.utc)
+              if ent.get("application-identifier", "").endswith("." + bid) and is_store and exp and exp > datetime.now(timezone.utc):
+                  if best is None or p["CreationDate"] > best[0]["CreationDate"]:
+                      best = (p, raw)
+          if best:
+              p, raw = best
+              path = os.path.join(out_dir, p["UUID"] + ".mobileprovision")
+              open(path, "wb").write(raw)
+              print(f"Kuruldu: {p['Name']} ({p['UUID']}) bitiş {p['ExpirationDate']} → {path}")
+              open("/tmp/widget_profile_found", "w").write("1")
+          else:
+              print("Apple'da uygun widget App Store profili bulunamadı")
+              open("/tmp/widget_profile_found", "w").write("0")
+          PY
+          fi
+
+          if [ "$have" -eq 0 ]; then
             echo "Widget profili yok → App Store Connect API ile oluşturuluyor"
             BID=$(app-store-connect bundle-ids list --bundle-id-identifier "$WIDGET_BUNDLE_ID" --strict-match-identifier --platform IOS --json \
                   | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")')
@@ -186,7 +228,7 @@ workflows:
                     | python3 -c 'import sys,json; print(" ".join(c["id"] for c in json.load(sys.stdin)))')
             if [ -z "$CERTS" ]; then echo "HATA: dağıtım sertifikası bulunamadı"; exit 1; fi
             app-store-connect profiles create "$BID" --certificate-ids $CERTS --type IOS_APP_STORE \
-              --name "PLANN Widgets AppStore" --save --profiles-dir "$PROFILES_DIR" || {
+              --name "PLANN Widgets AppStore CM $(date +%Y%m%d%H%M%S)" --save --profiles-dir "$PROFILES_DIR" || {
                 echo "HATA: profil API ile oluşturulamadı (API anahtarı yetkisi?)."
                 echo "Elle: developer.apple.com > Identifiers > + > App IDs > ${WIDGET_BUNDLE_ID};"
                 echo "Profiles > + > App Store Connect > ${WIDGET_BUNDLE_ID}; sonra Codemagic > Code signing identities > Fetch profiles."
