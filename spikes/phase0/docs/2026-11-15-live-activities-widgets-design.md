@@ -427,7 +427,7 @@ The owner reviewed the options on iPhone 11 (iOS 26.0) and iPhone 16 Plus (iOS 2
 - ✓ green = done;
 - red = cancelled.
 
-**Bars** are ~6 pt: the system linear `ProgressView(timerInterval:)` with `scaleEffect(y: 1.6)`, and 6 pt capsules for the static states.
+**Bars** use the system default linear `ProgressView(timerInterval:)` thickness (~4 pt) and 4 pt capsules for the static states. The owner rejected the ~6 pt variant on device: "too thick".
 
 **Dynamic Island** (always black):
 - compact leading: the "P" mark (amber ring; filled amber while processing) plus the first name;

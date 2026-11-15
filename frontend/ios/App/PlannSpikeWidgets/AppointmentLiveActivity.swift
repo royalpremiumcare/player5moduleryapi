@@ -360,7 +360,6 @@ private struct ProgressLine: View {
                 EmptyView()
             }
             .tint(onDark ? PC.amberDot : PC.amberBar)
-            .scaleEffect(x: 1, y: 1.6, anchor: .center)
         case .processing:
             ProgressView(timerInterval: processingRange(state), countsDown: false) {
                 EmptyView()
@@ -368,15 +367,14 @@ private struct ProgressLine: View {
                 EmptyView()
             }
             .tint(onDark ? PC.greenSoft : PC.greenBar)
-            .scaleEffect(x: 1, y: 1.6, anchor: .center)
         case .starting:
             Capsule()
                 .fill(onDark ? PC.amberDot : PC.amberBar)
-                .frame(height: 6)
+                .frame(height: 4)
         default:
             Capsule()
                 .fill(onDark ? Color.gray.opacity(0.5) : PC.trackDone)
-                .frame(height: 6)
+                .frame(height: 4)
         }
     }
 }
