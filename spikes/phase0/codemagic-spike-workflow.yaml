@@ -1,0 +1,55 @@
+# PHASE 0 SPIKE (S4) — throwaway workflow. Merge under `workflows:` in codemagic.yaml ON THE SPIKE
+# BRANCH ONLY, after the Xcode project on that branch contains the SpikeWidgets extension target.
+#
+# Safety: NO `publishing:` section → the IPA is only an artifact; nothing goes to TestFlight/App Store.
+# NO `triggering:` section → runs only when started manually in the Codemagic UI.
+#
+# Signing: per Codemagic docs, bundle_identifier "co.plannapp.app" auto-matches profiles for
+# co.plannapp.app AND co.plannapp.app.* (so co.plannapp.app.widgets is picked up IF a profile exists).
+# If auto-matching fails, switch to the explicit `provisioning_profiles:` + `certificates:` lists
+# (cannot be combined with distribution_type/bundle_identifier).
+  ios-spike-phase0:
+    name: PLANN iOS Spike Phase0 (no publish)
+    max_build_duration: 90
+    integrations:
+      app_store_connect: "PLANN_API"
+    environment:
+      groups:
+        - env.production
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: "co.plannapp.app"
+      node: latest
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install dependencies
+        script: cd frontend && npm install --legacy-peer-deps
+      - name: Build web
+        script: cd frontend && REACT_APP_BACKEND_URL=https://plannapp.co npm run build:app
+      - name: Sync Capacitor
+        script: cd frontend && npx cap sync ios
+      - name: Install CocoaPods
+        script: cd frontend/ios/App && pod install --repo-update
+      - name: Dump installed profiles (S4 evidence)
+        script: |
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                   "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            for f in "$d/"*.mobileprovision; do
+              [ -e "$f" ] || continue
+              echo "───── $(basename "$f")"
+              security cms -D -i "$f" 2>/dev/null | plutil -p - | \
+                grep -E '"Name"|"application-identifier"|associated-domains|application-groups|aps-environment' || true
+            done
+          done
+          xcode-project use-profiles
+      - name: Archive (S4)
+        script: |
+          set +e
+          xcode-project build-ipa --workspace "frontend/ios/App/App.xcworkspace" --scheme "App"
+          status=$?
+          [ $status -ne 0 ] && grep -hnE "error:|Provisioning profile|requires a provisioning profile|entitlement" /tmp/xcodebuild_logs/*.log | tail -80
+          exit $status
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
