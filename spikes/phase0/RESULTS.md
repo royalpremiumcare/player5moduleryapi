@@ -42,3 +42,14 @@
 6. **Terminal phases render no live timer** (spike bug: `.timer` counted up after cancel), as already in spec §6.
 7. **The compact Dynamic Island leading icon** must be the PLANN mark, not the spike's generic clock SF Symbol.
 8. **A push-to-start whose `stale-date` is already in the past is silently dropped** (device, 2026-11-15, iOS 26.0 and 26.6, build 1007). A `completed` start with `stale-date` = end (1 h ago) never appeared on either phone, and the app logged nothing. The same start with `stale-date` 35 min in the future appeared immediately. **Planner rule:** never emit `start` unless the computed `stale-date` is more than ~60 s in the future (plan Task 6 `test_never_start_with_past_stale_date`; Task 3 payload builder asserts it).
+9. **Push-to-start is throttled per device** (observed 2026-11-15/16 on iPhone 11 / iOS 26.0 and iPhone 16 Plus / iOS 26.6).
+   - After about **13 successful priority-10 starts within ~1 hour** per device, every further start was silently dropped. FCM accepted each one, but the device had no activity and nothing appeared in the app log.
+   - This included a control `completed` card whose view has no progress bar, which rules out a rendering failure in build 1009.
+   - The budget size and reset window are **not documented by Apple** and were not measured.
+
+   **Design consequences:**
+   - **(a)** The server keeps a per-device start budget. Default: at most ~8 starts per rolling hour; above that it falls back to a notification. It never retries a start in a tight loop.
+   - **(b)** Only appointments inside the lead window are started, and only up to the cap (rule 1a). Normal salon load (≤ 1 start per appointment, spread over the day) stays far below the observed burst.
+   - **(c)** Content-only updates use priority 5, which is exempt from the budget per Apple; priority 10 is kept for start, the PROCESSING transition and end.
+   - **(d)** Pilot QA must not burst-test on the owner's phone.
+   - **Open:** measure the reset time (retry a single start on 2026-11-16).
