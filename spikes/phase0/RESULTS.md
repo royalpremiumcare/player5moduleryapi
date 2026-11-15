@@ -81,3 +81,4 @@
       - multiple activities per device cannot rely on priority-5 updates landing;
       - **a single activity per device turns "latest wins" into the desired semantics**, because only the current state matters;
       - when several updates must land together, use priority 10, which is budgeted, so do it sparingly.
+18. **Start budget recovery** (iPhone 16 Plus / iOS 26.6): the last dropped start was at 00:28 TR. A single start at **01:03 TR (~35 min later) appeared**, so the push-to-start budget refills on the order of tens of minutes, not a daily reset. The exact refill rate is unmeasured.
