@@ -81,7 +81,14 @@ def env(monkeypatch):
     asyncio.run(registry.ensure_indexes(db))
     db.settings.docs.append({"organization_id": ORG, "live_activity_enabled": True})
     transport = RecordingTransport()
-    endpoints.configure(_refuse, _refuse, transport=transport)
+    current = {"user": jwt_user("ali"), "jwt": None}
+
+    async def get_current_user(_request, token, _db):  # stands in for server.get_current_user
+        if token == "valid" and current["jwt"] is not None:
+            return current["jwt"]
+        raise endpoints._unauthorized()
+
+    endpoints.configure(get_current_user, _refuse, transport=transport)
     resyncs = []
 
     def fake_resync(db_, org_id, **_kw):
@@ -92,9 +99,7 @@ def env(monkeypatch):
     monkeypatch.setattr(endpoints, "_now", lambda: NOW)
     app = FastAPI()
     app.include_router(endpoints.router, prefix="/api")
-    current = {"user": jwt_user("ali"), "jwt": None}
     app.dependency_overrides[endpoints._current_user] = lambda: current["user"]
-    app.dependency_overrides[endpoints._optional_user] = lambda: current["jwt"]
     app.dependency_overrides[endpoints._db] = lambda: db
     db.log.clear()
     return SimpleNamespace(db=db, client=TestClient(app), transport=transport, resyncs=resyncs, current=current)
@@ -172,7 +177,7 @@ def test_token_requires_secret(env):
         assert resp.status_code == 401
     # A JWT alone is not enough for this endpoint.
     env.current["jwt"] = jwt_user("ali")
-    assert env.client.post("/api/live-activities/token", json=TOKEN).status_code == 401
+    assert env.client.post("/api/live-activities/token", json=TOKEN, headers=BEARER).status_code == 401
     assert slot(env.db, "d1", 1)["state"] == "start_sent"
     assert env.resyncs == []
 
@@ -222,9 +227,15 @@ def test_late_token_ends_orphan_activity(env):
 
 # --- reconcile ---------------------------------------------------------------------------------
 
-def reconcile(env, slots, *, complete, device_id="d1", secret="secret-d1", **extra):
+BEARER = {"Authorization": "Bearer valid"}
+EMPTY = {"end": [], "end_activities": [], "start_locally": []}
+
+
+def reconcile(env, slots, *, complete, device_id="d1", secret="secret-d1", bearer=None, **extra):
     body = {"device_id": device_id, "activities_enabled": True, "complete": complete, "slots": slots, **extra}
-    headers = {SECRET_HEADER: secret} if secret else {}
+    headers = {SECRET_HEADER: secret} if secret is not None else {}
+    if bearer is not None:
+        headers["Authorization"] = f"Bearer {bearer}"
     return env.client.post("/api/live-activities/reconcile", json=body, headers=headers)
 
 
@@ -235,7 +246,7 @@ def test_reconcile_partial_does_not_end_unlisted(env):
 
     resp = reconcile(env, [{"slot_index": 1, "activity_id": "A1", "state": "active"}], complete=False)
     assert resp.status_code == 200
-    assert resp.json() == {"end": [], "start_locally": []}
+    assert resp.json() == EMPTY
     assert (slot(env.db, "d1", 1)["state"], slot(env.db, "d1", 2)["state"]) == ("active", "active")
 
     resp = reconcile(env, [{"slot_index": 1, "activity_id": "A1", "state": "active"}], complete=True)
@@ -256,7 +267,7 @@ def test_reconcile_ends_unknown_and_ignores_stale_reports(env):
         {"slot_index": 4, "activity_id": "X", "state": "active"},    # unknown to the server
     ], complete=True)
     assert resp.status_code == 200
-    assert resp.json()["end"] == [2, 4]
+    assert (resp.json()["end"], resp.json()["end_activities"]) == ([2], ["X"])
     assert slot(env.db, "d1", 1)["state"] == "active"
     assert slot(env.db, "d1", 2)["state"] == "ended"
     assert slot(env.db, "d1", 3)["state"] == "start_sent"  # the token callback still lands
@@ -279,14 +290,42 @@ def test_reconcile_auth_secret_or_owner_jwt(env):
     env.db.live_activity_devices.docs.append(device_doc("d1", "ali"))
     assert reconcile(env, [], complete=False, secret=None).status_code == 401
     assert reconcile(env, [], complete=False, secret="wrong").status_code == 401
+    assert reconcile(env, [], complete=False, secret="").status_code == 401
 
     env.current["jwt"] = jwt_user("veli")
-    assert reconcile(env, [], complete=False, secret=None).status_code == 403
+    assert reconcile(env, [], complete=False, secret=None, bearer="valid").status_code == 403
     env.current["jwt"] = jwt_user("ali", org="org2")
-    assert reconcile(env, [], complete=False, secret=None).status_code == 403
+    assert reconcile(env, [], complete=False, secret=None, bearer="valid").status_code == 403
     env.current["jwt"] = jwt_user("ali")
-    assert reconcile(env, [], complete=False, secret=None, device_id="nope").status_code == 403
-    assert reconcile(env, [], complete=False, secret=None).status_code == 200
+    assert reconcile(env, [], complete=False, secret=None, bearer="valid", device_id="nope").status_code == 403
+    assert reconcile(env, [], complete=False, secret=None, bearer="stale").status_code == 401
+    assert reconcile(env, [], complete=False, secret=None, bearer="valid").status_code == 200
+    # A wrong secret is never rescued by a valid JWT.
+    assert reconcile(env, [], complete=False, secret="wrong", bearer="valid").status_code == 401
+
+
+def test_reconcile_valid_secret_with_stale_bearer_200(env):
+    env.db.live_activity_devices.docs.append(device_doc("d1", "ali"))
+    seed_slot(env.db, "d1", 1, activity_id="A1", token="t1")
+    resp = reconcile(env, [{"slot_index": 1, "activity_id": "A1", "state": "active"}], complete=True,
+                     bearer="stale")
+    assert resp.status_code == 200
+    assert resp.json() == EMPTY
+    assert slot(env.db, "d1", 1)["state"] == "active"
+    # Without a secret the stale bearer is still refused.
+    assert reconcile(env, [], complete=False, secret=None, bearer="stale").status_code == 401
+
+
+def test_reconcile_same_index_stale_sibling_keeps_tracked(env):
+    env.db.live_activity_devices.docs.append(device_doc("d1", "ali"))
+    seed_slot(env.db, "d1", 1, activity_id="A1", token="t1")
+    for order in (["OLD", "A1"], ["A1", "OLD"]):
+        resp = reconcile(env, [{"slot_index": 1, "activity_id": a, "state": "active"} for a in order],
+                         complete=True)
+        assert resp.status_code == 200
+        assert (resp.json()["end"], resp.json()["end_activities"]) == ([], ["OLD"])
+        assert slot(env.db, "d1", 1)["state"] == "active"
+    assert slot(env.db, "d1", 1)["version"] == 3  # untouched
 
 
 def test_reconcile_start_locally_only_without_push_to_start(env):
@@ -322,7 +361,7 @@ def test_reconcile_start_locally_only_without_push_to_start(env):
     # Already started: the next foreground reconcile asks for nothing new.
     resp = reconcile(env, [{"slot_index": 1, "activity_id": "L1", "state": "active"}], complete=True,
                      device_id="d2", secret="secret-d2")
-    assert resp.json() == {"end": [], "start_locally": []}
+    assert resp.json() == EMPTY
 
 
 def test_reconcile_start_locally_respects_disabled(env):

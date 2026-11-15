@@ -1,7 +1,8 @@
 """HTTP endpoints for Live Activities and the widget summary (mounted under /api by server.py).
 
 server.py injects its auth and db dependencies with `configure(...)`, so this module never
-imports server. Tests override `_current_user`, `_optional_user` and `_db`.
+imports server. Tests override `_current_user` and `_db`; reconcile's JWT branch calls the
+configured `get_current_user` directly, only when no device secret is sent.
 
 Writes go only to `live_activity_devices`, `live_activity_slots` and the user's own
 `live_activity_*` fields; nothing here writes appointments or auto-completes.
@@ -68,21 +69,16 @@ def _unauthorized() -> HTTPException:
                          headers={"WWW-Authenticate": "Bearer"})
 
 
-async def _optional_user(request: Request, token: str | None = Depends(_bearer), db=Depends(_db)):
-    """The JWT user, or None when no bearer token is sent. A bad token still raises 401."""
+async def _resolve_jwt(request: Request, token: str | None, db):
     if not token:
-        return None
+        raise _unauthorized()
     if _get_current_user is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Live Activities not configured")
     return await _get_current_user(request, token, db)
 
 
 async def _current_user(request: Request, token: str | None = Depends(_bearer), db=Depends(_db)):
-    if not token:
-        raise _unauthorized()
-    if _get_current_user is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Live Activities not configured")
-    return await _get_current_user(request, token, db)
+    return await _resolve_jwt(request, token, db)
 
 
 def _user_dict(user) -> dict:
@@ -205,51 +201,56 @@ class Reconcile(BaseModel):
     slots: list[SlotReport] = Field(default_factory=list, max_length=32)
 
 
-def _sort_reports(reports: list[SlotReport], slots: list[dict]) -> tuple[list[dict], list[int]]:
-    """Split the device's list into what the registry applies and the slots the device must end.
+def _sort_reports(reports: list[SlotReport], slots: list[dict]) -> tuple[list[dict], list[int], list[str]]:
+    """Split the device's list into what the registry applies, the slots whose tracked activity the
+    device must end, and the untracked activities it must end.
 
-    A card still on screen is kept only if it is the activity the server tracks for its slot
-    (or the slot awaits its token); otherwise the device ends it. An ended or dismissed report
-    applies only to the tracked activity, never to a newer one in the same slot.
+    A card still on screen is kept only if it is the activity the server tracks for its slot (or
+    the slot awaits its token). An untracked sibling at the same index is ended by its activity id
+    and never drops the tracked activity's report. An ended or dismissed report applies only to
+    the tracked activity, never to a newer one in the same slot.
     """
     by_index = {s["slot_index"]: s for s in slots}
     apply: dict[int, dict] = {}
     end: set[int] = set()
+    end_activities: list[str] = []
     for r in reports:
         s = by_index.get(r.slot_index)
         tracked = s.get("activity_id") if s else None
+        is_tracked = tracked is not None and tracked == r.activity_id
         if r.state in ALIVE_REPORT_STATES:
-            if s is not None and s.get("state") in USABLE_STATES and tracked in (None, r.activity_id):
+            if s is not None and s.get("state") in USABLE_STATES and (tracked is None or is_tracked):
                 apply[r.slot_index] = r.model_dump()
-            else:
-                end.add(r.slot_index)
-        elif s is not None and tracked and tracked == r.activity_id:
+            elif is_tracked or (r.activity_id is None and s is not None and s.get("state") not in USABLE_STATES):
+                end.add(r.slot_index)  # the server already ended this slot's own activity
+            elif r.activity_id is not None and r.activity_id not in end_activities:
+                end_activities.append(r.activity_id)
+        elif s is not None and is_tracked:
             apply[r.slot_index] = r.model_dump()
-    for idx in end:
-        apply.pop(idx, None)
-    return list(apply.values()), sorted(end)
+    return list(apply.values()), sorted(end), end_activities
 
 
 @router.post("/live-activities/reconcile")
-async def reconcile(body: Reconcile, db=Depends(_db), jwt_user=Depends(_optional_user),
+async def reconcile(body: Reconcile, request: Request, db=Depends(_db), token: str | None = Depends(_bearer),
                     device_secret: str | None = Header(default=None, alias=SECRET_HEADER)):
+    # The secret is checked first: the app's shared HTTP client may also attach a stale bearer,
+    # which must neither block a valid secret nor trigger its 401-logout.
     if device_secret is not None:
         device = await registry.verify_device_secret(db, body.device_id, device_secret)
         if device is None:
             raise _unauthorized()
-    elif jwt_user is not None:
-        device = await _owned_device(db, body.device_id, _user_dict(jwt_user))
+    else:
+        user = await _resolve_jwt(request, token, db)
+        device = await _owned_device(db, body.device_id, _user_dict(user))
         if device is None:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Device belongs to another user")
-    else:
-        raise _unauthorized()
 
     now = _now()
     if body.push_to_start_token:
         await db.live_activity_devices.update_one(
             {"device_id": body.device_id}, {"$set": {"push_to_start_token": body.push_to_start_token}}
         )
-    reports, end = _sort_reports(body.slots, await registry.slots_for_device(db, body.device_id))
+    reports, end, end_activities = _sort_reports(body.slots, await registry.slots_for_device(db, body.device_id))
     changed = await registry.apply_device_report(
         db, device_id=body.device_id, slots=reports, activities_enabled=body.activities_enabled,
         complete=body.complete, now=now,
@@ -257,7 +258,7 @@ async def reconcile(body: Reconcile, db=Depends(_db), jwt_user=Depends(_optional
     starts = await start_locally(db, body.device_id, now=now)  # [] unless the device lacks push-to-start
     if changed:
         _resync_soon(db, device["organization_id"])  # e.g. a dismissed slot frees room for the next card
-    return {"end": end, "start_locally": starts}
+    return {"end": end, "end_activities": end_activities, "start_locally": starts}
 
 
 # --- preferences -------------------------------------------------------------------------------
