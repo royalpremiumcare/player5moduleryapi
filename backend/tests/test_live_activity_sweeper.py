@@ -429,3 +429,30 @@ async def test_token_arriving_during_expiry_keeps_slot_active(monkeypatch):
     assert stats["expired_starts"] == 0 and stats["claim_lost"] == 0
     s = slot(db, "d1", 1)
     assert (s["state"], s["update_token"], s["activity_id"]) == ("active", "live", "A")
+
+
+async def test_owner_change_during_sweep_sends_nothing_for_old_owner(monkeypatch):
+    db = await make_db(users=[user("ali"), user("veli")], devices=[device("d1", "ali", day=TODAY)],
+                       apts=[apt("a", "10:20"), apt("b", "10:40")])
+    seed_slot(db, "d1", 1, "a", "upcoming", content_hash="stale")   # would get an update
+    seed_slot(db, "d1", 2, "x", "upcoming", state="ended", token=None)  # would be reopened by a start
+    real = registry.slots_for_device
+    reowned = []
+
+    async def snapshot_then_reown(db_, device_id):
+        slots = await real(db_, device_id)
+        if not reowned:  # the phone is signed in by someone else right after the snapshot
+            _, secret = await registry.upsert_device(
+                db_, device_id="d1", organization_id=ORG, user_id="id-veli", username="veli",
+                os_version="18.1", app_build="100", fcm_token="fcm-d1", push_to_start_token="pts-d1",
+                activities_enabled=True)
+            reowned.append(secret)
+        return slots
+
+    monkeypatch.setattr(registry, "slots_for_device", snapshot_then_reown)
+    t = RecordingTransport()
+    stats = await sweep(db, t)
+    assert reowned and reowned[0]          # the owner really changed (new secret issued)
+    assert t.sent == []                    # nothing of ali's reaches veli's phone
+    assert stats["claim_lost"] == 2
+    assert {s["state"] for s in db.live_activity_slots.docs} == {"ended"}

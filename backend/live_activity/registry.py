@@ -48,7 +48,10 @@ async def upsert_device(
     if existing is None:
         update["$setOnInsert"] = {"start_log": []}
     if owner_changed:
-        await db.live_activity_slots.update_many({"device_id": device_id}, {"$set": {"state": "ended"}})
+        # $inc: a sweep still holding the old owner's slot snapshot then fails its claim_slot CAS
+        await db.live_activity_slots.update_many(
+            {"device_id": device_id}, {"$set": {"state": "ended"}, "$inc": {"version": 1}}
+        )
     row = await db.live_activity_devices.find_one_and_update(
         {"device_id": device_id}, update, upsert=True, return_document=ReturnDocument.AFTER
     )
