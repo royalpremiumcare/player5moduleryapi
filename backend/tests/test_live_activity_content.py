@@ -139,11 +139,18 @@ def test_payload_under_4kb_with_long_service():
     apt = dict(APT, service_name="x" * 5000)
     c = build_content_state(apt, Phase.UPCOMING, START, END, privacy_mode="full",
                             staff_name="M", version=1)
+    assert len(c["serviceName"]) == 40
+    a = build_aps("update", c, now_epoch=0, relevance=1.0, stale_epoch=None,
+                  dismissal_epoch=None, slot_id=None, org_id=None, input_push_token=False)
+    assert len(json.dumps(a, ensure_ascii=False).encode()) < 4096
+
+
+def test_oversize_payload_raises():
+    c = build_content_state(APT, Phase.UPCOMING, START, END, privacy_mode="full",
+                            staff_name="s" * 5000, version=1)
     with pytest.raises(PayloadTooLarge):
         build_aps("update", c, now_epoch=0, relevance=1.0, stale_epoch=None,
                   dismissal_epoch=None, slot_id=None, org_id=None, input_push_token=False)
-    ok = aps("update")
-    assert len(json.dumps(ok, ensure_ascii=False).encode()) < 4096
 
 
 def test_matches_golden_fixture():

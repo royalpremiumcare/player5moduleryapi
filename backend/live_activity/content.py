@@ -11,6 +11,7 @@ ALERT_PROCESSING = ("Randevu başladı", "{name} · {service}")
 
 ATTRIBUTES_TYPE = "PlannAppointmentAttributes"
 MAX_PAYLOAD_BYTES = 4096
+SERVICE_NAME_MAX = 40
 MIN_START_STALE_SECONDS = 60
 
 
@@ -71,7 +72,7 @@ def build_content_state(
         "startLabel": apt["appointment_time"],
         "endLabel": end.strftime("%H:%M"),
         "customerDisplay": display_name(apt.get("customer_name"), privacy_mode),
-        "serviceName": apt.get("service_name") or "",
+        "serviceName": (apt.get("service_name") or "")[:SERVICE_NAME_MAX],
         "staffName": staff_name,
         "version": version,
         "appointmentId": str(apt["id"]),
