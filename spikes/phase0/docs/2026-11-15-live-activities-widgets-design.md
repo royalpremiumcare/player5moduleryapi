@@ -393,6 +393,55 @@ The JWT lives in WebView `localStorage` [V `App.js:1064`]. The native token call
 
 ## 6. Live Activity & Dynamic Island design
 
+### 6.0 Owner-approved visual (device-reviewed 2026-11-15, spike builds 1006–1009) **[decided]**
+
+The owner reviewed the options on iPhone 11 (iOS 26.0) and iPhone 16 Plus (iOS 26.6). This section **supersedes** the black-card sketch below where they differ.
+
+**Rejected:**
+- the black card;
+- option C "big timer" (44 pt ring and digits: too large on the Lock Screen);
+- the 5-row white card (still too tall).
+
+**Lock Screen card: white, 3 rows (~100 pt)**
+
+`activityBackgroundTint(.white)`, padding 14/16/12.
+
+```
+▍ Ayşe K.                       Sıradaki          row 1: name 17 bold · status label
+▍ Saç Kesimi · Elif          14:30–15:15          row 2: service · staff 13 · time range 13 semibold
+▍ Başlamasına kalan 9:58  ━━━━━━━━░░░░░░          row 3: label 13 + value 20 bold (74 pt slot) + bar
+```
+
+| Phase | Left strip | Status label | Row 3 |
+|---|---|---|---|
+| upcoming | 4 pt amber `#D97706` | "Sıradaki" amber-700 | "Başlamasına kalan" + countdown to **start** + amber bar (lead→start) |
+| starting (stale at start) | 4 pt amber | "Sıradaki" | "Başlıyor · 14:30" (**no timer**), full amber bar |
+| processing | **6 pt** amber | black pill, **green dot** + "İşlemde" | "Bitmesine kalan" + countdown to **end** + **green** bar `#16A34A` (start→end) |
+| overdue (stale at end) | 4 pt gray | "Süre doldu" | "Süre doldu · 15:15" (**no timer**) |
+| completed | 4 pt green | "✓ Tamamlandı" green-700 | "✓ Tamamlandı · 15:15" (**no timer, no bar**) |
+| cancelled | 4 pt red | "İptal edildi" red-700 | "✕ Randevu iptal edildi" (name gray, **no strikethrough**) |
+
+**Colour meaning:**
+- amber = the appointment, the same as the in-app card strip;
+- green = "in progress now" (dot, bar, island timer);
+- ✓ green = done;
+- red = cancelled.
+
+**Bars** are ~6 pt: the system linear `ProgressView(timerInterval:)` with `scaleEffect(y: 1.6)`, and 6 pt capsules for the static states.
+
+**Dynamic Island** (always black):
+- compact leading: the "P" mark (amber ring; filled amber while processing) plus the first name;
+- compact trailing: the countdown, amber for upcoming and **green to the end** for processing;
+- expanded: mark + name, time range, service, timer row, bar;
+- terminal states show ✓ / ✕ plus "Bitti" / "İptal" and no timer.
+
+**Not possible on iOS:** a "breathing" strip. Live Activities allow no repeating animations; only timers, progress views and push-driven content transitions animate. The 6 pt strip, the green dot and the moving bar carry "live".
+
+**Ordering:** with no relevance score, iOS stacked cards in start order (oldest on top). The server sends `relevance-score` (processing 100, upcoming 50 − minutes/10, terminal 0). Device verification is pending (build 1009 test).
+
+**Spike source:** `frontend/ios/App/PlannSpikeWidgets/AppointmentLiveActivity.swift` on the spike branch is the reference implementation for plan Task 16.
+
+
 The visual language follows the existing app: black/white, zinc neutrals, Figtree-like system font weights, the amber status bar for pending/due, green for completed, red for cancelled (`Dashboard.js:653-656`).
 
 ```
