@@ -82,3 +82,8 @@
       - **a single activity per device turns "latest wins" into the desired semantics**, because only the current state matters;
       - when several updates must land together, use priority 10, which is budgeted, so do it sparingly.
 18. **Start budget recovery** (iPhone 16 Plus / iOS 26.6): the last dropped start was at 00:28 TR. A single start at **01:03 TR (~35 min later) appeared**, so the push-to-start budget refills on the order of tens of minutes, not a daily reset. The exact refill rate is unmeasured.
+19. **The priority-10 *update* budget is generous** (iPhone 16 Plus / iOS 26.6, `frequent_pushes_enabled=false`, 01:07–01:11 TR).
+    - **40 silent priority-10 updates**, about one every 6 s, to one existing activity: **all 40 applied** (the card showed "Sayaç 40").
+    - The update budget is therefore far larger than the push-to-start burst limit (~13/h).
+    - A 5-staff owner with 3 cards needs ~40 priority-10 switches per *day*, spread out, which is well inside the observed tolerance.
+    - **Design consequence:** a multi-card model is viable if card *switches* go at priority 10, with priority 5 only for cosmetic changes. Starts stay rare (1–2 per card per day).
