@@ -68,3 +68,8 @@
     - A second priority-5 update switched it to another appointment in `processing` with an `alert`. It also applied immediately, and the alert **did** produce a banner and sound.
     - So one long-lived activity can show successive appointments without spending push-to-start budget, and the server decides exactly which transitions make noise.
 14. **`relevance-score` is not sticky.** After an update without `relevance-score`, the card dropped to the **bottom** of the stack. The score must be sent on **every** update, not just on start.
+15. **Offline delivery** (same device, 00:46 TR): a priority-5 update sent while the phone had **no internet** was delivered **when connectivity returned**. The card switched to the new appointment (Ece T.) and took its relevance position. While offline, the card kept rendering from local time (timers, stale fallbacks).
+16. **The relevance rule produces the intended order with silent updates** (00:48 TR):
+    - Silent priority-5 updates set processing Mehmet to 100 and upcoming Ece to 48 (`50 − 20 min/10`).
+    - The Lock Screen order became Mehmet (processing) → Ece → Ayşe (no score).
+    - There was no sound or banner, confirming that **ordering and content can be maintained silently**.
