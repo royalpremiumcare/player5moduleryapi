@@ -213,6 +213,70 @@ workflows:
             exit 1
           fi
           xcode-project use-profiles
+      - name: Widget profilini hedefe zorla ata
+        script: |
+          set -e
+          # use-profiles yeni extension hedefine profil atamazsa archive "requires a provisioning
+          # profile" ile düşer. Profili bulup hem pbxproj'a hem export_options.plist'e açıkça yazıyoruz.
+          PBX="frontend/ios/App/App.xcodeproj/project.pbxproj"
+          EXPORT_PLIST="$HOME/export_options.plist"
+          WPROF=""
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                   "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            for f in "$d/"*.mobileprovision; do
+              [ -e "$f" ] || continue
+              aid=$(security cms -D -i "$f" 2>/dev/null | python3 -c 'import plistlib,sys; print(plistlib.load(sys.stdin.buffer)["Entitlements"]["application-identifier"])' 2>/dev/null || true)
+              case "$aid" in *".${WIDGET_BUNDLE_ID}") WPROF="$f";; esac
+            done
+          done
+          if [ -z "$WPROF" ]; then
+            echo "HATA: ${WIDGET_BUNDLE_ID} için kurulu profil yok (önceki adımın çıktısına bakın)."
+            exit 1
+          fi
+          security cms -D -i "$WPROF" > /tmp/wprof.plist
+          WNAME=$(python3 -c 'import plistlib; print(plistlib.load(open("/tmp/wprof.plist","rb"))["Name"])')
+          WUUID=$(python3 -c 'import plistlib; print(plistlib.load(open("/tmp/wprof.plist","rb"))["UUID"])')
+          echo "Widget profili: $WNAME ($WUUID) → $WPROF"
+
+          echo "── Profildeki sertifikalar (SHA1) ──"
+          python3 - <<'PY'
+          import plistlib, hashlib
+          p = plistlib.load(open("/tmp/wprof.plist", "rb"))
+          for c in p.get("DeveloperCertificates", []):
+              print(hashlib.sha1(c).hexdigest().upper())
+          PY
+          echo "── Anahtarlıktaki imza kimlikleri ──"
+          security find-identity -v -p codesigning || true
+
+          python3 - "$PBX" "$WNAME" "$WIDGET_BUNDLE_ID" <<'PY'
+          import sys, re
+          path, name, bid = sys.argv[1:4]
+          s = open(path, encoding="utf-8").read()
+          marker = f"PRODUCT_BUNDLE_IDENTIFIER = {bid};"
+          blocks = s.split(marker)
+          if len(blocks) != 3:
+              sys.exit(f"beklenmeyen: {marker} {len(blocks)-1} kez bulundu")
+          out = blocks[0]
+          for rest in blocks[1:]:
+              head = rest.split("};", 1)[0]
+              add = ""
+              if "PROVISIONING_PROFILE_SPECIFIER" not in head:
+                  add += f'\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "{name}";'
+              if "CODE_SIGN_IDENTITY" not in head:
+                  add += '\n\t\t\t\tCODE_SIGN_IDENTITY = "Apple Distribution";'
+              out += marker + add + rest
+          open(path, "w", encoding="utf-8").write(out)
+          print("pbxproj widget ayarları tamam")
+          PY
+          grep -n -B2 -A3 "PRODUCT_BUNDLE_IDENTIFIER = ${WIDGET_BUNDLE_ID};" "$PBX" | grep -E "PROVISIONING_PROFILE_SPECIFIER|CODE_SIGN_IDENTITY|PRODUCT_BUNDLE" || true
+
+          if [ -f "$EXPORT_PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Print :provisioningProfiles:${WIDGET_BUNDLE_ID}" "$EXPORT_PLIST" >/dev/null 2>&1 \
+              || /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${WIDGET_BUNDLE_ID} string ${WNAME}" "$EXPORT_PLIST"
+            echo "── export_options.plist ──"; plutil -p "$EXPORT_PLIST"
+          else
+            echo "UYARI: $EXPORT_PLIST yok (build-ipa kendi oluşturacak)"
+          fi
       - name: iOS Uygulamasini (IPA) Derle
         script: |
           set +e
