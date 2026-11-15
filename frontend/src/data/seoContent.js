@@ -16,7 +16,7 @@
 // - Gelir-gider (kasa) takibi + istatistik raporları
 // - Seans paketleri (paket satışı ve kalan seans takibi)
 // - Yapay zeka asistanı (yazılı/sesli komutla randevu oluşturma)
-// - iOS / Android uygulama + PWA
+// - iOS / Android uygulama (App Store & Google Play)
 // - Türkçe/İngilizce arayüz, TRY/GBP desteği
 //
 // Bu dosya SAF DATA'dır (import yok) — build-time statik shell üreticisi
@@ -68,7 +68,7 @@ export const seoContent = {
     faq: [
       {
         q: "Müşteri randevu almak için uygulama kurmak zorunda mı?",
-        a: "Hayır. İşletmenize ait herkese açık randevu bağlantısını telefondaki tarayıcıdan açıp uygun saati seçmesi yeterlidir. Siz ise takvimi iOS, Android veya PWA üzerinden yönetebilirsiniz.",
+        a: "Hayır. İşletmenize ait herkese açık randevu bağlantısını telefondaki tarayıcıdan açıp uygun saati seçmesi yeterlidir. Siz ise takvimi iOS ve Android mobil uygulamasından yönetebilirsiniz.",
       },
       {
         q: "Teyit ve hatırlatma mesajlarını yine tek tek ben mi göndereceğim?",
@@ -94,7 +94,7 @@ export const seoContent = {
         "Dolu saatlere ikinci kayıt açılmasını önleyen takvim",
         "WhatsApp Business API ile zamanında onay ve hatırlatma",
         "Randevu geçmişi, toplam harcama ve genel not alanı",
-        "iOS, Android ve PWA üzerinden dükkân dışından erişim",
+        "iOS ve Android mobil uygulamasından dükkân dışından erişim",
       ],
     },
     cta: {
@@ -446,7 +446,7 @@ export const seoContent = {
   "tr:vertical:psikolog-randevu-programi": {
     intro: [
       "Bir seans biterken sıradaki danışan gelir; aradaki kısa sürede yeni saat taleplerine dönmek ve haftalık programı güncellemek kolay değildir. Düzenli görüşmeler mesajlarda, tek seferlik randevular ajandada kalınca çalışma günü gereksiz bir idari yüke dönüşür.",
-      "PLANN danışan randevularını gün ve hafta görünümünde düzenler. Paylaştığınız bağlantı uygun saatleri açar; WhatsApp onayı kayıt sırasında, hatırlatma seans yaklaşırken gider. Programınızı iOS, Android veya PWA'dan takip edersiniz.",
+      "PLANN danışan randevularını gün ve hafta görünümünde düzenler. Paylaştığınız bağlantı uygun saatleri açar; WhatsApp onayı kayıt sırasında, hatırlatma seans yaklaşırken gider. Programınızı iOS ve Android mobil uygulamasından takip edersiniz.",
     ],
     sections: [
       {
@@ -797,7 +797,7 @@ export const seoContent = {
       {
         h2: "Ders öncesi bilgi elinizin altında",
         body: [
-          "Üyenin önceki dersleri, harcaması, kalan paketi ve ekibin aldığı notlar müşteri kartında bulunur. Eğitmen, güne telefondan veya PWA üzerinden bakıp seans sırasını görebilir.",
+          "Üyenin önceki dersleri, harcaması, kalan paketi ve ekibin aldığı notlar müşteri kartında bulunur. Eğitmen, güne telefondaki mobil uygulamadan bakıp seans sırasını görebilir.",
         ],
       },
     ],
@@ -877,7 +877,7 @@ export const seoContent = {
       {
         h2: "Sınıfta, evde ya da çevrim içi",
         body: [
-          "Dersin nerede yapılacağından bağımsız olarak takvim ve hatırlatma akışı aynı kalır. Mobil/PWA görünümünden günün programına bakabilir, değişiklikleri telefondan işleyebilirsiniz.",
+          "Dersin nerede yapılacağından bağımsız olarak takvim ve hatırlatma akışı aynı kalır. Mobil uygulama görünümünden günün programına bakabilir, değişiklikleri telefondan işleyebilirsiniz.",
         ],
       },
     ],
@@ -906,7 +906,7 @@ export const seoContent = {
         "Veli veya öğrenciye WhatsApp mesajları otomatik gider",
         "Paket bakiyesi ve ders geçmişi birlikte tutulur",
         "Yazılı ya da sesli asistanla randevu eklenebilir",
-        "Program mobil ve PWA üzerinden açılabilir",
+        "Program mobil uygulamadan açılabilir",
       ],
     },
     cta: {
@@ -957,7 +957,7 @@ export const seoContent = {
       {
         h2: "Yoğun haftaya telefondan bakın",
         body: [
-          "Bayram öncesi gibi yoğun dönemlerde gün ve hafta görünümü alınmış randevuları netleştirir. Mobil/PWA üzerinden takvimi açıp yeni talebi uygun personele ekleyebilirsiniz.",
+          "Bayram öncesi gibi yoğun dönemlerde gün ve hafta görünümü alınmış randevuları netleştirir. Mobil uygulama üzerinden takvimi açıp yeni talebi uygun personele ekleyebilirsiniz.",
         ],
       },
     ],
@@ -1037,7 +1037,7 @@ export const seoContent = {
       {
         h2: "Önceki işlemleri yeni randevuda görün",
         body: [
-          "Kartta görünen geçmiş işler ve notlar, müşterinin son ziyaretini hatırlamayı kolaylaştırır. Mobil/PWA ekranından günün programına bakıp ekip içindeki iş dağılımını görebilirsiniz.",
+          "Kartta görünen geçmiş işler ve notlar, müşterinin son ziyaretini hatırlamayı kolaylaştırır. Mobil uygulama ekranından günün programına bakıp ekip içindeki iş dağılımını görebilirsiniz.",
         ],
       },
     ],
@@ -1565,7 +1565,7 @@ export const seoContent = {
   "tr:feature:mobil-randevu-uygulamasi": {
     intro: [
       "Randevular yalnızca bilgisayar başındayken gelmez. İşletme içinde hareket ederken, dışarıdayken veya günün programına hızlıca bakmanız gerektiğinde takvime telefondan ulaşabilmek işleri kolaylaştırır.",
-      "PLANN; iOS, Android ve kurulabilir PWA seçenekleriyle mobil kullanım sunar. Takvim, müşteri kayıtları ve yetkinizin izin verdiği işletme alanları telefonda ve bilgisayarda aynı hesap üzerinden açılır.",
+      "PLANN'in App Store'dan indirilen iOS ve Google Play'den indirilen Android mobil uygulamaları vardır. Takvim, müşteri kayıtları ve yetkinizin izin verdiği işletme alanları telefonda ve bilgisayarda aynı hesap üzerinden açılır.",
     ],
     sections: [
       {
@@ -1593,16 +1593,16 @@ export const seoContent = {
         ],
       },
       {
-        h2: "Uygulama, PWA ve web aynı hesabı kullanır",
+        h2: "Mobil uygulama ve web aynı hesabı kullanır",
         body: [
-          "iPhone, Android telefon, kurulabilir web uygulaması ve masaüstü tarayıcı aynı PLANN hesabındaki güncel kayıtları gösterir. Gördüğünüz içerik, oturum açtığınız hesap ve kullanıcı yetkileriyle belirlenir.",
+          "App Store ve Google Play'deki mobil uygulama ile masaüstü tarayıcı aynı PLANN hesabındaki güncel kayıtları gösterir. Gördüğünüz içerik, oturum açtığınız hesap ve kullanıcı yetkileriyle belirlenir.",
         ],
       },
     ],
     faq: [
       {
         q: "PLANN'i hangi mobil platformlarda kullanabilirim?",
-        a: "PLANN'in iOS ve Android uygulamaları vardır. Desteklenen tarayıcılarda PWA olarak kurulabilir ve normal web arayüzünden de açılabilir.",
+        a: "PLANN'in App Store'da yayınlanan iOS ve Google Play'de yayınlanan Android uygulamaları vardır. Ayrıca normal web arayüzünden de açılabilir.",
       },
       {
         q: "Online randevu alan müşterinin uygulama kurması gerekir mi?",
@@ -1620,7 +1620,7 @@ export const seoContent = {
     trust: {
       title: "Mobil erişimin kapsadığı alanlar",
       items: [
-        "iOS, Android ve kurulabilir PWA desteği",
+        "App Store (iOS) ve Google Play (Android) mobil uygulamaları",
         "Telefondan gün ve hafta randevu görünümü",
         "Yetkiye bağlı müşteri geçmişi, harcama ve not erişimi",
         "Personel bazlı takvim ve rol kontrollü görünürlük",
@@ -1678,7 +1678,7 @@ export const seoContent = {
       {
         h2: "Give each barber the access they need",
         body: [
-          "Separate staff diaries keep a multi-chair shop legible. Permissions can limit what each barber sees, while the owner can review the wider schedule and staff-level figures from the web, PWA or iOS and Android apps.",
+          "Separate staff diaries keep a multi-chair shop legible. Permissions can limit what each barber sees, while the owner can review the wider schedule and staff-level figures from the web or the iOS and Android apps.",
         ],
       },
     ],
@@ -1701,7 +1701,7 @@ export const seoContent = {
       },
       {
         q: "Can I check the diary away from the premises?",
-        a: "Yes. PLANN is available on iOS, Android and as a PWA, with the same current diary available when you are away from the shop.",
+        a: "Yes. PLANN is available on iOS and Android, with the same current diary available when you are away from the shop.",
       },
     ],
     trust: {
@@ -1795,7 +1795,7 @@ export const seoContent = {
         "Individual stylist diaries with booking conflict checks",
         "Client visit, spend and preference notes together",
         "Session package balances for defined treatment courses",
-        "Web, PWA, iOS and Android access for the team",
+        "Web, iOS and Android access for the team",
       ],
     },
     cta: {
@@ -1846,7 +1846,7 @@ export const seoContent = {
       {
         h2: "Separate responsibilities without separating the information",
         body: [
-          "Therapists can work from their own diaries under the permissions you set. Reception and management can have the broader access their roles require, with the current schedule available through the PWA and iOS or Android apps.",
+          "Therapists can work from their own diaries under the permissions you set. Reception and management can have the broader access their roles require, with the current schedule available through the iOS or Android apps.",
         ],
       },
     ],
@@ -1930,7 +1930,7 @@ export const seoContent = {
       {
         h2: "Keep working when the studio grows",
         body: [
-          "A solo technician can manage the diary from the PWA or iOS and Android apps. With additional technicians, give each person a diary and suitable permissions while retaining a studio-wide management view.",
+          "A solo technician can manage the diary from the iOS and Android apps. With additional technicians, give each person a diary and suitable permissions while retaining a studio-wide management view.",
         ],
       },
     ],
@@ -2017,7 +2017,7 @@ export const seoContent = {
     faq: [
       {
         q: "Can the team check appointments away from reception?",
-        a: "Yes. Authorised staff can use the web, PWA, iOS or Android versions, with access governed by the permissions set for their role.",
+        a: "Yes. Authorised staff can use the web, iOS or Android versions, with access governed by the permissions set for their role.",
       },
       {
         q: "Can every dentist have an individual diary?",
@@ -2094,7 +2094,7 @@ export const seoContent = {
       {
         h2: "Set access for the way you practise",
         body: [
-          "A sole practitioner can keep a single diary, while a group practice can allocate staff diaries and permissions. Each person works with the access their role requires across the web, PWA, iOS or Android app.",
+          "A sole practitioner can keep a single diary, while a group practice can allocate staff diaries and permissions. Each person works with the access their role requires across the web, iOS or Android app.",
         ],
       },
     ],
@@ -2334,7 +2334,7 @@ export const seoContent = {
       {
         h2: "Take the diary onto the gym floor",
         body: [
-          "The mobile app and PWA let trainers check the day, add a booking and review a member note without returning to reception. Typed or spoken AI booking is useful when the next client is already waiting.",
+          "The mobile app lets trainers check the day, add a booking and review a member note without returning to reception. Typed or spoken AI booking is useful when the next client is already waiting.",
         ],
       },
     ],
@@ -2414,7 +2414,7 @@ export const seoContent = {
       {
         h2: "Equally useful away from a desk",
         body: [
-          "The mobile app and PWA keep the next lesson, pupil history and notes to hand between sessions. Online teaching still happens on your chosen video service; PLANN looks after the appointment record and reminders.",
+          "The mobile app keeps the next lesson, pupil history and notes to hand between sessions. Online teaching still happens on your chosen video service; PLANN looks after the appointment record and reminders.",
         ],
       },
     ],
@@ -2443,7 +2443,7 @@ export const seoContent = {
         "WhatsApp prompts sent to the saved pupil or parent number",
         "Package balances linked to completed appointments",
         "Pupil lesson history, spend and notes kept together",
-        "Phone-friendly access through the app or PWA",
+        "Phone-friendly access through the iOS and Android app",
       ],
     },
     cta: {
@@ -2494,7 +2494,7 @@ export const seoContent = {
       {
         h2: "Check the next class anywhere",
         body: [
-          "Instructors can open the mobile app or PWA for their daily schedule and member notes. Reception can also add a booking quickly with a typed or spoken instruction to the AI assistant.",
+          "Instructors can open the mobile app for their daily schedule and member notes. Reception can also add a booking quickly with a typed or spoken instruction to the AI assistant.",
         ],
       },
     ],
@@ -2574,7 +2574,7 @@ export const seoContent = {
       {
         h2: "Useful between customer jobs",
         body: [
-          "The mobile app and PWA put the diary and client history on your phone. A spoken or typed AI instruction can add an appointment when using several screens would be inconvenient.",
+          "The mobile app puts the diary and client history on your phone. A spoken or typed AI instruction can add an appointment when using several screens would be inconvenient.",
         ],
       },
     ],
@@ -2654,7 +2654,7 @@ export const seoContent = {
       {
         h2: "Handle enquiries with wet hands",
         body: [
-          "Use the mobile app or PWA to check the next client from the workshop. When tapping through a form is awkward, the AI assistant can create a booking from a typed or spoken instruction.",
+          "Use the mobile app to check the next client from the workshop. When tapping through a form is awkward, the AI assistant can create a booking from a typed or spoken instruction.",
         ],
       },
     ],
@@ -2814,7 +2814,7 @@ export const seoContent = {
       {
         h2: "Adjust when the day changes",
         body: [
-          "Staff can update and check the diary through the mobile app or PWA. Typed and spoken AI booking also helps reception enter a clear appointment quickly when the telephone is busy.",
+          "Staff can update and check the diary through the mobile app. Typed and spoken AI booking also helps reception enter a clear appointment quickly when the telephone is busy.",
         ],
       },
     ],
@@ -3061,7 +3061,7 @@ export const seoContent = {
     faq: [
       {
         q: "Must clients install PLANN to make a booking?",
-        a: "No. Clients open your public booking link in a browser. The iOS, Android and PWA options are for businesses and their staff using PLANN.",
+        a: "No. Clients open your public booking link in a browser. The iOS and Android apps are for businesses and their staff using PLANN.",
       },
       {
         q: "Can the page offer a time that is already booked?",
@@ -3182,7 +3182,7 @@ export const seoContent = {
   "en-GB:feature:mobile-appointment-app-pwa": {
     intro: [
       "Appointments are rarely managed from one desk all day. Owners and staff need to check the diary between clients, in another room or while working away from the premises.",
-      "PLANN is available for iOS and Android, as well as a PWA. Use the same business account to reach your diary, client records and everyday management tools from the device that suits the work.",
+      "PLANN is available for iOS on the App Store and for Android on Google Play. Use the same business account to reach your diary, client records and everyday management tools from the device that suits the work.",
     ],
     sections: [
       {
@@ -3210,20 +3210,20 @@ export const seoContent = {
         ],
       },
       {
-        h2: "Choose app or PWA access",
+        h2: "iOS, Android and web access",
         body: [
-          "Use PLANN on iOS or Android, or open the PWA where that better suits your setup. Whichever route you choose, you are working with the same business account and appointment records.",
+          "Use the PLANN app from the App Store on iOS or Google Play on Android, or open PLANN in a web browser where that better suits your setup. Whichever route you choose, you are working with the same business account and appointment records.",
         ],
       },
     ],
     faq: [
       {
         q: "Which mobile options does PLANN support?",
-        a: "PLANN is available on iOS and Android and can also be used as a PWA.",
+        a: "PLANN is available on iOS via the App Store and on Android via Google Play, and can also be opened in a web browser.",
       },
       {
         q: "Do clients need to install anything?",
-        a: "No. Clients use your public booking link in their browser. The iOS, Android and PWA access is for the business and its authorised staff.",
+        a: "No. Clients use your public booking link in their browser. The iOS and Android apps are for the business and its authorised staff.",
       },
       {
         q: "Can staff use separate accounts on their phones?",
@@ -3237,7 +3237,7 @@ export const seoContent = {
     trust: {
       title: "PLANN access that fits the working day",
       items: [
-        "Available for iOS, Android and as a PWA",
+        "Available for iOS (App Store) and Android (Google Play)",
         "Day and week diary views on mobile",
         "Typed and voice AI appointment creation",
         "Client history, spend and notes within reach",
@@ -3246,7 +3246,7 @@ export const seoContent = {
     },
     cta: {
       title: "Keep the diary close to the work",
-      text: "Create your PLANN account and choose iOS, Android or PWA access for you and your team.",
+      text: "Create your PLANN account and use PLANN on iOS, Android or the web with your team.",
       button: "Create a PLANN account",
     },
     links: [

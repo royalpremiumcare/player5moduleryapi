@@ -38,7 +38,7 @@ const labels = {
       "whatsapp-randevu-hatirlatma": "WhatsApp Randevu Hatırlatma",
       "online-randevu-sayfasi": "Online Randevu Sayfası",
       "gelir-gider-personel-takibi": "Gelir-Gider & Personel Takibi",
-      "mobil-randevu-uygulamasi": "Mobil Randevu Uygulaması (PWA)",
+      "mobil-randevu-uygulamasi": "Mobil Randevu Uygulaması",
     },
   },
   "en-GB": {
@@ -67,7 +67,7 @@ const labels = {
       "whatsapp-appointment-reminders": "WhatsApp Appointment Reminders",
       "online-booking-page": "Online Booking Page",
       "revenue-expenses-staff-tracking": "Revenue, Expenses & Staff Tracking",
-      "mobile-appointment-app-pwa": "Mobile App (PWA)",
+      "mobile-appointment-app-pwa": "Mobile App",
     },
   },
 };
