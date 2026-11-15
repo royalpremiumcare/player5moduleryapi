@@ -56,6 +56,14 @@ def effective_lead_minutes(lead: int | None) -> int:
     return max(MIN_LEAD_MIN, min(MAX_LEAD_MIN, lead))
 
 
+def in_scope(apt: dict, user: dict, scope: str) -> bool:
+    """Scope filter of `visible_for_user`: `own` is the user's appointments, plus unassigned ones for admins."""
+    if scope != "own":
+        return True
+    sm = apt.get("staff_member_id")
+    return sm == user.get("username") or (user.get("role") == "admin" and not sm)
+
+
 def visible_for_user(
     apts: list[dict],
     user: dict,
@@ -67,15 +75,12 @@ def visible_for_user(
     day_open: bool,
     tz: ZoneInfo = TR_TZ,
 ) -> list[VisibleAppt]:
-    is_admin = user.get("role") == "admin"
     today = now.astimezone(tz).date()
     lead = timedelta(minutes=lead_min)
     out: list[VisibleAppt] = []
     for apt in apts:
-        if scope == "own":
-            sm = apt.get("staff_member_id")
-            if not (sm == user.get("username") or (is_admin and not sm)):
-                continue
+        if not in_scope(apt, user, scope):
+            continue
         try:
             duration = resolve_duration(apt, services_by_id)
             start, end = appointment_window(apt, duration, tz)

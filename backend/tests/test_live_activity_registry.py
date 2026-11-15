@@ -160,3 +160,39 @@ async def test_report_bumps_version_so_stale_claim_fails(db):
     assert stale is False
     s = (await registry.slots_for_device(db, "dev1"))[0]
     assert (s["state"], s["version"]) == ("dismissed_by_user", 2)
+
+
+async def test_active_report_never_changes_state(db):
+    await _seed_slot(db, 1, state="start_sent")
+    await _seed_slot(db, 2, state="ended")
+    changed = await registry.apply_device_report(
+        db, device_id="dev1", activities_enabled=True, complete=True, now=NOW,
+        slots=[{"slot_index": 1, "activity_id": "x", "state": "active"},
+               {"slot_index": 2, "activity_id": "act2", "state": "active"}])
+    assert changed == []
+    assert [s["state"] for s in await registry.slots_for_device(db, "dev1")] == ["start_sent", "ended"]
+    assert await registry.record_slot_token(db, device_id="dev1", slot_index=1, activity_id="A", update_token="T")
+
+
+async def test_refresh_slot_token_only_for_tracked_active_activity(db):
+    await _seed_slot(db, 1, update_token="old")  # version 1, activity act1
+    args = dict(device_id="dev1", slot_index=1, update_token="new")
+    assert await registry.refresh_slot_token(db, activity_id="other", **args) is False
+    assert await registry.refresh_slot_token(db, activity_id="act1", **args) is True
+    s = (await registry.slots_for_device(db, "dev1"))[0]
+    assert (s["update_token"], s["version"]) == ("new", 2)
+    assert await registry.refresh_slot_token(db, activity_id="act1", **args) is True  # same token: no bump
+    assert (await registry.slots_for_device(db, "dev1"))[0]["version"] == 2
+
+
+async def test_remove_device_ends_slots_and_deletes_row(db):
+    await registry.upsert_device(db, **DEVICE)
+    await _seed_slot(db, 1, update_token="t1")
+    await _seed_slot(db, 2, state="ended", update_token="t2")
+    await _seed_slot(db, 3, state="start_sent")
+    live = await registry.remove_device(db, "dev1")
+    assert [(s["slot_index"], s["update_token"]) for s in live] == [(1, "t1")]
+    assert await db.live_activity_devices.find_one({"device_id": "dev1"}) is None
+    assert {(s["state"], s["version"]) for s in await registry.slots_for_device(db, "dev1")} == {("ended", 2)}
+    _, secret = await registry.upsert_device(db, **DEVICE)
+    assert secret  # re-registering after logout issues a fresh secret

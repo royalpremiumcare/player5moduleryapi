@@ -105,6 +105,35 @@ async def record_slot_token(
     return result.matched_count == 1
 
 
+async def refresh_slot_token(
+    db, *, device_id: str, slot_index: int, activity_id: str, update_token: str
+) -> bool:
+    """A running activity re-sent or rotated its push token. True if the slot holds that activity."""
+    key = {"device_id": device_id, "slot_index": slot_index, "state": "active", "activity_id": activity_id}
+    slot = await db.live_activity_slots.find_one(key)
+    if slot is None:
+        return False
+    if slot.get("update_token") == update_token:
+        return True
+    result = await db.live_activity_slots.update_one(
+        key, {"$set": {"update_token": update_token}, "$inc": {"version": 1}}
+    )
+    return result.matched_count == 1
+
+
+async def remove_device(db, device_id: str) -> list[dict]:
+    """Logout: end every slot and delete the device row (and with it the secret).
+    Returns the slots that were live with a token, as they were before, so the caller can end them."""
+    live = [s for s in await slots_for_device(db, device_id)
+            if s.get("state") in ("start_sent", "active") and s.get("update_token")]
+    # $inc: a sweep holding a slot snapshot then fails its claim_slot CAS
+    await db.live_activity_slots.update_many(
+        {"device_id": device_id}, {"$set": {"state": "ended"}, "$inc": {"version": 1}}
+    )
+    await db.live_activity_devices.delete_one({"device_id": device_id})
+    return live
+
+
 async def apply_device_report(
     db, *, device_id: str, slots: list[dict], activities_enabled: bool, complete: bool, now: datetime
 ) -> list[dict]:
@@ -121,7 +150,9 @@ async def apply_device_report(
             new_state = {"dismissed": "dismissed_by_user", "ended": "ended", "active": "active"}.get(
                 report.get("state")
             )
-            if new_state is None or new_state == slot["state"]:
+            # "active" only lists the slot: the token callback alone makes a slot active, so a
+            # report can neither revive an ended slot nor pre-empt a pending start's token.
+            if new_state in (None, "active") or new_state == slot["state"]:
                 continue
             fields = {"state": new_state}
             if new_state == "dismissed_by_user":

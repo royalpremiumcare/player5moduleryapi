@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 
@@ -22,7 +23,14 @@ from .content import (
     format_alert,
     stale_epoch,
 )
-from .eligibility import VisibleAppt, effective_lead_minutes, effective_scope, slot_count, visible_for_user
+from .eligibility import (
+    MAX_SLOTS,
+    VisibleAppt,
+    effective_lead_minutes,
+    effective_scope,
+    slot_count,
+    visible_for_user,
+)
 from .phase import TR_TZ, Phase, appointment_window, compute_phase, resolve_duration
 from .planner import Action, plan_device
 from .transport import FcmLiveActivityTransport, LiveActivityTransport
@@ -120,7 +128,8 @@ async def _acquire_lock(redis, now: datetime) -> bool:
         return True
 
 
-async def _load_org(db, settings: dict, now: datetime) -> _Org:
+async def load_org(db, settings: dict, now: datetime) -> _Org:
+    """Read-only snapshot of one org: yesterday's and today's appointments, services, users, settings."""
     org_id = settings["organization_id"]
     local = now.astimezone(TR_TZ)
     days = [(local - timedelta(days=1)).strftime("%Y-%m-%d"), local.strftime("%Y-%m-%d")]
@@ -205,9 +214,20 @@ def _end_content(org: _Org, action: Action, now: datetime, *, staff_name, versio
         except (KeyError, ValueError):
             pass
     # Deleted (or unreadable): no data left to show; the card is dismissed immediately (spec §1 row 10).
-    stub = {"id": action.appointment_id or "", "appointment_time": "", "customer_name": None, "service_name": ""}
-    return build_content_state(stub, Phase.REMOVED, now, now, privacy_mode="hidden",
-                               staff_name=None, version=version), True
+    return removed_content(action.appointment_id, now, version=version), True
+
+
+def removed_content(appointment_id: str | None, now: datetime, *, version: int) -> dict:
+    """Final content for a card with nothing left to show (deleted appointment, orphan, logout)."""
+    stub = {"id": appointment_id or "", "appointment_time": "", "customer_name": None, "service_name": ""}
+    return build_content_state(stub, Phase.REMOVED, now, now, privacy_mode="hidden", staff_name=None, version=version)
+
+
+def _start_fields(v: VisibleAppt, content: dict, now: datetime) -> dict:
+    """Slot fields claimed for a start; a reused slot drops the previous activity's token."""
+    return {"appointment_id": v.id, "phase_sent": v.phase.value, "content_hash": content_hash(content),
+            "state": "start_sent", "started_at": now.timestamp(), "day": now.astimezone(TR_TZ).strftime("%Y-%m-%d"),
+            "update_token": None, "activity_id": None}
 
 
 async def _execute(db, org: _Org, device: dict, slot: dict | None, action: Action, visible: VisibleAppt | None,
@@ -236,9 +256,7 @@ async def _execute(db, org: _Org, device: dict, slot: dict | None, action: Actio
                 aps = build_aps("start", content, now_epoch=now_epoch, relevance=action.relevance,
                                 stale_epoch=stale, dismissal_epoch=None, slot_id=f"{device_id}:{action.slot_index}",
                                 org_id=org.org_id, input_push_token=True)
-                # A reused slot must drop the previous activity's token, or updates would target it.
-                fields.update(state="start_sent", started_at=now.timestamp(), day=today,
-                              update_token=None, activity_id=None)
+                fields = _start_fields(v, content, now)
                 la_token = device.get("push_to_start_token")
             else:
                 aps = build_aps("update", content, now_epoch=now_epoch, relevance=action.relevance,
@@ -302,28 +320,33 @@ async def _execute(db, org: _Org, device: dict, slot: dict | None, action: Actio
     # expiry reopens the index after LOST_START_SEC if no token arrives.
 
 
-async def _sweep_device(db, org: _Org, device: dict, *, transport: LiveActivityTransport, now: datetime,
-                        stats: _Stats) -> None:
-    device_id = device["device_id"]
-    if not device.get("fcm_token"):
-        return
+@dataclass
+class _DeviceView:
+    """What one device should show now: shared by the sweep and the reconcile's local starts."""
+    user: dict
+    n_slots: int
+    slots: list[dict]
+    visible: list[VisibleAppt]
+    by_id: dict[str, VisibleAppt]
+    staff_name: Callable[[dict], str | None]
+    content_for: Callable[[VisibleAppt, int], dict]
+
+
+async def _device_view(db, org: _Org, device: dict, *, now: datetime, stats: _Stats) -> _DeviceView | None:
     user = org.users_by_username.get(device.get("username"))
     if user is None or not _active(user):
-        return
-    stats.devices += 1
-    now_epoch = now.timestamp()
+        return None
+    device_id = device["device_id"]
     today = now.astimezone(TR_TZ).strftime("%Y-%m-%d")
     scope = effective_scope(user, admin_provides_service=org.admin_provides_service, org_has_staff=org.org_has_staff)
-    n_slots = slot_count(user, scope)
 
     slots = await registry.slots_for_device(db, device_id)
-    if await _expire_lost_starts(db, device_id, slots, now_epoch, stats):
+    if await _expire_lost_starts(db, device_id, slots, now.timestamp(), stats):
         slots = await registry.slots_for_device(db, device_id)
     await _load_slot_appointments(db, org, slots)
 
     visible = visible_for_user(org.apts, user, scope, now=now, services_by_id=org.services_by_id,
                                lead_min=org.lead_min, day_open=device.get("day") == today)
-    by_id = {v.id: v for v in visible}
 
     def staff_name(apt: dict) -> str | None:
         return org.staff_name(apt) if scope == "all" else None
@@ -332,19 +355,85 @@ async def _sweep_device(db, org: _Org, device: dict, *, transport: LiveActivityT
         return build_content_state(v.apt, v.phase, v.start, v.end, privacy_mode=org.privacy_mode,
                                    staff_name=staff_name(v.apt), version=version)
 
-    actions = plan_device(
-        slots=slots, visible=visible, n_slots=n_slots, now=now,
-        starts_last_hour=registry.starts_last_hour(device, now_epoch), start_budget=start_budget(),
-        start_alert_enabled=bool(user.get("live_activity_start_alert")),
-        has_push_to_start=bool(device.get("push_to_start_token")) and device.get("activities_enabled") is not False,
-        content_hash=lambda v: content_hash(content_for(v, 0)),
-        final_phases=_final_phases(org, slots, set(by_id), now),
+    return _DeviceView(user=user, n_slots=slot_count(user, scope), slots=slots, visible=visible,
+                       by_id={v.id: v for v in visible}, staff_name=staff_name, content_for=content_for)
+
+
+def _plan(org: _Org, device: dict, view: _DeviceView, *, now: datetime, has_push_to_start: bool,
+          start_alert_enabled: bool) -> list[Action]:
+    return plan_device(
+        slots=view.slots, visible=view.visible, n_slots=view.n_slots, now=now,
+        starts_last_hour=registry.starts_last_hour(device, now.timestamp()), start_budget=start_budget(),
+        start_alert_enabled=start_alert_enabled, has_push_to_start=has_push_to_start,
+        content_hash=lambda v: content_hash(view.content_for(v, 0)),
+        final_phases=_final_phases(org, view.slots, set(view.by_id), now),
     )
-    by_index = {s["slot_index"]: s for s in slots}
+
+
+async def _sweep_device(db, org: _Org, device: dict, *, transport: LiveActivityTransport, now: datetime,
+                        stats: _Stats) -> None:
+    if not device.get("fcm_token"):
+        return
+    view = await _device_view(db, org, device, now=now, stats=stats)
+    if view is None:
+        return
+    stats.devices += 1
+    actions = _plan(
+        org, device, view, now=now,
+        has_push_to_start=bool(device.get("push_to_start_token")) and device.get("activities_enabled") is not False,
+        start_alert_enabled=bool(view.user.get("live_activity_start_alert")),
+    )
+    by_index = {s["slot_index"]: s for s in view.slots}
     for action in actions:
         stats.actions += 1
-        await _execute(db, org, device, by_index.get(action.slot_index), action, by_id.get(action.appointment_id),
-                       transport=transport, now=now, stats=stats, content_for=content_for, staff_name=staff_name)
+        await _execute(db, org, device, by_index.get(action.slot_index), action, view.by_id.get(action.appointment_id),
+                       transport=transport, now=now, stats=stats, content_for=view.content_for,
+                       staff_name=view.staff_name)
+
+
+async def start_locally(db, device_id: str, *, now: datetime) -> list[dict]:
+    """Starts for a device without push-to-start (iOS 16.2–17.1), handed to the foregrounded app
+    instead of pushed. The planner decides them exactly as for a sweep; each slot is claimed
+    `start_sent` before it is returned, so the activity's token callback is accepted (and an
+    unused claim expires after LOST_START_SEC like a lost push-to-start)."""
+    device = await db.live_activity_devices.find_one({"device_id": device_id})
+    if device is None or device.get("push_to_start_token") or device.get("activities_enabled") is False:
+        return []
+    settings = await db.settings.find_one(
+        {"organization_id": device.get("organization_id"), "live_activity_enabled": True}, {"_id": 0}
+    )
+    if not settings:
+        return []
+    org = await load_org(db, settings, now)
+    today = now.astimezone(TR_TZ).strftime("%Y-%m-%d")
+    out: list[dict] = []
+    for _ in range(MAX_SLOTS):  # the planner opens one slot per pass
+        view = await _device_view(db, org, device, now=now, stats=_Stats())
+        if view is None:
+            break
+        actions = _plan(org, device, view, now=now, has_push_to_start=True, start_alert_enabled=False)
+        start = next((a for a in actions if a.kind == "start"), None)
+        if start is None:
+            break
+        v = view.by_id[start.appointment_id]
+        slot = next((s for s in view.slots if s["slot_index"] == start.slot_index), None)
+        expect = slot.get("version") if slot else None
+        content = view.content_for(v, (expect or 0) + 1)
+        claim = dict(device_id=device_id, slot_index=start.slot_index)
+        if not await registry.claim_slot(db, **claim, expect_version=expect, set_fields=_start_fields(v, content, now)):
+            break  # a concurrent sweep or report changed the slot; the next reconcile retries
+        if not await _same_owner(db, device):
+            await registry.claim_slot(db, **claim, expect_version=(expect or 0) + 1, set_fields={"state": "ended"})
+            break
+        await registry.record_start(db, device_id, now.timestamp())
+        if device.get("day") != today:
+            await db.live_activity_devices.update_one({"device_id": device_id}, {"$set": {"day": today}})
+        out.append({"slot_index": start.slot_index, "content": content,
+                    "stale_epoch": stale_epoch(v.phase, v.start, v.end), "relevance": start.relevance})
+        device = await db.live_activity_devices.find_one({"device_id": device_id})
+        if device is None:
+            break
+    return out
 
 
 async def run_sweep(db, *, transport: LiveActivityTransport, now: datetime, redis=None,
@@ -363,7 +452,7 @@ async def run_sweep(db, *, transport: LiveActivityTransport, now: datetime, redi
             continue
         stats.orgs += 1
         try:
-            org = await _load_org(db, settings, now)
+            org = await load_org(db, settings, now)
             devices = await db.live_activity_devices.find({"organization_id": org.org_id}).to_list(None)
         except Exception:
             stats.errors += 1

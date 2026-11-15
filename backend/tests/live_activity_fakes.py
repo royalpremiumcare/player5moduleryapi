@@ -69,6 +69,7 @@ class _Result:
     def __init__(self, n):
         self.matched_count = n
         self.modified_count = n
+        self.deleted_count = n
 
 
 class FakeCollection:
@@ -159,6 +160,16 @@ class FakeCollection:
                 self._apply(d, update)
                 n += 1
         return _Result(n)
+
+
+    async def delete_one(self, flt):
+        await asyncio.sleep(0)
+        self._note("delete_one", flt)
+        for i, d in enumerate(self.docs):
+            if _match(d, flt):
+                del self.docs[i]
+                return _Result(1)
+        return _Result(0)
 
 
 class FakeDB:
