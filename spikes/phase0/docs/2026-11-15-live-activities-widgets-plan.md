@@ -291,7 +291,8 @@ owner devices: every fallback_notify carries thread_id = "plann-overflow-<YYYY-M
   - `test_disabled_device_notifies_only`;
   - `test_fallback_notify_once_per_appointment`;
   - `test_missed_upcoming_starts_directly_processing`;
-  - `test_past_end_never_starts`.
+  - `test_past_end_never_starts`;
+  - `test_never_start_with_past_stale_date` (Phase 0: iOS silently drops a push-to-start whose `stale-date` is in the past).
 - [ ] **Step 2–4:** `pytest tests/test_live_activity_planner.py -v`: FAIL, then implement, then PASS.
 - [ ] **Step 5:** Commit `feat(live-activity): planner`.
 
