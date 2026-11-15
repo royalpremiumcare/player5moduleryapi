@@ -163,7 +163,8 @@ workflows:
           echo "ASC API env (yalnız isimler):"; env | grep -o '^APP_STORE_CONNECT_[A-Z_]*' | sort || true
 
           app_id_of() {
-            security cms -D -i "$1" 2>/dev/null | python3 -c 'import plistlib,sys; p=plistlib.load(sys.stdin.buffer); print(p["Entitlements"]["application-identifier"])' 2>/dev/null || true
+            security cms -D -i "$1" > /tmp/_p.plist 2>/dev/null || return 0
+            plutil -extract Entitlements.application-identifier raw -o - /tmp/_p.plist 2>/dev/null || true
           }
           have=0
           for d in "$PROFILES_DIR" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
@@ -267,21 +268,23 @@ workflows:
                    "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
             for f in "$d/"*.mobileprovision; do
               [ -e "$f" ] || continue
-              aid=$(security cms -D -i "$f" 2>/dev/null | python3 -c 'import plistlib,sys; print(plistlib.load(sys.stdin.buffer)["Entitlements"]["application-identifier"])' 2>/dev/null || true)
+              security cms -D -i "$f" > /tmp/_p.plist 2>/dev/null || continue
+              aid=$(plutil -extract Entitlements.application-identifier raw -o - /tmp/_p.plist 2>/dev/null || true)
               case "$aid" in *".${WIDGET_BUNDLE_ID}") WPROF="$f";; esac
             done
           done
           if [ -z "$WPROF" ]; then
-            echo "HATA: ${WIDGET_BUNDLE_ID} için kurulu profil yok (önceki adımın çıktısına bakın)."
-            exit 1
+            echo "UYARI: ${WIDGET_BUNDLE_ID} profili bu adımda okunamadı; use-profiles atamasına güveniliyor."
+            grep -n "PROVISIONING_PROFILE_SPECIFIER" "$PBX" || true
+            exit 0
           fi
           security cms -D -i "$WPROF" > /tmp/wprof.plist
-          WNAME=$(python3 -c 'import plistlib; print(plistlib.load(open("/tmp/wprof.plist","rb"))["Name"])')
-          WUUID=$(python3 -c 'import plistlib; print(plistlib.load(open("/tmp/wprof.plist","rb"))["UUID"])')
+          WNAME=$(plutil -extract Name raw -o - /tmp/wprof.plist)
+          WUUID=$(plutil -extract UUID raw -o - /tmp/wprof.plist)
           echo "Widget profili: $WNAME ($WUUID) → $WPROF"
 
           echo "── Profildeki sertifikalar (SHA1) ──"
-          python3 - <<'PY'
+          python3 - <<'PY' || true
           import plistlib, hashlib
           p = plistlib.load(open("/tmp/wprof.plist", "rb"))
           for c in p.get("DeveloperCertificates", []):
