@@ -89,6 +89,7 @@ async def test_record_token_moves_start_sent_to_active(db):
     assert await registry.record_slot_token(db, device_id="dev1", slot_index=1, activity_id="A", update_token="T")
     s = (await registry.slots_for_device(db, "dev1"))[0]
     assert (s["state"], s["activity_id"], s["update_token"]) == ("active", "A", "T")
+    assert s["version"] == 2  # a sweep holding the start_sent snapshot must lose its CAS
 
 
 async def test_record_token_unknown_slot_false(db):

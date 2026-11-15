@@ -403,3 +403,29 @@ async def test_resync_swallows_errors(caplog):
     with caplog.at_level(logging.ERROR, logger="live_activity.sweeper"):
         assert await sweeper.resync(db, ORG, transport=RecordingTransport(), now=NOW) is None
     assert "mongo down" in caplog.text
+
+
+async def test_token_arriving_during_expiry_keeps_slot_active(monkeypatch):
+    db = await make_db(users=[user("elif", role="staff")], devices=[device("d1", "elif", day=TODAY)],
+                       apts=[apt("a", "10:20", staff="elif")])
+    seed_slot(db, "d1", 1, "a", "upcoming", state="start_sent", token=None,
+              started_at=(NOW - timedelta(seconds=200)).timestamp(), version=1)
+    real = registry.slots_for_device
+    calls = []
+
+    async def snapshot_then_token(db_, device_id):
+        slots = await real(db_, device_id)
+        if not calls:  # the token lands right after the sweep's first snapshot
+            assert await registry.record_slot_token(db_, device_id=device_id, slot_index=1,
+                                                    activity_id="A", update_token="live")
+        calls.append(device_id)
+        return slots
+
+    monkeypatch.setattr(registry, "slots_for_device", snapshot_then_token)
+    t = RecordingTransport()
+    stats = await sweep(db, t)
+    # No second push-to-start for the same appointment; the live activity just gets its update.
+    assert events(t) == [("update", "live")]
+    assert stats["expired_starts"] == 0 and stats["claim_lost"] == 0
+    s = slot(db, "d1", 1)
+    assert (s["state"], s["update_token"], s["activity_id"]) == ("active", "live", "A")

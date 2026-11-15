@@ -96,7 +96,8 @@ async def record_slot_token(
 ) -> bool:
     result = await db.live_activity_slots.update_one(
         {"device_id": device_id, "slot_index": slot_index, "state": "start_sent"},
-        {"$set": {"state": "active", "activity_id": activity_id, "update_token": update_token}},
+        {"$set": {"state": "active", "activity_id": activity_id, "update_token": update_token},
+         "$inc": {"version": 1}},  # a sweep holding the start_sent snapshot then fails its CAS
     )
     return result.matched_count == 1
 
