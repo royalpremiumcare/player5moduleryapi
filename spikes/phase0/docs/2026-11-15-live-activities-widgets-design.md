@@ -403,10 +403,11 @@ Validated end to end on devices (RESULTS items 13–24).
 | Scope | own appointments | D2c: "Sadece benim" / "Tüm personel" (unassigned are included for the owner) |
 
 **Assignment (each sweep, per device):**
-- Visible = processing appointments, plus upcoming ones within the lead window (30 min).
-- Order: processing first (earliest end), then upcoming (earliest start); take N.
-- **Keep stable:** an appointment already in a slot stays in that slot. Free or completed slots take the next ones.
-- A finished appointment's slot shows "Tamamlandı" only until it is reassigned. On the last appointment of the day for that device, the slot gets `end` with `dismissal-date` = now + 15 min (owner may change this; see open question).
+- **Opening:** the device's day opens when its first appointment of the day enters the lead window (30 min before start, or already processing).
+- **Visible (once open):** processing appointments, plus **all remaining upcoming appointments of the same TR day**. Gaps show "Sıradaki 16:00" with a countdown.
+- **Order:** processing first (earliest end), then upcoming (earliest start); take N.
+- **Keep stable:** an appointment already in a slot stays in that slot. Free or completed slots take the next ones. Extra slots open (one start each) only while there are more visible appointments than open slots.
+- **A slot with nothing left to show** (its appointment completed or cancelled, and no unassigned visible appointment) gets `end` with the final content and `dismissal-date` = now + 15 min. This covers day end. It may reopen the same day if needed (starts ≤ 2 × N per day), unless the user dismissed it.
 
 **Pushes:**
 - **Start:** each slot starts **once per day**, at the lead time of its first appointment, plus at most one restart for the 8 h limit. Push-to-start budget (~13/h/device) is therefore never at risk.
