@@ -25,6 +25,7 @@ import {
 import TourGuide from "../components/TourGuide"; 
 // --------------------------
 import SwipeableAppointmentCard from "./SwipeableAppointmentCard";
+import { tourStateFor } from "./dashboardTourState";
 
 /** Dashboard selamlama: "Fatih Senyüz" → "Fatih" */
 function firstNameOnly(fullName) {
@@ -112,7 +113,7 @@ const WhatsAppIcon = ({ className }) => (
   </svg>
 );
 
-const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate, onOpenChat, activationState, ahaOverlayActive = false, forceStartTour, onForceStartTourConsumed }) => {
+const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppointment, onRefresh, onNavigate, onOpenChat, activationState, ahaOverlayActive = false, forceStartTour, onForceStartTourConsumed, userLoaded = false, onTourStateChange }) => {
   const { token, canViewAll } = useAuth();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === 'tr' ? tr : enGB;
@@ -151,6 +152,16 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   // Tur bu mount'ta yalnızca bir kez planlansın: forceStartTour consumed olunca
   // effect tekrar çalışıp localStorage yolundan ikinci kez tetiklemesin.
   const tourScheduledRef = useRef(false);
+
+  // Tur durumunu üst bileşene bildir (aynı değeri tekrar tekrar göndermez).
+  const lastReportedTourStateRef = useRef(null);
+  const onTourStateChangeRef = useRef(onTourStateChange);
+  onTourStateChangeRef.current = onTourStateChange;
+  const reportTourState = useCallback((state) => {
+    if (lastReportedTourStateRef.current === state) return;
+    lastReportedTourStateRef.current = state;
+    if (onTourStateChangeRef.current) onTourStateChangeRef.current(state);
+  }, []);
 
   const dashboardTourStorageKey = useMemo(() => {
     if (!token) return null;
@@ -307,15 +318,28 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
 
     // ahaOverlayActive: Aha spotlight/celebration/error overlay ekrandayken
     // turu başlatmıyoruz — yoksa welcome dialog Aha celebration üstüne biner.
-    if (ahaOverlayActive) return;
+    if (ahaOverlayActive) {
+      reportTourState('unknown');
+      return;
+    }
 
     // Tur bu mount'ta zaten planlandıysa tekrar planlama (çift render/çift tur önlemi)
     if (tourScheduledRef.current) return;
 
+    // Effect'in ne yapmak üzere olduğunu üst bileşene bildir.
+    reportTourState(tourStateFor({
+      userRole,
+      userLoaded,
+      activationState,
+      ahaOverlayActive,
+      storageKeySet: !dashboardTourStorageKey || !!localStorage.getItem(dashboardTourStorageKey),
+      forceStartTour,
+    }));
+
     // forceStartTour=true → localStorage flag'ine bakmadan turu zorla başlat (Aha akışı sonrası)
     if (forceStartTour && tourEligible) {
       tourScheduledRef.current = true;
-      setTimeout(() => setRunTour(true), 400);
+      setTimeout(() => { reportTourState('running'); setRunTour(true); }, 400);
       if (onForceStartTourConsumed) onForceStartTourConsumed();
       return;
     }
@@ -327,9 +351,9 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
     ) {
       // Sayfa tam yüklensin diye azıcık beklet
       tourScheduledRef.current = true;
-      setTimeout(() => setRunTour(true), 1000);
+      setTimeout(() => { reportTourState('running'); setRunTour(true); }, 1000);
     }
-  }, [userRole, loadPersonnelStats, dashboardTourStorageKey, activationState, forceStartTour, onForceStartTourConsumed, ahaOverlayActive]);
+  }, [userRole, loadPersonnelStats, dashboardTourStorageKey, activationState, forceStartTour, onForceStartTourConsumed, ahaOverlayActive, userLoaded, reportTourState]);
 
   useEffect(() => { if (settings !== null) loadStaffMembers(); }, [settings, userRole]);
   useEffect(() => { loadStaffDirectory(); /* eslint-disable-next-line */ }, [userRole, canViewAll]);
@@ -381,6 +405,7 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
       localStorage.setItem(dashboardTourStorageKey, 'true');
     }
     setRunTour(false);
+    reportTourState('finished');
   };
 
   // --- TUR ADIMLARI TANIMLAMASI ---
