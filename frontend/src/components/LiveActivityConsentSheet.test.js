@@ -1,38 +1,41 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import LiveActivityConsentSheet from './LiveActivityConsentSheet';
-import * as la from '../native/liveActivities';
+import tr from '../i18n/locales/tr/translation.json';
+import en from '../i18n/locales/en/translation.json';
 
 // jest has no '@/' alias (only webpack does); stand in for the one helper module the ui/* components import.
 jest.mock('@/lib/utils', () => ({
   cn: (...a) => a.filter((x) => typeof x === 'string').join(' '),
   keepOpenOnToastInteract: (fn) => fn,
 }), { virtual: true });
-jest.mock('@capacitor/core', () => ({
-  Capacitor: { isNativePlatform: () => true, getPlatform: () => 'ios', isPluginAvailable: () => true },
-  registerPlugin: jest.fn(() => ({})),
-}));
-jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k, d) => d ?? k }) }));
-jest.mock('../native/liveActivities', () => ({ getStatus: jest.fn() }));
+
+// t() resolves from the shipped Turkish translation file, so the tests check the copy users see.
+jest.mock('react-i18next', () => {
+  const trJson = jest.requireActual('../i18n/locales/tr/translation.json');
+  const lookup = (key) => key.split('.').reduce((o, k) => (o == null ? undefined : o[k]), trJson);
+  return { useTranslation: () => ({ t: (k) => lookup(k) ?? k }) };
+});
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-const jwt = (sub) => `h.${btoa(JSON.stringify({ sub }))}.s`;
 let container;
 let root;
+let onAllow;
+let onLater;
 
 async function render(props) {
   await act(async () => {
-    root.render(<LiveActivityConsentSheet orgFlagEnabled {...props} />);
+    root.render(<LiveActivityConsentSheet open onAllow={onAllow} onLater={onLater} {...props} />);
   });
 }
 const dialog = () => document.body.querySelector('[role="dialog"]');
 const button = (label) => [...document.body.querySelectorAll('button')].find((b) => b.textContent.trim() === label);
+const text = (el) => el.textContent.replace(/\s+/g, ' ').trim();
 
 beforeEach(() => {
-  jest.restoreAllMocks();
-  localStorage.clear();
-  la.getStatus.mockResolvedValue({ supported: true, enabled: true });
+  onAllow = jest.fn();
+  onLater = jest.fn();
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -43,90 +46,82 @@ afterEach(() => {
   container.remove();
 });
 
-test('shown once after login, never before login', async () => {
-  await render({ token: null });
-  expect(dialog()).toBeNull();
-
-  await render({ token: jwt('u1') });
-  expect(dialog()).not.toBeNull();
-
-  await act(async () => button('Şimdi değil').click());
-  expect(dialog()).toBeNull();
-  expect(localStorage.getItem('la_consent_seen:u1')).toBe('1');
-
-  // remount (next app launch): already seen
-  act(() => root.unmount());
-  root = createRoot(container);
-  await render({ token: jwt('u1') });
-  expect(dialog()).toBeNull();
-
-  // another user on the same device still gets it
-  await render({ token: jwt('u2') });
-  expect(dialog()).not.toBeNull();
-});
-
-test('not shown when flag off or plugin unsupported', async () => {
-  await render({ token: jwt('u1'), orgFlagEnabled: false });
-  expect(dialog()).toBeNull();
-  la.getStatus.mockResolvedValue({ supported: false });
-  await render({ token: jwt('u1'), orgFlagEnabled: true });
-  expect(dialog()).toBeNull();
-});
-
-test('copy is verbatim', async () => {
-  await render({ token: jwt('u1') });
+test('renders the approved Turkish copy', async () => {
+  await render();
   const d = dialog();
-  expect(d.textContent).toContain('Randevularınız kilit ekranında');
-  expect(d.textContent).toContain(
-    'Sıradaki randevunuz kilit ekranında ve Dynamic Island\'da geri sayımla görünür. Saati gelince kendiliğinden "İşlemde" olur.'
+  expect(d).not.toBeNull();
+  expect(text(d)).toContain('Randevularınız kilit ekranında');
+  expect(text(d)).toContain(
+    'Telefonunuzun kilidini açmadan sıradaki randevunuzu görürsünüz. Kilit ekranında küçük bir kart çıkar ve şunları gösterir:'
   );
-  expect(d.textContent).toContain(
-    'iOS izin isteyecek. İleride "izin vermeyi sürdürmek istiyor musunuz?" diye tekrar sorabilir. Sorarsa Her Zaman İzin Ver\'i seçin, yoksa randevular kilit ekranına gelmez.'
+
+  const bullets = [...d.querySelectorAll('ul > li')].map(text);
+  expect(bullets).toEqual([
+    'Müşterinin adı ve yapılacak işlem',
+    'Randevunun başlamasına kaç dakika kaldığı',
+    'İşlem başlayınca bitmesine kaç dakika kaldığı',
+  ]);
+
+  expect(text(d)).toContain(
+    'Kart kendi kendine güncellenir, uygulamayı açmanıza gerek yok. Randevu bitince "Tamamlandı" yazar ve bir süre sonra kaybolur.'
   );
-  expect(button('Devam')).toBeTruthy();
+  expect(text(d)).toContain('Bunun için 2 izin gerekiyor:');
+
+  const steps = [...d.querySelectorAll('ol > li')];
+  expect(steps.map(text)).toEqual([
+    'Şimdi "Bildirim göndermek istiyor" sorusu gelecek. İzin Ver\'e basın.',
+    'İlk kart geldiğinde iPhone "izin vermeyi sürdürmek istiyor musunuz?" diye sorabilir. Her Zaman İzin Ver\'i seçin.',
+  ]);
+  expect(text(steps[0].querySelector('strong'))).toBe('İzin Ver');
+  expect(text(steps[1].querySelector('strong'))).toBe('Her Zaman İzin Ver');
+
   expect(button('Şimdi değil')).toBeTruthy();
+  expect(button('İzin ver')).toBeTruthy();
 });
 
-test('Şimdi değil dismisses and records seen', async () => {
-  await render({ token: jwt('u1') });
+test('English strings exist for every Turkish consent key', () => {
+  const trKeys = Object.keys(tr.liveActivity.consent).sort();
+  expect(Object.keys(en.liveActivity.consent).sort()).toEqual(trKeys);
+  expect(trKeys).toEqual(['allow', 'bullets', 'intro', 'later', 'outro', 'permissionsTitle', 'steps', 'title']);
+  expect(en.liveActivity.consent.bullets).toHaveLength(3);
+  expect(en.liveActivity.consent.steps).toHaveLength(2);
+});
+
+test('İzin ver calls onAllow', async () => {
+  await render();
+  await act(async () => button('İzin ver').click());
+  expect(onAllow).toHaveBeenCalledTimes(1);
+  expect(onLater).not.toHaveBeenCalled();
+});
+
+test('Şimdi değil calls onLater', async () => {
+  await render();
   await act(async () => button('Şimdi değil').click());
-  expect(dialog()).toBeNull();
-  expect(localStorage.getItem('la_consent_seen:u1')).toBe('1');
+  expect(onLater).toHaveBeenCalledTimes(1);
+  expect(onAllow).not.toHaveBeenCalled();
 });
 
-test('Devam dismisses and records seen', async () => {
-  await render({ token: jwt('u1') });
-  await act(async () => button('Devam').click());
-  expect(dialog()).toBeNull();
-  expect(localStorage.getItem('la_consent_seen:u1')).toBe('1');
+test('Escape calls onLater', async () => {
+  await render();
+  await act(async () => {
+    dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+  expect(onLater).toHaveBeenCalledTimes(1);
+  expect(onAllow).not.toHaveBeenCalled();
 });
 
-test('localStorage failure still renders and dismisses', async () => {
-  jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied'); });
-  jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied'); });
-  await render({ token: jwt('u1') });
-  expect(dialog()).not.toBeNull();
-  await act(async () => button('Şimdi değil').click());
+test('closed renders nothing', async () => {
+  await render({ open: false });
   expect(dialog()).toBeNull();
-});
-
-test('manual open from settings works even when already seen', async () => {
-  localStorage.setItem('la_consent_seen:u1', '1');
-  const onManualClose = jest.fn();
-  await render({ token: jwt('u1'), manualOpen: true, onManualClose });
-  expect(dialog()).not.toBeNull();
-  await act(async () => button('Devam').click());
-  expect(onManualClose).toHaveBeenCalled();
+  expect(onAllow).not.toHaveBeenCalled();
+  expect(onLater).not.toHaveBeenCalled();
 });
 
 test('uses theme colour tokens, not fixed zinc/white', async () => {
-  await render({ token: jwt('u-theme') });
-  // The sheet's own note and buttons (the shared ui/dialog close button is out of scope).
-  const note = [...dialog().querySelectorAll('p')].find((p) => p.textContent.startsWith('iOS izin'));
-  const own = [note, button('Şimdi değil'), button('Devam')].map((el) => el.className).join(' ');
+  await render();
+  const own = [button('Şimdi değil'), button('İzin ver')].map((el) => el.className).join(' ');
   expect(own).not.toMatch(/\b(?:text|bg|border)-(?:zinc-\d+|white)\b/);
-  expect(note.className).toEqual(expect.stringContaining('text-muted-foreground'));
-  expect(button('Devam').className).toEqual(expect.stringContaining('bg-primary'));
-  expect(button('Devam').className).toEqual(expect.stringContaining('text-primary-foreground'));
+  expect(button('İzin ver').className).toEqual(expect.stringContaining('bg-primary'));
+  expect(button('İzin ver').className).toEqual(expect.stringContaining('text-primary-foreground'));
   expect(button('Şimdi değil').className).toEqual(expect.stringContaining('border-input'));
 });

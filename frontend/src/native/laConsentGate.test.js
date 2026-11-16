@@ -140,6 +140,79 @@ describe('useLaConsentGate', () => {
     expect(out.pushHeld).toBe(true);
   });
 
+  test.each([
+    ['previous user closed the sheet', true],
+    ['previous user had it open', false],
+  ])('first render after a token change starts fresh (%s)', async (_n, closeFirst) => {
+    const history = [];
+    function Recorder(props) {
+      history.push(useLaConsentGate(props));
+      return null;
+    }
+    await act(async () => {
+      root.render(<Recorder {...defaults} />);
+    });
+    if (closeFirst) await act(async () => history[history.length - 1].close());
+    getStatus.mockReturnValue(new Promise(() => {}));
+    const before = history.length;
+    await act(async () => {
+      root.render(<Recorder {...defaults} token={jwt('u2')} />);
+    });
+    const first = history[before];
+    expect(first.autoOpen).toBe(false);
+    expect(first.pushHeld).toBe(true);
+    // ...and every later render too, while getStatus for u2 is still pending.
+    history.slice(before).forEach((r) => {
+      expect(r.autoOpen).toBe(false);
+      expect(r.pushHeld).toBe(true);
+    });
+  });
+
+  test('logout and login as the same user starts a new session', async () => {
+    getStatus.mockReturnValue(new Promise(() => {}));
+    await render(defaults);
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+    expect(out.pushHeld).toBe(false);
+    await render({ ...defaults, token: null });
+    await render(defaults);
+    expect(out.pushHeld).toBe(true);
+  });
+
+  test('after the 30 s release the hold stays off for the session', async () => {
+    let resolveStatus;
+    getStatus.mockReturnValue(new Promise((r) => { resolveStatus = r; }));
+    await render(defaults);
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+    expect(out.pushHeld).toBe(false);
+    // The decision later becomes 'show', then 'wait': the push prompt has already been allowed to run.
+    await act(async () => resolveStatus({ supported: true }));
+    expect(out.autoOpen).toBe(true);
+    expect(out.pushHeld).toBe(false);
+    await render({ ...defaults, tourState: 'running' });
+    expect(out.autoOpen).toBe(false);
+    expect(out.pushHeld).toBe(false);
+  });
+
+  test('the 30 s timer is cleared when the decision leaves undecided', async () => {
+    let resolveStatus;
+    getStatus.mockReturnValue(new Promise((r) => { resolveStatus = r; }));
+    await render(defaults);
+    await act(async () => {
+      jest.advanceTimersByTime(10000);
+    });
+    await act(async () => resolveStatus({ supported: true }));
+    expect(out.autoOpen).toBe(true);
+    // 35 s after the first render, but only 10 s of it undecided: the hold must still be on.
+    await act(async () => {
+      jest.advanceTimersByTime(25000);
+    });
+    expect(out.pushHeld).toBe(true);
+  });
+
   test('flag false never holds', async () => {
     await render({ ...defaults, orgFlag: false });
     expect(out.pushHeld).toBe(false);

@@ -1,4 +1,8 @@
-import { tourStateFor } from './dashboardTourState';
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { tourStateFor, useTourStateReporter } from './dashboardTourState';
+
+global.IS_REACT_ACT_ENVIRONMENT = true;
 
 const base = {
   userRole: 'admin',
@@ -43,5 +47,57 @@ describe('tourStateFor', () => {
   });
   test('admin loaded with pending_aha_appointment and no overlay is not eligible', () => {
     expect(state({ activationState: 'pending_aha_appointment' })).toBe('not-eligible');
+  });
+});
+
+describe('useTourStateReporter', () => {
+  let container;
+  let root;
+  let report;
+  let onChange;
+
+  function Probe({ cb }) {
+    report = useTourStateReporter(cb);
+    return null;
+  }
+
+  beforeEach(() => {
+    onChange = jest.fn();
+    container = document.createElement('div');
+    root = createRoot(container);
+    act(() => root.render(<Probe cb={onChange} />));
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+  });
+
+  test('reports each change once', () => {
+    report('scheduled');
+    report('scheduled');
+    report('running');
+    expect(onChange.mock.calls.map((c) => c[0])).toEqual(['scheduled', 'running']);
+  });
+
+  test('unmount reports unknown so the App never waits on a tour that is gone', () => {
+    report('running');
+    act(() => root.unmount());
+    expect(onChange.mock.calls.map((c) => c[0])).toEqual(['running', 'unknown']);
+    root = createRoot(container);
+  });
+
+  test('a late report after unmount (stale tour timer) is dropped', () => {
+    report('scheduled');
+    act(() => root.unmount());
+    report('running');
+    expect(onChange.mock.calls.map((c) => c[0])).toEqual(['scheduled', 'unknown']);
+    root = createRoot(container);
+  });
+
+  test('uses the latest callback', () => {
+    const next = jest.fn();
+    act(() => root.render(<Probe cb={next} />));
+    report('finished');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith('finished');
   });
 });

@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Dialog,
@@ -8,62 +7,50 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
-import { getStatus } from '../native/liveActivities';
-import { subOf } from '../native/useLiveActivities';
-import { wasConsentSeen, markConsentSeen } from '../native/laConsentGate';
+
+const asList = (value) => (Array.isArray(value) ? value : []);
+
+/** "a **b** c" -> ['a ', <strong>b</strong>, ' c'] (only the bold markers; no HTML). */
+function withBold(line) {
+  return line.split('**').map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part));
+}
 
 /**
- * Explains iOS's Live Activity permission prompts. Opens by itself once per user after
- * login (supported plugin + org flag on); `manualOpen` reopens it from Settings.
+ * Explains Live Activities and iOS's two permission prompts. Presentational: the App decides
+ * when it is open. Dismissing it (Escape, tapping outside, the close button) counts as onLater.
  */
-export default function LiveActivityConsentSheet({ token, orgFlagEnabled, manualOpen = false, onManualClose }) {
+export default function LiveActivityConsentSheet({ open, onAllow, onLater }) {
   const { t } = useTranslation();
-  const [autoOpen, setAutoOpen] = useState(false);
-  const sub = token ? subOf(token) : null;
-
-  useEffect(() => {
-    setAutoOpen(false);
-    if (!sub || !orgFlagEnabled || wasConsentSeen(sub)) return undefined;
-    let cancelled = false;
-    (async () => {
-      const s = await getStatus();
-      if (!cancelled && s?.supported === true) setAutoOpen(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sub, orgFlagEnabled]);
-
-  const close = () => {
-    if (sub) markConsentSeen(sub);
-    setAutoOpen(false);
-    if (onManualClose) onManualClose();
-  };
+  const bullets = asList(t('liveActivity.consent.bullets', { returnObjects: true }));
+  const steps = asList(t('liveActivity.consent.steps', { returnObjects: true }));
 
   return (
-    <Dialog open={autoOpen || manualOpen} onOpenChange={(open) => !open && close()}>
+    <Dialog open={!!open} onOpenChange={(next) => !next && onLater && onLater()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('liveActivity.consent.title', 'Randevularınız kilit ekranında')}</DialogTitle>
-          <DialogDescription>
-            {t(
-              'liveActivity.consent.body',
-              'Sıradaki randevunuz kilit ekranında ve Dynamic Island\'da geri sayımla görünür. Saati gelince kendiliğinden "İşlemde" olur.'
-            )}
-          </DialogDescription>
+          <DialogDescription>{t('liveActivity.consent.intro')}</DialogDescription>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          {t(
-            'liveActivity.consent.note',
-            'iOS izin isteyecek. İleride "izin vermeyi sürdürmek istiyor musunuz?" diye tekrar sorabilir. Sorarsa Her Zaman İzin Ver\'i seçin, yoksa randevular kilit ekranına gelmez.'
-          )}
-        </p>
+        <ul className="list-disc ps-5 space-y-1 text-sm text-foreground">
+          {bullets.map((b) => (
+            <li key={b}>{b}</li>
+          ))}
+        </ul>
+        <p className="text-sm text-muted-foreground">{t('liveActivity.consent.outro')}</p>
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">{t('liveActivity.consent.permissionsTitle')}</p>
+          <ol className="list-decimal ps-5 space-y-1 text-sm text-foreground">
+            {steps.map((s) => (
+              <li key={s}>{withBold(s)}</li>
+            ))}
+          </ol>
+        </div>
         <DialogFooter className="gap-2">
-          <button type="button" onClick={close} className="min-h-11 px-4 rounded-xl border border-input text-foreground">
+          <button type="button" onClick={onLater} className="min-h-11 px-4 rounded-xl border border-input text-foreground">
             {t('liveActivity.consent.later', 'Şimdi değil')}
           </button>
-          <button type="button" autoFocus onClick={close} className="min-h-11 px-4 rounded-xl bg-primary text-primary-foreground font-medium">
-            {t('liveActivity.consent.continue', 'Devam')}
+          <button type="button" autoFocus onClick={onAllow} className="min-h-11 px-4 rounded-xl bg-primary text-primary-foreground font-medium">
+            {t('liveActivity.consent.allow', 'İzin ver')}
           </button>
         </DialogFooter>
       </DialogContent>

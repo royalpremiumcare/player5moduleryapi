@@ -1024,10 +1024,20 @@
     "howItWorks": "How does it work?",
     "consent": {
       "title": "Your appointments on the lock screen",
-      "body": "Your next appointment appears on the lock screen and Dynamic Island with a countdown. It switches to \"In progress\" by itself when the time comes.",
-      "note": "iOS will ask for permission. Later it may ask again whether you want to keep allowing it. If it does, choose Always Allow, otherwise appointments will not reach the lock screen.",
-      "continue": "Continue",
-      "later": "Not now"
+      "intro": "See your next appointment without unlocking your phone. A small card appears on the lock screen and shows:",
+      "bullets": [
+        "The client's name and the service",
+        "How many minutes until the appointment starts",
+        "Once it starts, how many minutes until it ends"
+      ],
+      "outro": "The card updates by itself, so you don't need to open the app. When the appointment ends it shows \"Completed\" and disappears after a while.",
+      "permissionsTitle": "This needs 2 permissions:",
+      "steps": [
+        "You'll now be asked whether PLANN may send you notifications. Tap **Allow**.",
+        "When the first card arrives, your iPhone may ask whether to keep allowing it. Choose **Always Allow**."
+      ],
+      "later": "Not now",
+      "allow": "Allow"
     }
   },
   "settings": {

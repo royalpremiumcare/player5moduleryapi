@@ -1026,10 +1026,20 @@
     "howItWorks": "Nasıl çalışır?",
     "consent": {
       "title": "Randevularınız kilit ekranında",
-      "body": "Sıradaki randevunuz kilit ekranında ve Dynamic Island'da geri sayımla görünür. Saati gelince kendiliğinden \"İşlemde\" olur.",
-      "note": "iOS izin isteyecek. İleride \"izin vermeyi sürdürmek istiyor musunuz?\" diye tekrar sorabilir. Sorarsa Her Zaman İzin Ver'i seçin, yoksa randevular kilit ekranına gelmez.",
-      "continue": "Devam",
-      "later": "Şimdi değil"
+      "intro": "Telefonunuzun kilidini açmadan sıradaki randevunuzu görürsünüz. Kilit ekranında küçük bir kart çıkar ve şunları gösterir:",
+      "bullets": [
+        "Müşterinin adı ve yapılacak işlem",
+        "Randevunun başlamasına kaç dakika kaldığı",
+        "İşlem başlayınca bitmesine kaç dakika kaldığı"
+      ],
+      "outro": "Kart kendi kendine güncellenir, uygulamayı açmanıza gerek yok. Randevu bitince \"Tamamlandı\" yazar ve bir süre sonra kaybolur.",
+      "permissionsTitle": "Bunun için 2 izin gerekiyor:",
+      "steps": [
+        "Şimdi \"Bildirim göndermek istiyor\" sorusu gelecek. **İzin Ver**'e basın.",
+        "İlk kart geldiğinde iPhone \"izin vermeyi sürdürmek istiyor musunuz?\" diye sorabilir. **Her Zaman İzin Ver**'i seçin."
+      ],
+      "later": "Şimdi değil",
+      "allow": "İzin ver"
     }
   },
   "settings": {

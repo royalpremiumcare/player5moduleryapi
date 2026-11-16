@@ -22,6 +22,8 @@ export function markConsentSeen(sub) {
   }
 }
 
+const freshState = (sub) => ({ sub, supported: undefined, closed: false, timedOut: false });
+
 /** -> 'skip' | 'undecided' | 'wait' | 'show' */
 export function decideConsent({ seen, supported, orgFlag, wizardOpen, ahaActive, tourState }) {
   if (seen || supported === false || orgFlag === false) return 'skip';
@@ -37,40 +39,48 @@ export function decideConsent({ seen, supported, orgFlag, wizardOpen, ahaActive,
  */
 export function useLaConsentGate({ token, orgFlag, wizardOpen, ahaActive, tourState }) {
   const sub = token ? subOf(token) : null;
-  const [supported, setSupported] = useState(undefined);
-  const [closed, setClosed] = useState(false);
-  const [timedOut, setTimedOut] = useState(false);
+  // State is tagged with the sub it belongs to: after an account switch the previous
+  // user's `supported`/`closed`/`timedOut` are ignored from the very first render.
+  const [state, setState] = useState(() => freshState(sub));
+  const current = state.sub === sub ? state : freshState(sub);
+  const { supported, closed, timedOut } = current;
 
-  // A different user starts from scratch.
+  const patch = useCallback(
+    (changes) => setState((s) => ({ ...(s.sub === sub ? s : freshState(sub)), ...changes })),
+    [sub]
+  );
+
+  // A different user (or a logout) starts from scratch.
   useEffect(() => {
-    setSupported(undefined);
-    setClosed(false);
-    setTimedOut(false);
+    setState((s) => (s.sub === sub ? s : freshState(sub)));
     if (!sub) return undefined;
     let cancelled = false;
     (async () => {
       const s = await getStatus();
-      if (!cancelled) setSupported(s?.supported === true);
+      if (!cancelled) patch({ supported: s?.supported === true });
     })();
     return () => {
       cancelled = true;
     };
-  }, [sub]);
+  }, [sub, patch]);
 
   const decision = sub
     ? decideConsent({ seen: closed || wasConsentSeen(sub), supported, orgFlag, wizardOpen, ahaActive, tourState })
     : 'skip';
 
+  // Leaving 'undecided' clears the timer. Once it has fired, `timedOut` stays true for this
+  // user's session: the push prompt has been allowed to run, so a later 'wait' or 'show'
+  // never holds it again (the sheet may still auto-open afterwards).
   useEffect(() => {
     if (decision !== 'undecided') return undefined;
-    const id = setTimeout(() => setTimedOut(true), UNDECIDED_RELEASE_MS);
+    const id = setTimeout(() => patch({ timedOut: true }), UNDECIDED_RELEASE_MS);
     return () => clearTimeout(id);
-  }, [decision]);
+  }, [decision, patch]);
 
   const close = useCallback(() => {
     if (sub) markConsentSeen(sub);
-    setClosed(true);
-  }, [sub]);
+    patch({ closed: true });
+  }, [sub, patch]);
 
   return {
     autoOpen: decision === 'show',

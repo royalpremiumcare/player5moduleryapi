@@ -56,7 +56,8 @@ import { useTranslation } from "react-i18next";
 import { PushNotifications } from '@capacitor/push-notifications';
 import { openAppStore } from "@/lib/appStore";
 import { showLoadError, NETWORK_ERROR_TOAST_ID, APPOINTMENTS_LOAD_TIMEOUT_MS } from "@/lib/loadError";
-import { useLiveActivities } from "@/native/useLiveActivities";
+import { useLiveActivities, subOf } from "@/native/useLiveActivities";
+import { useLaConsentGate } from "@/native/laConsentGate";
 import {
   handleCheckoutDeepLink,
   subscribeCheckoutEvents,
@@ -112,6 +113,29 @@ function App() {
   const [ahaRetryCount, setAhaRetryCount] = useState(0);
   const [ahaLastError, setAhaLastError] = useState(null);
   const [forceStartTour, setForceStartTour] = useState(false);
+
+  // ===== LIVE ACTIVITY CONSENT =====
+  // Dashboard'un tur durumu, kullanıcıya (sub) bağlı tutulur: hesap değişince ilk
+  // render'dan itibaren 'unknown' olur, önceki kullanıcının durumu kullanılmaz.
+  const tourSub = token ? subOf(token) : null;
+  const [tourStateEntry, setTourStateEntry] = useState({ sub: tourSub, state: 'unknown' });
+  const tourState = tourStateEntry.sub === tourSub ? tourStateEntry.state : 'unknown';
+  const handleTourStateChange = useCallback(
+    (state) => setTourStateEntry({ sub: tourSub, state }),
+    [tourSub]
+  );
+  // Rıza ekranı onboarding (sihirbaz, Aha, tur) bitince açılır; açılacaksa iOS bildirim
+  // izni (subscribeToPush) ekran kapanana kadar bekletilir. 'skipped' Aha'da ekranda
+  // bir şey yok, o yüzden onboarding'i bekletmez.
+  const { autoOpen: laConsentAutoOpen, pushHeld, close: closeLaConsent } = useLaConsentGate({
+    token,
+    orgFlag: settings ? !!settings.live_activity_enabled : undefined,
+    wizardOpen: showOnboarding,
+    ahaActive: ahaUiState !== 'idle' && ahaUiState !== 'skipped',
+    tourState,
+  });
+  const pushHeldRef = useRef(pushHeld);
+  const pushPendingRef = useRef(false);
 
   const hasActiveSessions = useMemo(
     () => computeHasActiveSessions(appointments),
@@ -765,6 +789,15 @@ function App() {
         } catch (_) { /* listener eklenemezse sessiz geç */ }
       }
 
+      // Live Activity rıza ekranı açılacaksa iOS izin sorusu onun üstüne binmesin:
+      // isteği not al, ekran kapanınca (veya bekleme bitince) tekrar çalıştırılır.
+      if (pushHeldRef.current) {
+        pushPendingRef.current = true;
+        await debugPush('held_for_consent', {});
+        return;
+      }
+      pushPendingRef.current = false;
+
       try {
         const permissionStatus = await PushNotifications.requestPermissions();
         await debugPush('permission', { receive: permissionStatus.receive });
@@ -957,6 +990,22 @@ function App() {
     }
   }, []);
   
+  // Rıza ekranı push iznini bırakınca (ekran kapandı / gerek kalmadı / 30 sn doldu)
+  // bekleyen push kurulumunu çalıştır.
+  useEffect(() => {
+    pushHeldRef.current = pushHeld;
+    if (!pushHeld && pushPendingRef.current && token) subscribeToPush();
+  }, [pushHeld, token, subscribeToPush]);
+
+  // Rıza ekranının iki butonu da (ve dışarı dokunup/Escape ile kapatma) ekranı kapatır,
+  // ardından push kurulumunu çalıştırır; iOS izin sorusu ancak bu noktada gelir.
+  const handleLaConsentDone = useCallback(() => {
+    closeLaConsent();
+    setLaConsentOpen(false);
+    pushHeldRef.current = false;
+    subscribeToPush();
+  }, [closeLaConsent, subscribeToPush]);
+
   // Token değiştiğinde push subscription'ı yenile (cross-account sorununu önlemek için)
   const prevTokenRef = useRef(token);
   useEffect(() => {
@@ -1516,10 +1565,9 @@ function App() {
     >
 
       <LiveActivityConsentSheet
-        token={token}
-        orgFlagEnabled={!!settings?.live_activity_enabled}
-        manualOpen={laConsentOpen}
-        onManualClose={() => setLaConsentOpen(false)}
+        open={laConsentAutoOpen || laConsentOpen}
+        onAllow={handleLaConsentDone}
+        onLater={handleLaConsentDone}
       />
 
       {/* Setup Wizard - Onboarding */}
@@ -1647,6 +1695,8 @@ function App() {
             userRole={userRole}
             activationState={currentUser?.activation_state}
             ahaOverlayActive={ahaUiState !== 'idle'}
+            userLoaded={!!currentUser}
+            onTourStateChange={handleTourStateChange}
             forceStartTour={forceStartTour}
             onForceStartTourConsumed={() => setForceStartTour(false)}
             onEditAppointment={handleEditAppointment}

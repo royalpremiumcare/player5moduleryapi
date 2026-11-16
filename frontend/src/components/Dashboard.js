@@ -25,7 +25,7 @@ import {
 import TourGuide from "../components/TourGuide"; 
 // --------------------------
 import SwipeableAppointmentCard from "./SwipeableAppointmentCard";
-import { tourStateFor } from "./dashboardTourState";
+import { tourStateFor, useTourStateReporter } from "./dashboardTourState";
 
 /** Dashboard selamlama: "Fatih Senyüz" → "Fatih" */
 function firstNameOnly(fullName) {
@@ -153,15 +153,9 @@ const Dashboard = ({ appointments, stats, userRole, onEditAppointment, onNewAppo
   // effect tekrar çalışıp localStorage yolundan ikinci kez tetiklemesin.
   const tourScheduledRef = useRef(false);
 
-  // Tur durumunu üst bileşene bildir (aynı değeri tekrar tekrar göndermez).
-  const lastReportedTourStateRef = useRef(null);
-  const onTourStateChangeRef = useRef(onTourStateChange);
-  onTourStateChangeRef.current = onTourStateChange;
-  const reportTourState = useCallback((state) => {
-    if (lastReportedTourStateRef.current === state) return;
-    lastReportedTourStateRef.current = state;
-    if (onTourStateChangeRef.current) onTourStateChangeRef.current(state);
-  }, []);
+  // Tur durumunu üst bileşene bildir (aynı değeri tekrar tekrar göndermez; unmount'ta
+  // 'unknown' bildirir ve sonradan gelen eski tur zamanlayıcılarını yok sayar).
+  const reportTourState = useTourStateReporter(onTourStateChange);
 
   const dashboardTourStorageKey = useMemo(() => {
     if (!token) return null;
