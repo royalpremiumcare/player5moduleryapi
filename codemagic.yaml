@@ -10,6 +10,8 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: "co.plannapp.app"
+      vars:
+        WIDGET_BUNDLE_ID: "co.plannapp.app.widgets"
       node: latest
       # 28.04.2026'dan beri App Store Connect yalnız Xcode 26 / iOS 26 SDK ile derlenmiş
       # build kabul ediyor. Eski sürüme pinlersek archive geçer ama upload reddedilir.
@@ -42,6 +44,87 @@ workflows:
         script: |
           cd frontend/ios/App
           pod install --repo-update
+      - name: Widget extension profili (yoksa oluştur)
+        script: |
+          set -e
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+          echo "ASC API env (yalnız isimler):"; env | grep -o '^APP_STORE_CONNECT_[A-Z_]*' | sort || true
+
+          app_id_of() {
+            security cms -D -i "$1" > /tmp/_p.plist 2>/dev/null || return 0
+            plutil -extract Entitlements.application-identifier raw -o - /tmp/_p.plist 2>/dev/null || true
+          }
+          have=0
+          for d in "$PROFILES_DIR" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            for f in "$d/"*.mobileprovision; do
+              [ -e "$f" ] || continue
+              case "$(app_id_of "$f")" in *".${WIDGET_BUNDLE_ID}") have=1; echo "Mevcut widget profili: $f";; esac
+            done
+          done
+
+          if [ "$have" -eq 0 ]; then
+            echo "Widget profili makinede yok → Apple'daki mevcut App Store profili indiriliyor"
+            app-store-connect profiles list --json > /tmp/asc_profiles.json || echo "UYARI: profiles list başarısız"
+            python3 - "$WIDGET_BUNDLE_ID" "$PROFILES_DIR" <<'PY' && have=$(cat /tmp/widget_profile_found 2>/dev/null || echo 0)
+          import base64, json, os, plistlib, re, sys
+          from datetime import datetime, timezone
+          bid, out_dir = sys.argv[1], sys.argv[2]
+          try:
+              items = json.load(open("/tmp/asc_profiles.json"))
+          except Exception as e:
+              print("profiles list okunamadı:", e); items = []
+          best = None
+          for it in items if isinstance(items, list) else []:
+              attrs = it.get("attributes", it)
+              content = attrs.get("profileContent")
+              if not content:
+                  continue
+              raw = base64.b64decode(content)
+              m = re.search(rb"<\?xml.*?</plist>", raw, re.S)
+              if not m:
+                  continue
+              p = plistlib.loads(m.group(0))
+              ent = p.get("Entitlements", {})
+              is_store = "ProvisionedDevices" not in p and not p.get("ProvisionsAllDevices") and not ent.get("get-task-allow")
+              exp = p.get("ExpirationDate")
+              if exp and exp.tzinfo is None:
+                  exp = exp.replace(tzinfo=timezone.utc)
+              if ent.get("application-identifier", "").endswith("." + bid) and is_store and exp and exp > datetime.now(timezone.utc):
+                  if best is None or p["CreationDate"] > best[0]["CreationDate"]:
+                      best = (p, raw)
+          if best:
+              p, raw = best
+              path = os.path.join(out_dir, p["UUID"] + ".mobileprovision")
+              open(path, "wb").write(raw)
+              print(f"Kuruldu: {p['Name']} ({p['UUID']}) bitiş {p['ExpirationDate']} → {path}")
+              open("/tmp/widget_profile_found", "w").write("1")
+          else:
+              print("Apple'da uygun widget App Store profili bulunamadı")
+              open("/tmp/widget_profile_found", "w").write("0")
+          PY
+          fi
+
+          if [ "$have" -eq 0 ]; then
+            echo "Widget profili yok → App Store Connect API ile oluşturuluyor"
+            BID=$(app-store-connect bundle-ids list --bundle-id-identifier "$WIDGET_BUNDLE_ID" --strict-match-identifier --platform IOS --json \
+                  | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")')
+            if [ -z "$BID" ]; then
+              BID=$(app-store-connect bundle-ids create "$WIDGET_BUNDLE_ID" --name "PLANN Widgets" --platform IOS --json \
+                    | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+              echo "Bundle ID oluşturuldu: $BID"
+            fi
+            CERTS=$(app-store-connect certificates list --type DISTRIBUTION IOS_DISTRIBUTION --json \
+                    | python3 -c 'import sys,json; print(" ".join(c["id"] for c in json.load(sys.stdin)))')
+            if [ -z "$CERTS" ]; then echo "HATA: dağıtım sertifikası bulunamadı"; exit 1; fi
+            app-store-connect profiles create "$BID" --certificate-ids $CERTS --type IOS_APP_STORE \
+              --name "PLANN Widgets AppStore CM $(date +%Y%m%d%H%M%S)" --save --profiles-dir "$PROFILES_DIR" || {
+                echo "HATA: profil API ile oluşturulamadı (API anahtarı yetkisi?)."
+                echo "Elle: developer.apple.com > Identifiers > + > App IDs > ${WIDGET_BUNDLE_ID};"
+                echo "Profiles > + > App Store Connect > ${WIDGET_BUNDLE_ID}; sonra Codemagic > Code signing identities > Fetch profiles."
+                exit 1
+              }
+          fi
       - name: Apple Sertifikalarini Hazirla
         script: |
           set -e
@@ -61,8 +144,14 @@ workflows:
               decoded=$(security cms -D -i "$f" 2>/dev/null | plutil -p -)
               echo "$decoded" | grep -E '"Name"|"UUID"|"CreationDate"|"application-identifier"|associated-domains' || true
               if echo "$decoded" | grep -q 'associated-domains'; then found_ad=1; fi
+              case "$decoded" in *".${WIDGET_BUNDLE_ID}"*) found_widget=1;; esac
             done
           done
+          if [ "${found_widget:-0}" -eq 1 ]; then
+            echo "Widget profili (${WIDGET_BUNDLE_ID}) kurulu profiller arasinda."
+          else
+            echo "UYARI: ${WIDGET_BUNDLE_ID} icin kurulu profil gorunmuyor."
+          fi
 
           # App.entitlements Associated Domains istiyor. Profilde bu yetki yoksa archive
           # 20 dakika sonra imzalamada patlıyor; burada erken kesmek süreyi boşa harcamıyor.
@@ -74,6 +163,72 @@ workflows:
           fi
 
           xcode-project use-profiles
+      - name: Widget profilini hedefe zorla ata
+        script: |
+          set -e
+          # use-profiles yeni extension hedefine profil atamazsa archive "requires a provisioning
+          # profile" ile düşer. Profili bulup hem pbxproj'a hem export_options.plist'e açıkça yazıyoruz.
+          PBX="frontend/ios/App/App.xcodeproj/project.pbxproj"
+          EXPORT_PLIST="$HOME/export_options.plist"
+          WPROF=""
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                   "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            for f in "$d/"*.mobileprovision; do
+              [ -e "$f" ] || continue
+              security cms -D -i "$f" > /tmp/_p.plist 2>/dev/null || continue
+              aid=$(plutil -extract Entitlements.application-identifier raw -o - /tmp/_p.plist 2>/dev/null || true)
+              case "$aid" in *".${WIDGET_BUNDLE_ID}") WPROF="$f";; esac
+            done
+          done
+          if [ -z "$WPROF" ]; then
+            echo "UYARI: ${WIDGET_BUNDLE_ID} profili bu adımda okunamadı; use-profiles atamasına güveniliyor."
+            grep -n "PROVISIONING_PROFILE_SPECIFIER" "$PBX" || true
+            exit 0
+          fi
+          security cms -D -i "$WPROF" > /tmp/wprof.plist
+          WNAME=$(plutil -extract Name raw -o - /tmp/wprof.plist)
+          WUUID=$(plutil -extract UUID raw -o - /tmp/wprof.plist)
+          echo "Widget profili: $WNAME ($WUUID) → $WPROF"
+
+          echo "── Profildeki sertifikalar (SHA1) ──"
+          python3 - <<'PY' || true
+          import plistlib, hashlib
+          p = plistlib.load(open("/tmp/wprof.plist", "rb"))
+          for c in p.get("DeveloperCertificates", []):
+              print(hashlib.sha1(c).hexdigest().upper())
+          PY
+          echo "── Anahtarlıktaki imza kimlikleri ──"
+          security find-identity -v -p codesigning || true
+
+          python3 - "$PBX" "$WNAME" "$WIDGET_BUNDLE_ID" <<'PY'
+          import sys, re
+          path, name, bid = sys.argv[1:4]
+          s = open(path, encoding="utf-8").read()
+          marker = f"PRODUCT_BUNDLE_IDENTIFIER = {bid};"
+          blocks = s.split(marker)
+          if len(blocks) != 3:
+              sys.exit(f"beklenmeyen: {marker} {len(blocks)-1} kez bulundu")
+          out = blocks[0]
+          for rest in blocks[1:]:
+              head = rest.split("};", 1)[0]
+              add = ""
+              if "PROVISIONING_PROFILE_SPECIFIER" not in head:
+                  add += f'\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "{name}";'
+              if "CODE_SIGN_IDENTITY" not in head:
+                  add += '\n\t\t\t\tCODE_SIGN_IDENTITY = "Apple Distribution";'
+              out += marker + add + rest
+          open(path, "w", encoding="utf-8").write(out)
+          print("pbxproj widget ayarları tamam")
+          PY
+          grep -n -B2 -A3 "PRODUCT_BUNDLE_IDENTIFIER = ${WIDGET_BUNDLE_ID};" "$PBX" | grep -E "PROVISIONING_PROFILE_SPECIFIER|CODE_SIGN_IDENTITY|PRODUCT_BUNDLE" || true
+
+          if [ -f "$EXPORT_PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Print :provisioningProfiles:${WIDGET_BUNDLE_ID}" "$EXPORT_PLIST" >/dev/null 2>&1 \
+              || /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${WIDGET_BUNDLE_ID} string ${WNAME}" "$EXPORT_PLIST"
+            echo "── export_options.plist ──"; plutil -p "$EXPORT_PLIST"
+          else
+            echo "UYARI: $EXPORT_PLIST yok (build-ipa kendi oluşturacak)"
+          fi
       - name: iOS Uygulamasini (IPA) Derle
         script: |
           # xcode-project, xcodebuild çıktısını yutup yalnız "Failed to archive" basıyor;
@@ -91,6 +246,250 @@ workflows:
             tail -n 150 /tmp/xcodebuild_logs/*.log 2>/dev/null
           fi
           exit $status
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false
+
+  ios-live-activities-beta:
+    name: PLANN iOS Live Activities Beta (TestFlight only)
+    max_build_duration: 120
+    integrations:
+      app_store_connect: "PLANN_API"
+    environment:
+      groups:
+        - env.production
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: "co.plannapp.app"
+      vars:
+        LA_BETA_MARKETING_VERSION: "6.4.91"
+        WIDGET_BUNDLE_ID: "co.plannapp.app.widgets"
+      node: latest
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install dependencies
+        script: |
+          cd frontend
+          npm install --legacy-peer-deps
+      - name: Create env and build
+        script: |
+          cd frontend
+          echo "REACT_APP_BACKEND_URL=https://plannapp.co" > .env.production
+          echo "REACT_APP_GOOGLE_MAPS_API_KEY=$REACT_APP_GOOGLE_MAPS_API_KEY" >> .env.production
+          echo "REACT_APP_POSTHOG_KEY=$REACT_APP_POSTHOG_KEY" >> .env.production
+          echo "REACT_APP_POSTHOG_HOST=$REACT_APP_POSTHOG_HOST" >> .env.production
+          echo "REACT_APP_META_PIXEL_ID=$REACT_APP_META_PIXEL_ID" >> .env.production
+          echo "REACT_APP_CHATWOOT_BASE_URL=$REACT_APP_CHATWOOT_BASE_URL" >> .env.production
+          echo "REACT_APP_CHATWOOT_WEBSITE_TOKEN=$REACT_APP_CHATWOOT_WEBSITE_TOKEN" >> .env.production
+          REACT_APP_BACKEND_URL=https://plannapp.co npm run build:app
+      - name: Sync Capacitor
+        script: |
+          cd frontend
+          npx cap sync ios
+      - name: Install CocoaPods
+        script: |
+          cd frontend/ios/App
+          pod install --repo-update
+      - name: Beta sürüm numarası
+        script: |
+          set -e
+          # Beta, production sürüm trenini işgal etmesin diye ayrı bir pazarlama sürümü kullanır.
+          LA_BETA_BUILD=$((2000 + ${BUILD_NUMBER:-0}))
+          PBX="frontend/ios/App/App.xcodeproj/project.pbxproj"
+          sed -i '' -E "s/MARKETING_VERSION = [0-9.]+;/MARKETING_VERSION = ${LA_BETA_MARKETING_VERSION};/g" "$PBX"
+          sed -i '' -E "s/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = ${LA_BETA_BUILD};/g" "$PBX"
+          grep -E "MARKETING_VERSION|CURRENT_PROJECT_VERSION" "$PBX" | sort | uniq -c
+      - name: Widget extension profili (yoksa oluştur)
+        script: |
+          set -e
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+          echo "ASC API env (yalnız isimler):"; env | grep -o '^APP_STORE_CONNECT_[A-Z_]*' | sort || true
+
+          app_id_of() {
+            security cms -D -i "$1" > /tmp/_p.plist 2>/dev/null || return 0
+            plutil -extract Entitlements.application-identifier raw -o - /tmp/_p.plist 2>/dev/null || true
+          }
+          have=0
+          for d in "$PROFILES_DIR" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            for f in "$d/"*.mobileprovision; do
+              [ -e "$f" ] || continue
+              case "$(app_id_of "$f")" in *".${WIDGET_BUNDLE_ID}") have=1; echo "Mevcut widget profili: $f";; esac
+            done
+          done
+
+          if [ "$have" -eq 0 ]; then
+            echo "Widget profili makinede yok → Apple'daki mevcut App Store profili indiriliyor"
+            app-store-connect profiles list --json > /tmp/asc_profiles.json || echo "UYARI: profiles list başarısız"
+            python3 - "$WIDGET_BUNDLE_ID" "$PROFILES_DIR" <<'PY' && have=$(cat /tmp/widget_profile_found 2>/dev/null || echo 0)
+          import base64, json, os, plistlib, re, sys
+          from datetime import datetime, timezone
+          bid, out_dir = sys.argv[1], sys.argv[2]
+          try:
+              items = json.load(open("/tmp/asc_profiles.json"))
+          except Exception as e:
+              print("profiles list okunamadı:", e); items = []
+          best = None
+          for it in items if isinstance(items, list) else []:
+              attrs = it.get("attributes", it)
+              content = attrs.get("profileContent")
+              if not content:
+                  continue
+              raw = base64.b64decode(content)
+              m = re.search(rb"<\?xml.*?</plist>", raw, re.S)
+              if not m:
+                  continue
+              p = plistlib.loads(m.group(0))
+              ent = p.get("Entitlements", {})
+              is_store = "ProvisionedDevices" not in p and not p.get("ProvisionsAllDevices") and not ent.get("get-task-allow")
+              exp = p.get("ExpirationDate")
+              if exp and exp.tzinfo is None:
+                  exp = exp.replace(tzinfo=timezone.utc)
+              if ent.get("application-identifier", "").endswith("." + bid) and is_store and exp and exp > datetime.now(timezone.utc):
+                  if best is None or p["CreationDate"] > best[0]["CreationDate"]:
+                      best = (p, raw)
+          if best:
+              p, raw = best
+              path = os.path.join(out_dir, p["UUID"] + ".mobileprovision")
+              open(path, "wb").write(raw)
+              print(f"Kuruldu: {p['Name']} ({p['UUID']}) bitiş {p['ExpirationDate']} → {path}")
+              open("/tmp/widget_profile_found", "w").write("1")
+          else:
+              print("Apple'da uygun widget App Store profili bulunamadı")
+              open("/tmp/widget_profile_found", "w").write("0")
+          PY
+          fi
+
+          if [ "$have" -eq 0 ]; then
+            echo "Widget profili yok → App Store Connect API ile oluşturuluyor"
+            BID=$(app-store-connect bundle-ids list --bundle-id-identifier "$WIDGET_BUNDLE_ID" --strict-match-identifier --platform IOS --json \
+                  | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")')
+            if [ -z "$BID" ]; then
+              BID=$(app-store-connect bundle-ids create "$WIDGET_BUNDLE_ID" --name "PLANN Widgets" --platform IOS --json \
+                    | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+              echo "Bundle ID oluşturuldu: $BID"
+            fi
+            CERTS=$(app-store-connect certificates list --type DISTRIBUTION IOS_DISTRIBUTION --json \
+                    | python3 -c 'import sys,json; print(" ".join(c["id"] for c in json.load(sys.stdin)))')
+            if [ -z "$CERTS" ]; then echo "HATA: dağıtım sertifikası bulunamadı"; exit 1; fi
+            app-store-connect profiles create "$BID" --certificate-ids $CERTS --type IOS_APP_STORE \
+              --name "PLANN Widgets AppStore CM $(date +%Y%m%d%H%M%S)" --save --profiles-dir "$PROFILES_DIR" || {
+                echo "HATA: profil API ile oluşturulamadı (API anahtarı yetkisi?)."
+                echo "Elle: developer.apple.com > Identifiers > + > App IDs > ${WIDGET_BUNDLE_ID};"
+                echo "Profiles > + > App Store Connect > ${WIDGET_BUNDLE_ID}; sonra Codemagic > Code signing identities > Fetch profiles."
+                exit 1
+              }
+          fi
+      - name: Apple Sertifikalarini Hazirla
+        script: |
+          set -e
+          echo "════════ KURULU PROVISIONING PROFILLER ════════"
+          found_ad=0
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                   "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            for f in "$d/"*.mobileprovision; do
+              [ -e "$f" ] || continue
+              echo "───── $d/$(basename "$f")"
+              decoded=$(security cms -D -i "$f" 2>/dev/null | plutil -p -)
+              echo "$decoded" | grep -E '"Name"|"UUID"|"application-identifier"|associated-domains' || true
+              if echo "$decoded" | grep -q 'associated-domains'; then found_ad=1; fi
+            done
+          done
+          if [ "$found_ad" -ne 1 ]; then
+            echo "HATA: Kurulu profillerin hicbirinde com.apple.developer.associated-domains yok."
+            exit 1
+          fi
+          xcode-project use-profiles
+      - name: Widget profilini hedefe zorla ata
+        script: |
+          set -e
+          # use-profiles yeni extension hedefine profil atamazsa archive "requires a provisioning
+          # profile" ile düşer. Profili bulup hem pbxproj'a hem export_options.plist'e açıkça yazıyoruz.
+          PBX="frontend/ios/App/App.xcodeproj/project.pbxproj"
+          EXPORT_PLIST="$HOME/export_options.plist"
+          WPROF=""
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                   "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            for f in "$d/"*.mobileprovision; do
+              [ -e "$f" ] || continue
+              security cms -D -i "$f" > /tmp/_p.plist 2>/dev/null || continue
+              aid=$(plutil -extract Entitlements.application-identifier raw -o - /tmp/_p.plist 2>/dev/null || true)
+              case "$aid" in *".${WIDGET_BUNDLE_ID}") WPROF="$f";; esac
+            done
+          done
+          if [ -z "$WPROF" ]; then
+            echo "UYARI: ${WIDGET_BUNDLE_ID} profili bu adımda okunamadı; use-profiles atamasına güveniliyor."
+            grep -n "PROVISIONING_PROFILE_SPECIFIER" "$PBX" || true
+            exit 0
+          fi
+          security cms -D -i "$WPROF" > /tmp/wprof.plist
+          WNAME=$(plutil -extract Name raw -o - /tmp/wprof.plist)
+          WUUID=$(plutil -extract UUID raw -o - /tmp/wprof.plist)
+          echo "Widget profili: $WNAME ($WUUID) → $WPROF"
+
+          echo "── Profildeki sertifikalar (SHA1) ──"
+          python3 - <<'PY' || true
+          import plistlib, hashlib
+          p = plistlib.load(open("/tmp/wprof.plist", "rb"))
+          for c in p.get("DeveloperCertificates", []):
+              print(hashlib.sha1(c).hexdigest().upper())
+          PY
+          echo "── Anahtarlıktaki imza kimlikleri ──"
+          security find-identity -v -p codesigning || true
+
+          python3 - "$PBX" "$WNAME" "$WIDGET_BUNDLE_ID" <<'PY'
+          import sys, re
+          path, name, bid = sys.argv[1:4]
+          s = open(path, encoding="utf-8").read()
+          marker = f"PRODUCT_BUNDLE_IDENTIFIER = {bid};"
+          blocks = s.split(marker)
+          if len(blocks) != 3:
+              sys.exit(f"beklenmeyen: {marker} {len(blocks)-1} kez bulundu")
+          out = blocks[0]
+          for rest in blocks[1:]:
+              head = rest.split("};", 1)[0]
+              add = ""
+              if "PROVISIONING_PROFILE_SPECIFIER" not in head:
+                  add += f'\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "{name}";'
+              if "CODE_SIGN_IDENTITY" not in head:
+                  add += '\n\t\t\t\tCODE_SIGN_IDENTITY = "Apple Distribution";'
+              out += marker + add + rest
+          open(path, "w", encoding="utf-8").write(out)
+          print("pbxproj widget ayarları tamam")
+          PY
+          grep -n -B2 -A3 "PRODUCT_BUNDLE_IDENTIFIER = ${WIDGET_BUNDLE_ID};" "$PBX" | grep -E "PROVISIONING_PROFILE_SPECIFIER|CODE_SIGN_IDENTITY|PRODUCT_BUNDLE" || true
+
+          if [ -f "$EXPORT_PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Print :provisioningProfiles:${WIDGET_BUNDLE_ID}" "$EXPORT_PLIST" >/dev/null 2>&1 \
+              || /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:${WIDGET_BUNDLE_ID} string ${WNAME}" "$EXPORT_PLIST"
+            echo "── export_options.plist ──"; plutil -p "$EXPORT_PLIST"
+          else
+            echo "UYARI: $EXPORT_PLIST yok (build-ipa kendi oluşturacak)"
+          fi
+      - name: iOS Uygulamasini (IPA) Derle
+        script: |
+          set +e
+          xcode-project build-ipa \
+            --workspace "frontend/ios/App/App.xcworkspace" \
+            --scheme "App"
+          status=$?
+          if [ $status -ne 0 ]; then
+            echo "════════ XCODEBUILD HATA SATIRLARI ════════"
+            grep -hnE "error:|fatal error|The following build commands failed|Command .* failed|Undefined symbol|No such module|Provisioning profile|requires a provisioning profile" /tmp/xcodebuild_logs/*.log 2>/dev/null | tail -80
+            echo "════════ LOGUN SON 150 SATIRI ════════"
+            tail -n 150 /tmp/xcodebuild_logs/*.log 2>/dev/null
+          fi
+          exit $status
+      - name: IPA içeriği (appex kontrolü)
+        script: |
+          IPA=$(ls build/ios/ipa/*.ipa | head -1)
+          unzip -l "$IPA" | grep -E "PlugIns/PlannWidgets.appex/(Info.plist|PlannWidgets)$" || { echo "HATA: appex IPA içinde yok"; exit 1; }
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

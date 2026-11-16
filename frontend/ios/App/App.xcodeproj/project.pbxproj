@@ -21,7 +21,40 @@
 		F1B2C3D4E5F60718A9B0C1E2 /* MyViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1E1 /* MyViewController.swift */; };
 		F1B2C3D4E5F60718A9B0C1F0 /* ContactPickerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1F1 /* ContactPickerPlugin.swift */; };
 		F1B2C3D4E5F60718A9B0C1F2 /* ContactPickerPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = F1B2C3D4E5F60718A9B0C1F3 /* ContactPickerPlugin.m */; };
+		B2C3D4E5F60718290000000C /* PlannWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718290000000B /* PlannWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B2C3D4E5F607182900000101 /* PlannAppointmentAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000100 /* PlannAppointmentAttributes.swift */; };
+		B2C3D4E5F607182900000102 /* PlannAppointmentAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000100 /* PlannAppointmentAttributes.swift */; };
+		B2C3D4E5F607182900000105 /* ContentModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000104 /* ContentModel.swift */; };
+		B2C3D4E5F607182900000106 /* ContentModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000104 /* ContentModel.swift */; };
+		B2C3D4E5F607182900000109 /* LiveActivityAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000108 /* LiveActivityAPI.swift */; };
+		B2C3D4E5F60718290000010D /* ReconcileLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718290000010C /* ReconcileLogic.swift */; };
+		B2C3D4E5F607182900000112 /* PlannWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000110 /* PlannWidgetsBundle.swift */; };
+		B2C3D4E5F607182900000116 /* AppointmentLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000114 /* AppointmentLiveActivity.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B2C3D4E5F607182900000006 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B2C3D4E5F607182900000001;
+			remoteInfo = PlannWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		B2C3D4E5F607182900000005 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B2C3D4E5F60718290000000C /* PlannWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -43,6 +76,14 @@
 		F1B2C3D4E5F60718A9B0C1E1 /* MyViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyViewController.swift; sourceTree = "<group>"; };
 		F1B2C3D4E5F60718A9B0C1F1 /* ContactPickerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactPickerPlugin.swift; sourceTree = "<group>"; };
 		F1B2C3D4E5F60718A9B0C1F3 /* ContactPickerPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ContactPickerPlugin.m; sourceTree = "<group>"; };
+		B2C3D4E5F60718290000000D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B2C3D4E5F60718290000000B /* PlannWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PlannWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B2C3D4E5F607182900000100 /* PlannAppointmentAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannAppointmentAttributes.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000104 /* ContentModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/ContentModel.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000108 /* LiveActivityAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/LiveActivityAPI.swift; sourceTree = "<group>"; };
+		B2C3D4E5F60718290000010C /* ReconcileLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/ReconcileLogic.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000110 /* PlannWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannWidgetsBundle.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000114 /* AppointmentLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentLiveActivity.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,6 +92,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B2C3D4E5F607182900000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -72,6 +120,9 @@
 				504EC3051FED79650016851F /* Products */,
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
+				B2C3D4E5F607182900000010 /* Shared */,
+				B2C3D4E5F607182900000011 /* LiveActivityCore */,
+				B2C3D4E5F607182900000012 /* PlannWidgets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -79,6 +130,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				B2C3D4E5F60718290000000B /* PlannWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -114,6 +166,34 @@
 			name = Pods;
 			sourceTree = "<group>";
 		};
+		B2C3D4E5F607182900000010 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				B2C3D4E5F607182900000100 /* PlannAppointmentAttributes.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		B2C3D4E5F607182900000011 /* LiveActivityCore */ = {
+			isa = PBXGroup;
+			children = (
+				B2C3D4E5F607182900000104 /* ContentModel.swift */,
+				B2C3D4E5F607182900000108 /* LiveActivityAPI.swift */,
+				B2C3D4E5F60718290000010C /* ReconcileLogic.swift */,
+			);
+			name = LiveActivityCore;
+			sourceTree = "<group>";
+		};
+		B2C3D4E5F607182900000012 /* PlannWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				B2C3D4E5F60718290000000D /* Info.plist */,
+				B2C3D4E5F607182900000110 /* PlannWidgetsBundle.swift */,
+				B2C3D4E5F607182900000114 /* AppointmentLiveActivity.swift */,
+			);
+			path = PlannWidgets;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -125,16 +205,35 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				B2C3D4E5F607182900000005 /* Embed Foundation Extensions */,
 				9592DBEFFC6D2A0C8D5DEB22 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B2C3D4E5F607182900000007 /* PBXTargetDependency */,
 			);
 			name = App;
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		B2C3D4E5F607182900000001 /* PlannWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B2C3D4E5F607182900000008 /* Build configuration list for PBXNativeTarget "PlannWidgets" */;
+			buildPhases = (
+				B2C3D4E5F607182900000002 /* Sources */,
+				B2C3D4E5F607182900000003 /* Frameworks */,
+				B2C3D4E5F607182900000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PlannWidgets;
+			productName = PlannWidgets;
+			productReference = B2C3D4E5F60718290000000B /* PlannWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -149,6 +248,10 @@
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
 						ProvisioningStyle = Automatic;
+					};
+					B2C3D4E5F607182900000001 = {
+						CreatedOnToolsVersion = 26.0;
+						ProvisioningStyle = Manual;
 					};
 				};
 			};
@@ -168,6 +271,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				B2C3D4E5F607182900000001 /* PlannWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -184,6 +288,13 @@
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
 				F1B2C3D4E5F60718A9B0C1D2 /* GoogleService-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B2C3D4E5F607182900000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -236,10 +347,33 @@
 				F1B2C3D4E5F60718A9B0C1E2 /* MyViewController.swift in Sources */,
 				F1B2C3D4E5F60718A9B0C1F0 /* ContactPickerPlugin.swift in Sources */,
 				F1B2C3D4E5F60718A9B0C1F2 /* ContactPickerPlugin.m in Sources */,
+				B2C3D4E5F607182900000101 /* PlannAppointmentAttributes.swift in Sources */,
+				B2C3D4E5F607182900000105 /* ContentModel.swift in Sources */,
+				B2C3D4E5F607182900000109 /* LiveActivityAPI.swift in Sources */,
+				B2C3D4E5F60718290000010D /* ReconcileLogic.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B2C3D4E5F607182900000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B2C3D4E5F607182900000102 /* PlannAppointmentAttributes.swift in Sources */,
+				B2C3D4E5F607182900000106 /* ContentModel.swift in Sources */,
+				B2C3D4E5F607182900000112 /* PlannWidgetsBundle.swift in Sources */,
+				B2C3D4E5F607182900000116 /* AppointmentLiveActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B2C3D4E5F607182900000007 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B2C3D4E5F607182900000001 /* PlannWidgets */;
+			targetProxy = B2C3D4E5F607182900000006 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -385,6 +519,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 6.4.2;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
+				OTHER_LDFLAGS = "$(inherited) -weak_framework ActivityKit";
 				PRODUCT_BUNDLE_IDENTIFIER = co.plannapp.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -407,9 +542,56 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 6.4.2;
+				OTHER_LDFLAGS = "$(inherited) -weak_framework ActivityKit";
 				PRODUCT_BUNDLE_IDENTIFIER = co.plannapp.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		B2C3D4E5F607182900000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 70;
+				DEVELOPMENT_TEAM = 9V42VGDN9U;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PlannWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 6.4.2;
+				PRODUCT_BUNDLE_IDENTIFIER = co.plannapp.app.widgets;
+				PRODUCT_BUNDLE_PACKAGE_TYPE = "XPC!";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B2C3D4E5F60718290000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 70;
+				DEVELOPMENT_TEAM = 9V42VGDN9U;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PlannWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 6.4.2;
+				PRODUCT_BUNDLE_IDENTIFIER = co.plannapp.app.widgets;
+				PRODUCT_BUNDLE_PACKAGE_TYPE = "XPC!";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -432,6 +614,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B2C3D4E5F607182900000008 /* Build configuration list for PBXNativeTarget "PlannWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B2C3D4E5F607182900000009 /* Debug */,
+				B2C3D4E5F60718290000000A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

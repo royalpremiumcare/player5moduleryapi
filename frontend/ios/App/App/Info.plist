@@ -72,5 +72,7 @@
 	<string>PLANN, sesli asistan özelliğini kullanabilmeniz için mikrofon erişimi ister.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>PLANN, sesli komutlarınızı metne dönüştürmek için konuşma tanıma erişimi ister.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 </dict>
 </plist>
