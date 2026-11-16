@@ -118,3 +118,15 @@ test('manual open from settings works even when already seen', async () => {
   await act(async () => button('Devam').click());
   expect(onManualClose).toHaveBeenCalled();
 });
+
+test('uses theme colour tokens, not fixed zinc/white', async () => {
+  await render({ token: jwt('u-theme') });
+  // The sheet's own note and buttons (the shared ui/dialog close button is out of scope).
+  const note = [...dialog().querySelectorAll('p')].find((p) => p.textContent.startsWith('iOS izin'));
+  const own = [note, button('Şimdi değil'), button('Devam')].map((el) => el.className).join(' ');
+  expect(own).not.toMatch(/\b(?:text|bg|border)-(?:zinc-\d+|white)\b/);
+  expect(note.className).toEqual(expect.stringContaining('text-muted-foreground'));
+  expect(button('Devam').className).toEqual(expect.stringContaining('bg-primary'));
+  expect(button('Devam').className).toEqual(expect.stringContaining('text-primary-foreground'));
+  expect(button('Şimdi değil').className).toEqual(expect.stringContaining('border-input'));
+});

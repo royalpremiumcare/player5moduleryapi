@@ -69,17 +69,17 @@ export default function LiveActivityConsentSheet({ token, orgFlagEnabled, manual
             )}
           </DialogDescription>
         </DialogHeader>
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-muted-foreground">
           {t(
             'liveActivity.consent.note',
             'iOS izin isteyecek. İleride "izin vermeyi sürdürmek istiyor musunuz?" diye tekrar sorabilir. Sorarsa Her Zaman İzin Ver\'i seçin, yoksa randevular kilit ekranına gelmez.'
           )}
         </p>
         <DialogFooter className="gap-2">
-          <button type="button" onClick={close} className="min-h-11 px-4 rounded-xl border border-zinc-200 text-zinc-700">
+          <button type="button" onClick={close} className="min-h-11 px-4 rounded-xl border border-input text-foreground">
             {t('liveActivity.consent.later', 'Şimdi değil')}
           </button>
-          <button type="button" autoFocus onClick={close} className="min-h-11 px-4 rounded-xl bg-zinc-900 text-white font-medium">
+          <button type="button" autoFocus onClick={close} className="min-h-11 px-4 rounded-xl bg-primary text-primary-foreground font-medium">
             {t('liveActivity.consent.continue', 'Devam')}
           </button>
         </DialogFooter>
