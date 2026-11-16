@@ -1,5 +1,25 @@
 import { ChevronRight } from "lucide-react";
 
+// Tıklanabilir satır klavye/VoiceOver için buton gibi davranır (native <button> gibi):
+// Enter keydown'da, Space keyup'ta tetikler; Space keydown sayfayı kaydırmasın diye engellenir.
+// Satırın içindeki bir kontrolde (ör. Switch) basılan tuşlar satırı tetiklemez.
+const pressableProps = (onClick) => {
+  if (!onClick) return {};
+  const isOwnKey = (e) => e.target === e.currentTarget;
+  return {
+    role: "button",
+    tabIndex: 0,
+    onKeyDown: (e) => {
+      if (!isOwnKey(e)) return;
+      if (e.key === "Enter") onClick(e);
+      else if (e.key === " ") e.preventDefault();
+    },
+    onKeyUp: (e) => {
+      if (isOwnKey(e) && e.key === " ") onClick(e);
+    },
+  };
+};
+
 // --- YARDIMCI BİLEŞEN: AYAR SATIRI ---
 // Tasarım Dili: Minimalist & Kurumsal
 export const SettingItem = ({ 
@@ -13,6 +33,7 @@ export const SettingItem = ({
 }) => (
   <div 
     onClick={onClick} 
+    {...pressableProps(onClick)}
     className={`flex items-center justify-between p-5 bg-white active:bg-zinc-50 transition-colors cursor-pointer first:rounded-t-2xl last:rounded-b-2xl border-b last:border-0 border-zinc-100 ${className}`}
   >
     <div className="flex items-center gap-4">
