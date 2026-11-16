@@ -1095,6 +1095,8 @@
     },
     "financeManagementSubtitle": "Kasa, gelir ve gider takibi",
     "locationSubtitle": "Adres ve konum bilgileri",
+    "notificationSettings": "Bildirim Ayarları",
+    "notificationSettingsSubtitle": "Bildirimler, onarım ve Canlı Etkinlik",
     "notificationsOn": "Bildirimler açık",
     "notificationsOff": "Bildirimler kapalı",
     "notificationsOffButPermissionGranted": "Kapalı — izin verilmiş, açmak için dokunun",

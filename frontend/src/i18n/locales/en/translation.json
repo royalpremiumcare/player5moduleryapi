@@ -1093,6 +1093,8 @@
     },
     "financeManagementSubtitle": "Track cash, income and expenses",
     "locationSubtitle": "Address and location information",
+    "notificationSettings": "Notification Settings",
+    "notificationSettingsSubtitle": "Notifications, repair and Live Activities",
     "notificationsOn": "Notifications on",
     "notificationsOff": "Notifications off",
     "notificationsOffButPermissionGranted": "Off — permission granted, tap to enable",

@@ -1,73 +1,16 @@
 import { useState, useEffect } from "react";
 import { 
-  Package, User, UserCog, Briefcase, HelpCircle, LogOut, ChevronRight, 
-  ArrowLeft, DollarSign, Bell, BellOff, MapPin, Wrench, ShieldCheck, Globe,
+  Package, User, UserCog, Briefcase, HelpCircle, LogOut,
+  ArrowLeft, DollarSign, Bell, MapPin, ShieldCheck, Globe,
   Wallet, CreditCard, Phone, MessageCircle, Mail, Headphones, Sparkles, Instagram, CheckCheck
 } from "lucide-react"; 
-import { Switch } from "@/components/ui/switch";
-import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import api from "../api/api";
-import LiveActivitySettings from "./LiveActivitySettings";
 import { WHATSAPP_PHONE_DISPLAY, WHATSAPP_URL, openLiveChat } from "../constants/contact";
-import { Capacitor, registerPlugin } from '@capacitor/core';
-import { PushNotifications } from '@capacitor/push-notifications';
+import { SettingItem, SectionTitle } from "./settings/SettingRows";
 
-const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
-  ? registerPlugin('FCMTokenPlugin')
-  : null;
-
-// --- YARDIMCI BİLEŞEN: AYAR SATIRI ---
-// Tasarım Dili: Minimalist & Kurumsal
-const SettingItem = ({ 
-  icon: Icon, 
-  title, 
-  subtitle, 
-  onClick, 
-  rightElement, 
-  isDestructive = false,
-  className = ""
-}) => (
-  <div 
-    onClick={onClick} 
-    className={`flex items-center justify-between p-5 bg-white active:bg-zinc-50 transition-colors cursor-pointer first:rounded-t-2xl last:rounded-b-2xl border-b last:border-0 border-zinc-100 ${className}`}
-  >
-    <div className="flex items-center gap-4">
-      {/* İkon Alanı: Renkli yerine "Kurumsal Gri" ve Çerçeveli */}
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border shadow-sm ${
-        isDestructive 
-          ? 'bg-red-50 border-red-100 text-red-600' 
-          : 'bg-zinc-50 border-zinc-200 text-zinc-600'
-      }`}>
-        <Icon className="w-6 h-6" strokeWidth={1.5} />
-      </div>
-      
-      <div>
-        <p className={`text-base font-medium ${isDestructive ? 'text-red-600' : 'text-zinc-900'}`}>
-          {title}
-        </p>
-        {subtitle && <p className="text-sm text-zinc-500 mt-0.5">{subtitle}</p>}
-      </div>
-    </div>
-    <div className="pl-3">
-      {rightElement || <ChevronRight className="w-5 h-5 text-zinc-300" />}
-    </div>
-  </div>
-);
-
-// --- YARDIMCI BİLEŞEN: KATEGORİ BAŞLIĞI ---
-const SectionTitle = ({ title }) => (
-  <h3 className="px-5 mb-3 mt-8 text-sm font-bold text-zinc-400 uppercase tracking-widest">
-    {title}
-  </h3>
-);
-
-const Settings = ({ onNavigate, userRole, onLogout, notifications = [], setNotifications, onOpenAppointment, onOpenLiveActivityConsent }) => {
+const Settings = ({ onNavigate, userRole, onLogout, notifications = [], setNotifications, onOpenAppointment }) => {
   const { t, i18n } = useTranslation();
   const isStaff = userRole === 'staff' || userRole === 'personnel';
-  const [pushSubscribed, setPushSubscribed] = useState(false);
-  const [permissionStatus, setPermissionStatus] = useState('default');
-  const [isSubscribing, setIsSubscribing] = useState(false);
   const [showContact, setShowContact] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
 
@@ -96,178 +39,6 @@ const Settings = ({ onNavigate, userRole, onLogout, notifications = [], setNotif
     const wrapper = document.getElementById("app-wrapper");
     if (wrapper) wrapper.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [showContact]);
-
-  // --- BİLDİRİM MANTIĞI ---
-  // Switch backend aboneliğine göre çalışır (OS izni ≠ kayıtlı cihaz).
-  useEffect(() => {
-    const syncPushStatus = async () => {
-      const isNative = Capacitor.isNativePlatform();
-      if (isNative) {
-        try {
-          const status = await PushNotifications.checkPermissions();
-          setPermissionStatus(status.receive);
-        } catch {
-          setPermissionStatus('default');
-        }
-      } else if ('Notification' in window) {
-        setPermissionStatus(Notification.permission);
-      }
-      try {
-        const res = await api.get('/push/status');
-        setPushSubscribed(!!res.data?.subscribed);
-      } catch {
-        setPushSubscribed(false);
-      }
-    };
-    syncPushStatus();
-  }, []);
-
-  const handleEnableNotifications = async () => {
-    const isNative = Capacitor.isNativePlatform();
-    
-    // Native (Android/iOS)
-    if (isNative) {
-      setIsSubscribing(true);
-      try {
-        const permStatus = await PushNotifications.requestPermissions();
-        if (permStatus.receive === 'granted') {
-          const platform = Capacitor.getPlatform();
-
-          if (platform === 'ios' && FCMTokenPlugin) {
-            // iOS: FCMTokenPlugin ile doğrudan FCM token al
-            const fcmResult = await FCMTokenPlugin.registerAndGetToken();
-            if (fcmResult && fcmResult.token) {
-              await api.post('/push/subscribe', {
-                subscription: {
-                  endpoint: fcmResult.token,
-                  keys: { p256dh: '', auth: '' },
-                  platform: 'ios'
-                }
-              });
-              setPushSubscribed(true);
-            }
-          } else {
-            // Android: Capacitor registration event kullan
-            await PushNotifications.register();
-            PushNotifications.addListener('registration', async (token) => {
-              await api.post('/push/subscribe', {
-                subscription: {
-                  endpoint: token.value,
-                  keys: { p256dh: '', auth: '' },
-                  platform: platform
-                }
-              });
-              setPushSubscribed(true);
-            });
-          }
-          setPushSubscribed(true);
-          setPermissionStatus('granted');
-          toast.success(t('settings.notificationsEnabledSuccess'));
-        } else {
-          setPermissionStatus('denied');
-          toast.error(t('settings.notificationsPermissionDenied'));
-        }
-      } catch (error) {
-        toast.error(t('settings.notificationsEnableError'));
-      } finally {
-        setIsSubscribing(false);
-      }
-      return;
-    }
-    
-    // Web
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-      toast.error(t('settings.notificationsBrowserNotSupported'));
-      return;
-    }
-
-    setIsSubscribing(true);
-    try {
-      const permission = await Notification.requestPermission();
-      setPermissionStatus(permission);
-      
-      if (permission === 'granted') {
-        const registration = await navigator.serviceWorker.ready;
-        const vapidResponse = await api.get('/push/vapid-key');
-        const vapidPublicKey = vapidResponse.data.publicKey;
-        
-        const urlBase64ToUint8Array = (base64String) => {
-          const padding = '='.repeat((4 - base64String.length % 4) % 4);
-          const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-          const rawData = window.atob(base64);
-          const outputArray = new Uint8Array(rawData.length);
-          for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i);
-          }
-          return outputArray;
-        };
-
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
-        });
-
-        await api.post('/push/subscribe', { subscription: subscription.toJSON() });
-        setPushSubscribed(true);
-        toast.success(t('settings.notificationsEnabledSuccess'));
-      } else if (permission === 'denied') {
-        toast.error(t('settings.notificationsPermissionDeniedWeb'));
-      }
-    } catch (error) {
-      toast.error(t('settings.notificationsEnableError'));
-    } finally {
-      setIsSubscribing(false);
-    }
-  };
-
-  const handleDisableNotifications = async () => {
-    setIsSubscribing(true);
-    try {
-      await api.delete('/push/unsubscribe');
-      setPushSubscribed(false);
-      toast.success(t('settings.notificationsDisabledSuccess'));
-    } catch (error) {
-      toast.error(t('settings.notificationsDisableError'));
-    } finally {
-      setIsSubscribing(false);
-    }
-  };
-
-  const handleToggleNotifications = async (checked) => {
-    if (checked) await handleEnableNotifications();
-    else await handleDisableNotifications();
-  };
-
-  const handleRepairNotifications = async () => {
-    try {
-      toast.info(t('settings.notificationsRepairing'));
-      const isNative = Capacitor.isNativePlatform();
-      
-      if (isNative) {
-        const permStatus = await PushNotifications.requestPermissions();
-        if (permStatus.receive === 'granted') {
-          await PushNotifications.register();
-          PushNotifications.addListener('registration', async (token) => {
-            await api.post('/push/subscribe', {
-              subscription: {
-                endpoint: token.value,
-                keys: { p256dh: '', auth: '' },
-                platform: Capacitor.getPlatform()
-              }
-            });
-            toast.success(t('settings.notificationsRepaired'));
-          });
-        }
-      } else if ('serviceWorker' in navigator) {
-        const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.getSubscription();
-        if (sub) await sub.unsubscribe();
-        window.location.reload();
-      }
-    } catch (error) {
-      toast.error(t('settings.notificationsRepairError'));
-    }
-  };
 
   // --- RENDER ---
 
@@ -523,37 +294,13 @@ const Settings = ({ onNavigate, userRole, onLogout, notifications = [], setNotif
         <SectionTitle title={t('settings.sections.appPreferences')} />
         <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
           
-          {/* Bildirimler (Switch) — backend aboneliğine göre; OS izni ayrı kalır */}
           <SettingItem 
-            icon={pushSubscribed ? Bell : BellOff} 
-            title={t('settings.notifications')}
-            subtitle={
-              pushSubscribed
-                ? t('settings.notificationsOn')
-                : permissionStatus === 'granted'
-                  ? t('settings.notificationsOffButPermissionGranted')
-                  : t('settings.notificationsOff')
-            }
-            rightElement={
-              <Switch 
-                checked={pushSubscribed}
-                onCheckedChange={handleToggleNotifications}
-                disabled={isSubscribing}
-                className="scale-110"
-              />
-            }
-          />
-
-          {/* Bildirim Onarma */}
-          <SettingItem 
-            icon={Wrench} 
-            title={t('settings.notificationsRepair')}
-            subtitle={t('settings.notificationsRepairSubtitle')}
-            onClick={handleRepairNotifications}
+            icon={Bell} 
+            title={t('settings.notificationSettings')}
+            subtitle={t('settings.notificationSettingsSubtitle')}
+            onClick={() => onNavigate && onNavigate('settings-notifications')}
           />
         </div>
-
-        <LiveActivitySettings onOpenConsent={onOpenLiveActivityConsent} />
 
         {/* GRUP 4: DESTEK & ÇIKIŞ */}
         <SectionTitle title={t('settings.sections.other')} />

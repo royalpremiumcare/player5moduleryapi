@@ -26,6 +26,7 @@ import LiveActivityConsentSheet from "@/components/LiveActivityConsentSheet";
 import MarketingAssistant from "@/components/MarketingAssistant";
 import SettingsSubscription from "@/components/SettingsSubscription";
 import SettingsProfile from "@/components/SettingsProfile";
+import SettingsNotifications from "@/components/SettingsNotifications";
 import LocationSettings from "@/components/LocationSettings";
 import SettingsOnlineBooking from "@/components/SettingsOnlineBooking";
 import Finance from "@/components/Finance";
@@ -1657,7 +1658,7 @@ function App() {
         </header>
       )}
 
-      <main className={(currentView === "dashboard" || currentView === "sessions" || currentView === "settings" || currentView === "statistics" || currentView === "settings-subscription" || currentView === "settings-profile" || currentView === "settings-location" || currentView === "settings-online-booking" || currentView === "subscribe" || currentView === "staff" || currentView === "services" || currentView === "marketing-assistant" || currentView === "help-center") && !showForm ? "" : "container mx-auto px-4 py-6"}>
+      <main className={(currentView === "dashboard" || currentView === "sessions" || currentView === "settings" || currentView === "statistics" || currentView === "settings-subscription" || currentView === "settings-profile" || currentView === "settings-notifications" || currentView === "settings-location" || currentView === "settings-online-booking" || currentView === "subscribe" || currentView === "staff" || currentView === "services" || currentView === "marketing-assistant" || currentView === "help-center") && !showForm ? "" : "container mx-auto px-4 py-6"}>
         {/* Ödeme Başarı Banner'ı */}
         {showPaymentSuccess && (
           <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-6 shadow-lg sticky top-0 z-50 animate-in slide-in-from-top">
@@ -1817,7 +1818,6 @@ function App() {
             notifications={notifications}
             setNotifications={setNotifications}
             onOpenAppointment={(id) => { if (id) { setDetailFromNotif(true); setDetailAppointmentId(String(id)); } }}
-            onOpenLiveActivityConsent={() => setLaConsentOpen(true)}
           />
         )}
         {currentView === "statistics" && userRole === 'admin' && (
@@ -1844,6 +1844,16 @@ function App() {
               setCurrentView(view);
               setShowForm(false);
             }}
+          />
+        )}
+
+        {currentView === "settings-notifications" && (
+          <SettingsNotifications
+            onNavigate={(view) => {
+              setCurrentView(view);
+              setShowForm(false);
+            }}
+            onOpenLiveActivityConsent={() => setLaConsentOpen(true)}
           />
         )}
 
