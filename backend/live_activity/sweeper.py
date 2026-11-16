@@ -77,6 +77,18 @@ def _active(user: dict) -> bool:
     return "status" not in user or user["status"] == "active"
 
 
+def _supports_input_push_token(os_version) -> bool:
+    """`input-push-token` on a push-to-start is iOS 18+ only (spec §5.3); unknown → False."""
+    try:
+        return int(str(os_version).strip().split(".")[0]) >= 18
+    except (TypeError, ValueError):
+        return False
+
+
+def _slot_attributes(device_id: str, slot_index: int, org_id: str) -> dict:
+    return {"slotId": f"{device_id}:{slot_index}", "orgId": org_id}
+
+
 @dataclass
 class _Org:
     org_id: str
@@ -255,9 +267,11 @@ async def _execute(db, org: _Org | None, device: dict, slot: dict | None, action
             stale = stale_epoch(v.phase, v.start, v.end)
             fields = {"appointment_id": v.id, "phase_sent": v.phase.value, "content_hash": content_hash(content)}
             if action.kind == "start":
+                attrs = _slot_attributes(device_id, action.slot_index, org.org_id)
                 aps = build_aps("start", content, now_epoch=now_epoch, relevance=action.relevance,
-                                stale_epoch=stale, dismissal_epoch=None, slot_id=f"{device_id}:{action.slot_index}",
-                                org_id=org.org_id, input_push_token=True)
+                                stale_epoch=stale, dismissal_epoch=None, slot_id=attrs["slotId"],
+                                org_id=attrs["orgId"],
+                                input_push_token=_supports_input_push_token(device.get("os_version")))
                 fields = _start_fields(v, content, now)
                 la_token = device.get("push_to_start_token")
             else:
@@ -294,8 +308,14 @@ async def _execute(db, org: _Org | None, device: dict, slot: dict | None, action
 
     if result.ok:
         stats.sent += 1
-        if action.kind == "start" and device.get("day") != today:  # first start of the day opens it
+        # The first start of the day opens it; so does a switch/update onto one of today's
+        # appointments (a slot carried over from yesterday never starts again today).
+        opens_day = action.kind == "start" or (
+            action.kind == "update" and visible is not None
+            and visible.start.astimezone(TR_TZ).strftime("%Y-%m-%d") == today)
+        if opens_day and device.get("day") != today:
             await db.live_activity_devices.update_one({"device_id": device_id}, {"$set": {"day": today}})
+            device["day"] = today
         return
 
     previous = {k: (slot or {}).get(k) for k in fields}
@@ -471,10 +491,11 @@ async def start_locally(db, device_id: str, *, now: datetime) -> list[dict]:
         if not await _same_owner(db, device):
             await registry.claim_slot(db, **claim, expect_version=(expect or 0) + 1, set_fields={"state": "ended"})
             break
-        await registry.record_start(db, device_id, now.timestamp())
+        # No record_start: the push-to-start budget does not apply to a start the app makes itself.
         if device.get("day") != today:
             await db.live_activity_devices.update_one({"device_id": device_id}, {"$set": {"day": today}})
         out.append({"slot_index": start.slot_index, "content": content,
+                    "attributes": _slot_attributes(device_id, start.slot_index, org.org_id),
                     "stale_epoch": stale_epoch(v.phase, v.start, v.end), "relevance": start.relevance})
         device = await db.live_activity_devices.find_one({"device_id": device_id})
         if device is None:

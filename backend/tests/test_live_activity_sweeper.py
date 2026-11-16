@@ -42,7 +42,7 @@ def device(device_id, username, org=ORG, **kw):
     return {
         "device_id": device_id, "organization_id": org, "user_id": f"id-{username}", "username": username,
         "fcm_token": f"fcm-{device_id}", "push_to_start_token": f"pts-{device_id}",
-        "activities_enabled": True, "start_log": [], "day": None, **kw,
+        "activities_enabled": True, "start_log": [], "day": None, "os_version": "26.0", **kw,
     }
 
 
@@ -596,3 +596,61 @@ async def test_completed_still_ends_soon_with_final_content():
     assert (aps["event"], aps["content-state"]["phase"]) == ("end", "completed")
     assert aps["content-state"]["customerDisplay"] == "Ayşe K."
     assert aps["dismissal-date"] == int(NOW.timestamp()) + 900
+
+
+@pytest.mark.parametrize("os_version,expected", [
+    ("17.5", False), ("17.4.1", False), (None, False), ("", False), ("beta", False),
+    ("18.0", True), ("18", True), ("26.0", True), (" 18.2 ", True),
+])
+async def test_input_push_token_only_on_ios18_plus(os_version, expected):
+    db = await make_db(users=[user("ali")], devices=[device("d1", "ali", os_version=os_version)],
+                       apts=[apt("a", "10:20")])
+    t = RecordingTransport()
+    await sweep(db, t)
+    assert events(t) == [("start", "pts-d1")]
+    assert ("input-push-token" in t.sent[0]["aps"]) is expected
+
+
+async def test_start_locally_items_carry_attributes():
+    db = await make_db(users=[user("ali")], devices=[device("d1", "ali", push_to_start_token=None)],
+                       apts=[apt("a", "10:20")])
+    out = await sweeper.start_locally(db, "d1", now=NOW)
+    assert [o["slot_index"] for o in out] == [1]
+    assert out[0]["attributes"] == {"slotId": "d1:1", "orgId": ORG}
+
+
+async def test_start_locally_does_not_spend_push_to_start_budget():
+    db = await make_db(users=[user("ali", live_activity_slot_count=2)],
+                       devices=[device("d1", "ali", push_to_start_token=None)],
+                       apts=[apt("a", "10:20"), apt("b", "10:25")])
+    out = await sweeper.start_locally(db, "d1", now=NOW)
+    assert [o["slot_index"] for o in out] == [1, 2]
+    assert dev(db, "d1")["start_log"] == []     # the push-to-start budget does not apply
+    assert dev(db, "d1")["day"] == TODAY
+
+
+async def test_switch_to_todays_appointment_opens_the_day():
+    # A slot carried over from yesterday switches to today's first appointment (no start today).
+    db = await make_db(users=[user("elif", role="staff")], devices=[device("d1", "elif", day="2026-11-15")],
+                       apts=[apt("y", "23:00", staff="elif", date="2026-11-15", status="Tamamlandı"),
+                             apt("b", "10:20", staff="elif"), apt("c", "13:00", staff="elif")])
+    seed_slot(db, "d1", 1, "y", "processing", day="2026-11-15")
+    t = RecordingTransport()
+    await sweep(db, t)
+    assert events(t) == [("update", "tok")]
+    assert t.sent[0]["aps"]["content-state"]["appointmentId"] == "b"
+    assert dev(db, "d1")["day"] == TODAY
+    # with the day open, the 13:00 appointment (outside the lead window) follows b
+    db.appointments.docs[1]["status"] = "Tamamlandı"
+    await sweep(db, t, now=NOW + timedelta(seconds=30))
+    assert t.sent[-1]["aps"]["content-state"]["appointmentId"] == "c"
+
+
+async def test_update_of_yesterdays_appointment_does_not_open_the_day():
+    db = await make_db(users=[user("elif", role="staff")], devices=[device("d1", "elif", day="2026-11-15")],
+                       apts=[apt("y", "23:30", staff="elif", date="2026-11-15", duration=720)])  # processing past midnight
+    seed_slot(db, "d1", 1, "y", "processing", content_hash="stale", day="2026-11-15")
+    t = RecordingTransport()
+    await sweep(db, t)
+    assert events(t) == [("update", "tok")]
+    assert dev(db, "d1")["day"] == "2026-11-15"
