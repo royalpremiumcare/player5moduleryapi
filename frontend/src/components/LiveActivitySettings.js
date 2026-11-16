@@ -82,11 +82,11 @@ export default function LiveActivitySettings({ onOpenConsent }) {
             <RadioGroup aria-labelledby="la-scope-label" value={prefs.scope} onValueChange={(v) => save({ scope: v })}>
               <div className="flex items-center gap-3 min-h-11">
                 <RadioGroupItem value="own" id="la-scope-own" />
-                <Label htmlFor="la-scope-own">{t('liveActivity.scopeOwn', 'Sadece benimkiler')}</Label>
+                <Label htmlFor="la-scope-own">{t('liveActivity.scopeOwn', 'Sadece benim randevularım')}</Label>
               </div>
               <div className="flex items-center gap-3 min-h-11">
                 <RadioGroupItem value="all" id="la-scope-all" />
-                <Label htmlFor="la-scope-all">{t('liveActivity.scopeAll', 'Tüm personel')}</Label>
+                <Label htmlFor="la-scope-all">{t('liveActivity.scopeAll', 'Tüm personelin randevuları')}</Label>
               </div>
             </RadioGroup>
           </div>
@@ -114,7 +114,7 @@ export default function LiveActivitySettings({ onOpenConsent }) {
 
         <div className="p-5 flex items-center justify-between gap-4">
           <label htmlFor="la-alert" className="text-base font-medium text-zinc-900">
-            {t('liveActivity.startAlert', 'Randevu başlarken uyar')}
+            {t('liveActivity.startAlert', 'Randevu başladığında sesli uyarı')}
           </label>
           <Switch
             id="la-alert"

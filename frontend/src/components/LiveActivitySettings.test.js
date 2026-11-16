@@ -75,6 +75,14 @@ test('owner sees scope, slots and alert', async () => {
   expect(q('[role="switch"]')).not.toBeNull();
 });
 
+test('uses the owner-approved labels', async () => {
+  await render();
+  expect(text()).toContain('Canlı bildirimler');
+  expect(text()).toContain('Sadece benim randevularım');
+  expect(text()).toContain('Tüm personelin randevuları');
+  expect(text()).toContain('Randevu başladığında sesli uyarı');
+});
+
 test('manager sees scope and slots', async () => {
   await render();
   expect(q('[role="radiogroup"]') && q('select')).toBeTruthy();

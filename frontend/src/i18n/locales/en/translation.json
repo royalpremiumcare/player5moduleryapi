@@ -1017,10 +1017,10 @@
     "disabledBanner": "Live Activities are turned off in iOS settings. Appointments will not appear on the lock screen.",
     "openIosSettings": "Open iOS Settings",
     "scope": "Whose appointments to show?",
-    "scopeOwn": "Only mine",
-    "scopeAll": "All staff",
+    "scopeOwn": "Only my appointments",
+    "scopeAll": "All staff appointments",
     "slots": "Appointments on the lock screen",
-    "startAlert": "Alert when an appointment starts",
+    "startAlert": "Audible alert when an appointment starts",
     "howItWorks": "How does it work?",
     "consent": {
       "title": "Your appointments on the lock screen",
