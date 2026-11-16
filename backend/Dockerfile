@@ -34,7 +34,7 @@ RUN pip install --no-cache-dir \
     pywebpush \
     cryptography \
     slowapi \
-    firebase-admin==7.1.0 \
+    firebase-admin==7.7.0 \
     stripe
 
 # 5. Tüm kodları kopyala
