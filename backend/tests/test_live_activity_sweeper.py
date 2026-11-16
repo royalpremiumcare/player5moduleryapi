@@ -203,11 +203,76 @@ async def test_flag_off_org_ignored():
     assert len(t.sent) == 1
 
 
-async def test_inactive_user_device_skipped():
+def assert_removed_end_now(sent):
+    aps = sent["aps"]
+    cs = aps["content-state"]
+    assert (aps["event"], cs["phase"], aps["dismissal-date"]) == ("end", "removed", aps["timestamp"])
+    assert (cs["customerDisplay"], cs["serviceName"], cs["staffName"], cs["startLabel"]) == (None, "", None, "")
+    assert "Ayşe" not in str(aps) and "Saç" not in str(aps)
+
+
+async def test_inactive_user_device_slots_ended():
     db = await make_db(users=[user("ali", status="passive")], devices=[device("d1", "ali")], apts=[apt("a", "10:20")])
     t = RecordingTransport()
     await sweep(db, t)
-    assert t.sent == []
+    assert t.sent == []                       # nothing started for an inactive user
+
+    seed_slot(db, "d1", 1, "a", "upcoming", token="tok1")
+    seed_slot(db, "d1", 2, "a", "upcoming", state="start_sent", token=None)   # no token: cannot be ended
+    seed_slot(db, "d1", 3, "a", "upcoming", state="ended", token="old")
+    await sweep(db, t)
+    assert events(t) == [("end", "tok1")]
+    assert_removed_end_now(t.sent[0])
+    assert slot(db, "d1", 1)["state"] == "ended"
+    await sweep(db, t, now=NOW + timedelta(seconds=30))
+    assert len(t.sent) == 1                   # ended once
+
+
+async def test_missing_user_device_slots_ended():
+    db = await make_db(users=[user("ali")], devices=[device("d1", "ghost")], apts=[apt("a", "10:20")])
+    seed_slot(db, "d1", 1, "a", "upcoming", token="tok1")
+    t = RecordingTransport()
+    await sweep(db, t)
+    assert events(t) == [("end", "tok1")]
+    assert_removed_end_now(t.sent[0])
+    assert slot(db, "d1", 1)["state"] == "ended"
+
+
+async def test_flag_off_org_ends_live_slots():
+    db = await make_db(
+        settings_=[settings(), settings("org2", enabled=False), {"organization_id": "org3"}],   # org4: no settings
+        users=[user("ali"), user("can", org="org2"), user("cem", org="org3"), user("dan", org="org4")],
+        devices=[device("d1", "ali"), device("d2", "can", org="org2"), device("d3", "cem", org="org3"),
+                 device("d4", "dan", org="org4"), device("d5", "can", org="org2")],
+        apts=[apt("a", "10:20"), apt("b", "10:20", org="org2"), apt("c", "10:20", org="org3")],
+    )
+    seed_slot(db, "d2", 1, "b", "upcoming", token="tok2")
+    seed_slot(db, "d2", 2, "b", "upcoming", state="ended", token="old2")
+    seed_slot(db, "d3", 1, "c", "upcoming", state="start_sent", token="tok3")
+    seed_slot(db, "d4", 1, "x", "upcoming", token="tok4")
+    t = RecordingTransport()
+    stats = await sweep(db, t)
+    assert sorted(events(t)) == [("end", "tok2"), ("end", "tok3"), ("end", "tok4"), ("start", "pts-d1")]
+    for sent in t.sent:
+        if sent["aps"]["event"] == "end":
+            assert_removed_end_now(sent)
+    assert stats["orgs"] == 1
+    assert {slot(db, d, 1)["state"] for d in ("d2", "d3", "d4")} == {"ended"}
+    await sweep(db, t, now=NOW + timedelta(seconds=30))
+    assert len(t.sent) == 4                   # ended once; d5 (no slots) never touched
+
+    # The change-hook path ends only the orgs it was asked about.
+    db = await make_db(
+        settings_=[settings("org2", enabled=False), settings("org3", enabled=False)],
+        users=[user("can", org="org2"), user("cem", org="org3")],
+        devices=[device("d2", "can", org="org2"), device("d3", "cem", org="org3")],
+    )
+    seed_slot(db, "d2", 1, "b", "upcoming", token="tok2")
+    seed_slot(db, "d3", 1, "c", "upcoming", token="tok3")
+    t = RecordingTransport()
+    await sweep(db, t, org_ids=["org2"])
+    assert events(t) == [("end", "tok2")]
+    assert slot(db, "d3", 1)["state"] == "active"
 
 
 # --- tokens -----------------------------------------------------------------------------

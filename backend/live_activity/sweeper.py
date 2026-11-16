@@ -32,7 +32,7 @@ from .eligibility import (
     visible_for_user,
 )
 from .phase import TR_TZ, Phase, appointment_window, compute_phase, resolve_duration
-from .planner import Action, plan_device
+from .planner import USABLE_STATES, Action, plan_device
 from .transport import FcmLiveActivityTransport, LiveActivityTransport
 
 logger = logging.getLogger(__name__)
@@ -202,7 +202,7 @@ def _final_phases(org: _Org, slots: list[dict], visible_ids: set, now: datetime)
     return out
 
 
-def _end_content(org: _Org, action: Action, now: datetime, *, staff_name, version: int) -> tuple[dict, bool]:
+def _end_content(org: _Org | None, action: Action, now: datetime, *, staff_name, version: int) -> tuple[dict, bool]:
     """Final content for an `end`. Returns (content, removed); a deleted appointment, or one that
     left the user's scope (planned with phase `removed`), is `removed`."""
     removed_phase = action.phase is Phase.REMOVED
@@ -232,7 +232,7 @@ def _start_fields(v: VisibleAppt, content: dict, now: datetime) -> dict:
             "update_token": None, "activity_id": None}
 
 
-async def _execute(db, org: _Org, device: dict, slot: dict | None, action: Action, visible: VisibleAppt | None,
+async def _execute(db, org: _Org | None, device: dict, slot: dict | None, action: Action, visible: VisibleAppt | None,
                    *, transport: LiveActivityTransport, now: datetime, stats: _Stats, content_for, staff_name) -> None:
     device_id = device["device_id"]
     now_epoch = int(now.timestamp())
@@ -372,9 +372,53 @@ def _plan(org: _Org, device: dict, view: _DeviceView, *, now: datetime, has_push
     )
 
 
+async def _end_live_slots(db, device: dict, *, transport: LiveActivityTransport, now: datetime,
+                          stats: _Stats) -> None:
+    """End every live card of a device that may show nothing any more (org flag off or settings
+    gone, user inactive or deleted): removed stub, dismissed now (spec §1.2). Each end goes
+    through the same claim-then-send path, owner re-check included."""
+    if not device.get("fcm_token"):
+        return
+    for s in await registry.slots_for_device(db, device["device_id"]):
+        if s.get("state") not in USABLE_STATES or not s.get("update_token"):
+            continue
+        stats.actions += 1
+        action = Action("end", s["slot_index"], s.get("appointment_id"), Phase.REMOVED, 10, None, 0.0, "now")
+        await _execute(db, None, device, s, action, None, transport=transport, now=now, stats=stats,
+                       content_for=None, staff_name=None)
+
+
+async def _end_disabled_orgs(db, enabled_ids: set, org_ids: list[str] | None, *,
+                             transport: LiveActivityTransport, now: datetime, stats: _Stats) -> None:
+    """End the live cards left in orgs whose flag is off (or whose settings are missing).
+
+    Only enabled orgs open slots, so live slots are few: they are listed first, and their
+    devices are looked up only when there are any. With `org_ids` (the change hook) only
+    those orgs are considered."""
+    live = await db.live_activity_slots.find(
+        {"state": {"$in": sorted(USABLE_STATES)}}, {"_id": 0, "device_id": 1, "update_token": 1}
+    ).to_list(None)
+    device_ids = sorted({s["device_id"] for s in live if s.get("update_token")})
+    if not device_ids:
+        return
+    for device in await db.live_activity_devices.find({"device_id": {"$in": device_ids}}).to_list(None):
+        org_id = device.get("organization_id")
+        if org_id in enabled_ids or (org_ids is not None and org_id not in org_ids):
+            continue
+        try:
+            await _end_live_slots(db, device, transport=transport, now=now, stats=stats)
+        except Exception:
+            stats.errors += 1
+            logger.exception("live activity sweep: ending device %s of disabled org failed", device.get("device_id"))
+
+
 async def _sweep_device(db, org: _Org, device: dict, *, transport: LiveActivityTransport, now: datetime,
                         stats: _Stats) -> None:
     if not device.get("fcm_token"):
+        return
+    user = org.users_by_username.get(device.get("username"))
+    if user is None or not _active(user):
+        await _end_live_slots(db, device, transport=transport, now=now, stats=stats)
         return
     view = await _device_view(db, org, device, now=now, stats=stats)
     if view is None:
@@ -449,9 +493,8 @@ async def run_sweep(db, *, transport: LiveActivityTransport, now: datetime, redi
     flt: dict = {"live_activity_enabled": True}
     if org_ids is not None:
         flt["organization_id"] = {"$in": list(org_ids)}
-    for settings in await db.settings.find(flt, {"_id": 0}).to_list(None):
-        if not settings.get("organization_id"):
-            continue
+    enabled = [s for s in await db.settings.find(flt, {"_id": 0}).to_list(None) if s.get("organization_id")]
+    for settings in enabled:
         stats.orgs += 1
         try:
             org = await load_org(db, settings, now)
@@ -466,6 +509,12 @@ async def run_sweep(db, *, transport: LiveActivityTransport, now: datetime, redi
             except Exception:
                 stats.errors += 1
                 logger.exception("live activity sweep: device %s failed", device.get("device_id"))
+    try:
+        await _end_disabled_orgs(db, {s["organization_id"] for s in enabled}, org_ids,
+                                 transport=transport, now=now, stats=stats)
+    except Exception:
+        stats.errors += 1
+        logger.exception("live activity sweep: ending cards of disabled orgs failed")
     return stats.as_dict()
 
 
