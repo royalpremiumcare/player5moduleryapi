@@ -103,9 +103,10 @@ def test_idle_slot_ends_soon_at_day_end():
         ("end", 1, "a", Phase.COMPLETED, 10, None, "soon"),
         ("end", 2, "b", Phase.CANCELLED, 10, None, "soon"),
     ]
-    # without a completed/cancelled phase the end repeats the last content sent
-    assert [a.phase for a in plan(slots, [], n=2)] == [P, U]
-    assert [a.phase for a in plan(slots, [], n=2, final_phases={"a": Phase.REMOVED, "b": Phase.INELIGIBLE})] == [P, U]
+    # without a completed/cancelled phase the appointment left the scope: removed, dismissed now
+    for final in ({}, {"a": Phase.REMOVED, "b": Phase.INELIGIBLE}):
+        assert [(a.phase, a.dismissal) for a in plan(slots, [], n=2, final_phases=final)] == [
+            (Phase.REMOVED, "now"), (Phase.REMOVED, "now")]
 
 
 def test_processing_outranks_upcoming_when_full():
@@ -249,7 +250,7 @@ def test_slot_count_decrease_ends_extra_slots():
 def test_rescheduled_out_of_day_leaves_slot():
     slots = [slot(1, "moved", U)]
     assert summary(plan(slots, [va("b", U, 30)], n=1)) == [("update", 1, "b", U, 10, None, None)]
-    assert summary(plan(slots, [], n=1)) == [("end", 1, "moved", U, 10, None, "soon")]
+    assert summary(plan(slots, [], n=1)) == [("end", 1, "moved", Phase.REMOVED, 10, None, "now")]
 
 
 def test_reassignment_moves_between_staff_devices():
@@ -257,7 +258,7 @@ def test_reassignment_moves_between_staff_devices():
     elif_actions = plan([slot(1, "a", U)], [], n=1)
     can_actions = plan([], [a], n=1)
     owner_actions = plan([slot(1, "a", U), slot(2, "z", U)], [a, va("z", U, 50)], n=4)
-    assert summary(elif_actions) == [("end", 1, "a", U, 10, None, "soon")]
+    assert summary(elif_actions) == [("end", 1, "a", Phase.REMOVED, 10, None, "now")]
     assert summary(can_actions) == [("start", 1, "a", U, 10, "start", None)]
     assert owner_actions == []
 
@@ -379,3 +380,24 @@ def test_dismissed_card_not_reopened_after_slot_count_drop():
     w = va("w", U, 60)
     actions = plan([slot(1, "y", U), slot(3, "x", P, state="dismissed_by_user")], vis[:2] + [w], n=2)
     assert summary(actions) == [("start", 2, "w", U, 10, "start", None)]
+
+
+def test_8h_restart_only_with_push_to_start():
+    old = slot(1, "b", U, started_h=8)
+    visible = [va("b", U, 40)]
+    assert summary(plan([old], visible, n=1)) == [("end", 1, "b", U, 10, None, "now")]
+    # without push-to-start the slot could not be reopened by a push: keep it running
+    assert plan([old], visible, n=1, has_push_to_start=False) == []
+
+
+def test_out_of_scope_appointment_ends_now_removed():
+    # reassigned / rescheduled to another day / back to an ineligible status: neither final nor visible
+    s = [slot(1, "a", U)]
+    assert summary(plan(s, [], n=1)) == [("end", 1, "a", Phase.REMOVED, 10, None, "now")]
+    assert summary(plan(s, [], n=1, final_phases={"a": Phase.INELIGIBLE})) == [
+        ("end", 1, "a", Phase.REMOVED, 10, None, "now")]
+    # completed / cancelled still end soon with the final phase
+    assert summary(plan(s, [], n=1, final_phases={"a": Phase.COMPLETED})) == [
+        ("end", 1, "a", Phase.COMPLETED, 10, None, "soon")]
+    assert summary(plan(s, [], n=1, final_phases={"a": Phase.CANCELLED})) == [
+        ("end", 1, "a", Phase.CANCELLED, 10, None, "soon")]

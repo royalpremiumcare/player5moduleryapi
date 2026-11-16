@@ -500,3 +500,34 @@ async def test_device_gone_before_send_sends_nothing(monkeypatch):
     await sweep(db, t)
     assert t.sent == []
     assert slot(db, "d1", 1)["state"] == "ended"
+
+
+# --- final review fixes -------------------------------------------------------------------
+
+async def test_reassigned_away_ends_now_with_removed_stub():
+    db = await make_db(users=[user("elif", role="staff"), user("can", role="staff")],
+                       devices=[device("d1", "elif", day=TODAY)],
+                       apts=[apt("a", "10:20", staff="can")])   # reassigned Elif -> Can
+    seed_slot(db, "d1", 1, "a", "upcoming", content_hash="x")
+    t = RecordingTransport()
+    await sweep(db, t)
+    assert events(t) == [("end", "tok")]
+    aps = t.sent[0]["aps"]
+    cs = aps["content-state"]
+    assert aps["dismissal-date"] == aps["timestamp"]           # immediately
+    assert cs["phase"] == "removed"
+    assert (cs["customerDisplay"], cs["serviceName"], cs["staffName"], cs["startLabel"]) == (None, "", None, "")
+    assert "Ayşe" not in str(aps) and "Saç" not in str(aps)
+    assert slot(db, "d1", 1)["state"] == "ended"
+
+
+async def test_completed_still_ends_soon_with_final_content():
+    db = await make_db(users=[user("elif", role="staff")], devices=[device("d1", "elif", day=TODAY)],
+                       apts=[apt("a", "09:40", staff="elif", status="Tamamlandı")])
+    seed_slot(db, "d1", 1, "a", "processing")
+    t = RecordingTransport()
+    await sweep(db, t)
+    aps = t.sent[0]["aps"]
+    assert (aps["event"], aps["content-state"]["phase"]) == ("end", "completed")
+    assert aps["content-state"]["customerDisplay"] == "Ayşe K."
+    assert aps["dismissal-date"] == int(NOW.timestamp()) + 900

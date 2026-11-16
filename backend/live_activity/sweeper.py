@@ -203,8 +203,10 @@ def _final_phases(org: _Org, slots: list[dict], visible_ids: set, now: datetime)
 
 
 def _end_content(org: _Org, action: Action, now: datetime, *, staff_name, version: int) -> tuple[dict, bool]:
-    """Final content for an `end`. Returns (content, removed); a deleted appointment is `removed`."""
-    apt = org.apts_by_id.get(action.appointment_id) if action.appointment_id else None
+    """Final content for an `end`. Returns (content, removed); a deleted appointment, or one that
+    left the user's scope (planned with phase `removed`), is `removed`."""
+    removed_phase = action.phase is Phase.REMOVED
+    apt = org.apts_by_id.get(action.appointment_id) if action.appointment_id and not removed_phase else None
     if apt is not None:
         try:
             start, end = appointment_window(apt, org.duration(apt))
@@ -213,7 +215,7 @@ def _end_content(org: _Org, action: Action, now: datetime, *, staff_name, versio
                                        staff_name=staff_name(apt), version=version), False
         except (KeyError, ValueError):
             pass
-    # Deleted (or unreadable): no data left to show; the card is dismissed immediately (spec §1 row 10).
+    # Deleted, out of scope or unreadable: no data left to show; dismissed immediately (spec §1.2).
     return removed_content(action.appointment_id, now, version=version), True
 
 

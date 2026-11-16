@@ -64,6 +64,7 @@ def plan_device(
     hidden = {s.get("appointment_id") for s in ordered if dismissed_today(s)}
     top = [v for v in visible if v.id not in hidden][:n_slots]
     by_id = {v.id: v for v in top}
+    visible_ids = {v.id for v in visible}
     already_processing = {s.get("appointment_id") for s in slots if s.get("phase_sent") == Phase.PROCESSING.value}
 
     def end(s: dict, dismissal: Literal["soon", "now"]) -> Action:
@@ -104,11 +105,18 @@ def plan_device(
         if not s.get("update_token"):
             continue  # no token yet (start_sent): retried next sweep
         if v is None:
-            actions.append(end(s, "soon"))  # nothing left to show: idle or day end
+            aid = s.get("appointment_id")
+            if final_phases.get(aid) in FINAL_PHASES or aid in visible_ids:
+                actions.append(end(s, "soon"))  # nothing left to show: idle or day end
+            else:
+                # Left the user's scope (reassigned, rescheduled out, ineligible again): spec §1.2
+                # ends it immediately, with no appointment data left on the card.
+                actions.append(Action("end", s["slot_index"], aid, Phase.REMOVED, 10, None, 0.0, "now"))
             continue
         started_at = s.get("started_at")
-        if started_at is not None and now_epoch - started_at >= RESTART_AGE_SEC and v.phase is not Phase.PROCESSING:
-            actions.append(end(s, "now"))  # 8 h limit; reopened next sweep
+        if has_push_to_start and started_at is not None and now_epoch - started_at >= RESTART_AGE_SEC \
+                and v.phase is not Phase.PROCESSING:
+            actions.append(end(s, "now"))  # 8 h limit; reopened next sweep by push-to-start
             continue
         if v.id != s.get("appointment_id") or v.phase.value != s.get("phase_sent"):
             priority = 10
