@@ -3,7 +3,8 @@ import Capacitor
 import UIKit
 
 /// JS bridge for the slot Live Activities (`PlannLiveActivity`). Compiles for the iOS 15 app
-/// target: every method gates itself on iOS 16.2 and resolves `{supported:false}` below it.
+/// target: every method gates itself on iOS 16.2 on an iPhone and resolves `{supported:false}`
+/// otherwise (iPad has no lock-screen Live Activities).
 /// The JWT arrives only for register/unregister and is handed straight to the coordinator.
 @objc(PlannLiveActivityPlugin)
 public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -17,22 +18,34 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)
     ]
 
-    // register({apiBaseUrl, jwt, fcmToken?}) -> {deviceId, newSecret}
+    /// Live Activities exist on iPhone only; iPad and Mac (iPad idiom) report unsupported.
+    @MainActor private static var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
+
+    // register({apiBaseUrl, jwt, fcmToken?}) -> {deviceId, newSecret, hasFcmToken}
     @objc func register(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
-        runRegister(call)
+        Task { @MainActor in
+            guard Self.isPhone else { call.resolve(["supported": false]); return }
+            self.runRegister(call)
+        }
     }
 
     // reconcile() -> {ended, startedLocally}
     @objc func reconcile(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
-        runReconcile(call)
+        Task { @MainActor in
+            guard Self.isPhone else { call.resolve(["supported": false]); return }
+            self.runReconcile(call)
+        }
     }
 
     // unregister({jwt?}) -> {ended}; without a jwt the secret is deleted locally
     @objc func unregister(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
-        runUnregister(call)
+        Task { @MainActor in
+            guard Self.isPhone else { call.resolve(["supported": false]); return }
+            self.runUnregister(call)
+        }
     }
 
     // getStatus() -> {supported, enabled, iosVersion}
@@ -43,13 +56,20 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             return
         }
-        runGetStatus(call)
+        Task { @MainActor in
+            guard Self.isPhone else {
+                call.resolve(["supported": false, "iosVersion": UIDevice.current.systemVersion])
+                return
+            }
+            self.runGetStatus(call)
+        }
     }
 
     // openSettings() -> {opened}
     @objc func openSettings(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
         Task { @MainActor in
+            guard Self.isPhone else { call.resolve(["supported": false]); return }
             guard let url = URL(string: UIApplication.openSettingsURLString) else {
                 call.reject("Settings URL unavailable", "UNAVAILABLE")
                 return
@@ -74,7 +94,8 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             do {
                 let result = try await LiveActivityCoordinator.shared.register(
                     apiBaseUrl: apiBaseUrl, jwt: jwt, fcmToken: fcmToken)
-                call.resolve(["supported": true, "deviceId": result.deviceId, "newSecret": result.newSecret])
+                call.resolve(["supported": true, "deviceId": result.deviceId, "newSecret": result.newSecret,
+                              "hasFcmToken": result.hasFcmToken])
             } catch {
                 call.reject("Live Activity registration failed", pluginErrorCode(error))
             }

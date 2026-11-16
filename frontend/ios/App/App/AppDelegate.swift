@@ -28,6 +28,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate, MessagingDelegate {
 
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         print("📱 FCM Token: \(fcmToken ?? "nil")")
+        // Live Activities: keep the newest FCM token for the next register (fresh installs get
+        // it only after JS push setup; JS re-registers on resume until the server has one).
+        if #available(iOS 16.2, *) {
+            Task { @MainActor in LiveActivityCoordinator.shared.updateFcmToken(fcmToken) }
+        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

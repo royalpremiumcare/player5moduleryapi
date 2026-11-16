@@ -63,13 +63,13 @@ final class LiveActivityCoordinator {
 
         if #available(iOS 17.2, *) {
             if let token = PlannActivity.pushToStartToken {
-                latestPushToStartToken = pushTokenHex(token)
+                rememberPushToStartToken(pushTokenHex(token))
             }
             Task {
                 for await token in PlannActivity.pushToStartTokenUpdates {
                     let hex = pushTokenHex(token)
                     guard hex != self.latestPushToStartToken else { continue }
-                    self.latestPushToStartToken = hex
+                    self.rememberPushToStartToken(hex)
                     self.scheduleReport()
                 }
             }
@@ -86,6 +86,31 @@ final class LiveActivityCoordinator {
         }
 
         scheduleReport() // launch report, including background launches
+    }
+
+    private func rememberPushToStartToken(_ hex: String) {
+        latestPushToStartToken = hex
+        api.lastPushToStartToken = hex
+    }
+
+    /// The push-to-start token to send now (17.2+): re-read from ActivityKit, else the last one
+    /// seen or persisted, so a cold-launch register never nulls the server's stored token.
+    private func pushToStartTokenNow() -> String? {
+        var fresh: String?
+        if #available(iOS 17.2, *), let token = PlannActivity.pushToStartToken {
+            fresh = pushTokenHex(token)
+        }
+        let token = pushToStartTokenToSend(fresh: fresh, latest: latestPushToStartToken,
+                                           persisted: api.lastPushToStartToken)
+        if let token = token, token != latestPushToStartToken { rememberPushToStartToken(token) }
+        return token
+    }
+
+    /// Latest FCM token from Firebase (AppDelegate's MessagingDelegate). Only stored: the next
+    /// register uses it (JS re-registers on resume while the server has no FCM token).
+    func updateFcmToken(_ token: String?) {
+        guard let token = token, !token.isEmpty else { return }
+        lastFcmToken = token
     }
 
     private func observe(_ activity: PlannActivity) {
@@ -177,7 +202,7 @@ final class LiveActivityCoordinator {
         defer { background.end() }
         let current = snapshots()
         let report = completeReport(deviceId: api.deviceId(), activitiesEnabled: activitiesEnabled,
-                                    pushToStartToken: latestPushToStartToken, current: current)
+                                    pushToStartToken: pushToStartTokenNow(), current: current)
         let response = try await api.reconcile(report)
 
         let endIds = endInstructions(response: response, current: current)
@@ -280,14 +305,20 @@ final class LiveActivityCoordinator {
     /// Serialized with unregister: one identity operation in flight, later calls wait for it
     /// before running their own. After a registration that stored a new secret, runs one
     /// complete reconcile.
-    func register(apiBaseUrl: String, jwt: String, fcmToken: String?) async throws -> (deviceId: String, newSecret: Bool) {
-        let newSecret = try await enqueueIdentity {
+    func register(apiBaseUrl: String, jwt: String, fcmToken: String?) async throws
+        -> (deviceId: String, newSecret: Bool, hasFcmToken: Bool) {
+        let outcome = try await enqueueIdentity {
             try await self.performRegister(apiBaseUrl: apiBaseUrl, jwt: jwt, fcmToken: fcmToken)
         }
-        return (api.deviceId(), newSecret)
+        return (api.deviceId(), outcome.newSecret, outcome.hasFcmToken)
     }
 
-    private func performRegister(apiBaseUrl: String, jwt: String, fcmToken: String?) async throws -> Bool {
+    private struct RegisterOutcome: Sendable {
+        let newSecret: Bool
+        let hasFcmToken: Bool
+    }
+
+    private func performRegister(apiBaseUrl: String, jwt: String, fcmToken: String?) async throws -> RegisterOutcome {
         let background = BackgroundTaskGuard("PlannLiveActivityRegister")
         defer { background.end() }
         let given = (fcmToken?.isEmpty == false) ? fcmToken : nil
@@ -301,7 +332,7 @@ final class LiveActivityCoordinator {
             osVersion: UIDevice.current.systemVersion,
             appBuild: appBuildString(shortVersion: info?["CFBundleShortVersionString"] as? String,
                                      build: info?["CFBundleVersion"] as? String),
-            fcmToken: fcm, pushToStartToken: latestPushToStartToken,
+            fcmToken: fcm, pushToStartToken: pushToStartTokenNow(),
             activitiesEnabled: activitiesEnabled)
         if newSecret {
             pendingReport?.cancel()
@@ -313,7 +344,7 @@ final class LiveActivityCoordinator {
                 log.error("post-register reconcile failed: \(pluginErrorCode(error), privacy: .public)")
             }
         }
-        return newSecret
+        return RegisterOutcome(newSecret: newSecret, hasFcmToken: fcm != nil)
     }
 
     /// Logout, serialized with register: blocks reports/reconciles/local starts at once, waits for
@@ -353,9 +384,13 @@ private final class BackgroundTaskGuard {
     private var id: UIBackgroundTaskIdentifier = .invalid
 
     init(_ name: String) {
-        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            self?.end()
+        // The expiration handler ends the task by its own id: no call back into this
+        // main-actor object from a closure whose isolation differs across SDKs.
+        var taskId: UIBackgroundTaskIdentifier = .invalid
+        taskId = UIApplication.shared.beginBackgroundTask(withName: name) {
+            UIApplication.shared.endBackgroundTask(taskId)
         }
+        id = taskId
     }
 
     func end() {
