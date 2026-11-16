@@ -10,24 +10,7 @@ import {
 } from './ui/dialog';
 import { getStatus } from '../native/liveActivities';
 import { subOf } from '../native/useLiveActivities';
-
-const seenKey = (sub) => `la_consent_seen:${sub}`;
-
-function wasSeen(sub) {
-  try {
-    return localStorage.getItem(seenKey(sub)) === '1';
-  } catch (e) {
-    return false;
-  }
-}
-
-function markSeen(sub) {
-  try {
-    localStorage.setItem(seenKey(sub), '1');
-  } catch (e) {
-    /* storage unavailable: the sheet may show again next launch */
-  }
-}
+import { wasConsentSeen, markConsentSeen } from '../native/laConsentGate';
 
 /**
  * Explains iOS's Live Activity permission prompts. Opens by itself once per user after
@@ -40,7 +23,7 @@ export default function LiveActivityConsentSheet({ token, orgFlagEnabled, manual
 
   useEffect(() => {
     setAutoOpen(false);
-    if (!sub || !orgFlagEnabled || wasSeen(sub)) return undefined;
+    if (!sub || !orgFlagEnabled || wasConsentSeen(sub)) return undefined;
     let cancelled = false;
     (async () => {
       const s = await getStatus();
@@ -52,7 +35,7 @@ export default function LiveActivityConsentSheet({ token, orgFlagEnabled, manual
   }, [sub, orgFlagEnabled]);
 
   const close = () => {
-    if (sub) markSeen(sub);
+    if (sub) markConsentSeen(sub);
     setAutoOpen(false);
     if (onManualClose) onManualClose();
   };
