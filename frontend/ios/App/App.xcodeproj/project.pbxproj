@@ -30,6 +30,12 @@
 		B2C3D4E5F60718290000010D /* ReconcileLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718290000010C /* ReconcileLogic.swift */; };
 		B2C3D4E5F607182900000112 /* PlannWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000110 /* PlannWidgetsBundle.swift */; };
 		B2C3D4E5F607182900000116 /* AppointmentLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000114 /* AppointmentLiveActivity.swift */; };
+		B2C3D4E5F607182900000119 /* CoordinatorLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000118 /* CoordinatorLogic.swift */; };
+		B2C3D4E5F60718290000011D /* KeychainSecretStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718290000011C /* KeychainSecretStore.swift */; };
+		B2C3D4E5F607182900000121 /* URLSessionTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000120 /* URLSessionTransport.swift */; };
+		B2C3D4E5F607182900000125 /* LiveActivityCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000124 /* LiveActivityCoordinator.swift */; };
+		B2C3D4E5F607182900000129 /* PlannLiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000128 /* PlannLiveActivityPlugin.swift */; };
+		B2C3D4E5F60718290000012D /* PlannLiveActivityPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718290000012C /* PlannLiveActivityPlugin.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -84,6 +90,12 @@
 		B2C3D4E5F60718290000010C /* ReconcileLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/ReconcileLogic.swift; sourceTree = "<group>"; };
 		B2C3D4E5F607182900000110 /* PlannWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannWidgetsBundle.swift; sourceTree = "<group>"; };
 		B2C3D4E5F607182900000114 /* AppointmentLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentLiveActivity.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000118 /* CoordinatorLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/CoordinatorLogic.swift; sourceTree = "<group>"; };
+		B2C3D4E5F60718290000011C /* KeychainSecretStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSecretStore.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000120 /* URLSessionTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLSessionTransport.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000124 /* LiveActivityCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityCoordinator.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000128 /* PlannLiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannLiveActivityPlugin.swift; sourceTree = "<group>"; };
+		B2C3D4E5F60718290000012C /* PlannLiveActivityPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PlannLiveActivityPlugin.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,6 +165,11 @@
 				F1B2C3D4E5F60718A9B0C1F3 /* ContactPickerPlugin.m */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				B2C3D4E5F60718290000011C /* KeychainSecretStore.swift */,
+				B2C3D4E5F607182900000120 /* URLSessionTransport.swift */,
+				B2C3D4E5F607182900000124 /* LiveActivityCoordinator.swift */,
+				B2C3D4E5F607182900000128 /* PlannLiveActivityPlugin.swift */,
+				B2C3D4E5F60718290000012C /* PlannLiveActivityPlugin.m */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -180,6 +197,7 @@
 				B2C3D4E5F607182900000104 /* ContentModel.swift */,
 				B2C3D4E5F607182900000108 /* LiveActivityAPI.swift */,
 				B2C3D4E5F60718290000010C /* ReconcileLogic.swift */,
+				B2C3D4E5F607182900000118 /* CoordinatorLogic.swift */,
 			);
 			name = LiveActivityCore;
 			sourceTree = "<group>";
@@ -351,6 +369,12 @@
 				B2C3D4E5F607182900000105 /* ContentModel.swift in Sources */,
 				B2C3D4E5F607182900000109 /* LiveActivityAPI.swift in Sources */,
 				B2C3D4E5F60718290000010D /* ReconcileLogic.swift in Sources */,
+				B2C3D4E5F607182900000119 /* CoordinatorLogic.swift in Sources */,
+				B2C3D4E5F60718290000011D /* KeychainSecretStore.swift in Sources */,
+				B2C3D4E5F607182900000121 /* URLSessionTransport.swift in Sources */,
+				B2C3D4E5F607182900000125 /* LiveActivityCoordinator.swift in Sources */,
+				B2C3D4E5F607182900000129 /* PlannLiveActivityPlugin.swift in Sources */,
+				B2C3D4E5F60718290000012D /* PlannLiveActivityPlugin.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

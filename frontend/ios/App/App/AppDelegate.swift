@@ -11,6 +11,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate, MessagingDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         FirebaseApp.configure()
         Messaging.messaging().delegate = self
+        // Live Activity observers must also exist on background launches (token delivery, no WebView).
+        if #available(iOS 16.2, *) { LiveActivityCoordinator.shared.start() }
         return true
     }
 
@@ -44,6 +46,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, MessagingDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        if #available(iOS 16.2, *) { LiveActivityCoordinator.shared.reconcileIfRegistered() }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

@@ -3,7 +3,7 @@
 frontend/ios/App/App.xcodeproj/project.pbxproj.
 
 Idempotent: every object is added only if missing.  Extend FILES (one data
-structure) to wire further Swift files, then re-run --apply.
+structure) to wire further source files (.swift or .m), then re-run --apply.
 
     python3 add_live_activity_targets.py --apply [path/to/project.pbxproj]
     python3 add_live_activity_targets.py --check [path/to/project.pbxproj]
@@ -49,7 +49,7 @@ GROUPS = {  # name -> (uid, path or None); None = existing/pathless handled belo
 }
 EXISTING_GROUPS = {"App": APP_GROUP}
 
-# One entry per Swift file.  k = stable index (ref=u(0x100+4k), app bf +1, ext bf +2);
+# One entry per source file (.swift or .m).  k = stable index (ref=u(0x100+4k), app bf +1, ext bf +2);
 # never renumber existing entries.  path is relative to the xcodeproj directory
 # (or to the group's own path when the group has one - then `path` is the basename).
 CORE = "../LiveActivityCore/Sources/LiveActivityCore/"
@@ -66,9 +66,22 @@ FILES = [
          group=EXT, disk="PlannWidgets/PlannWidgetsBundle.swift", targets=(EXT,)),
     dict(k=5, name="AppointmentLiveActivity.swift", path="AppointmentLiveActivity.swift",
          group=EXT, disk="PlannWidgets/AppointmentLiveActivity.swift", targets=(EXT,)),
-    # Task 5 appends the app-side files here (group="App", targets=("App",)).
+    dict(k=6, name="CoordinatorLogic.swift", path=CORE + "CoordinatorLogic.swift",
+         group="LiveActivityCore", disk=CORE + "CoordinatorLogic.swift", targets=("App",)),
+    dict(k=7, name="KeychainSecretStore.swift", path="KeychainSecretStore.swift",
+         group="App", disk="App/KeychainSecretStore.swift", targets=("App",)),
+    dict(k=8, name="URLSessionTransport.swift", path="URLSessionTransport.swift",
+         group="App", disk="App/URLSessionTransport.swift", targets=("App",)),
+    dict(k=9, name="LiveActivityCoordinator.swift", path="LiveActivityCoordinator.swift",
+         group="App", disk="App/LiveActivityCoordinator.swift", targets=("App",)),
+    dict(k=10, name="PlannLiveActivityPlugin.swift", path="PlannLiveActivityPlugin.swift",
+         group="App", disk="App/PlannLiveActivityPlugin.swift", targets=("App",)),
+    dict(k=11, name="PlannLiveActivityPlugin.m", path="PlannLiveActivityPlugin.m",
+         group="App", disk="App/PlannLiveActivityPlugin.m", targets=("App",)),
 ]
+FILE_TYPES = {".swift": "sourcecode.swift", ".m": "sourcecode.c.objc"}
 for f in FILES:
+    f["ftype"] = FILE_TYPES[os.path.splitext(f["name"])[1]]
     f["ref"] = u(0x100 + 4 * f["k"])
     f["bf"] = {"App": u(0x101 + 4 * f["k"]), EXT: u(0x102 + 4 * f["k"])}
 
@@ -185,8 +198,8 @@ def check(path):
     ext_src = list_items(src, EXT_SOURCES, "files") or []
     app_src = list_items(src, APP_SOURCES, "files") or []
     for f in FILES:
-        need(re.search(r"%s /\* %s \*/ = \{isa = PBXFileReference;[^\n]*path = %s;" %
-                       (f["ref"], re.escape(f["name"]), re.escape(f["path"])), src),
+        need(re.search(r"%s /\* %s \*/ = \{isa = PBXFileReference; lastKnownFileType = %s; path = %s;" %
+                       (f["ref"], re.escape(f["name"]), re.escape(f["ftype"]), re.escape(f["path"])), src),
              f"file ref missing: {f['name']}")
         need(os.path.exists(os.path.join(XCODEPROJ_DIR, f["disk"])),
              f"file not on disk: {f['disk']}")
@@ -308,9 +321,8 @@ def apply(path):
     for f in FILES:
         if has(f["ref"]) or f["ref"] + " /*" in src:
             continue
-        ftype = "sourcecode.swift"
         src = insert_before(src, "/* End PBXFileReference section */",
-            f"\t\t{f['ref']} /* {f['name']} */ = {{isa = PBXFileReference; lastKnownFileType = {ftype}; path = {f['path']}; sourceTree = \"<group>\"; }};\n")
+            f"\t\t{f['ref']} /* {f['name']} */ = {{isa = PBXFileReference; lastKnownFileType = {f['ftype']}; path = {f['path']}; sourceTree = \"<group>\"; }};\n")
         bfs = ""
         for tgt in f["targets"]:
             bfs += f"\t\t{f['bf'][tgt]} /* {f['name']} in Sources */ = {{isa = PBXBuildFile; fileRef = {f['ref']} /* {f['name']} */; }};\n"

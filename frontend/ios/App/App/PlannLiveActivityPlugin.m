@@ -1,0 +1,9 @@
+#import <Capacitor/Capacitor.h>
+
+CAP_PLUGIN(PlannLiveActivityPlugin, "PlannLiveActivity",
+    CAP_PLUGIN_METHOD(register, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(reconcile, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(unregister, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(getStatus, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(openSettings, CAPPluginReturnPromise);
+)

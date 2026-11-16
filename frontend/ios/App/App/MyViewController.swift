@@ -15,6 +15,7 @@ class MyViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(FCMTokenPlugin())
         bridge?.registerPluginInstance(ContactPickerPlugin())
+        bridge?.registerPluginInstance(PlannLiveActivityPlugin())
     }
 
     // iOS native sağa-kaydırma (swipe-back) ve sola-kaydırma (forward) gesture'ları.
