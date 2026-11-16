@@ -166,3 +166,53 @@ test('consent link calls onOpenConsent', async () => {
   });
   expect(onOpenConsent).toHaveBeenCalled();
 });
+
+test('slot select hidden while scope is own (the server forces 1)', async () => {
+  api.get.mockResolvedValue({ data: { ...OWNER, scope: 'own', slot_count: 1 } });
+  await render();
+  expect(q('[role="radiogroup"]')).not.toBeNull();
+  expect(q('select')).toBeNull();
+});
+
+test('slot select appears once scope is switched to all', async () => {
+  api.get.mockResolvedValue({ data: { ...OWNER, scope: 'own', slot_count: 1 } });
+  api.put.mockResolvedValue({ data: { scope: 'all', slot_count: 4, start_alert: false } });
+  await render();
+  await act(async () => {
+    [...container.querySelectorAll('[role="radio"]')].find((r) => r.value === 'all').click();
+  });
+  expect(q('select')).not.toBeNull();
+  expect(q('select').value).toBe('4');
+});
+
+describe('returning from iOS Settings', () => {
+  function setVisibility(state) {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  }
+  afterEach(() => setVisibility('visible'));
+
+  test('re-reads the status when the page becomes visible again', async () => {
+    la.getStatus.mockResolvedValue({ supported: true, enabled: false });
+    await render();
+    expect(text()).toContain('iOS Ayarlarını Aç');
+
+    la.getStatus.mockResolvedValue({ supported: true, enabled: true });
+    setVisibility('hidden');
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(text()).toContain('iOS Ayarlarını Aç');
+
+    setVisibility('visible');
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(text()).not.toContain('iOS Ayarlarını Aç');
+    expect(api.get).toHaveBeenCalledTimes(1); // preferences are not refetched
+  });
+
+  test('stops listening after unmount', async () => {
+    await render();
+    act(() => root.unmount());
+    la.getStatus.mockClear();
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(la.getStatus).not.toHaveBeenCalled();
+    root = createRoot(container); // afterEach unmounts again
+  });
+});

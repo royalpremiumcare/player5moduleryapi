@@ -33,8 +33,16 @@ export default function LiveActivitySettings({ onOpenConsent }) {
         /* leave the section hidden */
       }
     })();
+    // Back from iOS Settings: re-read the status so the "disabled" banner is current.
+    const onVisible = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const s = await getStatus();
+      if (!cancelled && s?.supported === true) setStatus(s);
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 
@@ -92,7 +100,7 @@ export default function LiveActivitySettings({ onOpenConsent }) {
           </div>
         )}
 
-        {prefs.can_choose_slots && (
+        {prefs.can_choose_slots && prefs.scope === 'all' && (
           <div className="p-5 flex items-center justify-between gap-4">
             <label htmlFor="la-slots" className="text-base font-medium text-zinc-900">
               {t('liveActivity.slots', 'Kilit ekranında kaç randevu')}
