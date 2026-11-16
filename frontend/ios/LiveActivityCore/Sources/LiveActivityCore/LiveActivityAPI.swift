@@ -47,6 +47,12 @@ public final class LiveActivityAPI {
         return s
     }
 
+    /// True once a register stored a device secret (and until unregister deletes it).
+    public var hasSecret: Bool {
+        guard let s = secrets.read(Self.secretKey) else { return false }
+        return !s.isEmpty
+    }
+
     public func deviceId() -> String {
         if let id = secrets.read(Self.deviceIdKey), !id.isEmpty { return id }
         let id = UUID().uuidString
