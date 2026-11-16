@@ -140,12 +140,17 @@ class DeviceRegistration(BaseModel):
 @router.post("/live-activities/devices")
 async def register_device(body: DeviceRegistration, user=Depends(_current_user), db=Depends(_db)):
     u = _user_dict(user)
-    _, secret = await registry.upsert_device(
+    previous_owner_slots: list[dict] = []
+    row, secret = await registry.upsert_device(
         db, device_id=body.device_id, organization_id=u["organization_id"], user_id=_user_id(u),
         username=u["username"], os_version=body.os_version, app_build=body.app_build,
         fcm_token=body.fcm_token, push_to_start_token=body.push_to_start_token,
-        activities_enabled=body.activities_enabled,
+        activities_enabled=body.activities_enabled, ended_slots=previous_owner_slots,
     )
+    # Shared phone: the previous owner's cards must not stay on the new owner's lock screen.
+    now = _now()
+    for s in previous_owner_slots:
+        await _end_now(row, s["update_token"], version=(s.get("version") or 0) + 1, now=now)
     return {"device_secret": secret}  # None unless first registration or a new owner
 
 

@@ -138,6 +138,28 @@ def test_device_reowned_rotates_secret(env):
     assert "secret_sha256" in row and s2 not in json.dumps(row, default=str)
 
 
+def test_device_reowned_ends_previous_owners_cards(env):
+    env.db.live_activity_devices.docs.append(device_doc("d1", "ali"))
+    seed_slot(env.db, "d1", 1, activity_id="A", token="tok-1")
+    seed_slot(env.db, "d1", 2, state="start_sent", activity_id=None, token=None)
+    seed_slot(env.db, "d1", 3, state="ended", activity_id="C", token="old-3")
+
+    env.current["user"] = jwt_user("ali")       # same owner re-registers: nothing ended
+    assert env.client.post("/api/live-activities/devices", json=REGISTER).status_code == 200
+    assert env.transport.sent == []
+
+    env.current["user"] = jwt_user("veli")      # shared phone: veli signs in after ali
+    assert env.client.post("/api/live-activities/devices", json=REGISTER).status_code == 200
+    assert [(m["fcm_token"], m["la_token"], m["aps"]["event"]) for m in env.transport.sent] == [
+        ("fcm-d1", "tok-1", "end")]
+    aps = env.transport.sent[0]["aps"]
+    cs = aps["content-state"]
+    assert (cs["phase"], cs["customerDisplay"], cs["serviceName"], cs["staffName"]) == ("removed", None, "", None)
+    assert aps["dismissal-date"] == aps["timestamp"] == int(NOW.timestamp())
+    assert cs["version"] == 4                   # after the owner-change bump
+    assert {s["state"] for s in env.db.live_activity_slots.docs} == {"ended"}
+
+
 def test_logout_removes_device_ends_slots_and_revokes_secret(env):
     env.db.live_activity_devices.docs.append(device_doc("d1", "ali"))
     seed_slot(env.db, "d1", 1, activity_id="A", token="tok-1")

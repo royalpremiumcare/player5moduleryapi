@@ -26,9 +26,13 @@ async def upsert_device(
     db, *, device_id: str, organization_id: str, user_id: str, username: str,
     os_version: str, app_build: str, fcm_token: str | None,
     push_to_start_token: str | None, activities_enabled: bool,
+    ended_slots: list[dict] | None = None,
 ) -> tuple[dict, str | None]:
     """Create/refresh a device row. Returns (row, new_secret); the secret is
-    issued only on first registration or when the owner changes."""
+    issued only on first registration or when the owner changes.
+
+    On an owner change every slot is ended; the ones that were live with a token are appended
+    (as they were before) to `ended_slots`, if given, so the caller can end their cards."""
     existing = await db.live_activity_devices.find_one({"device_id": device_id})
     owner_changed = existing is not None and (
         existing.get("user_id") != user_id or existing.get("organization_id") != organization_id
@@ -48,6 +52,8 @@ async def upsert_device(
     if existing is None:
         update["$setOnInsert"] = {"start_log": []}
     if owner_changed:
+        if ended_slots is not None:
+            ended_slots.extend(await _live_slots(db, device_id))
         # $inc: a sweep still holding the old owner's slot snapshot then fails its claim_slot CAS
         await db.live_activity_slots.update_many(
             {"device_id": device_id}, {"$set": {"state": "ended"}, "$inc": {"version": 1}}
@@ -70,6 +76,12 @@ async def verify_device_secret(db, device_id: str, secret: str) -> dict | None:
 async def slots_for_device(db, device_id: str) -> list[dict]:
     slots = await db.live_activity_slots.find({"device_id": device_id}).to_list(None)
     return sorted(slots, key=lambda s: s["slot_index"])
+
+
+async def _live_slots(db, device_id: str) -> list[dict]:
+    """Slots whose card may still be on screen and can be ended by its token."""
+    return [s for s in await slots_for_device(db, device_id)
+            if s.get("state") in ("start_sent", "active") and s.get("update_token")]
 
 
 async def claim_slot(
@@ -124,8 +136,7 @@ async def refresh_slot_token(
 async def remove_device(db, device_id: str) -> list[dict]:
     """Logout: end every slot and delete the device row (and with it the secret).
     Returns the slots that were live with a token, as they were before, so the caller can end them."""
-    live = [s for s in await slots_for_device(db, device_id)
-            if s.get("state") in ("start_sent", "active") and s.get("update_token")]
+    live = await _live_slots(db, device_id)
     # $inc: a sweep holding a slot snapshot then fails its claim_slot CAS
     await db.live_activity_slots.update_many(
         {"device_id": device_id}, {"$set": {"state": "ended"}, "$inc": {"version": 1}}

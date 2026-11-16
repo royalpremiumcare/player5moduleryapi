@@ -84,6 +84,20 @@ async def test_reowned_device_rotates_secret_and_ends_slots(db):
     assert [s["state"] for s in await registry.slots_for_device(db, "dev1")] == ["ended"]
 
 
+async def test_reowned_device_exposes_live_slots_to_end(db):
+    await registry.upsert_device(db, **DEVICE)
+    await _seed_slot(db, 1, update_token="tok-1")
+    await _seed_slot(db, 2, state="start_sent")                  # no token: nothing to end
+    await _seed_slot(db, 3, state="ended", update_token="old")
+    same: list = []
+    await registry.upsert_device(db, **{**DEVICE, "fcm_token": "new"}, ended_slots=same)
+    assert same == []                                            # same owner: nothing ended
+    ended: list = []
+    row, secret = await registry.upsert_device(db, **{**DEVICE, "user_id": "u2"}, ended_slots=ended)
+    assert secret and row["user_id"] == "u2"
+    assert [(s["slot_index"], s["update_token"], s["version"]) for s in ended] == [(1, "tok-1", 1)]
+
+
 async def test_record_token_moves_start_sent_to_active(db):
     await _seed_slot(db, state="start_sent")
     assert await registry.record_slot_token(db, device_id="dev1", slot_index=1, activity_id="A", update_token="T")
