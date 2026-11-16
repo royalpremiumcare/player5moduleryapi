@@ -3,7 +3,8 @@ import Security
 
 /// Live Activity install id and device secret, stored as generic-password items in the app's
 /// own Keychain (no access group, no App Group). Readable after the first unlock, so background
-/// launches that deliver push tokens can use the secret.
+/// launches that deliver push tokens can use the secret. This-device-only: a backup restored to
+/// another device must not clone the device id and secret (it registers as a new device).
 final class KeychainSecretStore: SecretStore {
     static let service = "co.plannapp.app.la"
 
@@ -26,7 +27,7 @@ final class KeychainSecretStore: SecretStore {
 
     func write(_ key: String, _ value: String) {
         let attrs: [String: Any] = [kSecValueData as String: Data(value.utf8),
-                                    kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock]
+                                    kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
         let status = SecItemUpdate(query(key) as CFDictionary, attrs as CFDictionary)
         if status == errSecItemNotFound {
             let add = query(key).merging(attrs) { _, new in new }

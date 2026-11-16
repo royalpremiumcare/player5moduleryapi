@@ -134,7 +134,9 @@ struct AppointmentLiveActivity: Widget {
             } compactTrailing: {
                 CompactValue(look: l, state: context.state)
             } minimal: {
-                IslandMark(look: l, size: 21)
+                if l != .empty {
+                    IslandMark(look: l, size: 21)
+                }
             }
             .widgetURL(deepLink(context.state))
         }

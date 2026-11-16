@@ -4,8 +4,6 @@ import WidgetKit
 @main
 struct PlannWidgetsBundle: WidgetBundle {
     var body: some Widget {
-        if #available(iOS 16.2, *) {
-            AppointmentLiveActivity()
-        }
+        AppointmentLiveActivity() // the extension's deployment target is iOS 16.2
     }
 }
