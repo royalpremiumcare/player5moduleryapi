@@ -28,8 +28,29 @@ async function call(method, options) {
   }
 }
 
-export const register = (options) => call('register', options);
+// Last unregister, by JWT. Logout (AuthContext) and the hook's token-cleared effect both
+// unregister the same session; the later call reuses the first one's promise. A register
+// re-arms it; a failed (null) unregister may be retried.
+let lastUnregister = null;
+
+export function register(options) {
+  lastUnregister = null;
+  return call('register', options);
+}
+
 export const reconcile = () => call('reconcile');
-export const unregister = (options) => call('unregister', options);
+
+export function unregister(options) {
+  const jwt = options?.jwt ?? null;
+  if (lastUnregister && lastUnregister.jwt === jwt) return lastUnregister.promise;
+  const entry = { jwt, promise: null };
+  entry.promise = call('unregister', options).then((result) => {
+    if (result === null && lastUnregister === entry) lastUnregister = null;
+    return result;
+  });
+  lastUnregister = entry;
+  return entry.promise;
+}
+
 export const getStatus = () => call('getStatus');
 export const openSettings = () => call('openSettings');

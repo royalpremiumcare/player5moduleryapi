@@ -7,9 +7,18 @@ import {
   getStatus,
 } from './liveActivities';
 
+// JWT payload segments are base64url (RFC 7515): map to base64 and pad before atob, then
+// decode the bytes as UTF-8 so a non-ASCII sub survives (binary string where TextDecoder is
+// missing: still exact for ASCII).
 export function subOf(token) {
   try {
-    return JSON.parse(atob(token.split('.')[1])).sub || null;
+    const seg = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(seg.padEnd(seg.length + ((4 - (seg.length % 4)) % 4), '='));
+    const json =
+      typeof TextDecoder === 'function'
+        ? new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)))
+        : bin;
+    return JSON.parse(json).sub || null;
   } catch (e) {
     return null;
   }
@@ -34,7 +43,8 @@ function apiBaseUrl() {
  */
 export function useLiveActivities({ token, orgFlagEnabled }) {
   const [status, setStatus] = useState(null);
-  // { key, token } of the session currently registered natively.
+  // { key, token, needsFcm } of the session currently registered natively. needsFcm: the last
+  // register sent no FCM token (fresh install before push setup), so register again on resume.
   const sessionRef = useRef(null);
 
   useEffect(() => {
@@ -51,7 +61,7 @@ export function useLiveActivities({ token, orgFlagEnabled }) {
     if (sessionRef.current) {
       sessionRef.current.token = token; // keep the latest JWT for unregister
     } else {
-      const current = { key, token };
+      const current = { key, token, needsFcm: false };
       sessionRef.current = current;
       (async () => {
         const result = await register({ apiBaseUrl: apiBaseUrl(), jwt: token, fcmToken: undefined });
@@ -61,14 +71,24 @@ export function useLiveActivities({ token, orgFlagEnabled }) {
           return;
         }
         if (result.supported === false) return; // unsupported iOS: not registered, no retry
+        current.needsFcm = result.hasFcmToken === false;
         await reconcile();
         const s = await getStatus();
         if (sessionRef.current === current) setStatus(s);
       })();
     }
 
-    const onVisible = () => {
-      if (document.visibilityState === 'visible' && sessionRef.current) reconcile();
+    const onVisible = async () => {
+      const session = sessionRef.current;
+      if (document.visibilityState !== 'visible' || !session) return;
+      if (session.needsFcm) {
+        // The server upsert is idempotent (no new secret); stop once an FCM token went out.
+        session.needsFcm = false;
+        const result = await register({ apiBaseUrl: apiBaseUrl(), jwt: session.token, fcmToken: undefined });
+        if (sessionRef.current !== session) return;
+        session.needsFcm = result === null || result.hasFcmToken === false;
+      }
+      reconcile();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
