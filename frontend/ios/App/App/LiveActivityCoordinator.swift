@@ -33,9 +33,16 @@ final class LiveActivityCoordinator {
     private var observed = Set<String>()
     private(set) var latestPushToStartToken: String?
     private var lastFcmToken: String?
-    private var registerTail: Task<Bool, Error>?
+    /// FIFO for register/unregister: each waits for the previous one to finish.
+    private var identityTail: Task<Void, Never>?
     private var reconcileTail: Task<ReconcileOutcome, Error>?
     private var pendingReport: Task<Void, Never>?
+    /// Unregister calls not yet finished. While > 0 no report, reconcile or local start runs, so
+    /// nothing can recreate cards during the logout DELETE (the secret is deleted only after it).
+    private var unregistersInFlight = 0
+    private var unregistering: Bool { unregistersInFlight > 0 }
+    /// activity id -> last token hex the server accepted; drives the post-reconcile re-post.
+    private var postedTokens: [String: String] = [:]
 
     private init() {}
 
@@ -107,6 +114,7 @@ final class LiveActivityCoordinator {
             if delay > 0 { try? await Task.sleep(nanoseconds: delay * 1_000_000_000) }
             do {
                 try await api.postToken(slotIndex: slot.index, activityId: activity.id, updateToken: hex)
+                postedTokens[activity.id] = hex
                 return
             } catch {
                 if !isRetryableTokenError(error) || attempt == delays.count - 1 {
@@ -122,11 +130,13 @@ final class LiveActivityCoordinator {
     /// Debounced (2 s) complete report after an ActivityKit change. No-op without a secret.
     func scheduleReport() {
         pendingReport?.cancel()
+        pendingReport = nil
+        guard !unregistering else { return }
         pendingReport = Task {
             try? await Task.sleep(nanoseconds: Self.reportDebounceNanos)
             guard !Task.isCancelled else { return }
             self.pendingReport = nil
-            guard self.api.hasSecret else { return }
+            guard self.api.hasSecret, !self.unregistering else { return }
             do {
                 try await self.reconcile()
             } catch {
@@ -137,7 +147,7 @@ final class LiveActivityCoordinator {
 
     /// Foreground reconcile (AppDelegate.applicationDidBecomeActive), only once registered.
     func reconcileIfRegistered() {
-        guard api.hasSecret else { return }
+        guard api.hasSecret, !unregistering else { return }
         pendingReport?.cancel()
         pendingReport = nil
         Task {
@@ -162,6 +172,7 @@ final class LiveActivityCoordinator {
     }
 
     private func performReconcile() async throws -> ReconcileOutcome {
+        guard !unregistering else { return ReconcileOutcome(ended: 0, startedLocally: 0) }
         let background = BackgroundTaskGuard("PlannLiveActivityReconcile")
         defer { background.end() }
         let current = snapshots()
@@ -176,7 +187,26 @@ final class LiveActivityCoordinator {
             ended += 1
         }
         let startedLocally = startLocally(response.start_locally)
+        repostTokens()
         return ReconcileOutcome(ended: ended, startedLocally: startedLocally)
+    }
+
+    /// Re-posts current per-activity tokens the server has not accepted yet (a post that failed,
+    /// or one that arrived before the secret existed).
+    private func repostTokens() {
+        guard !unregistering else { return }
+        let activities = PlannActivity.activities
+        let candidates = activities.compactMap { activity -> TokenCandidate? in
+            guard let slot = SlotId(activity.attributes.slotId) else { return nil }
+            return TokenCandidate(slotIndex: slot.index, activityId: activity.id,
+                                  token: activity.pushToken.map(pushTokenHex),
+                                  state: Self.stateString(activity.activityState))
+        }
+        for candidate in tokensToRepost(candidates, posted: postedTokens) {
+            guard let token = candidate.token,
+                  let activity = activities.first(where: { $0.id == candidate.activityId }) else { continue }
+            Task { await self.postToken(token, for: activity) }
+        }
     }
 
     private func snapshots() -> [ActivitySnapshot] {
@@ -199,7 +229,7 @@ final class LiveActivityCoordinator {
     /// Server-planned starts for devices without push-to-start: only in the foreground and only
     /// below iOS 17.2 (a background local start throws `.visibility`).
     private func startLocally(_ starts: [LocalStart]) -> Int {
-        guard !starts.isEmpty, UIApplication.shared.applicationState == .active else { return 0 }
+        guard !starts.isEmpty, !unregistering, UIApplication.shared.applicationState == .active else { return 0 }
         guard #unavailable(iOS 17.2) else { return 0 }
         let deviceId = api.deviceId()
         var count = 0
@@ -236,16 +266,24 @@ final class LiveActivityCoordinator {
 
     // MARK: registration (JWT only passes through; never stored)
 
-    /// Serialized: one registration in flight, later calls wait for it before running their own.
-    /// After a registration that stored a new secret, runs one complete reconcile.
-    func register(apiBaseUrl: String, jwt: String, fcmToken: String?) async throws -> (deviceId: String, newSecret: Bool) {
-        let previous = registerTail
-        let task = Task { () async throws -> Bool in
-            _ = await previous?.result
-            return try await self.performRegister(apiBaseUrl: apiBaseUrl, jwt: jwt, fcmToken: fcmToken)
+    /// Runs `operation` after every earlier register/unregister has finished (FIFO).
+    private func enqueueIdentity<T: Sendable>(_ operation: @escaping @MainActor () async throws -> T) async throws -> T {
+        let previous = identityTail
+        let task = Task { () async throws -> T in
+            await previous?.value
+            return try await operation()
         }
-        registerTail = task
-        let newSecret = try await task.value
+        identityTail = Task { _ = await task.result }
+        return try await task.value
+    }
+
+    /// Serialized with unregister: one identity operation in flight, later calls wait for it
+    /// before running their own. After a registration that stored a new secret, runs one
+    /// complete reconcile.
+    func register(apiBaseUrl: String, jwt: String, fcmToken: String?) async throws -> (deviceId: String, newSecret: Bool) {
+        let newSecret = try await enqueueIdentity {
+            try await self.performRegister(apiBaseUrl: apiBaseUrl, jwt: jwt, fcmToken: fcmToken)
+        }
         return (api.deviceId(), newSecret)
     }
 
@@ -256,7 +294,9 @@ final class LiveActivityCoordinator {
         let fcm = given ?? Messaging.messaging().fcmToken ?? lastFcmToken
         if let fcm = fcm { lastFcmToken = fcm }
         let info = Bundle.main.infoDictionary
-        let newSecret = try await api.register(
+        // registerEnsuringSecret: a secret lost in transit (server has one, Keychain none) is
+        // recovered once by deleting the device with the JWT and registering again.
+        let newSecret = try await api.registerEnsuringSecret(
             apiBaseUrl: apiBaseUrl, jwt: jwt,
             osVersion: UIDevice.current.systemVersion,
             appBuild: appBuildString(shortVersion: info?["CFBundleShortVersionString"] as? String,
@@ -266,6 +306,7 @@ final class LiveActivityCoordinator {
         if newSecret {
             pendingReport?.cancel()
             pendingReport = nil
+            postedTokens.removeAll() // a new secret: re-post every live token after the reconcile
             do {
                 try await reconcile()
             } catch {
@@ -275,16 +316,33 @@ final class LiveActivityCoordinator {
         return newSecret
     }
 
-    /// Logout: waits for in-flight register/reconcile, ends every local activity, then the core
-    /// unregister (DELETE with the JWT; always deletes the stored secret).
+    /// Logout, serialized with register: blocks reports/reconciles/local starts at once, waits for
+    /// the in-flight reconcile, ends every local activity, then the core unregister (DELETE with
+    /// the JWT; always deletes the stored secret). Without a JWT the secret is deleted locally.
     @discardableResult
-    func unregister(jwt: String) async -> Int {
+    func unregister(jwt: String?) async -> Int {
+        unregistersInFlight += 1
+        pendingReport?.cancel()
+        pendingReport = nil
         let background = BackgroundTaskGuard("PlannLiveActivityUnregister")
         defer { background.end() }
-        _ = await registerTail?.result
+        let ended = (try? await enqueueIdentity { await self.performUnregister(jwt: jwt) }) ?? 0
+        return ended
+    }
+
+    /// Runs inside the identity FIFO; lifts its block before the next queued register starts.
+    private func performUnregister(jwt: String?) async -> Int {
+        defer { unregistersInFlight -= 1 }
         _ = await reconcileTail?.result
         let ended = await endAll()
-        await api.unregister(jwt: jwt)
+        if let jwt = jwt, !jwt.isEmpty {
+            await api.unregister(jwt: jwt)
+        } else {
+            api.forgetSecret()
+        }
+        pendingReport?.cancel() // state updates from the ended cards may have scheduled one
+        pendingReport = nil
+        postedTokens.removeAll()
         return ended
     }
 }

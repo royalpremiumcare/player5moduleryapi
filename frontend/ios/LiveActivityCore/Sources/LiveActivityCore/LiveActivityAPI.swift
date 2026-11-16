@@ -122,6 +122,24 @@ public final class LiveActivityAPI {
         return false
     }
 
+    /// `register`, recovering once from a lost secret: when the server issues none (the row already
+    /// has one) but the Keychain holds none either, the device is deleted with the JWT and registered
+    /// again, so the server issues a fresh secret. Never loops.
+    @discardableResult
+    public func registerEnsuringSecret(apiBaseUrl: String, jwt: String, osVersion: String, appBuild: String,
+                                       fcmToken: String?, pushToStartToken: String?,
+                                       activitiesEnabled: Bool) async throws -> Bool {
+        func attempt() async throws -> Bool {
+            try await register(apiBaseUrl: apiBaseUrl, jwt: jwt, osVersion: osVersion, appBuild: appBuild,
+                               fcmToken: fcmToken, pushToStartToken: pushToStartToken,
+                               activitiesEnabled: activitiesEnabled)
+        }
+        if try await attempt() { return true }
+        guard !hasSecret else { return false }
+        await unregister(jwt: jwt)
+        return try await attempt()
+    }
+
     private struct TokenBody: Encodable {
         let device_id: String, slot_index: Int, activity_id: String, update_token: String
     }
@@ -135,6 +153,11 @@ public final class LiveActivityAPI {
     public func reconcile(_ report: ReconcileReport) async throws -> ReconcileResponse {
         let data = try await perform(try secretRequest("POST", "/reconcile", json: try JSONEncoder().encode(report)))
         return try JSONDecoder().decode(ReconcileResponse.self, from: data)
+    }
+
+    /// Deletes the stored secret locally, without a server call (logout without a JWT).
+    public func forgetSecret() {
+        secrets.delete(Self.secretKey)
     }
 
     public func unregister(jwt: String) async {

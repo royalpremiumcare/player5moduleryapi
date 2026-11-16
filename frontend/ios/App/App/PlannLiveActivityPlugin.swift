@@ -29,7 +29,7 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         runReconcile(call)
     }
 
-    // unregister({jwt}) -> {ended}
+    // unregister({jwt?}) -> {ended}; without a jwt the secret is deleted locally
     @objc func unregister(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
         runUnregister(call)
@@ -39,7 +39,7 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getStatus(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else {
             Task { @MainActor in
-                call.resolve(["supported": false, "enabled": false, "iosVersion": UIDevice.current.systemVersion])
+                call.resolve(["supported": false, "iosVersion": UIDevice.current.systemVersion])
             }
             return
         }
@@ -95,10 +95,7 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @available(iOS 16.2, *)
     private func runUnregister(_ call: CAPPluginCall) {
-        guard let jwt = call.getString("jwt"), !jwt.isEmpty else {
-            call.reject("jwt is required", "INVALID_ARGUMENTS")
-            return
-        }
+        let jwt = call.getString("jwt")
         Task { @MainActor in
             let ended = await LiveActivityCoordinator.shared.unregister(jwt: jwt)
             call.resolve(["supported": true, "ended": ended])

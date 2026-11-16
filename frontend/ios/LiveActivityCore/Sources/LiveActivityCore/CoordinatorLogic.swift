@@ -81,3 +81,29 @@ public func pluginErrorCode(_ error: Error) -> String {
     case nil: return "NETWORK"
     }
 }
+
+/// An activity's current per-activity push token, as seen by the coordinator.
+public struct TokenCandidate: Equatable {
+    public var slotIndex: Int
+    public var activityId: String
+    public var token: String?
+    /// report state string (see `reportState(described:)`)
+    public var state: String
+
+    public init(slotIndex: Int, activityId: String, token: String?, state: String) {
+        self.slotIndex = slotIndex
+        self.activityId = activityId
+        self.token = token
+        self.state = state
+    }
+}
+
+/// Tokens to post again after a reconcile: alive activities (active/stale/pending) with a token
+/// that was never posted successfully or has changed since. Order is preserved.
+public func tokensToRepost(_ candidates: [TokenCandidate], posted: [String: String]) -> [TokenCandidate] {
+    let alive: Set<String> = ["active", "stale", "pending"]
+    return candidates.filter { c in
+        guard let token = c.token, !token.isEmpty, alive.contains(c.state) else { return false }
+        return posted[c.activityId] != token
+    }
+}
