@@ -97,3 +97,4 @@ sentry-sdk[fastapi]==2.22.0
 sib-api-v3-sdk==7.6.0
 Pillow==10.4.0
 posthog==3.7.0
+firebase-admin==7.1.0

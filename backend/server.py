@@ -936,6 +936,21 @@ async def notify_saas_invoice_payment_failed(db, invoice) -> bool:
 scheduler = AsyncIOScheduler()
 _app_instance = None  # Global app instance for scheduler
 
+# iOS Live Activities (flag: settings.live_activity_enabled, default OFF)
+try:
+    import live_activity.sweeper
+    import live_activity.registry
+    import live_activity.endpoints
+    from live_activity.transport import FcmLiveActivityTransport
+    # Tek transport; firebase_admin Step 6'da (lifespan) zaten initialize edilir, burada ikinci initialize YOK.
+    _LA_TRANSPORT = FcmLiveActivityTransport()
+    LIVE_ACTIVITY_POLL_SECONDS = live_activity.sweeper.poll_seconds()
+except Exception as _la_import_err:
+    logging.warning(f"Live Activity disabled (import failed): {_la_import_err}")
+    live_activity = None
+    _LA_TRANSPORT = None
+    LIVE_ACTIVITY_POLL_SECONDS = 30
+
 # Hatırlatma poll aralığı (saniye). Küçük değer = daha hassas zamanlama.
 REMINDER_POLL_SECONDS = int(os.getenv("REMINDER_POLL_SECONDS", "60"))
 
@@ -1361,6 +1376,32 @@ async def lifespan(app: FastAPI):
                 f"epoch-gated, no backfill)"
             )
         
+        # Live Activity sweep (flag-gated per org; failures never affect other jobs)
+        if app.db is not None and live_activity is not None:
+            try:
+                await live_activity.registry.ensure_indexes(app.db)
+                _la_db = app.db
+
+                async def _run_live_activity_sweep():
+                    try:
+                        _redis = getattr(getattr(_app_instance, 'state', None), 'redis_client', None)
+                        await live_activity.sweeper.run_sweep(
+                            _la_db, transport=_LA_TRANSPORT, now=datetime.now(live_activity.sweeper.TR_TZ),
+                            redis=_redis or None)
+                    except Exception as e:
+                        logging.error(f"live_activity_sweep job failed: {e}", exc_info=True)
+
+                scheduler.add_job(
+                    _run_live_activity_sweep,
+                    IntervalTrigger(seconds=LIVE_ACTIVITY_POLL_SECONDS),
+                    id='live_activity_sweep_job',
+                    replace_existing=True,
+                    max_instances=1,
+                )
+                logging.info(f"  - Live Activity sweep: registered (every {LIVE_ACTIVITY_POLL_SECONDS}s, per-org flag)")
+            except Exception as la_err:
+                logging.warning(f"Live Activity scheduler registration failed: {la_err}")
+
         # Step 4b: Financial Engine Cron Jobs
         if app.db is not None:
             try:
@@ -2361,6 +2402,15 @@ async def emit_to_organization(organization_id: str, event: str, data: dict):
     except Exception as e:
         logger.error(f"✗ [EMIT] Error emitting {event} to org_{organization_id}: {e}", exc_info=True)
 
+    # Live Activity change hook (flag-gated inside run_sweep; never breaks the emit)
+    if event in ("appointment_created", "appointment_updated", "appointment_deleted", "appointments_bulk_updated"):
+        try:
+            _la_db = getattr(_app_instance, "db", None) if _app_instance else None
+            if live_activity is not None and _LA_TRANSPORT is not None and _la_db is not None:
+                asyncio.create_task(live_activity.sweeper.resync(_la_db, organization_id, transport=_LA_TRANSPORT))
+        except Exception as la_err:
+            logger.warning(f"live activity resync hook failed: {la_err}")
+
 # === GÜVENLİK YARDIMCI FONKSİYONLARI (Aynı kaldı) ===
 _mongo_client = None; _mongo_db = None
 async def ensure_db_connection(request: Request):
@@ -2858,7 +2908,7 @@ async def invalidate_service_caches(request: Request, org_id: str):
 # === VERİ MODELLERİ (Aynı kaldı) ===
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    id: Optional[str] = None; user_id: Optional[str] = None; username: str; full_name: Optional[str] = None; language: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=list); onboarding_completed: bool = False; activation_state: Optional[str] = None; aha_skipped_reason: Optional[str] = None; aha_skipped_at: Optional[str] = None; aha_wa_message_id: Optional[str] = None; aha_wa_last_error: Optional[str] = None; aha_appointment_id: Optional[str] = None; first_appointment_at: Optional[str] = None; breaks: List[dict] = Field(default_factory=list); can_view_all_appointments: bool = False
+    id: Optional[str] = None; user_id: Optional[str] = None; username: str; full_name: Optional[str] = None; language: Optional[str] = None; organization_id: str = Field(default_factory=lambda: str(uuid.uuid4())); role: str = "admin"; slug: Optional[str] = None; permitted_service_ids: List[str] = []; payment_type: Optional[str] = "salary"; payment_amount: Optional[float] = 0.0; status: Optional[str] = "active"; invitation_token: Optional[str] = None; days_off: List[str] = Field(default_factory=list); onboarding_completed: bool = False; activation_state: Optional[str] = None; aha_skipped_reason: Optional[str] = None; aha_skipped_at: Optional[str] = None; aha_wa_message_id: Optional[str] = None; aha_wa_last_error: Optional[str] = None; aha_appointment_id: Optional[str] = None; first_appointment_at: Optional[str] = None; breaks: List[dict] = Field(default_factory=list); can_view_all_appointments: bool = False; live_activity_scope: Optional[str] = None; live_activity_slot_count: Optional[int] = None; live_activity_start_alert: bool = False
 class UserInDB(User): hashed_password: Optional[str] = None
 class UserCreate(BaseModel): username: str; password: str; full_name: Optional[str] = None; organization_name: Optional[str] = None; support_phone: Optional[str] = None; sector: Optional[str] = None
 class Token(BaseModel): access_token: str; token_type: str
@@ -2925,6 +2975,7 @@ class Settings(BaseModel):
     images: List[str] = Field(default_factory=list)
     show_service_duration_on_public: bool = True; show_service_price_on_public: bool = True
     multi_service_enabled: bool = False
+    live_activity_enabled: bool = False; live_activity_lead_minutes: int = 30; lock_screen_name_mode: str = "initials"
     break_limit_minutes: int = 60; break_limit_count: int = 2
     # Pazarlama Otopilotu (WhatsApp geri-kazanım): varsayılan KAPALI.
     # marketing_autopilot_days: {service_id: gün}. Haritada olmayan hizmet için
@@ -11281,6 +11332,7 @@ async def update_settings(request: Request, settings: Settings, current_user: Us
     current_settings = await db.settings.find_one(query, {"_id": 0})
     
     update_data = settings.model_dump(exclude_unset=True)
+    update_data.pop("live_activity_enabled", None)  # Live Activity pilot bayrağı yalnızca operatör tarafından açılır (F-6)
     update_data["organization_id"] = current_user.organization_id
     
     # Eğer company_name değiştiyse, yeni slug oluştur
@@ -17716,6 +17768,12 @@ async def ai_chat_endpoint(
 
 # --- Router prefix'i buraya taşındı ---
 app.include_router(api_router, prefix="/api")
+try:
+    if live_activity is not None:
+        live_activity.endpoints.configure(get_current_user=get_current_user, get_db=get_db, transport=_LA_TRANSPORT)
+        app.include_router(live_activity.endpoints.router, prefix="/api")
+except Exception as _la_router_err:
+    logging.warning(f"Live Activity router registration failed: {_la_router_err}")
 
 
 # ═══ iOS Universal Links — apple-app-site-association (AASA) ═══
