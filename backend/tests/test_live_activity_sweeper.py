@@ -321,7 +321,7 @@ async def test_fcm_success_does_not_mark_active():
     t = RecordingTransport()
     await sweep(db, t)
     start = t.sent[0]
-    assert start["alert"] == ("Sıradaki randevu", "Ayşe K. · Saç Kesimi · 10:20")
+    assert start["alert"] == ("Sıradaki randevu", "Ayşe Kaya · Saç Kesimi · 10:20")
     assert start["priority"] == 10
     assert start["aps"]["attributes"] == {"slotId": "d1:1", "orgId": ORG}
     assert start["aps"]["input-push-token"] == 1
@@ -594,7 +594,7 @@ async def test_completed_still_ends_soon_with_final_content():
     await sweep(db, t)
     aps = t.sent[0]["aps"]
     assert (aps["event"], aps["content-state"]["phase"]) == ("end", "completed")
-    assert aps["content-state"]["customerDisplay"] == "Ayşe K."
+    assert aps["content-state"]["customerDisplay"] == "Ayşe Kaya"
     assert aps["dismissal-date"] == int(NOW.timestamp()) + 900
 
 

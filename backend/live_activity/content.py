@@ -39,7 +39,13 @@ NAME_MODES = ("initials", "full", "hidden")
 
 
 def name_mode(mode) -> Literal["initials", "full", "hidden"]:
-    """`settings.lock_screen_name_mode` as stored by the tenant; anything unknown is "initials"."""
+    """`settings.lock_screen_name_mode` as stored by the tenant.
+
+    Missing/None means "full" (the default); an explicit "initials"/"hidden" is honoured;
+    any other (bogus) string falls back to the privacy-safe "initials".
+    """
+    if mode is None:
+        return "full"
     return mode if mode in NAME_MODES else "initials"
 
 

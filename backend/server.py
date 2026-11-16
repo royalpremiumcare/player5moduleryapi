@@ -2975,7 +2975,7 @@ class Settings(BaseModel):
     images: List[str] = Field(default_factory=list)
     show_service_duration_on_public: bool = True; show_service_price_on_public: bool = True
     multi_service_enabled: bool = False
-    live_activity_enabled: bool = False; live_activity_lead_minutes: int = 30; lock_screen_name_mode: str = "initials"
+    live_activity_enabled: bool = False; live_activity_lead_minutes: int = 30; lock_screen_name_mode: str = "full"
     break_limit_minutes: int = 60; break_limit_count: int = 2
     # Pazarlama Otopilotu (WhatsApp geri-kazanım): varsayılan KAPALI.
     # marketing_autopilot_days: {service_id: gün}. Haritada olmayan hizmet için

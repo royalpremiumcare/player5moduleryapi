@@ -17,7 +17,7 @@ def test_settings_defaults_flag_off():
     body = _block(r"^class Settings\(BaseModel\):", r"^class \w+")
     assert "live_activity_enabled: bool = False" in body
     assert "live_activity_lead_minutes: int = 30" in body
-    assert 'lock_screen_name_mode: str = "initials"' in body
+    assert 'lock_screen_name_mode: str = "full"' in body
 
 
 def test_user_new_fields_optional():

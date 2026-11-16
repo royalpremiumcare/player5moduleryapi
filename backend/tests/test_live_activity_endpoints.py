@@ -369,7 +369,7 @@ def test_reconcile_start_locally_only_without_push_to_start(env):
     assert (start["slot_index"], start["stale_epoch"]) == (1, start_epoch)
     assert start["relevance"] == pytest.approx(48.0)
     content = start["content"]
-    assert (content["appointmentId"], content["phase"], content["customerDisplay"]) == ("a1", "upcoming", "Ayşe K.")
+    assert (content["appointmentId"], content["phase"], content["customerDisplay"]) == ("a1", "upcoming", "Ayşe Kaya")
     assert env.transport.sent == []  # handed to the app, never pushed
 
     s = slot(env.db, "d2", 1)
@@ -514,7 +514,7 @@ def test_widget_admin_default_all_manager_default_own(env):
     assert body["items"][0]["staffName"] == "Elif Demir"
     assert body["items"][0]["phase"] == "processing"
     assert body["generatedAt"] == NOW.isoformat()
-    assert body["privacyMode"] == "initials"
+    assert body["privacyMode"] == "full"
 
     env.current["user"] = jwt_user("can", role="staff", can_view_all_appointments=True)
     body = env.client.get("/api/widget/summary").json()

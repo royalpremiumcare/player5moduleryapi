@@ -162,11 +162,18 @@ def test_no_phone_or_price_keys():
     assert "phone" not in blob and "price" not in blob and "905551112233" not in blob
 
 
+def test_missing_name_mode_is_full():
+    from live_activity.content import name_mode
+
+    assert name_mode(None) == "full"
+    assert display_name("test müşteri", name_mode(None)) == "Test Müşteri"
+
+
 def test_unknown_name_mode_is_initials():
     from live_activity.content import name_mode
 
     assert [name_mode(m) for m in ("initials", "full", "hidden")] == ["initials", "full", "hidden"]
-    for bogus in (None, "", "FULL", "Full Name", "none", 1):
+    for bogus in ("", "FULL", "Full Name", "none", 1):
         assert name_mode(bogus) == "initials"
         assert display_name("ayşe kaya", bogus) == "Ayşe K."
     assert cs(privacy_mode="everything")["customerDisplay"] == "Ayşe Y."
