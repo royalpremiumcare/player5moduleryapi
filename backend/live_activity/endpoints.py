@@ -274,6 +274,23 @@ class Preferences(BaseModel):
     start_alert: bool | None = None
 
 
+@router.get("/live-activities/preferences")
+async def get_preferences(user=Depends(_current_user), db=Depends(_db)):
+    """Read-only: the effective values plus which controls the server lets this user change."""
+    u = _user_dict(user)
+    org = await load_org_snapshot(db, u["organization_id"], _now())
+    settings = await db.settings.find_one({"organization_id": u["organization_id"]}, {"_id": 0}) or {}
+    viewer = user_view(org, u)
+    scope = effective_scope(viewer, admin_provides_service=org.admin_provides_service,
+                            org_has_staff=org.org_has_staff)
+    is_admin = viewer.get("role") == "admin"
+    forced_all = is_admin and not org.admin_provides_service and not org.org_has_staff
+    privileged = is_admin or is_manager(viewer)
+    return {"enabled": settings.get("live_activity_enabled") is True, "scope": scope,
+            "slot_count": slot_count(viewer, scope), "start_alert": bool(viewer.get("live_activity_start_alert")),
+            "can_choose_scope": privileged and not forced_all, "can_choose_slots": privileged}
+
+
 @router.put("/live-activities/preferences")
 async def update_preferences(body: Preferences, user=Depends(_current_user), db=Depends(_db)):
     u = _user_dict(user)

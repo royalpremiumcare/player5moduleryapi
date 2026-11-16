@@ -436,6 +436,50 @@ def test_preferences_admin_slot_count_clamped(env):
         {"scope": "all", "slot_count": 3, "start_alert": False}
 
 
+URL = "/api/live-activities/preferences"
+
+
+def test_get_preferences_owner_defaults(env):
+    env.db.users.docs.extend([user_doc("ali"), user_doc("elif", role="staff")])
+    resp = env.client.get(URL)
+    assert resp.status_code == 200
+    assert resp.json() == {"enabled": True, "scope": "all", "slot_count": 4, "start_alert": False,
+                           "can_choose_scope": True, "can_choose_slots": True}
+    assert writes(env.db) == []
+
+
+def test_get_preferences_manager(env):
+    env.db.users.docs.extend([user_doc("ali"), user_doc("can", role="staff", can_view_all_appointments=True,
+                                                        live_activity_scope="all", live_activity_slot_count=3,
+                                                        live_activity_start_alert=True)])
+    env.current["user"] = jwt_user("can", role="staff", can_view_all_appointments=True)
+    assert env.client.get(URL).json() == {"enabled": True, "scope": "all", "slot_count": 3, "start_alert": True,
+                                          "can_choose_scope": True, "can_choose_slots": True}
+
+
+def test_get_preferences_plain_staff(env):
+    env.db.users.docs.extend([user_doc("ali"), user_doc("elif", role="staff")])
+    env.current["user"] = jwt_user("elif", role="staff")
+    assert env.client.get(URL).json() == {"enabled": True, "scope": "own", "slot_count": 1, "start_alert": False,
+                                          "can_choose_scope": False, "can_choose_slots": False}
+
+
+def test_get_preferences_forced_all_hides_scope(env):
+    env.db.settings.docs[0]["admin_provides_service"] = False
+    env.db.users.docs.append(user_doc("ali"))  # no staff in the org
+    body = env.client.get(URL).json()
+    assert (body["scope"], body["can_choose_scope"], body["can_choose_slots"]) == ("all", False, True)
+
+
+def test_get_preferences_flag_reflects_org(env):
+    env.db.users.docs.append(user_doc("ali"))
+    assert env.client.get(URL).json()["enabled"] is True
+    env.db.settings.docs[0]["live_activity_enabled"] = False
+    assert env.client.get(URL).json()["enabled"] is False
+    env.db.settings.docs.clear()
+    assert env.client.get(URL).json()["enabled"] is False
+
+
 # --- widget ------------------------------------------------------------------------------------
 
 def seed_day(env, **settings):
