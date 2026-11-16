@@ -110,3 +110,14 @@ test('Bildirim Ayarları row navigates to settings-notifications', async () => {
   await act(async () => { row.click(); });
   expect(onNavigate).toHaveBeenCalledWith('settings-notifications');
 });
+
+test('owner-approved Bildirim Ayarları copy is locked in tr and en', () => {
+  // eslint-disable-next-line global-require
+  const tr = require('../i18n/locales/tr/translation.json').settings;
+  // eslint-disable-next-line global-require
+  const en = require('../i18n/locales/en/translation.json').settings;
+  expect(tr.notificationSettings).toBe('Bildirim Ayarları');
+  expect(tr.notificationSettingsSubtitle).toBe('Bildirimler ve kilit ekranı kartları');
+  expect(en.notificationSettings).toBe('Notification settings');
+  expect(en.notificationSettingsSubtitle).toBe('Notifications and lock screen cards');
+});
