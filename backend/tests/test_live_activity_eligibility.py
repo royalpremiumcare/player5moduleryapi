@@ -153,3 +153,12 @@ def test_processing_across_midnight_stays_visible():
     res = visible(a, ADMIN, now=now)
     assert ids(res) == ["late"]
     assert res[0].phase == Phase.PROCESSING
+
+
+def test_non_int_duration_skipped():
+    bad_own = apt("bad1", "10:10", service_duration="45")                 # string duration
+    bad_service = apt("bad2", "10:15", service_duration=None, service_id="s1")
+    good = apt("good", "10:20")
+    result = visible_for_user([bad_own, bad_service, good], STAFF, "own", now=NOW,
+                              services_by_id={"s1": "forty"}, lead_min=30, day_open=True)
+    assert ids(result) == ["good"]

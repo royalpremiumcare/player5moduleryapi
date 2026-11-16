@@ -208,7 +208,7 @@ def _final_phases(org: _Org, slots: list[dict], visible_ids: set, now: datetime)
             continue
         try:
             phase = compute_phase(apt, now, org.duration(apt))
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, TypeError):
             continue
         if phase in FINAL_PHASES:
             out[aid] = phase
@@ -226,7 +226,7 @@ def _end_content(org: _Org | None, action: Action, now: datetime, *, staff_name,
             phase = action.phase or compute_phase(apt, now, org.duration(apt))
             return build_content_state(apt, phase, start, end, privacy_mode=org.privacy_mode,
                                        staff_name=staff_name(apt), version=version), False
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, TypeError):
             pass
     # Deleted, out of scope or unreadable: no data left to show; dismissed immediately (spec §1.2).
     return removed_content(action.appointment_id, now, version=version), True

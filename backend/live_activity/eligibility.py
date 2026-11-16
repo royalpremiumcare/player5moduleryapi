@@ -85,8 +85,8 @@ def visible_for_user(
             duration = resolve_duration(apt, services_by_id)
             start, end = appointment_window(apt, duration, tz)
             phase = compute_phase(apt, now, duration, tz)
-        except (KeyError, ValueError) as exc:
-            logger.debug("skipping appointment %s: bad date/time (%s)", apt.get("id"), exc)
+        except (KeyError, ValueError, TypeError) as exc:
+            logger.debug("skipping appointment %s: bad date/time or duration (%s)", apt.get("id"), exc)
             continue
         if phase == Phase.PROCESSING:
             pass  # stays visible across midnight

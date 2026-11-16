@@ -41,7 +41,7 @@ async def build_summary(db, user: dict, requested_scope: Literal["own", "all"] |
     for apt in todays:
         try:
             phases.append(compute_phase(apt, now, org.duration(apt)))
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, TypeError):
             continue
     completed = sum(p is Phase.COMPLETED for p in phases)
     remaining = sum(p in (Phase.UPCOMING, Phase.PROCESSING) for p in phases)

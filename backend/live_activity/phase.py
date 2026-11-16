@@ -29,7 +29,8 @@ def resolve_duration(apt: dict, services_by_id: dict[str, int]) -> int:
 def appointment_window(
     apt: dict, duration_min: int, tz: ZoneInfo = TR_TZ
 ) -> tuple[datetime, datetime]:
-    """Start and end of the appointment in ``tz``. Raises ValueError on malformed date/time."""
+    """Start and end of the appointment in ``tz``. Raises ValueError on malformed date/time,
+    TypeError on a non-numeric duration."""
     start = datetime.strptime(f"{apt['appointment_date']} {apt['appointment_time']}", "%Y-%m-%d %H:%M")
     start = start.replace(tzinfo=tz)
     return start, start + timedelta(minutes=duration_min)

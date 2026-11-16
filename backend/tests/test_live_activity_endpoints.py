@@ -523,6 +523,14 @@ def test_widget_unknown_name_mode_reported_as_initials(env):
     assert body["items"][0]["customerDisplay"] == "Mehmet Ö."
 
 
+def test_widget_non_int_duration_skipped_not_500(env):
+    seed_day(env)
+    env.db.appointments.docs.append(apt("bad", "10:30", staff="elif", duration="45"))
+    resp = env.client.get("/api/widget/summary")
+    assert resp.status_code == 200
+    assert "bad" not in [i["id"] for i in resp.json()["items"]]
+
+
 def test_widget_hidden_mode_nulls_names(env):
     seed_day(env, lock_screen_name_mode="hidden")
     body = env.client.get("/api/widget/summary").json()

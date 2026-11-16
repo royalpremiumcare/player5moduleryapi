@@ -654,3 +654,14 @@ async def test_update_of_yesterdays_appointment_does_not_open_the_day():
     await sweep(db, t)
     assert events(t) == [("update", "tok")]
     assert dev(db, "d1")["day"] == "2026-11-15"
+
+
+async def test_non_int_duration_does_not_kill_device_sweep():
+    db = await make_db(users=[user("ali")], devices=[device("d1", "ali", day=TODAY)],
+                       apts=[apt("bad", "10:10", duration="45"), apt("a", "10:20")])
+    seed_slot(db, "d1", 1, "bad", "upcoming")   # a slot already holding the unreadable one
+    t = RecordingTransport()
+    stats = await sweep(db, t)
+    assert stats["errors"] == 0
+    assert events(t) == [("update", "tok")]
+    assert t.sent[0]["aps"]["content-state"]["appointmentId"] == "a"
