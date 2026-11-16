@@ -298,6 +298,7 @@ const SCREEN_MAP_TR = {
   settings: { label: 'Ayarlar', slug: 'ayarlar' },
   'settings-subscription': { label: 'Ayarlar · Abonelik', slug: 'ayarlar-abonelik' },
   'settings-profile': { label: 'Ayarlar · Profil', slug: 'ayarlar-profil' },
+  'settings-notifications': { label: 'Ayarlar · Bildirimler', slug: 'ayarlar-bildirimler' },
   'settings-location': { label: 'Ayarlar · Konum', slug: 'ayarlar-konum' },
   'settings-online-booking': { label: 'Ayarlar · Online Randevu', slug: 'ayarlar-online-randevu' },
   'settings-finance': { label: 'Ayarlar · Finans', slug: 'ayarlar-finans' },
