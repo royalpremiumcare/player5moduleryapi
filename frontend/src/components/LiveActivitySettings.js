@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { Check, Info, Layers, Users, Volume2 } from 'lucide-react';
 import { Switch } from './ui/switch';
-import { RadioGroup, RadioGroupItem } from './ui/radio-group';
-import { Label } from './ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { SettingItem, SectionTitle } from './settings/SettingRows';
 import api from '../api/api';
 import { getStatus, openSettings } from '../native/liveActivities';
 
@@ -18,6 +19,7 @@ export default function LiveActivitySettings({ onOpenConsent }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState(null);
   const [prefs, setPrefs] = useState(null);
+  const [sheet, setSheet] = useState(null); // 'scope' | 'slots' | null
 
   useEffect(() => {
     let cancelled = false;
@@ -58,14 +60,43 @@ export default function LiveActivitySettings({ onOpenConsent }) {
     }
   };
 
+  const scopeLabel = (v) =>
+    v === 'own'
+      ? t('liveActivity.scopeOwn', 'Sadece benim randevularım')
+      : t('liveActivity.scopeAll', 'Tüm personelin randevuları');
+
+  const sheetConfig =
+    sheet === 'scope'
+      ? {
+          title: t('liveActivity.scope', 'Kimin randevuları gösterilsin?'),
+          current: prefs.scope,
+          options: [
+            { value: 'own', label: scopeLabel('own') },
+            { value: 'all', label: scopeLabel('all') },
+          ],
+          patch: (v) => ({ scope: v }),
+        }
+      : sheet === 'slots'
+        ? {
+            title: t('liveActivity.slots', 'Kilit ekranında kaç randevu'),
+            current: prefs.slot_count,
+            options: SLOT_OPTIONS.map((n) => ({ value: n, label: String(n) })),
+            patch: (v) => ({ slot_count: v }),
+          }
+        : null;
+
+  const choose = (value) => {
+    const patch = sheetConfig.patch(value);
+    setSheet(null);
+    if (value !== sheetConfig.current) save(patch);
+  };
+
   return (
-    <section aria-labelledby="la-settings-title" className="mt-8">
-      <h3 id="la-settings-title" className="px-5 mb-3 text-sm font-bold text-zinc-400 uppercase tracking-widest">
-        {t('liveActivity.title', 'Canlı bildirimler')}
-      </h3>
-      <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden divide-y divide-zinc-100">
+    <section aria-label={t('liveActivity.title', 'Canlı bildirimler')}>
+      <SectionTitle title={t('liveActivity.title', 'Canlı bildirimler')} />
+      <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
         {status.enabled === false && (
-          <div role="alert" className="p-5 bg-amber-50 text-amber-900 text-sm">
+          <div role="alert" className="p-5 bg-amber-50 text-amber-900 text-sm border-b border-zinc-100">
             <p>
               {t(
                 'liveActivity.disabledBanner',
@@ -83,60 +114,68 @@ export default function LiveActivitySettings({ onOpenConsent }) {
         )}
 
         {prefs.can_choose_scope && (
-          <div className="p-5">
-            <p id="la-scope-label" className="text-base font-medium text-zinc-900 mb-3">
-              {t('liveActivity.scope', 'Kimin randevuları gösterilsin?')}
-            </p>
-            <RadioGroup aria-labelledby="la-scope-label" value={prefs.scope} onValueChange={(v) => save({ scope: v })}>
-              <div className="flex items-center gap-3 min-h-11">
-                <RadioGroupItem value="own" id="la-scope-own" />
-                <Label htmlFor="la-scope-own">{t('liveActivity.scopeOwn', 'Sadece benim randevularım')}</Label>
-              </div>
-              <div className="flex items-center gap-3 min-h-11">
-                <RadioGroupItem value="all" id="la-scope-all" />
-                <Label htmlFor="la-scope-all">{t('liveActivity.scopeAll', 'Tüm personelin randevuları')}</Label>
-              </div>
-            </RadioGroup>
-          </div>
+          <SettingItem
+            icon={Users}
+            title={t('liveActivity.scope', 'Kimin randevuları gösterilsin?')}
+            subtitle={scopeLabel(prefs.scope)}
+            onClick={() => setSheet('scope')}
+          />
         )}
 
         {prefs.can_choose_slots && prefs.scope === 'all' && (
-          <div className="p-5 flex items-center justify-between gap-4">
-            <label htmlFor="la-slots" className="text-base font-medium text-zinc-900">
-              {t('liveActivity.slots', 'Kilit ekranında kaç randevu')}
-            </label>
-            <select
-              id="la-slots"
-              value={prefs.slot_count}
-              onChange={(e) => save({ slot_count: Number(e.target.value) })}
-              className="min-h-11 rounded-xl border border-zinc-200 bg-white px-3 text-base"
-            >
-              {SLOT_OPTIONS.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SettingItem
+            icon={Layers}
+            title={t('liveActivity.slots', 'Kilit ekranında kaç randevu')}
+            subtitle={String(prefs.slot_count)}
+            onClick={() => setSheet('slots')}
+          />
         )}
 
-        <div className="p-5 flex items-center justify-between gap-4">
-          <label htmlFor="la-alert" className="text-base font-medium text-zinc-900">
-            {t('liveActivity.startAlert', 'Randevu başladığında sesli uyarı')}
-          </label>
-          <Switch
-            id="la-alert"
-            checked={!!prefs.start_alert}
-            onCheckedChange={(v) => save({ start_alert: v })}
-          />
-        </div>
+        <SettingItem
+          icon={Volume2}
+          title={t('liveActivity.startAlert', 'Randevu başladığında sesli uyarı')}
+          rightElement={
+            <Switch
+              aria-label={t('liveActivity.startAlert', 'Randevu başladığında sesli uyarı')}
+              checked={!!prefs.start_alert}
+              onCheckedChange={(v) => save({ start_alert: v })}
+              className="scale-110"
+            />
+          }
+        />
 
-        <div className="p-5">
-          <button type="button" onClick={() => onOpenConsent && onOpenConsent()} className="min-h-11 text-sm font-medium text-zinc-600 underline">
-            {t('liveActivity.howItWorks', 'Nasıl çalışır?')}
-          </button>
-        </div>
+        <SettingItem
+          icon={Info}
+          title={t('liveActivity.howItWorks', 'Nasıl çalışır?')}
+          onClick={() => onOpenConsent && onOpenConsent()}
+        />
       </div>
+
+      <Dialog open={sheetConfig !== null} onOpenChange={(open) => !open && setSheet(null)}>
+        {sheetConfig && (
+          <DialogContent aria-describedby={undefined}>
+            <DialogHeader>
+              <DialogTitle>{sheetConfig.title}</DialogTitle>
+            </DialogHeader>
+            <div className="-mx-2">
+              {sheetConfig.options.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  data-option={o.value}
+                  onClick={() => choose(o.value)}
+                  className="flex w-full min-h-11 items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-base text-zinc-900 active:bg-zinc-50"
+                >
+                  <span>{o.label}</span>
+                  {o.value === sheetConfig.current && (
+                    <Check className="w-5 h-5 text-zinc-900" strokeWidth={2} aria-hidden="true" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
     </section>
   );
 }

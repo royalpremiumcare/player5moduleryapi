@@ -67,76 +67,126 @@ test('section hidden when org flag off', async () => {
   expect(container.innerHTML).toBe('');
 });
 
-test('owner sees scope, slots and alert', async () => {
+const SCOPE_TITLE = 'Kimin randevuları gösterilsin?';
+const SLOTS_TITLE = 'Kilit ekranında kaç randevu';
+const rowOf = (title) => {
+  const p = [...container.querySelectorAll('p')].find((x) => x.textContent === title);
+  return p ? p.closest('div.flex.items-center.justify-between') : null;
+};
+const sheet = () => document.body.querySelector('[role="dialog"]');
+const sheetOptions = () => [...(sheet()?.querySelectorAll('button[data-option]') || [])];
+const clickRow = (title) => act(async () => { rowOf(title).click(); });
+const chooseOption = (value) => act(async () => {
+  sheetOptions().find((b) => b.dataset.option === String(value)).click();
+});
+
+test('rows render with icons and current values in subtitles', async () => {
   await render();
   expect(text()).toContain('Canlı bildirimler');
-  expect(q('[role="radiogroup"]')).not.toBeNull();
-  expect(q('select')).not.toBeNull();
+  const scope = rowOf(SCOPE_TITLE);
+  expect(scope.querySelector('svg')).not.toBeNull();
+  expect(scope.textContent).toContain('Tüm personelin randevuları');
+  const slots = rowOf(SLOTS_TITLE);
+  expect(slots.querySelector('svg')).not.toBeNull();
+  expect(slots.textContent).toContain('4');
+  expect(rowOf('Randevu başladığında sesli uyarı').querySelector('svg')).not.toBeNull();
   expect(q('[role="switch"]')).not.toBeNull();
+  expect(rowOf('Nasıl çalışır?').querySelector('svg')).not.toBeNull();
+});
+
+test('no radio inputs or select remain', async () => {
+  await render();
+  expect(q('[role="radiogroup"]')).toBeNull();
+  expect(q('[role="radio"]')).toBeNull();
+  expect(q('input[type="radio"]')).toBeNull();
+  expect(q('select')).toBeNull();
 });
 
 test('uses the owner-approved labels', async () => {
   await render();
   expect(text()).toContain('Canlı bildirimler');
-  expect(text()).toContain('Sadece benim randevularım');
-  expect(text()).toContain('Tüm personelin randevuları');
+  expect(text()).toContain('Kimin randevuları gösterilsin?');
   expect(text()).toContain('Randevu başladığında sesli uyarı');
+  await clickRow(SCOPE_TITLE);
+  expect(sheet().textContent).toContain('Sadece benim randevularım');
+  expect(sheet().textContent).toContain('Tüm personelin randevuları');
 });
 
-test('manager sees scope and slots', async () => {
-  await render();
-  expect(q('[role="radiogroup"]') && q('select')).toBeTruthy();
-});
-
-test('plain staff sees only alert', async () => {
+test('plain staff sees only alert and how-it-works', async () => {
   api.get.mockResolvedValue({ data: { ...OWNER, scope: 'own', slot_count: 1, can_choose_scope: false, can_choose_slots: false } });
   await render();
-  expect(q('[role="radiogroup"]')).toBeNull();
-  expect(q('select')).toBeNull();
+  expect(rowOf(SCOPE_TITLE)).toBeNull();
+  expect(rowOf(SLOTS_TITLE)).toBeNull();
   expect(q('[role="switch"]')).not.toBeNull();
 });
 
-test('scope hidden when admin does not provide service and no staff', async () => {
+test('scope row hidden when the server does not let the user choose', async () => {
   api.get.mockResolvedValue({ data: { ...OWNER, can_choose_scope: false } });
   await render();
-  expect(q('[role="radiogroup"]')).toBeNull();
-  expect(q('select')).not.toBeNull();
+  expect(rowOf(SCOPE_TITLE)).toBeNull();
+  expect(rowOf(SLOTS_TITLE)).not.toBeNull();
 });
 
-test('slot count limited to 1..5 default 4', async () => {
+test('scope row opens choice sheet and saves selection', async () => {
   await render();
-  const sel = q('select');
-  expect([...sel.options].map((o) => o.value)).toEqual(['1', '2', '3', '4', '5']);
-  expect(sel.value).toBe('4');
+  await clickRow(SCOPE_TITLE);
+  expect(sheet()).not.toBeNull();
+  const own = sheetOptions().find((b) => b.dataset.option === 'own');
+  const all = sheetOptions().find((b) => b.dataset.option === 'all');
+  expect(all.querySelector('svg')).not.toBeNull(); // check on the current value
+  expect(own.querySelector('svg')).toBeNull();
+  await chooseOption('own');
+  expect(api.put).toHaveBeenCalledWith('/live-activities/preferences', { scope: 'own' });
+  expect(toast.success).toHaveBeenCalled();
+  expect(sheet()).toBeNull();
 });
 
-test('saves via preferences endpoint', async () => {
+test('slot row hidden when scope own', async () => {
+  api.get.mockResolvedValue({ data: { ...OWNER, scope: 'own', slot_count: 1 } });
   await render();
-  await act(async () => {
-    q('[role="switch"]').click();
-  });
+  expect(rowOf(SCOPE_TITLE)).not.toBeNull();
+  expect(rowOf(SLOTS_TITLE)).toBeNull();
+});
+
+test('slot row appears once scope is switched to all', async () => {
+  api.get.mockResolvedValue({ data: { ...OWNER, scope: 'own', slot_count: 1 } });
+  api.put.mockResolvedValue({ data: { scope: 'all', slot_count: 4, start_alert: false } });
+  await render();
+  await clickRow(SCOPE_TITLE);
+  await chooseOption('all');
+  expect(rowOf(SLOTS_TITLE)).not.toBeNull();
+  expect(rowOf(SLOTS_TITLE).textContent).toContain('4');
+});
+
+test('slot choice offers 1..5 and saves', async () => {
+  await render();
+  await clickRow(SLOTS_TITLE);
+  expect(sheetOptions().map((b) => b.dataset.option)).toEqual(['1', '2', '3', '4', '5']);
+  await chooseOption(2);
+  expect(api.put).toHaveBeenCalledWith('/live-activities/preferences', { slot_count: 2 });
+});
+
+test('slot choice saves and rolls back on error', async () => {
+  api.put.mockRejectedValue(new Error('boom'));
+  await render();
+  await clickRow(SLOTS_TITLE);
+  await chooseOption(2);
+  expect(toast.error).toHaveBeenCalled();
+  expect(rowOf(SLOTS_TITLE).textContent).toContain('4');
+  expect(rowOf(SLOTS_TITLE).textContent).not.toContain('2');
+});
+
+test('start alert switch saves via preferences endpoint', async () => {
+  await render();
+  await act(async () => { q('[role="switch"]').click(); });
   expect(api.put).toHaveBeenCalledWith('/live-activities/preferences', { start_alert: true });
   expect(toast.success).toHaveBeenCalled();
-
-  await act(async () => {
-    [...container.querySelectorAll('[role="radio"]')].find((r) => r.value === 'own').click();
-  });
-  expect(api.put).toHaveBeenCalledWith('/live-activities/preferences', { scope: 'own' });
-
-  const sel = q('select');
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, '2');
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  expect(api.put).toHaveBeenCalledWith('/live-activities/preferences', { slot_count: 2 });
 });
 
 test('save failure shows an error toast and keeps the old value', async () => {
   api.put.mockRejectedValue(new Error('boom'));
   await render();
-  await act(async () => {
-    q('[role="switch"]').click();
-  });
+  await act(async () => { q('[role="switch"]').click(); });
   expect(toast.error).toHaveBeenCalled();
   expect(q('[role="switch"]').getAttribute('aria-checked')).toBe('false');
 });
@@ -157,32 +207,11 @@ test('no banner when enabled', async () => {
   expect(text()).not.toContain('iOS Ayarlarını Aç');
 });
 
-test('consent link calls onOpenConsent', async () => {
+test('how it works row opens consent', async () => {
   const onOpenConsent = jest.fn();
   await render({ onOpenConsent });
-  const btn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Nasıl çalışır'));
-  await act(async () => {
-    btn.click();
-  });
+  await clickRow('Nasıl çalışır?');
   expect(onOpenConsent).toHaveBeenCalled();
-});
-
-test('slot select hidden while scope is own (the server forces 1)', async () => {
-  api.get.mockResolvedValue({ data: { ...OWNER, scope: 'own', slot_count: 1 } });
-  await render();
-  expect(q('[role="radiogroup"]')).not.toBeNull();
-  expect(q('select')).toBeNull();
-});
-
-test('slot select appears once scope is switched to all', async () => {
-  api.get.mockResolvedValue({ data: { ...OWNER, scope: 'own', slot_count: 1 } });
-  api.put.mockResolvedValue({ data: { scope: 'all', slot_count: 4, start_alert: false } });
-  await render();
-  await act(async () => {
-    [...container.querySelectorAll('[role="radio"]')].find((r) => r.value === 'all').click();
-  });
-  expect(q('select')).not.toBeNull();
-  expect(q('select').value).toBe('4');
 });
 
 describe('returning from iOS Settings', () => {
