@@ -45,8 +45,8 @@ def test_router_included():
 
 
 def test_dockerfile_pins_firebase_admin():
-    assert "firebase-admin==7.1.0" in (BACKEND / "Dockerfile").read_text()
-    assert "firebase-admin==7.1.0" in (BACKEND / "requirements.txt").read_text()
+    assert "firebase-admin==7.7.0" in (BACKEND / "Dockerfile").read_text()
+    assert "firebase-admin==7.7.0" in (BACKEND / "requirements.txt").read_text()
 
 
 def test_wiring_is_guarded_by_try_except():
