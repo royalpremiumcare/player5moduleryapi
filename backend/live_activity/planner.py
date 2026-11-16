@@ -55,12 +55,16 @@ def plan_device(
     now_epoch = now.timestamp()
     final_phases = final_phases or {}
     ordered = sorted(slots, key=lambda s: s["slot_index"])
-    top = visible[:n_slots]
-    by_id = {v.id: v for v in top}
-    already_processing = {s.get("appointment_id") for s in slots if s.get("phase_sent") == Phase.PROCESSING.value}
 
     def dismissed_today(s: dict) -> bool:
         return s.get("state") == DISMISSED_STATE and s.get("day") == today
+
+    # A card the user dismissed today is not reopened that day, in any slot (even one beyond a
+    # lowered slot count), and it does not take one of the top-N places either.
+    hidden = {s.get("appointment_id") for s in ordered if dismissed_today(s)}
+    top = [v for v in visible if v.id not in hidden][:n_slots]
+    by_id = {v.id: v for v in top}
+    already_processing = {s.get("appointment_id") for s in slots if s.get("phase_sent") == Phase.PROCESSING.value}
 
     def end(s: dict, dismissal: Literal["soon", "now"]) -> Action:
         phase = final_phases.get(s.get("appointment_id"))
@@ -74,10 +78,9 @@ def plan_device(
         if s["slot_index"] > n_slots and s.get("update_token"):
             actions.append(end(s, "now"))  # slot count lowered
 
-    # Stability within the top N: a held appointment keeps its slot. A slot the user
-    # dismissed today keeps its appointment too, so the card does not pop up elsewhere.
+    # Stability within the top N: a held appointment keeps its slot.
     in_range = [s for s in ordered if s["slot_index"] <= n_slots]
-    held = {s.get("appointment_id") for s in in_range if dismissed_today(s) and s.get("appointment_id") in by_id}
+    held: set = set()
     target: dict[int, VisibleAppt | None] = {}
     free: list[dict] = []
     for s in in_range:

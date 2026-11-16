@@ -365,3 +365,17 @@ def test_replays_sim_day_scenario():
         (331, "end", 1, "a4", "completed", None),
     ]
 
+
+
+# --- final review fixes ---------------------------------------------------------------------
+
+def test_dismissed_card_not_reopened_after_slot_count_drop():
+    # Slot 3 was dismissed today while holding x (processing); the count then drops 3 -> 2.
+    vis = [va("x", P, -10), va("y", U, 20), va("z", U, 40)]
+    slots = [slot(1, "y", U), slot(2, "z", U), slot(3, "x", P, state="dismissed_by_user")]
+    assert plan(slots, vis, n=3) == []
+    assert plan(slots, vis, n=2) == []  # x stays hidden: it neither reappears nor takes a top-N place
+    # a dismissed slot out of range does not consume a top-N place either
+    w = va("w", U, 60)
+    actions = plan([slot(1, "y", U), slot(3, "x", P, state="dismissed_by_user")], vis[:2] + [w], n=2)
+    assert summary(actions) == [("start", 2, "w", U, 10, "start", None)]
