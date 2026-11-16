@@ -1,0 +1,12 @@
+{
+  "phase": "upcoming",
+  "startEpoch": 1794828600.0,
+  "endEpoch": 1794831300.0,
+  "startLabel": "14:30",
+  "endLabel": "15:15",
+  "customerDisplay": "Ayşe Y.",
+  "serviceName": "Saç Boyama",
+  "staffName": "Mehmet",
+  "version": 3,
+  "appointmentId": "apt-123"
+}
