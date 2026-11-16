@@ -3,6 +3,7 @@ import axios from 'axios';
 import api from '../api/api';
 import i18n from '../i18n';
 import posthog from '../lib/posthog';
+import { unregister as unregisterLiveActivities } from '../native/liveActivities';
 
 function localizeRegisterError(detail) {
   const raw = String(detail || '').trim();
@@ -241,9 +242,17 @@ export const AuthProvider = ({ children }) => {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
                          window.navigator.standalone === true;
     
+    const currentToken = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+
+    // iOS Canlı Etkinlikler: cihaz kaydını şimdi sil (iOS dışında no-op, hata atmaz). Beklenmez;
+    // native çağrı sayfa yenilense de tamamlanır. useLiveActivities'in efekti sayfa yenilemesiyle
+    // yarışacağı için ona bırakılmaz; aynı JWT için ikinci çağrı tekrar gönderilmez.
+    if (currentToken) {
+      try { unregisterLiveActivities({ jwt: currentToken }); } catch (_) {}
+    }
+
     // Backend'de push subscription'ları sil (FCM token'ı temizle)
     try {
-      const currentToken = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
       if (currentToken) {
         // Token varsa backend'e unsubscribe isteği gönder
         await api.delete('/push/unsubscribe').catch(err => {
