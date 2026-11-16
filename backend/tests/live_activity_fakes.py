@@ -99,6 +99,8 @@ class FakeCollection:
     def _apply(doc, update):
         for k, v in update.get("$set", {}).items():
             doc[k] = v
+        for k in update.get("$unset", {}):
+            doc.pop(k, None)
         for k, v in update.get("$inc", {}).items():
             doc[k] = doc.get(k, 0) + v
         for k, v in update.get("$push", {}).items():
