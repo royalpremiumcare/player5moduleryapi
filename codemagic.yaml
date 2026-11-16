@@ -44,6 +44,31 @@ workflows:
         script: |
           cd frontend/ios/App
           pod install --repo-update
+      - name: Sürüm numaralarını tüm hedeflere eşitle
+        script: |
+          set -e
+          # PlannWidgets eklentisinin CFBundleShortVersionString/CFBundleVersion'ı App ile aynı
+          # olmalı (App Store doğrulaması). App hedefinin Release değerleri tüm hedeflere
+          # kopyalanır; zaten eşitse dosya değişmez.
+          PBX="frontend/ios/App/App.xcodeproj/project.pbxproj"
+          VERSIONS_FILE=$(mktemp)
+          python3 - "$PBX" > "$VERSIONS_FILE" <<'PY'
+          import re, sys
+          text = open(sys.argv[1]).read()
+          for body, name in re.findall(r"isa = XCBuildConfiguration;(.*?)\sname = (\w+);", text, re.S):
+              if name == "Release" and "INFOPLIST_FILE = App/Info.plist;" in body:
+                  mv = re.search(r"MARKETING_VERSION = ([0-9.]+);", body)
+                  cpv = re.search(r"CURRENT_PROJECT_VERSION = ([0-9]+);", body)
+                  if mv and cpv:
+                      print(mv.group(1), cpv.group(1))
+                      sys.exit(0)
+          sys.exit("App hedefinin Release MARKETING_VERSION/CURRENT_PROJECT_VERSION değeri bulunamadı")
+          PY
+          read -r APP_MARKETING_VERSION APP_BUILD < "$VERSIONS_FILE"
+          echo "App sürümü: ${APP_MARKETING_VERSION} (${APP_BUILD})"
+          sed -i '' -E "s/MARKETING_VERSION = [0-9.]+;/MARKETING_VERSION = ${APP_MARKETING_VERSION};/g" "$PBX"
+          sed -i '' -E "s/CURRENT_PROJECT_VERSION = [0-9]+;/CURRENT_PROJECT_VERSION = ${APP_BUILD};/g" "$PBX"
+          grep -E "MARKETING_VERSION|CURRENT_PROJECT_VERSION" "$PBX" | sort | uniq -c
       - name: Widget extension profili (yoksa oluştur)
         script: |
           set -e
@@ -292,6 +317,28 @@ workflows:
         script: |
           cd frontend
           npx cap sync ios
+      - name: Beta'da Capgo OTA kapalı
+        script: |
+          set -e
+          # Beta JS'i production OTA paketiyle değişmesin: yalnız cap sync'in ürettiği native
+          # kopyada autoUpdate=false. frontend/capacitor.config.json ve production akışı aynı kalır.
+          python3 - frontend/ios/App/App/capacitor.config.json <<'PY'
+          import json, sys
+          path = sys.argv[1]
+          with open(path) as f:
+              cfg = json.load(f)
+          try:
+              updater = cfg["plugins"]["CapacitorUpdater"]
+          except (KeyError, TypeError):
+              sys.exit(f"{path}: plugins.CapacitorUpdater bulunamadı")
+          if not isinstance(updater, dict) or "autoUpdate" not in updater:
+              sys.exit(f"{path}: plugins.CapacitorUpdater.autoUpdate bulunamadı")
+          updater["autoUpdate"] = False
+          with open(path, "w") as f:
+              json.dump(cfg, f, indent=2, ensure_ascii=False)
+              f.write("\n")
+          print("CapacitorUpdater:", json.dumps(updater, ensure_ascii=False))
+          PY
       - name: Install CocoaPods
         script: |
           cd frontend/ios/App
