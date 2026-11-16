@@ -64,3 +64,13 @@ def test_wiring_is_guarded_by_try_except():
     assert guarded(inc)
     assert "live_activity is not None and _LA_TRANSPORT is not None" in _block(
         r"^async def emit_to_organization", r"\n(?=\S)")
+
+
+def test_tenant_settings_update_cannot_set_pilot_flag():
+    # Controller ruling F-6: live_activity_enabled is operator-only; tenants keep lead/name mode.
+    body = _block(r"^async def update_settings\(request: Request, settings: Settings", r"\n(?=\S)")
+    dump = body.index("update_data = settings.model_dump(exclude_unset=True)")
+    pop = body.index('update_data.pop("live_activity_enabled", None)')
+    write = body.index("await db.settings.update_one(query, {\"$set\": update_data}, upsert=True)")
+    assert dump < pop < write
+    assert "live_activity_lead_minutes" not in body and "lock_screen_name_mode" not in body

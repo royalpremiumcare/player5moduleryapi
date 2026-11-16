@@ -516,6 +516,13 @@ def test_widget_payload_has_no_phone_notes_price(env):
     assert resp.json()["items"][0]["customerDisplay"] == "Mehmet Öz"
 
 
+def test_widget_unknown_name_mode_reported_as_initials(env):
+    seed_day(env, lock_screen_name_mode="Full Name")   # tenants may write any string
+    body = env.client.get("/api/widget/summary").json()
+    assert body["privacyMode"] == "initials"
+    assert body["items"][0]["customerDisplay"] == "Mehmet Ö."
+
+
 def test_widget_hidden_mode_nulls_names(env):
     seed_day(env, lock_screen_name_mode="hidden")
     body = env.client.get("/api/widget/summary").json()

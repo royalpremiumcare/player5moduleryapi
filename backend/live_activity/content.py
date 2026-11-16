@@ -35,7 +35,16 @@ def _capitalize(word: str) -> str:
     return _tr_upper(word[0]) + _tr_lower(word[1:])
 
 
+NAME_MODES = ("initials", "full", "hidden")
+
+
+def name_mode(mode) -> Literal["initials", "full", "hidden"]:
+    """`settings.lock_screen_name_mode` as stored by the tenant; anything unknown is "initials"."""
+    return mode if mode in NAME_MODES else "initials"
+
+
 def display_name(full: str | None, mode: Literal["initials", "full", "hidden"]) -> str | None:
+    mode = name_mode(mode)
     words = (full or "").split()
     if mode == "hidden" or not words:
         return None

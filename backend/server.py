@@ -11332,6 +11332,7 @@ async def update_settings(request: Request, settings: Settings, current_user: Us
     current_settings = await db.settings.find_one(query, {"_id": 0})
     
     update_data = settings.model_dump(exclude_unset=True)
+    update_data.pop("live_activity_enabled", None)  # Live Activity pilot bayrağı yalnızca operatör tarafından açılır (F-6)
     update_data["organization_id"] = current_user.organization_id
     
     # Eğer company_name değiştiyse, yeni slug oluştur

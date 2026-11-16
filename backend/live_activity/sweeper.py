@@ -21,6 +21,7 @@ from .content import (
     build_aps,
     build_content_state,
     format_alert,
+    name_mode,
     stale_epoch,
 )
 from .eligibility import (
@@ -159,7 +160,7 @@ async def load_org(db, settings: dict, now: datetime) -> _Org:
         admin_provides_service=settings.get("admin_provides_service", True),
         org_has_staff=any(u.get("role") == "staff" and _active(u) for u in users),
         lead_min=effective_lead_minutes(settings.get("live_activity_lead_minutes")),
-        privacy_mode=settings.get("lock_screen_name_mode") or "initials",
+        privacy_mode=name_mode(settings.get("lock_screen_name_mode")),
     )
 
 

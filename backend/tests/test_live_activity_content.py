@@ -160,3 +160,13 @@ def test_matches_golden_fixture():
 def test_no_phone_or_price_keys():
     blob = json.dumps(aps("update")).lower()
     assert "phone" not in blob and "price" not in blob and "905551112233" not in blob
+
+
+def test_unknown_name_mode_is_initials():
+    from live_activity.content import name_mode
+
+    assert [name_mode(m) for m in ("initials", "full", "hidden")] == ["initials", "full", "hidden"]
+    for bogus in (None, "", "FULL", "Full Name", "none", 1):
+        assert name_mode(bogus) == "initials"
+        assert display_name("ayşe kaya", bogus) == "Ayşe K."
+    assert cs(privacy_mode="everything")["customerDisplay"] == "Ayşe Y."
