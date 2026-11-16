@@ -58,6 +58,7 @@ import { openAppStore } from "@/lib/appStore";
 import { showLoadError, NETWORK_ERROR_TOAST_ID, APPOINTMENTS_LOAD_TIMEOUT_MS } from "@/lib/loadError";
 import { useLiveActivities, subOf } from "@/native/useLiveActivities";
 import { useLaConsentGate } from "@/native/laConsentGate";
+import { usePushHold } from "@/native/pushHold";
 import {
   handleCheckoutDeepLink,
   subscribeCheckoutEvents,
@@ -134,8 +135,14 @@ function App() {
     ahaActive: ahaUiState !== 'idle' && ahaUiState !== 'skipped',
     tourState,
   });
-  const pushHeldRef = useRef(pushHeld);
-  const pushPendingRef = useRef(false);
+  // Ekran push iznini bırakınca bekleyen kurulumu tek bir yerden, bir kez çalıştırır;
+  // çıkışta (token yok) bekleyen kurulum düşer. subscribeToPush aşağıda tanımlı,
+  // yalnız effect içinde çağrılır.
+  const deferPushIfHeld = usePushHold({
+    held: pushHeld,
+    active: !!token,
+    run: () => subscribeToPush(),
+  });
 
   const hasActiveSessions = useMemo(
     () => computeHasActiveSessions(appointments),
@@ -791,12 +798,10 @@ function App() {
 
       // Live Activity rıza ekranı açılacaksa iOS izin sorusu onun üstüne binmesin:
       // isteği not al, ekran kapanınca (veya bekleme bitince) tekrar çalıştırılır.
-      if (pushHeldRef.current) {
-        pushPendingRef.current = true;
+      if (deferPushIfHeld()) {
         await debugPush('held_for_consent', {});
         return;
       }
-      pushPendingRef.current = false;
 
       try {
         const permissionStatus = await PushNotifications.requestPermissions();
@@ -988,23 +993,15 @@ function App() {
     } catch (error) {
       console.error('Push subscription error:', error);
     }
-  }, []);
+  }, [deferPushIfHeld]);
   
-  // Rıza ekranı push iznini bırakınca (ekran kapandı / gerek kalmadı / 30 sn doldu)
-  // bekleyen push kurulumunu çalıştır.
-  useEffect(() => {
-    pushHeldRef.current = pushHeld;
-    if (!pushHeld && pushPendingRef.current && token) subscribeToPush();
-  }, [pushHeld, token, subscribeToPush]);
-
-  // Rıza ekranının iki butonu da (ve dışarı dokunup/Escape ile kapatma) ekranı kapatır,
-  // ardından push kurulumunu çalıştırır; iOS izin sorusu ancak bu noktada gelir.
+  // Rıza ekranının iki butonu da (ve dışarı dokunup/Escape ile kapatma) yalnız ekranı
+  // kapatır. Bekletilen push kurulumu varsa usePushHold onu bir kez çalıştırır; iOS izin
+  // sorusu ancak bu noktada gelir. Ayarlar'dan açılıp kapatılınca kurulum yeniden çalışmaz.
   const handleLaConsentDone = useCallback(() => {
     closeLaConsent();
     setLaConsentOpen(false);
-    pushHeldRef.current = false;
-    subscribeToPush();
-  }, [closeLaConsent, subscribeToPush]);
+  }, [closeLaConsent]);
 
   // Token değiştiğinde push subscription'ı yenile (cross-account sorununu önlemek için)
   const prevTokenRef = useRef(token);
