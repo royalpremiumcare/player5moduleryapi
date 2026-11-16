@@ -55,6 +55,7 @@ import { useTranslation } from "react-i18next";
 import { PushNotifications } from '@capacitor/push-notifications';
 import { openAppStore } from "@/lib/appStore";
 import { showLoadError, NETWORK_ERROR_TOAST_ID, APPOINTMENTS_LOAD_TIMEOUT_MS } from "@/lib/loadError";
+import { useLiveActivities } from "@/native/useLiveActivities";
 import {
   handleCheckoutDeepLink,
   subscribeCheckoutEvents,
@@ -98,6 +99,7 @@ function App() {
   const [showForm, setShowForm] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [settings, setSettings] = useState(null);
+  useLiveActivities({ token, orgFlagEnabled: !!settings?.live_activity_enabled });
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
