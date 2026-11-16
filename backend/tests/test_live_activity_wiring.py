@@ -47,3 +47,20 @@ def test_router_included():
 def test_dockerfile_pins_firebase_admin():
     assert "firebase-admin==7.1.0" in (BACKEND / "Dockerfile").read_text()
     assert "firebase-admin==7.1.0" in (BACKEND / "requirements.txt").read_text()
+
+
+def test_wiring_is_guarded_by_try_except():
+    lines = SERVER.splitlines()
+
+    def guarded(idx: int, back: int = 6, fwd: int = 4) -> bool:
+        before = "\n".join(lines[max(0, idx - back): idx])
+        after = "\n".join(lines[idx + 1: idx + 1 + fwd])
+        return "try:" in before and "except" in after and "logging.warning" in after
+
+    imp = next(i for i, l in enumerate(lines) if l.strip() == "import live_activity.sweeper")
+    assert "try:" in lines[imp - 1]
+    assert "live_activity = None" in SERVER
+    inc = next(i for i, l in enumerate(lines) if "include_router(live_activity.endpoints.router" in l)
+    assert guarded(inc)
+    assert "live_activity is not None and _LA_TRANSPORT is not None" in _block(
+        r"^async def emit_to_organization", r"\n(?=\S)")

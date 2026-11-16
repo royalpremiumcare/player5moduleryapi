@@ -937,13 +937,19 @@ scheduler = AsyncIOScheduler()
 _app_instance = None  # Global app instance for scheduler
 
 # iOS Live Activities (flag: settings.live_activity_enabled, default OFF)
-import live_activity.sweeper
-import live_activity.registry
-import live_activity.endpoints
-from live_activity.transport import FcmLiveActivityTransport
-# Tek transport; firebase_admin Step 6'da (lifespan) zaten initialize edilir, burada ikinci initialize YOK.
-_LA_TRANSPORT = FcmLiveActivityTransport()
-LIVE_ACTIVITY_POLL_SECONDS = live_activity.sweeper.poll_seconds()
+try:
+    import live_activity.sweeper
+    import live_activity.registry
+    import live_activity.endpoints
+    from live_activity.transport import FcmLiveActivityTransport
+    # Tek transport; firebase_admin Step 6'da (lifespan) zaten initialize edilir, burada ikinci initialize YOK.
+    _LA_TRANSPORT = FcmLiveActivityTransport()
+    LIVE_ACTIVITY_POLL_SECONDS = live_activity.sweeper.poll_seconds()
+except Exception as _la_import_err:
+    logging.warning(f"Live Activity disabled (import failed): {_la_import_err}")
+    live_activity = None
+    _LA_TRANSPORT = None
+    LIVE_ACTIVITY_POLL_SECONDS = 30
 
 # Hatırlatma poll aralığı (saniye). Küçük değer = daha hassas zamanlama.
 REMINDER_POLL_SECONDS = int(os.getenv("REMINDER_POLL_SECONDS", "60"))
@@ -1371,7 +1377,7 @@ async def lifespan(app: FastAPI):
             )
         
         # Live Activity sweep (flag-gated per org; failures never affect other jobs)
-        if app.db is not None:
+        if app.db is not None and live_activity is not None:
             try:
                 await live_activity.registry.ensure_indexes(app.db)
                 _la_db = app.db
@@ -2400,7 +2406,7 @@ async def emit_to_organization(organization_id: str, event: str, data: dict):
     if event in ("appointment_created", "appointment_updated", "appointment_deleted", "appointments_bulk_updated"):
         try:
             _la_db = getattr(_app_instance, "db", None) if _app_instance else None
-            if _la_db is not None:
+            if live_activity is not None and _LA_TRANSPORT is not None and _la_db is not None:
                 asyncio.create_task(live_activity.sweeper.resync(_la_db, organization_id, transport=_LA_TRANSPORT))
         except Exception as la_err:
             logger.warning(f"live activity resync hook failed: {la_err}")
@@ -17761,8 +17767,12 @@ async def ai_chat_endpoint(
 
 # --- Router prefix'i buraya taşındı ---
 app.include_router(api_router, prefix="/api")
-live_activity.endpoints.configure(get_current_user=get_current_user, get_db=get_db, transport=_LA_TRANSPORT)
-app.include_router(live_activity.endpoints.router, prefix="/api")
+try:
+    if live_activity is not None:
+        live_activity.endpoints.configure(get_current_user=get_current_user, get_db=get_db, transport=_LA_TRANSPORT)
+        app.include_router(live_activity.endpoints.router, prefix="/api")
+except Exception as _la_router_err:
+    logging.warning(f"Live Activity router registration failed: {_la_router_err}")
 
 
 # ═══ iOS Universal Links — apple-app-site-association (AASA) ═══
