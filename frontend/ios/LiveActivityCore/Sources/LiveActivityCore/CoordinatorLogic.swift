@@ -56,6 +56,13 @@ public func pushTokenHex(_ token: Data) -> String {
     token.map { String(format: "%02x", $0) }.joined()
 }
 
+/// Push-to-start token for a register/report: the one ActivityKit returns now, else the last one
+/// its update stream delivered, else the persisted one. Empty strings count as absent, so a
+/// register never nulls the server's stored token while one is known.
+public func pushToStartTokenToSend(fresh: String?, latest: String?, persisted: String?) -> String? {
+    [fresh, latest, persisted].lazy.compactMap { $0 }.first { !$0.isEmpty }
+}
+
 /// `CFBundleShortVersionString (CFBundleVersion)`.
 public func appBuildString(shortVersion: String?, build: String?) -> String {
     "\(shortVersion ?? "?") (\(build ?? "?"))"

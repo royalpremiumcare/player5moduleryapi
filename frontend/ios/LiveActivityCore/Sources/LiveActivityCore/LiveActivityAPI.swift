@@ -21,6 +21,7 @@ public final class LiveActivityAPI {
     static let deviceIdKey = "la.device_id"
     static let secretKey = "la.device_secret"
     static let baseUrlKey = "la.api_base_url"
+    static let pushToStartKey = "la.push_to_start_token"
     static let secretHeader = "X-Plann-Device-Secret"
 
     private let transport: HTTPTransport
@@ -38,6 +39,17 @@ public final class LiveActivityAPI {
         set {
             if let v = newValue { defaults.set(Self.trimmed(v), forKey: Self.baseUrlKey) }
             else { defaults.removeObject(forKey: Self.baseUrlKey) }
+        }
+    }
+
+    /// Last push-to-start token (hex) ActivityKit gave this install. Kept in UserDefaults (wiped
+    /// on uninstall) and across logout: it belongs to the install, not the user, so a register
+    /// never sends null while a token is known.
+    public var lastPushToStartToken: String? {
+        get { defaults.string(forKey: Self.pushToStartKey) }
+        set {
+            if let v = newValue, !v.isEmpty { defaults.set(v, forKey: Self.pushToStartKey) }
+            else { defaults.removeObject(forKey: Self.pushToStartKey) }
         }
     }
 

@@ -1,6 +1,6 @@
 import Foundation
 
-public enum PlannPhase: String, Codable {
+public enum PlannPhase: String, Codable, Sendable {
     case upcoming, processing, completed, cancelled, removed, unknown
 
     public init(from decoder: Decoder) throws {
@@ -9,7 +9,7 @@ public enum PlannPhase: String, Codable {
     }
 }
 
-public struct PlannContentState: Codable, Hashable {
+public struct PlannContentState: Codable, Hashable, Sendable {
     public var phase: PlannPhase
     public var startEpoch: Double
     public var endEpoch: Double
@@ -47,7 +47,7 @@ public struct PlannContentState: Codable, Hashable {
     }
 }
 
-public struct SlotId: Hashable {
+public struct SlotId: Hashable, Sendable {
     public let deviceId: String
     public let index: Int
 
