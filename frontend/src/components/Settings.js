@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
+import LiveActivitySettings from "./LiveActivitySettings";
 import { WHATSAPP_PHONE_DISPLAY, WHATSAPP_URL, openLiveChat } from "../constants/contact";
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
@@ -61,7 +62,7 @@ const SectionTitle = ({ title }) => (
   </h3>
 );
 
-const Settings = ({ onNavigate, userRole, onLogout, notifications = [], setNotifications, onOpenAppointment }) => {
+const Settings = ({ onNavigate, userRole, onLogout, notifications = [], setNotifications, onOpenAppointment, onOpenLiveActivityConsent }) => {
   const { t, i18n } = useTranslation();
   const isStaff = userRole === 'staff' || userRole === 'personnel';
   const [pushSubscribed, setPushSubscribed] = useState(false);
@@ -551,6 +552,8 @@ const Settings = ({ onNavigate, userRole, onLogout, notifications = [], setNotif
             onClick={handleRepairNotifications}
           />
         </div>
+
+        <LiveActivitySettings onOpenConsent={onOpenLiveActivityConsent} />
 
         {/* GRUP 4: DESTEK & ÇIKIŞ */}
         <SectionTitle title={t('settings.sections.other')} />

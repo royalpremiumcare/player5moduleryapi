@@ -22,6 +22,7 @@ import AppointmentFormWizard from "@/components/AppointmentFormWizard";
 import ServiceManagement from "@/components/ServiceManagement";
 import CashRegister from "@/components/CashRegister";
 import Settings from "@/components/Settings";
+import LiveActivityConsentSheet from "@/components/LiveActivityConsentSheet";
 import MarketingAssistant from "@/components/MarketingAssistant";
 import SettingsSubscription from "@/components/SettingsSubscription";
 import SettingsProfile from "@/components/SettingsProfile";
@@ -100,6 +101,7 @@ function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [settings, setSettings] = useState(null);
   useLiveActivities({ token, orgFlagEnabled: !!settings?.live_activity_enabled });
+  const [laConsentOpen, setLaConsentOpen] = useState(false);
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -1513,6 +1515,13 @@ function App() {
       }}
     >
 
+      <LiveActivityConsentSheet
+        token={token}
+        orgFlagEnabled={!!settings?.live_activity_enabled}
+        manualOpen={laConsentOpen}
+        onManualClose={() => setLaConsentOpen(false)}
+      />
+
       {/* Setup Wizard - Onboarding */}
       {ENABLE_SETUP_WIZARD && showOnboarding && (
         <SetupWizard
@@ -1761,6 +1770,7 @@ function App() {
             notifications={notifications}
             setNotifications={setNotifications}
             onOpenAppointment={(id) => { if (id) { setDetailFromNotif(true); setDetailAppointmentId(String(id)); } }}
+            onOpenLiveActivityConsent={() => setLaConsentOpen(true)}
           />
         )}
         {currentView === "statistics" && userRole === 'admin' && (

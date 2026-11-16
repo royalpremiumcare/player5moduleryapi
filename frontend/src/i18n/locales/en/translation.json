@@ -1010,6 +1010,26 @@
       "services": "Services"
     }
   },
+  "liveActivity": {
+    "title": "Live notifications",
+    "saved": "Saved",
+    "saveError": "Could not save, please try again",
+    "disabledBanner": "Live Activities are turned off in iOS settings. Appointments will not appear on the lock screen.",
+    "openIosSettings": "Open iOS Settings",
+    "scope": "Whose appointments to show?",
+    "scopeOwn": "Only mine",
+    "scopeAll": "All staff",
+    "slots": "Appointments on the lock screen",
+    "startAlert": "Alert when an appointment starts",
+    "howItWorks": "How does it work?",
+    "consent": {
+      "title": "Your appointments on the lock screen",
+      "body": "Your next appointment appears on the lock screen and Dynamic Island with a countdown. It switches to \"In progress\" by itself when the time comes.",
+      "note": "iOS will ask for permission. Later it may ask again whether you want to keep allowing it. If it does, choose Always Allow, otherwise appointments will not reach the lock screen.",
+      "continue": "Continue",
+      "later": "Not now"
+    }
+  },
   "settings": {
     "title": "Settings",
     "subtitle": "Manage your account and system settings",

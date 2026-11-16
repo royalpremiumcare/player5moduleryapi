@@ -1012,6 +1012,26 @@
       "services": "Hizmetler"
     }
   },
+  "liveActivity": {
+    "title": "Canlı bildirimler",
+    "saved": "Kaydedildi",
+    "saveError": "Kaydedilemedi, tekrar deneyin",
+    "disabledBanner": "Canlı Etkinlikler iOS ayarlarında kapalı. Randevular kilit ekranına gelmez.",
+    "openIosSettings": "iOS Ayarlarını Aç",
+    "scope": "Kimin randevuları gösterilsin?",
+    "scopeOwn": "Sadece benimkiler",
+    "scopeAll": "Tüm personel",
+    "slots": "Kilit ekranında kaç randevu",
+    "startAlert": "Randevu başlarken uyar",
+    "howItWorks": "Nasıl çalışır?",
+    "consent": {
+      "title": "Randevularınız kilit ekranında",
+      "body": "Sıradaki randevunuz kilit ekranında ve Dynamic Island'da geri sayımla görünür. Saati gelince kendiliğinden \"İşlemde\" olur.",
+      "note": "iOS izin isteyecek. İleride \"izin vermeyi sürdürmek istiyor musunuz?\" diye tekrar sorabilir. Sorarsa Her Zaman İzin Ver'i seçin, yoksa randevular kilit ekranına gelmez.",
+      "continue": "Devam",
+      "later": "Şimdi değil"
+    }
+  },
   "settings": {
     "title": "Ayarlar",
     "subtitle": "Hesap ve sistem ayarlarınızı yönetin",

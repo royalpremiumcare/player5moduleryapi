@@ -7,7 +7,7 @@ import {
   getStatus,
 } from './liveActivities';
 
-function subOf(token) {
+export function subOf(token) {
   try {
     return JSON.parse(atob(token.split('.')[1])).sub || null;
   } catch (e) {
