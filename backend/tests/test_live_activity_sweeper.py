@@ -392,6 +392,7 @@ async def test_two_admin_devices_independent():
     assert sorted(events(t)) == [("start", "pts-d1"), ("start", "pts-d2")]
     assert sorted(s["aps"]["attributes"]["slotId"] for s in t.sent) == ["d1:1", "d2:1"]
 
+    await registry.record_slot_token(db, device_id="d1", slot_index=1, activity_id="A1", update_token="tok1")
     await registry.apply_device_report(db, device_id="d1", slots=[{"slot_index": 1, "activity_id": "A1", "state": "dismissed"}],
                                        activities_enabled=True, complete=False, now=NOW)
     await registry.record_slot_token(db, device_id="d2", slot_index=1, activity_id="A2", update_token="tok2")

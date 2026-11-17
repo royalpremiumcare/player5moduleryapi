@@ -72,7 +72,10 @@ async def upsert_device(
     if existing is None:
         update["$setOnInsert"] = {"start_log": []}
         # A report that raced a logout must not hand its dismissed ids to the next user.
-        await db.live_activity_slots.update_many({"device_id": device_id}, {"$unset": FORGET_DISMISSALS})
+        # $inc: an in-flight report or claim holding an older slot snapshot then fails its CAS.
+        await db.live_activity_slots.update_many(
+            {"device_id": device_id}, {"$unset": FORGET_DISMISSALS, "$inc": {"version": 1}}
+        )
     if owner_changed:
         if ended_slots is not None:
             ended_slots.extend(await _live_slots(db, device_id))
@@ -206,6 +209,10 @@ def _report_fields(slot: dict, report: dict | None, *, complete: bool, today: st
         # "active" only lists the slot: the token callback alone makes a slot active, so a
         # report can neither revive an ended slot nor pre-empt a pending start's token.
         if new_state in (None, "active") or new_state == slot["state"]:
+            return None
+        # Only the slot's own activity can end or dismiss it (as in the endpoint's report filter): a
+        # slot restarted since the report was read (no activity yet, or another one) is left alone.
+        if slot.get("activity_id") is None or slot.get("activity_id") != report.get("activity_id"):
             return None
         if new_state == "dismissed_by_user":
             # The slot may be reused today for another appointment; the planner keeps every

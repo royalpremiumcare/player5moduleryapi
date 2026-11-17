@@ -281,3 +281,39 @@ async def test_new_device_row_forgets_dismissals_left_by_a_stale_report(db):
     await registry.upsert_device(db, **{**DEVICE, "user_id": "u2"})
     s = (await registry.slots_for_device(db, "dev1"))[0]
     assert "dismissed_ids" not in s and "dismissed_day" not in s
+
+
+async def test_dismissal_report_ignored_after_slot_restarted(db, monkeypatch):
+    # The report's snapshot holds act1 (appointment a); a sweep then restarts the slot for b
+    # (start_sent, no activity yet) before the report writes. b was never dismissed.
+    await _seed_slot(db, 1, appointment_id="a")
+    real = registry.slots_for_device
+
+    async def snapshot_then_restart(db_, device_id):
+        slots = await real(db_, device_id)
+        assert await registry.claim_slot(db_, device_id=device_id, slot_index=1, expect_version=slots[0]["version"],
+                                         set_fields={"state": "start_sent", "appointment_id": "b",
+                                                     "activity_id": None, "update_token": None})
+        monkeypatch.setattr(registry, "slots_for_device", real)
+        return slots
+
+    monkeypatch.setattr(registry, "slots_for_device", snapshot_then_restart)
+    changed = await registry.apply_device_report(
+        db, device_id="dev1", slots=[{"slot_index": 1, "activity_id": "act1", "state": "dismissed"}],
+        activities_enabled=True, complete=False, now=NOW)
+    assert changed == []
+    s = (await real(db, "dev1"))[0]
+    assert (s["state"], s["appointment_id"]) == ("start_sent", "b")
+    assert "b" not in (s.get("dismissed_ids") or [])
+
+
+async def test_new_device_row_bumps_slot_versions(db):
+    await registry.upsert_device(db, **DEVICE)
+    await _seed_slot(db, 1, appointment_id="a")
+    await registry.remove_device(db, "dev1")
+    before = (await registry.slots_for_device(db, "dev1"))[0]["version"]
+    await registry.upsert_device(db, **DEVICE)
+    assert (await registry.slots_for_device(db, "dev1"))[0]["version"] == before + 1
+    # an in-flight writer holding the pre-registration snapshot loses its CAS
+    assert not await registry.claim_slot(db, device_id="dev1", slot_index=1, expect_version=before,
+                                         set_fields={"dismissed_ids": ["a"]})
