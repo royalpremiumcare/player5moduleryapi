@@ -20,8 +20,31 @@ WRITE_METHODS = {
 }
 
 
+def _path_values(doc, path):
+    """Values at a dotted path, fanning out over arrays (``services.service_id``)."""
+    vals = [doc]
+    for part in path.split("."):
+        nxt = []
+        for v in vals:
+            if isinstance(v, list):
+                nxt.extend(x.get(part) for x in v if isinstance(x, dict) and part in x)
+            elif isinstance(v, dict) and part in v:
+                nxt.append(v[part])
+        vals = nxt
+    return [x for v in vals for x in (v if isinstance(v, list) else [v])]
+
+
 def _match(doc, flt):
     for k, v in flt.items():
+        if k == "$or":
+            if not any(_match(doc, sub) for sub in v):
+                return False
+            continue
+        if "." in k:
+            vals = _path_values(doc, k)
+            if isinstance(v, dict) or v not in vals:
+                return False
+            continue
         if isinstance(v, dict):
             for op, arg in v.items():
                 if op == "$in" and doc.get(k) not in arg:
@@ -31,6 +54,10 @@ def _match(doc, flt):
                 if op == "$lt" and not (k in doc and doc[k] < arg):
                     return False
                 if op == "$gt" and not (k in doc and doc[k] > arg):
+                    return False
+                if op == "$gte" and not (k in doc and doc[k] >= arg):
+                    return False
+                if op == "$nin" and doc.get(k) in arg:
                     return False
         elif doc.get(k) != v:
             return False
@@ -100,8 +127,19 @@ class FakeCollection:
                     raise DuplicateKeyError("duplicate key")
 
     @staticmethod
-    def _apply(doc, update):
+    def _apply(doc, update, array_filters=None):
         for k, v in update.get("$set", {}).items():
+            if ".$[" in k:  # "arr.$[ident].field" with array_filters=[{"ident.f": x}]
+                arr, rest = k.split(".$[", 1)
+                ident, field = rest.split("].", 1)
+                if not isinstance(doc.get(arr), list):  # MongoDB rejects the whole update here
+                    raise ValueError(f"The path '{arr}' must exist in the document in order to apply array updates.")
+                cond = {f.split(".", 1)[1]: fv for af in array_filters or [] for f, fv in af.items()
+                        if f.startswith(ident + ".")}
+                for el in doc[arr]:
+                    if _match(el, cond):
+                        el[field] = v
+                continue
             doc[k] = v
         for k in update.get("$unset", {}):
             doc.pop(k, None)
@@ -167,13 +205,13 @@ class FakeCollection:
             self._insert_from(flt, update)
         return _Result(0)
 
-    async def update_many(self, flt, update):
+    async def update_many(self, flt, update, array_filters=None):
         await asyncio.sleep(0)
         self._note("update_many", flt, update)
         n = 0
         for d in self.docs:
             if _match(d, flt):
-                self._apply(d, update)
+                self._apply(d, update, array_filters)
                 n += 1
         return _Result(n)
 

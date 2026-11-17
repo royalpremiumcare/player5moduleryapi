@@ -3,6 +3,7 @@ from whatsapp_service import send_whatsapp_template, detect_language_from_phone
 from funnel_registry import is_frontend_owned, is_valid_event
 from funnel_service import ensure_funnel_indexes, record_funnel_event, track_webhook_event
 from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
+from name_sync import propagate_service_rename, sync_customer_to_appointments
 from meta_capi_service import get_meta_capi_service, split_full_name
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
@@ -2415,6 +2416,18 @@ async def emit_to_organization(organization_id: str, event: str, data: dict):
                 asyncio.create_task(live_activity.sweeper.resync(_la_db, organization_id, transport=_LA_TRANSPORT))
         except Exception as la_err:
             logger.warning(f"live activity resync hook failed: {la_err}")
+
+
+def _org_emit_after_stats_refresh(request: Request, current_user):
+    """emit_to_organization that first drops the cached dashboard stats (they hold
+    today's customer/service names), so the reload the event triggers is fresh."""
+    async def _emit(organization_id: str, event: str, data: dict):
+        try:
+            await invalidate_cache(request, "dashboard_stats", current_user)
+        except Exception as e:
+            logger.warning(f"dashboard_stats invalidation before {event} failed: {e}")
+        await emit_to_organization(organization_id, event, data)
+    return _emit
 
 # === GÜVENLİK YARDIMCI FONKSİYONLARI (Aynı kaldı) ===
 _mongo_client = None; _mongo_db = None
@@ -8396,6 +8409,7 @@ async def update_service(request: Request, service_id: str, service_update: Serv
     )
     if version_changing:
         update_data["version"] = int(service.get("version", 1)) + 1
+    name_changing = "name" in update_data and update_data["name"] != service.get("name")
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     ops = {}
     if update_data: ops["$set"] = update_data
@@ -8406,6 +8420,16 @@ async def update_service(request: Request, service_id: str, service_update: Serv
             await invalidate_service_caches(request, current_user.organization_id)
         except Exception as e:
             logging.error(f"Service cache invalidation failed: {e}")
+    if name_changing:
+        # Randevular hizmet adının kopyasını tutar: bugün ve sonrası aktif randevulara yansıt
+        # (geçmiş/tamamlanan/iptal eski adıyla kalır), açık panolar + Live Activity yenilensin.
+        try:
+            await propagate_service_rename(
+                db, current_user.organization_id, service_id, update_data["name"],
+                emit=_org_emit_after_stats_refresh(request, current_user),
+            )
+        except Exception as e:
+            logging.error(f"Service rename propagation failed: {e}")
     updated_service = await db.services.find_one(query, {"_id": 0})
     if isinstance(updated_service['created_at'], str): updated_service['created_at'] = datetime.fromisoformat(updated_service['created_at'].replace('Z', '+00:00'))
     return updated_service
@@ -12922,19 +12946,13 @@ async def update_customer(request: Request, phone: str, update_data: CustomerUpd
     
     await db.customers.update_one({"phone": phone, "organization_id": current_user.organization_id}, {"$set": updates})
     
-    # Telefon değiştiyse randevuları da güncelle
-    if new_phone and new_phone != phone:
-        await db.appointments.update_many(
-            {"phone": phone, "organization_id": current_user.organization_id},
-            {"$set": {"phone": new_phone}}
-        )
-    # İsim değiştiyse randevulardaki müşteri adını da güncelle
-    if "name" in updates:
-        phone_to_match = new_phone if new_phone and new_phone != phone else phone
-        await db.appointments.update_many(
-            {"phone": phone_to_match, "organization_id": current_user.organization_id},
-            {"$set": {"customer_name": updates["name"]}}
-        )
+    # Telefon/isim değiştiyse randevulara da yansıt; randevu değiştiyse açık panolar
+    # ve Live Activity kartları hemen yenilensin diye org'a randevu olayı yayınlanır.
+    await sync_customer_to_appointments(
+        db, current_user.organization_id, phone,
+        new_phone=updates.get("phone"), new_name=updates.get("name"),
+        emit=_org_emit_after_stats_refresh(request, current_user),
+    )
     
     try:
         await invalidate_cache(request, "customers_list", current_user)
