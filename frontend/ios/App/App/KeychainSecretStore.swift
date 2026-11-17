@@ -5,6 +5,10 @@ import Security
 /// own Keychain (no access group, no App Group). Readable after the first unlock, so background
 /// launches that deliver push tokens can use the secret. This-device-only: a backup restored to
 /// another device must not clone the device id and secret (it registers as a new device).
+/// Items carry no explicit access group, so they land in the default group: the FIRST entry of
+/// `keychain-access-groups` in App.entitlements. That entry must stay the app's own group
+/// (`$(AppIdentifierPrefix)co.plannapp.app`), listed before the widget-shared group, or new
+/// secrets would become readable by the widget extension.
 final class KeychainSecretStore: SecretStore {
     static let service = "co.plannapp.app.la"
 
