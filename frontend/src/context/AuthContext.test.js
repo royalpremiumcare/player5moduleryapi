@@ -14,7 +14,7 @@ jest.mock('../lib/posthog', () => ({
 }));
 jest.mock('../i18n', () => ({ __esModule: true, default: { t: (k) => k } }));
 jest.mock('../native/liveActivities', () => ({ unregister: jest.fn() }));
-jest.mock('../native/widgets', () => ({ clearWidgetCredential: jest.fn() }));
+jest.mock('../native/widgets', () => ({ clearWidgetCredential: jest.fn(), isWidgetSupported: jest.fn() }));
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -47,7 +47,15 @@ beforeEach(async () => {
     events.push(['la-unregister', opts, localStorage.getItem('authToken')]);
     return new Promise(() => {}); // native call never answers before the reload
   });
-  api.delete.mockImplementation(async (url) => { if (url === '/push/unsubscribe') events.push(['push-unsubscribe']); });
+  // The push unsubscribe is a network round trip: it settles after the native bridge answers.
+  api.delete.mockImplementation(async (url) => {
+    if (url === '/push/unsubscribe') {
+      await new Promise((r) => setTimeout(r, 0));
+      events.push(['push-unsubscribe']);
+    }
+  });
+  widgets.isWidgetSupported.mockReturnValue(true);
+  widgets.clearWidgetCredential.mockResolvedValue({ key: 'wk-device' });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -99,26 +107,62 @@ test('logout clears a pending widget deep link so the next user does not inherit
   expect(takePending(Date.now())).toBeNull();
 });
 
-test('logout deletes key and clears credential before navigation', async () => {
-  api.delete.mockImplementation(async (url) => {
-    events.push([url === '/widget/key' ? 'widget-delete' : 'push-unsubscribe', localStorage.getItem('authToken')]);
+const widgetDeletes = () => api.delete.mock.calls.filter(([url]) => url === '/widget/key');
+
+test('logout revokes only this device key (from native) before navigation', async () => {
+  api.delete.mockImplementation(async (url, config) => {
+    if (url === '/widget/key') {
+      events.push(['widget-delete', localStorage.getItem('authToken'), config]);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 0));
+    events.push(['push-unsubscribe']);
   });
   widgets.clearWidgetCredential.mockImplementation(() => {
     events.push(['widget-clear']);
-    return new Promise(() => {});
+    return Promise.resolve({ key: 'wk-device' });
   });
   await renderWithStoredToken(TOKEN);
   await act(async () => { await auth.logout(); });
 
-  expect(api.delete).toHaveBeenCalledWith('/widget/key', expect.objectContaining({
+  expect(widgetDeletes()).toEqual([['/widget/key', {
+    data: { key: 'wk-device' },
     headers: { Authorization: `Bearer ${TOKEN}` },
-  }));
+  }]]);
   const names = events.map((e) => e[0]);
-  expect(names).toContain('widget-delete');
-  expect(names).toContain('widget-clear');
+  expect(names.indexOf('widget-clear')).toBeLessThan(names.indexOf('widget-delete'));
   expect(names.indexOf('widget-delete')).toBeLessThan(names.indexOf('navigate'));
-  expect(names.indexOf('widget-clear')).toBeLessThan(names.indexOf('navigate'));
   expect(events.find((e) => e[0] === 'widget-delete')[1]).toBe(TOKEN);
+});
+
+test('logout does not wait for the native clear', async () => {
+  widgets.clearWidgetCredential.mockReturnValue(new Promise(() => {}));
+  await renderWithStoredToken(TOKEN);
+  await act(async () => { await auth.logout(); });
+  expect(events[events.length - 1]).toEqual(['navigate', '/login']);
+  expect(widgetDeletes()).toEqual([]);
+});
+
+test('logout revokes all keys only when native cannot tell the key (old native build)', async () => {
+  widgets.clearWidgetCredential.mockResolvedValue(null);
+  await renderWithStoredToken(TOKEN);
+  await act(async () => { await auth.logout(); });
+  expect(widgetDeletes()).toEqual([['/widget/key', { headers: { Authorization: `Bearer ${TOKEN}` } }]]);
+});
+
+test('logout sends no revoke when this device holds no widget key', async () => {
+  widgets.clearWidgetCredential.mockResolvedValue({});
+  await renderWithStoredToken(TOKEN);
+  await act(async () => { await auth.logout(); });
+  expect(widgetDeletes()).toEqual([]);
+});
+
+test('logout on web or Android leaves the iPhone widget keys alone', async () => {
+  widgets.isWidgetSupported.mockReturnValue(false);
+  widgets.clearWidgetCredential.mockResolvedValue(null);
+  await renderWithStoredToken(TOKEN);
+  await act(async () => { await auth.logout(); });
+  expect(widgetDeletes()).toEqual([]);
 });
 
 test('logout never throws when the delete fails', async () => {
@@ -132,9 +176,11 @@ test('logout never throws when the delete fails', async () => {
   expect(localStorage.getItem('authToken')).toBeNull();
 });
 
-test('logout clears the widget issue stamp so the next login issues a fresh key', async () => {
+test('logout clears the widget issue stamp and backoff so the next login issues a fresh key', async () => {
   localStorage.setItem('widget_key_issued:ali', String(Date.now()));
+  localStorage.setItem('widget_key_backoff:ali', String(Date.now() + 1000));
   await renderWithStoredToken(TOKEN);
   await act(async () => { await auth.logout(); });
   expect(localStorage.getItem('widget_key_issued:ali')).toBeNull();
+  expect(localStorage.getItem('widget_key_backoff:ali')).toBeNull();
 });

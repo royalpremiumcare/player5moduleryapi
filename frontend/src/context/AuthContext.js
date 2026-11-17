@@ -5,8 +5,9 @@ import i18n from '../i18n';
 import posthog from '../lib/posthog';
 import { clearPending } from '../lib/pendingDeepLink';
 import { unregister as unregisterLiveActivities } from '../native/liveActivities';
-import { clearWidgetCredential } from '../native/widgets';
+import { clearWidgetCredential, isWidgetSupported } from '../native/widgets';
 import { clearWidgetIssueStamp } from '../native/widgetStamp';
+import { revokeWidgetKey } from '../native/useWidgetCredential';
 
 function localizeRegisterError(detail) {
   const raw = String(detail || '').trim();
@@ -254,18 +255,25 @@ export const AuthProvider = ({ children }) => {
       try { unregisterLiveActivities({ jwt: currentToken }); } catch (_) {}
     }
 
-    // Ana ekran widget'ları: anahtarı sunucuda iptal et ve native kimlik bilgisini sil.
-    // Beklenmez, asla hata atmaz; state temizlenmeden ve yönlendirmeden önce gönderilir.
-    if (currentToken) {
-      try {
-        Promise.resolve(
-          api.delete('/widget/key', { headers: { Authorization: `Bearer ${currentToken}` } })
-        ).catch(() => {});
-      } catch (_) {}
-    }
+    // Ana ekran widget'ları: native kimlik bilgisini sil, sonra YALNIZCA bu cihazın anahtarını
+    // sunucuda iptal et (diğer cihazların widget'ları çalışmaya devam eder). Native silinen anahtarı
+    // döndürür; bilemiyorsa (eski native sürüm: null) tüm anahtarlar iptal edilir. Bu cihazda anahtar
+    // yoksa ya da cihaz widget desteklemiyorsa (web/Android) hiçbir şey iptal edilmez.
+    // Beklenmez, asla hata atmaz; native yanıtı push aboneliğinin ağ isteğinden önce gelir, böylece
+    // iptal isteği yönlendirmeden önce gönderilir.
+    try {
+      const widgetsHere = !!currentToken && isWidgetSupported();
+      new Promise((resolve) => resolve(clearWidgetCredential()))
+        .catch(() => null)
+        .then((cleared) => {
+          if (!widgetsHere) return;
+          if (cleared?.key) revokeWidgetKey({ key: cleared.key, token: currentToken });
+          else if (cleared == null) revokeWidgetKey({ token: currentToken });
+        })
+        .catch(() => {});
+    } catch (_) {}
     // The key is revoked: the next login must issue a new one regardless of the 24h stamp.
     try { if (currentToken) clearWidgetIssueStamp(currentToken); } catch (_) {}
-    try { Promise.resolve(clearWidgetCredential()).catch(() => {}); } catch (_) {}
 
     // Backend'de push subscription'ları sil (FCM token'ı temizle)
     try {
