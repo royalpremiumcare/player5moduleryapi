@@ -243,3 +243,24 @@ def test_upcoming_and_terminal_relevance_unchanged():
     assert relevance(Phase.UPCOMING, START + timedelta(minutes=900), NOW, end) == 1
     assert relevance(Phase.COMPLETED, START, NOW, end) == 0
     assert relevance(Phase.CANCELLED, START, NOW, end) == 0
+
+
+@pytest.mark.parametrize("full,expected", [
+    ("Mustafa Bulut", "Mustafa B."),
+    ("Ayşe Yılmaz", "Ayşe Y."),
+    ("Elif Nur Demir", "Elif Nur D."),
+    ("Mustafa", "Mustafa"),
+    ("İsmail Çelik", "İsmail Ç."),
+    ("ışıl özdemir", "Işıl Ö."),
+    ("  ", None),
+    ("", None),
+    (None, None),
+])
+def test_staff_name_is_first_names_plus_last_initial(full, expected):
+    assert cs(staff_name=full)["staffName"] == expected
+
+
+def test_staff_name_shortening_leaves_customer_name_mode_alone():
+    c = cs(privacy_mode="full", staff_name="Mustafa Bulut")
+    assert c["customerDisplay"] == "Ayşe Kaya Yılmaz"
+    assert c["staffName"] == "Mustafa B."

@@ -453,7 +453,7 @@ async def test_staff_name_only_on_all_scope_and_privacy_mode():
     t = RecordingTransport()
     await sweep(db, t)
     by_dev = {s["aps"]["attributes"]["slotId"]: s for s in t.sent}
-    assert by_dev["d1:1"]["aps"]["content-state"]["staffName"] == "Elif Yılmaz"
+    assert by_dev["d1:1"]["aps"]["content-state"]["staffName"] == "Elif Y."
     assert by_dev["d2:1"]["aps"]["content-state"]["staffName"] is None
     assert by_dev["d1:1"]["aps"]["content-state"]["customerDisplay"] is None
     assert by_dev["d1:1"]["alert"] == ("Sıradaki randevu", "Saç Kesimi · 10:20")

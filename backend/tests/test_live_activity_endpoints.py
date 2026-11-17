@@ -512,7 +512,7 @@ def test_widget_admin_default_all_manager_default_own(env):
     assert body["scope"] == "all"
     assert [i["id"] for i in body["items"]] == ["proc", "can1", "unas", "e2", "e3", "e4"]
     assert body["counts"] == {"total": 9, "completed": 2, "remaining": 7}
-    assert body["items"][0]["staffName"] == "Elif Demir"
+    assert body["items"][0]["staffName"] == "Elif D."
     assert body["items"][0]["phase"] == "processing"
     assert body["generatedAt"] == NOW.isoformat()
     assert body["privacyMode"] == "full"

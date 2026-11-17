@@ -76,6 +76,16 @@ def display_name(full: str | None, mode: Literal["initials", "full", "hidden"]) 
     return f"{_capitalize(words[0])} {_tr_upper(words[-1][0])}."
 
 
+def staff_display(full: str | None) -> str | None:
+    """Staff name for cards/widget: first name(s) plus the initial of the last word."""
+    words = (full or "").split()
+    if not words:
+        return None
+    if len(words) == 1:
+        return _capitalize(words[0])
+    return " ".join(_capitalize(w) for w in words[:-1]) + f" {_tr_upper(words[-1][0])}."
+
+
 def _processing_relevance(start: datetime, end: datetime | None) -> float:
     """100..199, higher for an earlier end; independent of the push time.
 
@@ -118,7 +128,7 @@ def build_content_state(
         "endLabel": end.strftime("%H:%M"),
         "customerDisplay": display_name(apt.get("customer_name"), privacy_mode),
         "serviceName": (apt.get("service_name") or "")[:SERVICE_NAME_MAX],
-        "staffName": staff_name,
+        "staffName": staff_display(staff_name),
         "version": version,
         "appointmentId": str(apt["id"]),
         "icon": icon,
