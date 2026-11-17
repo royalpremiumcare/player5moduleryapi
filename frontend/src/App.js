@@ -64,6 +64,8 @@ import {
   handleCheckoutDeepLink,
   subscribeCheckoutEvents,
 } from "@/lib/inAppSubscribe";
+import { parseAppDeepLink } from "@/lib/deepLinks";
+import { savePending, takePending } from "@/lib/pendingDeepLink";
 
 const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
   ? registerPlugin('FCMTokenPlugin')
@@ -1074,6 +1076,9 @@ function App() {
     loadStatsRef.current = loadStats;
   }, [userRole, currentUser, loadAppointments, loadStats]);
 
+  // Widget / Live Activity derin bağlantıları: giriş yoksa beklet, varsa uygula
+  const routeDeepLinkRef = useRef(() => {});
+
   // Deep link handling for native apps (Stripe payment success/cancel)
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -1087,8 +1092,17 @@ function App() {
       } else if (parsed.kind === 'cancel') {
         setCurrentView('subscribe');
         setShowForm(false);
+      } else {
+        routeDeepLinkRef.current(parseAppDeepLink(event.url));
       }
     });
+
+    // Uygulama kapalıyken widget/LA ile açıldıysa ilk URL'i bir kez işle
+    CapacitorApp.getLaunchUrl()
+      .then((launch) => {
+        if (launch?.url) routeDeepLinkRef.current(parseAppDeepLink(launch.url));
+      })
+      .catch(() => {});
 
     const unsubCheckout = subscribeCheckoutEvents((event) => {
       if (event.type === 'upgraded') {
@@ -1544,6 +1558,33 @@ function App() {
     setSelectedAppointment(null);
     setShowForm(true);
   };
+
+  const applyDeepLink = (intent) => {
+    if (!intent) return;
+    if (intent.kind === 'appointment') {
+      setCurrentView('dashboard');
+      setDetailAppointmentId(String(intent.id));
+    } else if (intent.kind === 'new-appointment') {
+      setCurrentView('dashboard');
+      // Form zaten açıksa içeriğine dokunma
+      if (!showForm) handleNewAppointment();
+    }
+  };
+
+  routeDeepLinkRef.current = (intent) => {
+    if (!intent) return;
+    if (!token || !currentUser) {
+      savePending(intent);
+      return;
+    }
+    applyDeepLink(intent);
+  };
+
+  // Giriş sonrası bekleyen derin bağlantıyı bir kez uygula
+  useEffect(() => {
+    if (!token || !currentUser) return;
+    applyDeepLink(takePending(Date.now()));
+  }, [token, currentUser]);
 
 
   return (
