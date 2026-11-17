@@ -76,4 +76,39 @@ describe('deepLinkInbox', () => {
     mockUrlListener({ url: 'plannapp://appointment/9' });
     expect(events).toHaveLength(1);
   });
+
+  it('keeps the last unclaimed url and hands it out once', async () => {
+    start();
+    await flush();
+    mockUrlListener({ url: 'plannapp://checkout/success?session_id=abc' });
+    expect(events).toEqual([]);
+    const { takeUnclaimedUrl } = require('./deepLinkInbox');
+    expect(takeUnclaimedUrl()).toBe('plannapp://checkout/success?session_id=abc');
+    expect(takeUnclaimedUrl()).toBeNull();
+  });
+
+  it('skips a launch url already handled in this session (new runtime after logout)', async () => {
+    mockLaunchUrl = 'plannapp://appointment/5';
+    start();
+    await flush();
+    expect(takePending(Date.now())).toEqual({ kind: 'appointment', id: '5' });
+
+    jest.resetModules();
+    require('./deepLinkInbox').startDeepLinkInbox();
+    await flush();
+    expect(mockGetLaunchUrl).toHaveBeenCalledTimes(2);
+    expect(takePending(Date.now())).toBeNull();
+  });
+
+  it('a different launch url in a later runtime is handled', async () => {
+    mockLaunchUrl = 'plannapp://appointment/5';
+    start();
+    await flush();
+    takePending(Date.now());
+    jest.resetModules();
+    mockLaunchUrl = 'plannapp://appointment/6';
+    require('./deepLinkInbox').startDeepLinkInbox();
+    await flush();
+    expect(takePending(Date.now())).toEqual({ kind: 'appointment', id: '6' });
+  });
 });

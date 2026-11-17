@@ -88,3 +88,11 @@ test('logout without a stored token skips the Live Activity unregister', async (
   expect(la.unregister).not.toHaveBeenCalled();
   expect(events.map((e) => e[0])).toEqual(['navigate']);
 });
+
+test('logout clears a pending widget deep link so the next user does not inherit it', async () => {
+  const { savePending, takePending } = require('../lib/pendingDeepLink');
+  await renderWithStoredToken(TOKEN);
+  savePending({ kind: 'appointment', id: '9' });
+  await act(async () => { await auth.logout(); });
+  expect(takePending(Date.now())).toBeNull();
+});

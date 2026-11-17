@@ -3,6 +3,7 @@ import axios from 'axios';
 import api from '../api/api';
 import i18n from '../i18n';
 import posthog from '../lib/posthog';
+import { clearPending } from '../lib/pendingDeepLink';
 import { unregister as unregisterLiveActivities } from '../native/liveActivities';
 
 function localizeRegisterError(detail) {
@@ -265,6 +266,9 @@ export const AuthProvider = ({ children }) => {
       console.warn('Push unsubscribe error (ignored):', error);
     }
     
+    // Bekleyen widget/LA bağlantısını sonraki kullanıcı devralmasın
+    try { clearPending(); } catch (_) {}
+
     // PostHog reset — sonraki kullanıcının funnel'ı temiz başlasın
     try { posthog.reset(); } catch (_) {}
 

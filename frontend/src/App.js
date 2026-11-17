@@ -65,7 +65,7 @@ import {
   subscribeCheckoutEvents,
 } from "@/lib/inAppSubscribe";
 import { takePending } from "@/lib/pendingDeepLink";
-import { DEEP_LINK_EVENT } from "@/native/deepLinkInbox";
+import { DEEP_LINK_EVENT, takeUnclaimedUrl } from "@/native/deepLinkInbox";
 
 const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
   ? registerPlugin('FCMTokenPlugin')
@@ -76,7 +76,7 @@ const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() =
 const NOTIFICATION_LOOKBACK_DAYS = 7;
 
 function App() {
-  const { logout, userRole, token } = useAuth();
+  const { logout, userRole, token, canViewAll } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { t, i18n } = useTranslation();
   const bottomNavRef = useRef(null);
@@ -1080,9 +1080,9 @@ function App() {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
-    const handleDeepLink = CapacitorApp.addListener('appUrlOpen', async (event) => {
-      console.log('🔗 Deep link received:', event.url);
-      const parsed = await handleCheckoutDeepLink(event.url);
+    const onUrl = async (url) => {
+      console.log('🔗 Deep link received:', url);
+      const parsed = await handleCheckoutDeepLink(url);
       if (parsed.kind === 'success') {
         setCurrentView('subscribe');
         setShowForm(false);
@@ -1090,7 +1090,13 @@ function App() {
         setCurrentView('subscribe');
         setShowForm(false);
       }
-    });
+    };
+
+    const handleDeepLink = CapacitorApp.addListener('appUrlOpen', (event) => onUrl(event.url));
+
+    // deepLinkInbox ilk dinleyici olduğundan, App bağlanmadan gelen (tutulan) checkout URL'ini o saklar
+    const missed = takeUnclaimedUrl();
+    if (missed) onUrl(missed);
 
     const unsubCheckout = subscribeCheckoutEvents((event) => {
       if (event.type === 'upgraded') {
@@ -2081,7 +2087,7 @@ function App() {
         <AppointmentDetail
           appointmentId={detailAppointmentId}
           userRole={userRole}
-          canViewAll={currentUser?.can_view_all_appointments}
+          canViewAll={currentUser?.can_view_all_appointments ?? canViewAll}
           onClose={() => {
             setDetailAppointmentId(null);
             setShowForm(false);
