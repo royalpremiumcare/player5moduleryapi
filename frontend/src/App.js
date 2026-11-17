@@ -64,8 +64,8 @@ import {
   handleCheckoutDeepLink,
   subscribeCheckoutEvents,
 } from "@/lib/inAppSubscribe";
-import { parseAppDeepLink } from "@/lib/deepLinks";
-import { savePending, takePending } from "@/lib/pendingDeepLink";
+import { takePending } from "@/lib/pendingDeepLink";
+import { DEEP_LINK_EVENT } from "@/native/deepLinkInbox";
 
 const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
   ? registerPlugin('FCMTokenPlugin')
@@ -1076,9 +1076,6 @@ function App() {
     loadStatsRef.current = loadStats;
   }, [userRole, currentUser, loadAppointments, loadStats]);
 
-  // Widget / Live Activity derin bağlantıları: giriş yoksa beklet, varsa uygula
-  const routeDeepLinkRef = useRef(() => {});
-
   // Deep link handling for native apps (Stripe payment success/cancel)
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -1092,17 +1089,8 @@ function App() {
       } else if (parsed.kind === 'cancel') {
         setCurrentView('subscribe');
         setShowForm(false);
-      } else {
-        routeDeepLinkRef.current(parseAppDeepLink(event.url));
       }
     });
-
-    // Uygulama kapalıyken widget/LA ile açıldıysa ilk URL'i bir kez işle
-    CapacitorApp.getLaunchUrl()
-      .then((launch) => {
-        if (launch?.url) routeDeepLinkRef.current(parseAppDeepLink(launch.url));
-      })
-      .catch(() => {});
 
     const unsubCheckout = subscribeCheckoutEvents((event) => {
       if (event.type === 'upgraded') {
@@ -1563,6 +1551,7 @@ function App() {
     if (!intent) return;
     if (intent.kind === 'appointment') {
       setCurrentView('dashboard');
+      setShowForm(false);
       setDetailAppointmentId(String(intent.id));
     } else if (intent.kind === 'new-appointment') {
       setCurrentView('dashboard');
@@ -1571,20 +1560,23 @@ function App() {
     }
   };
 
-  routeDeepLinkRef.current = (intent) => {
-    if (!intent) return;
-    if (!token || !currentUser) {
-      savePending(intent);
-      return;
-    }
-    applyDeepLink(intent);
-  };
-
-  // Giriş sonrası bekleyen derin bağlantıyı bir kez uygula
+  // Widget / Live Activity bağlantıları deepLinkInbox'ta dokunma anında bekletilir.
+  // Hazır olunca (staff için currentUser yüklenmez; admin için Aha kararı gerekir) bir kez uygula.
+  const deepLinkReady = !!token && (userRole !== 'admin' || !!currentUser);
+  const tryApplyPendingRef = useRef(() => {});
   useEffect(() => {
-    if (!token || !currentUser) return;
-    applyDeepLink(takePending(Date.now()));
-  }, [token, currentUser]);
+    tryApplyPendingRef.current = () => {
+      if (deepLinkReady) applyDeepLink(takePending(Date.now()));
+    };
+  });
+  useEffect(() => {
+    tryApplyPendingRef.current();
+  }, [deepLinkReady]);
+  useEffect(() => {
+    const onDeepLink = () => tryApplyPendingRef.current();
+    window.addEventListener(DEEP_LINK_EVENT, onDeepLink);
+    return () => window.removeEventListener(DEEP_LINK_EVENT, onDeepLink);
+  }, []);
 
 
   return (
@@ -2085,7 +2077,7 @@ function App() {
           Bildirimler sayfasından açıldıysa kapatınca oraya geri döner (Ayarlar
           view'i korunur → Settings zaten bildirimler alt sayfasında kalır);
           diğer durumlarda dashboard'a döner. */}
-      {token && currentUser && detailAppointmentId && (
+      {token && detailAppointmentId && (userRole !== 'admin' || currentUser) && (
         <AppointmentDetail
           appointmentId={detailAppointmentId}
           userRole={userRole}

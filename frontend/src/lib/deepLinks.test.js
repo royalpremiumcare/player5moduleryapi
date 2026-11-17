@@ -12,7 +12,7 @@ describe('parseAppDeepLink', () => {
 
   it('parses appointment id', () => {
     expect(parseAppDeepLink('plannapp://appointment/123')).toEqual({ kind: 'appointment', id: '123' });
-    expect(parseAppDeepLink('plannapp://appointment/ab%20c?x=1')).toEqual({ kind: 'appointment', id: 'ab c' });
+    expect(parseAppDeepLink('plannapp://appointment/abc%5F1?x=1')).toEqual({ kind: 'appointment', id: 'abc_1' });
   });
 
   it('rejects other schemes and empty id', () => {
@@ -21,6 +21,8 @@ describe('parseAppDeepLink', () => {
     expect(parseAppDeepLink('plannapp://appointment/')).toBeNull();
     expect(parseAppDeepLink('plannapp://appointment')).toBeNull();
     expect(parseAppDeepLink('plannapp://appointment/%E0%A4%A')).toBeNull();
+    expect(parseAppDeepLink('plannapp://appointment/..%2Fusers')).toBeNull();
+    expect(parseAppDeepLink('plannapp://appointment/' + 'a'.repeat(65))).toBeNull();
     expect(parseAppDeepLink(undefined)).toBeNull();
     expect(parseAppDeepLink('')).toBeNull();
   });

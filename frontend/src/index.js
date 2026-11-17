@@ -11,6 +11,10 @@ import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import posthog from './lib/posthog';
 import metaPixel from './lib/metaPixel';
+import { startDeepLinkInbox } from './native/deepLinkInbox';
+
+// Widget / Live Activity derin bağlantıları: auth kapısından bağımsız, bir kez
+startDeepLinkInbox();
 
 // === POSTHOG ANALYTICS ===
 // REACT_APP_POSTHOG_KEY yoksa otomatik olarak no-op'a düşer; ledger POST'ları yine çalışır.

@@ -20,7 +20,7 @@ export function parseAppDeepLink(url) {
     if (!segments[0]) return null;
     try {
       const id = decodeURIComponent(segments[0]);
-      return id ? { kind: 'appointment', id } : null;
+      return /^[A-Za-z0-9_-]{1,64}$/.test(id) ? { kind: 'appointment', id } : null;
     } catch {
       return null;
     }
