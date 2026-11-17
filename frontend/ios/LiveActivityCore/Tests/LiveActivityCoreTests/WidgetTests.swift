@@ -80,6 +80,31 @@ final class WidgetTests: XCTestCase {
         XCTAssertEqual(widgetDay(s, at: Self.t0).rows.map(\.id), ["p1", "p2", "u1", "u2"])
     }
 
+    func testEqualStartOrEndBrokenById() {
+        let b = Self.base
+        let s = summary([item("u-b", b + 600, b + 900), item("u-a", b + 600, b + 1200),
+                         item("p-b", b - 100, b + 300, .processing), item("p-a", b - 200, b + 300, .processing)])
+        XCTAssertEqual(widgetDay(s, at: Self.t0).rows.map(\.id), ["p-a", "p-b", "u-a", "u-b"])
+    }
+
+    func testCacheEnvelopeRoundTripsWithPlainCoders() throws {
+        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: try fixture(),
+                                      fetchedAt: Date(timeIntervalSince1970: Self.base + 0.5))
+        let data = try XCTUnwrap(env.encoded())
+        // Plain JSONDecoder (default date strategy) reads what encoded() wrote, and the reverse.
+        let plain = try JSONDecoder().decode(WidgetCacheEnvelope.self, from: data)
+        XCTAssertEqual(plain.fetchedAt, env.fetchedAt)
+        let back = try XCTUnwrap(WidgetCacheEnvelope.decode(try JSONEncoder().encode(env)))
+        XCTAssertEqual(back.summary, env.summary)
+        XCTAssertEqual(back.keyHash, env.keyHash)
+        XCTAssertEqual(back.fetchedAt, env.fetchedAt)
+    }
+
+    func testCacheEnvelopeDecodeRejectsGarbage() {
+        XCTAssertNil(WidgetCacheEnvelope.decode(nil))
+        XCTAssertNil(WidgetCacheEnvelope.decode(Data("not json".utf8)))
+    }
+
     func testEntryDatesBoundariesDedupedCapped() throws {
         let s = try fixture()
         let d = entryDates(s, from: Self.t0)

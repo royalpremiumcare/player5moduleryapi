@@ -38,6 +38,14 @@
 		B2C3D4E5F60718290000012D /* PlannLiveActivityPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718290000012C /* PlannLiveActivityPlugin.m */; };
 		B2C3D4E5F607182900000131 /* WidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000130 /* WidgetBridge.swift */; };
 		B2C3D4E5F607182900000135 /* WidgetCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000134 /* WidgetCredentialStore.swift */; };
+		B2C3D4E5F607182900000132 /* WidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000130 /* WidgetBridge.swift */; };
+		B2C3D4E5F607182900000136 /* WidgetCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000134 /* WidgetCredentialStore.swift */; };
+		B2C3D4E5F60718290000013A /* WidgetModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000138 /* WidgetModel.swift */; };
+		B2C3D4E5F60718290000013E /* WidgetTimelineLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718290000013C /* WidgetTimelineLogic.swift */; };
+		B2C3D4E5F607182900000142 /* WidgetAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000140 /* WidgetAPI.swift */; };
+		B2C3D4E5F607182900000146 /* WidgetPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000144 /* WidgetPresentation.swift */; };
+		B2C3D4E5F60718290000014A /* TodayWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000148 /* TodayWidget.swift */; };
+		B2C3D4E5F60718290000014E /* TodayWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718290000014C /* TodayWidgetViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -100,6 +108,12 @@
 		B2C3D4E5F60718290000012C /* PlannLiveActivityPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PlannLiveActivityPlugin.m; sourceTree = "<group>"; };
 		B2C3D4E5F607182900000130 /* WidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/WidgetBridge.swift; sourceTree = "<group>"; };
 		B2C3D4E5F607182900000134 /* WidgetCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetCredentialStore.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000138 /* WidgetModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/WidgetModel.swift; sourceTree = "<group>"; };
+		B2C3D4E5F60718290000013C /* WidgetTimelineLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/WidgetTimelineLogic.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000140 /* WidgetAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/WidgetAPI.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000144 /* WidgetPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/WidgetPresentation.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000148 /* TodayWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidget.swift; sourceTree = "<group>"; };
+		B2C3D4E5F60718290000014C /* TodayWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgetViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -204,6 +218,10 @@
 				B2C3D4E5F60718290000010C /* ReconcileLogic.swift */,
 				B2C3D4E5F607182900000118 /* CoordinatorLogic.swift */,
 				B2C3D4E5F607182900000130 /* WidgetBridge.swift */,
+				B2C3D4E5F607182900000138 /* WidgetModel.swift */,
+				B2C3D4E5F60718290000013C /* WidgetTimelineLogic.swift */,
+				B2C3D4E5F607182900000140 /* WidgetAPI.swift */,
+				B2C3D4E5F607182900000144 /* WidgetPresentation.swift */,
 			);
 			name = LiveActivityCore;
 			sourceTree = "<group>";
@@ -214,6 +232,8 @@
 				B2C3D4E5F60718290000000D /* Info.plist */,
 				B2C3D4E5F607182900000110 /* PlannWidgetsBundle.swift */,
 				B2C3D4E5F607182900000114 /* AppointmentLiveActivity.swift */,
+				B2C3D4E5F607182900000148 /* TodayWidget.swift */,
+				B2C3D4E5F60718290000014C /* TodayWidgetViews.swift */,
 			);
 			path = PlannWidgets;
 			sourceTree = "<group>";
@@ -394,6 +414,14 @@
 				B2C3D4E5F607182900000106 /* ContentModel.swift in Sources */,
 				B2C3D4E5F607182900000112 /* PlannWidgetsBundle.swift in Sources */,
 				B2C3D4E5F607182900000116 /* AppointmentLiveActivity.swift in Sources */,
+				B2C3D4E5F607182900000132 /* WidgetBridge.swift in Sources */,
+				B2C3D4E5F607182900000136 /* WidgetCredentialStore.swift in Sources */,
+				B2C3D4E5F60718290000013A /* WidgetModel.swift in Sources */,
+				B2C3D4E5F60718290000013E /* WidgetTimelineLogic.swift in Sources */,
+				B2C3D4E5F607182900000142 /* WidgetAPI.swift in Sources */,
+				B2C3D4E5F607182900000146 /* WidgetPresentation.swift in Sources */,
+				B2C3D4E5F60718290000014A /* TodayWidget.swift in Sources */,
+				B2C3D4E5F60718290000014E /* TodayWidgetViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

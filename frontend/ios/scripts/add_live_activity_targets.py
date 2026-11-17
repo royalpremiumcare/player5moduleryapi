@@ -80,9 +80,21 @@ FILES = [
     dict(k=11, name="PlannLiveActivityPlugin.m", path="PlannLiveActivityPlugin.m",
          group="App", disk="App/PlannLiveActivityPlugin.m", targets=("App",)),
     dict(k=12, name="WidgetBridge.swift", path=CORE + "WidgetBridge.swift",
-         group="LiveActivityCore", disk=CORE + "WidgetBridge.swift", targets=("App",)),
+         group="LiveActivityCore", disk=CORE + "WidgetBridge.swift", targets=("App", EXT)),
     dict(k=13, name="WidgetCredentialStore.swift", path="WidgetCredentialStore.swift",
-         group="App", disk="App/WidgetCredentialStore.swift", targets=("App",)),
+         group="App", disk="App/WidgetCredentialStore.swift", targets=("App", EXT)),
+    dict(k=14, name="WidgetModel.swift", path=CORE + "WidgetModel.swift",
+         group="LiveActivityCore", disk=CORE + "WidgetModel.swift", targets=(EXT,)),
+    dict(k=15, name="WidgetTimelineLogic.swift", path=CORE + "WidgetTimelineLogic.swift",
+         group="LiveActivityCore", disk=CORE + "WidgetTimelineLogic.swift", targets=(EXT,)),
+    dict(k=16, name="WidgetAPI.swift", path=CORE + "WidgetAPI.swift",
+         group="LiveActivityCore", disk=CORE + "WidgetAPI.swift", targets=(EXT,)),
+    dict(k=17, name="WidgetPresentation.swift", path=CORE + "WidgetPresentation.swift",
+         group="LiveActivityCore", disk=CORE + "WidgetPresentation.swift", targets=(EXT,)),
+    dict(k=18, name="TodayWidget.swift", path="TodayWidget.swift",
+         group=EXT, disk="PlannWidgets/TodayWidget.swift", targets=(EXT,)),
+    dict(k=19, name="TodayWidgetViews.swift", path="TodayWidgetViews.swift",
+         group=EXT, disk="PlannWidgets/TodayWidgetViews.swift", targets=(EXT,)),
 ]
 FILE_TYPES = {".swift": "sourcecode.swift", ".m": "sourcecode.c.objc"}
 for f in FILES:
@@ -333,19 +345,18 @@ def apply(path):
             f"\t\t{uid} /* {name} */ = {{\n\t\t\tisa = PBXGroup;\n\t\t\tchildren = (\n{kids}\t\t\t);\n{pathline}\t\t\tsourceTree = \"<group>\";\n\t\t}};\n")
         src = add_to_list(src, MAIN_GROUP, "children", f"\t\t\t\t{uid} /* {name} */,\n")
 
-    # ---- files
+    # ---- files (a target added later to an existing file gets its own build file)
     for f in FILES:
-        if has(f["ref"]) or f["ref"] + " /*" in src:
-            continue
-        src = insert_before(src, "/* End PBXFileReference section */",
-            f"\t\t{f['ref']} /* {f['name']} */ = {{isa = PBXFileReference; lastKnownFileType = {f['ftype']}; path = {f['path']}; sourceTree = \"<group>\"; }};\n")
-        bfs = ""
+        if not (has(f["ref"]) or f["ref"] + " /*" in src):
+            src = insert_before(src, "/* End PBXFileReference section */",
+                f"\t\t{f['ref']} /* {f['name']} */ = {{isa = PBXFileReference; lastKnownFileType = {f['ftype']}; path = {f['path']}; sourceTree = \"<group>\"; }};\n")
+            gid = GROUPS[f["group"]][0] if f["group"] in GROUPS else EXISTING_GROUPS[f["group"]]
+            src = add_to_list(src, gid, "children", f"\t\t\t\t{f['ref']} /* {f['name']} */,\n")
         for tgt in f["targets"]:
-            bfs += f"\t\t{f['bf'][tgt]} /* {f['name']} in Sources */ = {{isa = PBXBuildFile; fileRef = {f['ref']} /* {f['name']} */; }};\n"
-        src = insert_before(src, "/* End PBXBuildFile section */", bfs)
-        gid = GROUPS[f["group"]][0] if f["group"] in GROUPS else EXISTING_GROUPS[f["group"]]
-        src = add_to_list(src, gid, "children", f"\t\t\t\t{f['ref']} /* {f['name']} */,\n")
-        for tgt in f["targets"]:
+            if has(f["bf"][tgt]):
+                continue
+            src = insert_before(src, "/* End PBXBuildFile section */",
+                f"\t\t{f['bf'][tgt]} /* {f['name']} in Sources */ = {{isa = PBXBuildFile; fileRef = {f['ref']} /* {f['name']} */; }};\n")
             phase = APP_SOURCES if tgt == "App" else EXT_SOURCES
             src = add_to_list(src, phase, "files", f"\t\t\t\t{f['bf'][tgt]} /* {f['name']} in Sources */,\n")
 

@@ -15,6 +15,17 @@ public struct WidgetCacheEnvelope: Codable, Sendable {
     }
 }
 
+/// The cache file is written and read only through these, with plain coders (default date
+/// strategy) on both sides.
+public extension WidgetCacheEnvelope {
+    func encoded() -> Data? { try? JSONEncoder().encode(self) }
+
+    static func decode(_ data: Data?) -> WidgetCacheEnvelope? {
+        guard let data else { return nil }
+        return try? JSONDecoder().decode(WidgetCacheEnvelope.self, from: data)
+    }
+}
+
 /// A cached summary is only usable by the credential that fetched it.
 public func usableCache(_ env: WidgetCacheEnvelope?, currentKey: String?) -> WidgetSummary? {
     guard let env, let key = currentKey, sha256hex(key) == env.keyHash else { return nil }

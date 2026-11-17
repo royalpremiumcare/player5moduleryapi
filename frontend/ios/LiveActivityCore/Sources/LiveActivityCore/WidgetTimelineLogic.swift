@@ -33,7 +33,8 @@ public func widgetDay(_ s: WidgetSummary, at date: Date) -> WidgetDay {
     }
     rows.sort { a, b in
         if (a.row.phase == .processing) != (b.row.phase == .processing) { return a.row.phase == .processing }
-        return a.row.phase == .processing ? a.end < b.end : a.start < b.start
+        let (ka, kb) = a.row.phase == .processing ? (a.end, b.end) : (a.start, b.start)
+        return ka != kb ? ka < kb : a.row.id < b.row.id
     }
     let shifted = min(ended, s.counts.remaining)
     let counts = WidgetSummary.Counts(total: s.counts.total,
