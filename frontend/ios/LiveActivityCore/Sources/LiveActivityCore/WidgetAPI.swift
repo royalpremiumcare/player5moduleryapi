@@ -26,10 +26,61 @@ public extension WidgetCacheEnvelope {
     }
 }
 
-/// A cached summary is only usable by the credential that fetched it.
-public func usableCache(_ env: WidgetCacheEnvelope?, currentKey: String?) -> WidgetSummary? {
-    guard let env, let key = currentKey, sha256hex(key) == env.keyHash else { return nil }
+/// The salons' calendar: the summary's "today" is the Europe/Istanbul day (fixed UTC+3 since 2016,
+/// which is also the fallback if the zone database is missing).
+public let widgetTimeZone: TimeZone = TimeZone(identifier: "Europe/Istanbul") ?? TimeZone(secondsFromGMT: 3 * 3600)!
+
+private var widgetCalendar: Calendar {
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = widgetTimeZone
+    return cal
+}
+
+public func isSameTRDay(_ a: Date, _ b: Date) -> Bool {
+    widgetCalendar.isDate(a, inSameDayAs: b)
+}
+
+/// The next Europe/Istanbul midnight after `date`.
+public func nextTRMidnight(after date: Date) -> Date {
+    let cal = widgetCalendar
+    let start = cal.startOfDay(for: date)
+    return cal.date(byAdding: .day, value: 1, to: start) ?? date.addingTimeInterval(24 * 3600)
+}
+
+/// A cached summary is only usable by the credential that fetched it, and only on the TR calendar
+/// day it was generated: after midnight yesterday's counts and "Yarın ilk" line would be wrong.
+public func usableCache(_ env: WidgetCacheEnvelope?, currentKey: String?, now: Date) -> WidgetSummary? {
+    guard let env, let key = currentKey, sha256hex(key) == env.keyHash,
+          let generated = env.summary.generatedAtDate, isSameTRDay(generated, now) else { return nil }
     return env.summary
+}
+
+/// The result of one summary request, as the widget acts on it.
+public enum WidgetFetchOutcome: Equatable, Sendable {
+    case fetched(WidgetSummary)
+    /// 401: the key is revoked, expired or its user is inactive. The widget drops its cache and
+    /// shows signed out; the app re-issues a key the next time it comes to the foreground.
+    case unauthorized
+    /// No data: transport error, timeout, rate limit, any other status, bad JSON, or not attempted.
+    case unavailable
+}
+
+public func fetchOutcome(statusCode: Int?, data: Data?) -> WidgetFetchOutcome {
+    guard let statusCode else { return .unavailable }
+    if statusCode == 401 { return .unauthorized }
+    guard (200..<300).contains(statusCode), let data,
+          let summary = try? JSONDecoder().decode(WidgetSummary.self, from: data) else { return .unavailable }
+    return .fetched(summary)
+}
+
+/// Every widget instance (small, medium, lock screen...) runs its own timeline. Within this window
+/// after a fetch for the same key they reuse the cache instead of calling the server again.
+public let widgetFetchDedupInterval: TimeInterval = 60
+
+public func shouldSkipFetch(cache: WidgetCacheEnvelope?, currentKey: String?, now: Date) -> Bool {
+    guard let cache, usableCache(cache, currentKey: currentKey, now: now) != nil else { return false }
+    let age = now.timeIntervalSince(cache.fetchedAt)
+    return age >= 0 && age < widgetFetchDedupInterval
 }
 
 public func summaryRequest(baseURL: String, key: String) -> URLRequest? {

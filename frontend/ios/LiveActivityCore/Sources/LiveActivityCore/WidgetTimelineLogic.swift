@@ -53,10 +53,22 @@ public func entryDates(_ s: WidgetSummary, from now: Date) -> [Date] {
     Array(([now] + futureBoundaries(s, after: now)).prefix(60))
 }
 
-public func nextReload(_ s: WidgetSummary?, from now: Date) -> Date {
-    let cap = now.addingTimeInterval(15 * 60)
-    guard let s, let next = futureBoundaries(s, after: now).first else { return cap }
-    return min(next, cap)
+/// The next boundary, capped at 15 min. With nothing left today the cap is 60 min (or the TR
+/// midnight, if sooner, so the new day loads); signed out / unreachable retry every 15 min.
+/// `retryAt` pulls the reload forward, e.g. right after a fetch skipped in favour of a fresh cache.
+public func nextReload(_ s: WidgetSummary?, from now: Date, retryAt: Date? = nil) -> Date {
+    var candidates: [Date]
+    if let s {
+        if let next = futureBoundaries(s, after: now).first {
+            candidates = [next, now.addingTimeInterval(15 * 60)]
+        } else {
+            candidates = [now.addingTimeInterval(60 * 60), nextTRMidnight(after: now)]
+        }
+    } else {
+        candidates = [now.addingTimeInterval(15 * 60)]
+    }
+    if let retryAt { candidates.append(retryAt) }
+    return candidates.min()!
 }
 
 public func rows(for family: WidgetFamilyKind, _ day: WidgetDay) -> [WidgetRow] {

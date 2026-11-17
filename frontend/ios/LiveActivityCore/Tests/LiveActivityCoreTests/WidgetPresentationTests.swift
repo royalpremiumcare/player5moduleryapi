@@ -19,25 +19,38 @@ final class WidgetPresentationTests: XCTestCase {
 
     // MARK: content resolution (Review Focus 1 and 5)
 
+    let now = Date(timeIntervalSince1970: 1794913200) // 2026-11-17T14:00:00+03:00, same day as summary()
+
     func testNoCredentialIsSignedOutEvenWithACache() {
         let s = summary()
-        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: s, fetchedAt: Date())
-        XCTAssertEqual(widgetContent(fetched: nil, cache: env, currentKey: nil), .signedOut)
-        XCTAssertEqual(widgetContent(fetched: s, cache: env, currentKey: nil), .signedOut)
+        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: s, fetchedAt: now)
+        XCTAssertEqual(widgetContent(.unavailable, cache: env, currentKey: nil, now: now), .signedOut)
+        XCTAssertEqual(widgetContent(.fetched(s), cache: env, currentKey: nil, now: now), .signedOut)
     }
 
     func testFreshFetchWins() {
         let fresh = summary(orgName: "Yeni")
-        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: summary(orgName: "Eski"), fetchedAt: Date())
-        XCTAssertEqual(widgetContent(fetched: fresh, cache: env, currentKey: "k"), .summary(fresh))
+        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: summary(orgName: "Eski"), fetchedAt: now)
+        XCTAssertEqual(widgetContent(.fetched(fresh), cache: env, currentKey: "k", now: now), .summary(fresh))
     }
 
     func testFailedFetchFallsBackToMatchingCacheOnly() {
         let cached = summary(orgName: "Eski")
-        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: cached, fetchedAt: Date())
-        XCTAssertEqual(widgetContent(fetched: nil, cache: env, currentKey: "k"), .summary(cached))
-        XCTAssertEqual(widgetContent(fetched: nil, cache: env, currentKey: "other"), .unreachable)
-        XCTAssertEqual(widgetContent(fetched: nil, cache: nil, currentKey: "k"), .unreachable)
+        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: cached, fetchedAt: now)
+        XCTAssertEqual(widgetContent(.unavailable, cache: env, currentKey: "k", now: now), .summary(cached))
+        XCTAssertEqual(widgetContent(.unavailable, cache: env, currentKey: "other", now: now), .unreachable)
+        XCTAssertEqual(widgetContent(.unavailable, cache: nil, currentKey: "k", now: now), .unreachable)
+    }
+
+    func testFailedFetchAfterMidnightIsUnreachableNotYesterday() {
+        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: summary(orgName: "Eski"), fetchedAt: now)
+        let tomorrow = now.addingTimeInterval(11 * 3600) // 01:00 the next day in Istanbul
+        XCTAssertEqual(widgetContent(.unavailable, cache: env, currentKey: "k", now: tomorrow), .unreachable)
+    }
+
+    func testUnauthorizedIsSignedOutEvenWithAMatchingCache() {
+        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: summary(orgName: "Eski"), fetchedAt: now)
+        XCTAssertEqual(widgetContent(.unauthorized, cache: env, currentKey: "k", now: now), .signedOut)
     }
 
     // MARK: copy

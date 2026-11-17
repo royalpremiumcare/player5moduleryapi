@@ -26,7 +26,8 @@ struct TodayProvider: TimelineProvider {
         // Privacy: outside the gallery the snapshot shows the real state (signed out, unreachable or
         // this key's cache), never sample rows, so a signed-in salon never sees made-up customer names.
         let key = WidgetCredentialStore.read()?.key
-        completion(TodayEntry(date: now, content: widgetContent(fetched: nil, cache: TodayCache.read(), currentKey: key)))
+        completion(TodayEntry(date: now, content: widgetContent(.unavailable, cache: TodayCache.read(), currentKey: key,
+                                                                now: now)))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
@@ -41,14 +42,30 @@ struct TodayProvider: TimelineProvider {
                                 policy: .after(nextReload(nil, from: now))))
             return
         }
+        // Every placed widget (small, medium, lock screen...) asks for its own timeline, often in the
+        // same burst: one fetch per key per minute serves them all, and the skipped ones reload once
+        // that minute is over so an in-app change made meanwhile still arrives.
+        if let cache = TodayCache.read(), shouldSkipFetch(cache: cache, currentKey: credential.key, now: now) {
+            let content = widgetContent(.unavailable, cache: cache, currentKey: credential.key, now: now)
+            completion(TodayTimeline.make(content, now: now,
+                                          retryAt: cache.fetchedAt.addingTimeInterval(widgetFetchDedupInterval)))
+            return
+        }
         Task {
-            let fetched = await TodayFetcher.fetch(baseURL: credential.baseURL, key: credential.key)
-            if let fetched {
-                TodayCache.write(WidgetCacheEnvelope(keyHash: sha256hex(credential.key), summary: fetched,
+            let outcome = await TodayFetcher.fetch(baseURL: credential.baseURL, key: credential.key)
+            switch outcome {
+            case .fetched(let summary):
+                TodayCache.write(WidgetCacheEnvelope(keyHash: sha256hex(credential.key), summary: summary,
                                                      fetchedAt: Date()))
+            case .unauthorized:
+                // Revoked or expired key: drop this key's rows and show signed out. The Keychain item
+                // stays; the app replaces it with a fresh key the next time it is opened.
+                TodayCache.remove()
+            case .unavailable:
+                break
             }
-            let content = widgetContent(fetched: fetched, cache: fetched == nil ? TodayCache.read() : nil,
-                                        currentKey: credential.key)
+            let content = widgetContent(outcome, cache: outcome == .unavailable ? TodayCache.read() : nil,
+                                        currentKey: credential.key, now: now)
             completion(TodayTimeline.make(content, now: now))
         }
     }
@@ -56,32 +73,34 @@ struct TodayProvider: TimelineProvider {
 
 enum TodayTimeline {
     /// One entry now and one at every start and end, so rows roll from upcoming to processing to
-    /// gone without network; reload at the next boundary or in 15 minutes, whichever is first.
-    static func make(_ content: WidgetContent, now: Date) -> Timeline<TodayEntry> {
+    /// gone without network; reload policy from `nextReload` (next boundary or 15 min; 60 min or
+    /// midnight when nothing is left today; sooner when `retryAt` asks for it).
+    static func make(_ content: WidgetContent, now: Date, retryAt: Date? = nil) -> Timeline<TodayEntry> {
         guard case .summary(let summary) = content else {
-            return Timeline(entries: [TodayEntry(date: now, content: content)], policy: .after(nextReload(nil, from: now)))
+            return Timeline(entries: [TodayEntry(date: now, content: content)],
+                            policy: .after(nextReload(nil, from: now, retryAt: retryAt)))
         }
         let entries = entryDates(summary, from: now).map { TodayEntry(date: $0, content: content) }
-        return Timeline(entries: entries, policy: .after(nextReload(summary, from: now)))
+        return Timeline(entries: entries, policy: .after(nextReload(summary, from: now, retryAt: retryAt)))
     }
 }
 
 enum TodayFetcher {
-    /// The summary, or nil on any failure (no request, transport error, non-2xx, bad JSON, or 10 s).
-    static func fetch(baseURL: String, key: String) async -> WidgetSummary? {
-        guard let request = summaryRequest(baseURL: baseURL, key: key) else { return nil }
-        return await withTaskGroup(of: WidgetSummary?.self, returning: WidgetSummary?.self) { group in
+    /// The summary, `.unauthorized` on 401, otherwise `.unavailable` (no request, transport error,
+    /// other status, bad JSON, or 10 s). The status mapping is `fetchOutcome` in LiveActivityCore.
+    static func fetch(baseURL: String, key: String) async -> WidgetFetchOutcome {
+        guard let request = summaryRequest(baseURL: baseURL, key: key) else { return .unavailable }
+        return await withTaskGroup(of: WidgetFetchOutcome.self, returning: WidgetFetchOutcome.self) { group in
             group.addTask {
-                guard let result = try? await URLSession.shared.data(for: request) else { return nil }
+                guard let result = try? await URLSession.shared.data(for: request) else { return .unavailable }
                 let (data, response) = result
-                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
-                return try? JSONDecoder().decode(WidgetSummary.self, from: data)
+                return fetchOutcome(statusCode: (response as? HTTPURLResponse)?.statusCode, data: data)
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: 10_000_000_000)
-                return nil
+                return .unavailable
             }
-            let first: WidgetSummary? = (await group.next()) ?? nil
+            let first = (await group.next()) ?? .unavailable
             group.cancelAll()
             return first
         }

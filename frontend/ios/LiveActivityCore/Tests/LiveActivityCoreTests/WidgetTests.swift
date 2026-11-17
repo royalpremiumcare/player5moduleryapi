@@ -156,14 +156,14 @@ final class WidgetTests: XCTestCase {
     func testCacheUsableOnlyWithMatchingKey() throws {
         let s = summary([])
         let env = WidgetCacheEnvelope(keyHash: sha256hex("key-1"), summary: s, fetchedAt: Self.t0)
-        XCTAssertEqual(usableCache(env, currentKey: "key-1"), s)
-        XCTAssertNil(usableCache(env, currentKey: "key-2"))
+        XCTAssertEqual(usableCache(env, currentKey: "key-1", now: Self.t0), s)
+        XCTAssertNil(usableCache(env, currentKey: "key-2", now: Self.t0))
     }
 
     func testCacheNilWithoutKey() {
         let env = WidgetCacheEnvelope(keyHash: sha256hex(""), summary: summary([]), fetchedAt: Self.t0)
-        XCTAssertNil(usableCache(env, currentKey: nil))
-        XCTAssertNil(usableCache(nil, currentKey: "k"))
+        XCTAssertNil(usableCache(env, currentKey: nil, now: Self.t0))
+        XCTAssertNil(usableCache(nil, currentKey: "k", now: Self.t0))
     }
 
     func testRequestRejectsHttp() {
@@ -177,5 +177,84 @@ final class WidgetTests: XCTestCase {
         XCTAssertEqual(r.httpMethod, "GET")
         XCTAssertEqual(r.value(forHTTPHeaderField: "X-Plann-Widget-Key"), "abc")
         XCTAssertEqual(r.timeoutInterval, 10)
+    }
+
+    // MARK: cache day, 401 and fetch de-duplication (final review Important 2 and 3)
+
+    func summary(generatedAt: String, _ items: [WidgetItem] = []) -> WidgetSummary {
+        var s = summary(items)
+        s.generatedAt = generatedAt
+        return s
+    }
+
+    func date(_ iso: String) throws -> Date { try XCTUnwrap(parseISO8601(iso)) }
+
+    func testSameTRDayAcrossMidnight() throws {
+        XCTAssertTrue(isSameTRDay(try date("2026-11-17T00:00:00+03:00"), try date("2026-11-17T23:59:59+03:00")))
+        XCTAssertFalse(isSameTRDay(try date("2026-11-17T23:59:00+03:00"), try date("2026-11-18T00:01:00+03:00")))
+        // 22:30 UTC is already the next day in Istanbul
+        XCTAssertFalse(isSameTRDay(try date("2026-11-17T20:00:00Z"), try date("2026-11-17T22:30:00Z")))
+        XCTAssertTrue(isSameTRDay(try date("2026-11-17T21:30:00Z"), try date("2026-11-18T20:00:00Z")))
+    }
+
+    func testCacheFromYesterdayIsNotUsable() throws {
+        let s = summary(generatedAt: "2026-11-17T23:59:00+03:00")
+        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: s, fetchedAt: try date("2026-11-17T23:59:00+03:00"))
+        XCTAssertEqual(usableCache(env, currentKey: "k", now: try date("2026-11-17T23:59:50+03:00")), s)
+        XCTAssertNil(usableCache(env, currentKey: "k", now: try date("2026-11-18T00:01:00+03:00")))
+    }
+
+    func testCacheWithUnparseableGeneratedAtIsNotUsable() {
+        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: summary(generatedAt: ""), fetchedAt: Self.t0)
+        XCTAssertNil(usableCache(env, currentKey: "k", now: Self.t0))
+    }
+
+    func testFetchOutcomeFromResponse() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "widget_summary", withExtension: "json", subdirectory: "Fixtures"))
+        let body = try Data(contentsOf: url)
+        XCTAssertEqual(fetchOutcome(statusCode: 200, data: body), .fetched(try fixture()))
+        XCTAssertEqual(fetchOutcome(statusCode: 200, data: Data("nope".utf8)), .unavailable)
+        XCTAssertEqual(fetchOutcome(statusCode: 401, data: Data()), .unauthorized)
+        XCTAssertEqual(fetchOutcome(statusCode: 429, data: body), .unavailable)
+        XCTAssertEqual(fetchOutcome(statusCode: 500, data: body), .unavailable)
+        XCTAssertEqual(fetchOutcome(statusCode: nil, data: nil), .unavailable)
+    }
+
+    func testSkipsFetchWhenThisKeysCacheIsUnder60sOld() {
+        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: summary([]), fetchedAt: Self.t0)
+        XCTAssertTrue(shouldSkipFetch(cache: env, currentKey: "k", now: Self.t0.addingTimeInterval(59)))
+        XCTAssertFalse(shouldSkipFetch(cache: env, currentKey: "k", now: Self.t0.addingTimeInterval(60)))
+        XCTAssertFalse(shouldSkipFetch(cache: env, currentKey: "other", now: Self.t0.addingTimeInterval(10)))
+        XCTAssertFalse(shouldSkipFetch(cache: nil, currentKey: "k", now: Self.t0))
+        XCTAssertFalse(shouldSkipFetch(cache: env, currentKey: nil, now: Self.t0))
+        // a clock that went backwards never pins the widget to its cache
+        XCTAssertFalse(shouldSkipFetch(cache: env, currentKey: "k", now: Self.t0.addingTimeInterval(-5)))
+    }
+
+    func testNoSkipWhenTheFreshCacheIsFromYesterday() throws {
+        let fetched = try date("2026-11-17T23:59:40+03:00")
+        let env = WidgetCacheEnvelope(keyHash: sha256hex("k"), summary: summary(generatedAt: "2026-11-17T23:59:40+03:00"),
+                                      fetchedAt: fetched)
+        XCTAssertFalse(shouldSkipFetch(cache: env, currentKey: "k", now: try date("2026-11-18T00:00:10+03:00")))
+    }
+
+    func testIdleReloadIs60MinWhenNoBoundariesRemainToday() {
+        let b = Self.base
+        let done = summary([item("a", b - 3600, b - 1800)])
+        XCTAssertEqual(nextReload(done, from: Self.t0), Self.t0.addingTimeInterval(3600))
+        XCTAssertEqual(nextReload(summary([]), from: Self.t0), Self.t0.addingTimeInterval(3600))
+        // signed out / unreachable keep retrying every 15 min
+        XCTAssertEqual(nextReload(nil, from: Self.t0), Self.t0.addingTimeInterval(900))
+    }
+
+    func testIdleReloadNeverSleepsPastTRMidnight() throws {
+        let now = try date("2026-11-17T23:30:00+03:00")
+        XCTAssertEqual(nextReload(summary([]), from: now), try date("2026-11-18T00:00:00+03:00"))
+    }
+
+    func testRetryAtPullsTheReloadForward() {
+        let s = summary([])
+        XCTAssertEqual(nextReload(s, from: Self.t0, retryAt: Self.t0.addingTimeInterval(45)), Self.t0.addingTimeInterval(45))
+        XCTAssertEqual(nextReload(s, from: Self.t0, retryAt: Self.t0.addingTimeInterval(7200)), Self.t0.addingTimeInterval(3600))
     }
 }

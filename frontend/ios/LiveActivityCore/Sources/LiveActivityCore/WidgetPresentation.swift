@@ -7,13 +7,18 @@ public enum WidgetContent: Equatable, Sendable {
     case summary(WidgetSummary)
 }
 
-/// No credential is always signed out, whatever is cached (spec §7A.9). A fresh fetch wins; on a
-/// failed fetch only the cache written for this very key is used.
-public func widgetContent(fetched: WidgetSummary?, cache: WidgetCacheEnvelope?, currentKey: String?) -> WidgetContent {
+/// No credential is always signed out, whatever is cached (spec §7A.9), and so is a key the server
+/// rejected (401). A fresh fetch wins; otherwise only today's cache written for this very key is used.
+public func widgetContent(_ outcome: WidgetFetchOutcome, cache: WidgetCacheEnvelope?, currentKey: String?,
+                          now: Date) -> WidgetContent {
     guard let currentKey else { return .signedOut }
-    if let fetched { return .summary(fetched) }
-    if let cached = usableCache(cache, currentKey: currentKey) { return .summary(cached) }
-    return .unreachable
+    switch outcome {
+    case .fetched(let summary): return .summary(summary)
+    case .unauthorized: return .signedOut
+    case .unavailable:
+        if let cached = usableCache(cache, currentKey: currentKey, now: now) { return .summary(cached) }
+        return .unreachable
+    }
 }
 
 /// The widget's Turkish copy (plan Global Constraints), kept verbatim in one place.
