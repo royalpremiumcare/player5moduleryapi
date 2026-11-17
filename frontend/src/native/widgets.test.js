@@ -64,3 +64,19 @@ test('never throws when the method is missing (old native build) or rejects', as
   plugin.clearWidgetCredential.mockRejectedValue(new Error('boom'));
   await expect(clearWidgetCredential()).resolves.toBeNull();
 });
+
+test('widgetCredentialPresent forwards to native and is null off iOS', async () => {
+  plugin.widgetCredentialPresent = jest.fn().mockResolvedValue({ present: false });
+  const { widgetCredentialPresent } = require('./widgets');
+  expect(await widgetCredentialPresent()).toEqual({ present: false });
+  Capacitor.getPlatform.mockReturnValue('android');
+  expect(await widgetCredentialPresent()).toBeNull();
+  expect(plugin.widgetCredentialPresent).toHaveBeenCalledTimes(1);
+});
+
+test('clearWidgetCredential and setWidgetCredential pass the native key fields through', async () => {
+  plugin.clearWidgetCredential.mockResolvedValue({ key: 'wk-device' });
+  plugin.setWidgetCredential.mockResolvedValue({ previousKey: 'wk-old' });
+  expect(await clearWidgetCredential()).toEqual({ key: 'wk-device' });
+  expect(await setWidgetCredential({ key: 'k', baseUrl: 'https://x' })).toEqual({ previousKey: 'wk-old' });
+});

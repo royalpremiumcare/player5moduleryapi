@@ -7,8 +7,9 @@ import WidgetKit
 /// target: every Live Activity method gates itself on iOS 16.2 on an iPhone and resolves
 /// `{supported:false}` otherwise (iPad has no lock-screen Live Activities).
 /// The JWT arrives only for register/unregister and is handed straight to the coordinator.
-/// The Home Screen widget methods (setWidgetCredential, clearWidgetCredential, reloadWidgets) gate
-/// on iOS 16.2 only (the widget extension's deployment target), not on iPhone: iPad has widgets.
+/// The Home Screen widget methods (setWidgetCredential, clearWidgetCredential, reloadWidgets,
+/// widgetCredentialPresent) gate on iOS 16.2 only (the widget extension's deployment target), not on
+/// iPhone: iPad has widgets.
 @objc(PlannLiveActivityPlugin)
 public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "PlannLiveActivityPlugin"
@@ -21,7 +22,8 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setWidgetCredential", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearWidgetCredential", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "reloadWidgets", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "reloadWidgets", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "widgetCredentialPresent", returnType: CAPPluginReturnPromise)
     ]
 
     /// Live Activities exist on iPhone only; iPad and Mac (iPad idiom) report unsupported.
@@ -88,7 +90,8 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // MARK: Home Screen widgets (iPhone and iPad, iOS 16.2+)
 
-    // setWidgetCredential({key, baseUrl}) -> {}; rejects INVALID_URL unless baseUrl is https
+    // setWidgetCredential({key, baseUrl}) -> {previousKey?}; previousKey is the key it replaced (the
+    // app revokes it). Rejects INVALID_URL unless baseUrl is https.
     @objc func setWidgetCredential(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
         guard let key = call.getString("key"), !key.isEmpty else {
@@ -100,26 +103,36 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("baseUrl must be an https URL", "INVALID_URL")
             return
         }
+        let previousKey: String?
         do {
-            try WidgetCredentialStore.write(key: key, baseURL: baseUrl)
+            previousKey = try WidgetCredentialStore.write(key: key, baseURL: baseUrl)
         } catch {
             call.reject("Widget credential could not be saved", "KEYCHAIN_ERROR")
             return
         }
+        let result: [String: Any] = previousKey.map { ["previousKey": $0] } ?? [:]
         Task { @MainActor in
             Self.reloadWidgetTimelinesNow()
-            call.resolve([:])
+            call.resolve(result)
         }
     }
 
-    // clearWidgetCredential() -> {}; the widget then shows the signed-out state
+    // clearWidgetCredential() -> {key?}; key is the deleted key (logout revokes exactly that one).
+    // The widget then shows the signed-out state.
     @objc func clearWidgetCredential(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
-        WidgetCredentialStore.clear()
+        let result: [String: Any] = WidgetCredentialStore.clear().map { ["key": $0] } ?? [:]
         Task { @MainActor in
             Self.reloadWidgetTimelinesNow()
-            call.resolve([:])
+            call.resolve(result)
         }
+    }
+
+    // widgetCredentialPresent() -> {present}; false when the widget has no credential (never stored,
+    // a failed write, or removed), so the app issues a new key without waiting for its 24 h stamp.
+    @objc func widgetCredentialPresent(_ call: CAPPluginCall) {
+        guard #available(iOS 16.2, *) else { call.resolve(["present": false, "supported": false]); return }
+        call.resolve(["present": WidgetCredentialStore.read() != nil])
     }
 
     // reloadWidgets() -> {}; at most one reload per 5 s

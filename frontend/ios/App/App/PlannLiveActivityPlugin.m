@@ -9,4 +9,5 @@ CAP_PLUGIN(PlannLiveActivityPlugin, "PlannLiveActivity",
     CAP_PLUGIN_METHOD(setWidgetCredential, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(clearWidgetCredential, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(reloadWidgets, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(widgetCredentialPresent, CAPPluginReturnPromise);
 )

@@ -29,6 +29,10 @@ async function call(method, options) {
   }
 }
 
+// setWidgetCredential -> {previousKey?} (the key it replaced) or {supported:false} below iOS 16.2.
+// clearWidgetCredential -> {key?} (the key it deleted). widgetCredentialPresent -> {present} or
+// {present:false, supported:false} below iOS 16.2.
 export const setWidgetCredential = (options) => call('setWidgetCredential', options);
 export const clearWidgetCredential = () => call('clearWidgetCredential');
 export const reloadWidgets = () => call('reloadWidgets');
+export const widgetCredentialPresent = () => call('widgetCredentialPresent');

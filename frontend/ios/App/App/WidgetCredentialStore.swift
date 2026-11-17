@@ -41,10 +41,13 @@ enum WidgetCredentialStore {
         return (key, baseURL)
     }
 
-    /// Writes both items. On any failure both are removed, so a half-written pair never pairs a
-    /// new key with an old origin (or the reverse).
-    static func write(key: String, baseURL: String) throws {
+    /// Writes both items and returns the key it replaced (nil when none, or the same key), so the
+    /// app can revoke that key on the server. On any failure both are removed, so a half-written
+    /// pair never pairs a new key with an old origin (or the reverse).
+    @discardableResult
+    static func write(key: String, baseURL: String) throws -> String? {
         guard let group = accessGroup else { throw StoreError.noAccessGroup }
+        let previous = readItem(WidgetBridge.keyAccount, group: group)
         do {
             try writeItem(WidgetBridge.keyAccount, key, group: group)
             try writeItem(WidgetBridge.baseURLAccount, baseURL, group: group)
@@ -52,12 +55,19 @@ enum WidgetCredentialStore {
             clear()
             throw error
         }
+        guard let previous, !previous.isEmpty, previous != key else { return nil }
+        return previous
     }
 
-    static func clear() {
-        guard let group = accessGroup else { return }
+    /// Removes both items and returns the key that was stored (nil when none), so logout can
+    /// revoke exactly this device's key on the server.
+    @discardableResult
+    static func clear() -> String? {
+        guard let group = accessGroup else { return nil }
+        let key = readItem(WidgetBridge.keyAccount, group: group)
         _ = SecItemDelete(query(WidgetBridge.keyAccount, group: group) as CFDictionary)
         _ = SecItemDelete(query(WidgetBridge.baseURLAccount, group: group) as CFDictionary)
+        return key?.isEmpty == false ? key : nil
     }
 
     private static func readItem(_ account: String, group: String) -> String? {
