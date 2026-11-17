@@ -131,3 +131,10 @@ test('logout never throws when the delete fails', async () => {
   expect(events[events.length - 1]).toEqual(['navigate', '/login']);
   expect(localStorage.getItem('authToken')).toBeNull();
 });
+
+test('logout clears the widget issue stamp so the next login issues a fresh key', async () => {
+  localStorage.setItem('widget_key_issued:ali', String(Date.now()));
+  await renderWithStoredToken(TOKEN);
+  await act(async () => { await auth.logout(); });
+  expect(localStorage.getItem('widget_key_issued:ali')).toBeNull();
+});

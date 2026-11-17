@@ -6,6 +6,7 @@ import posthog from '../lib/posthog';
 import { clearPending } from '../lib/pendingDeepLink';
 import { unregister as unregisterLiveActivities } from '../native/liveActivities';
 import { clearWidgetCredential } from '../native/widgets';
+import { clearWidgetIssueStamp } from '../native/widgetStamp';
 
 function localizeRegisterError(detail) {
   const raw = String(detail || '').trim();
@@ -262,6 +263,8 @@ export const AuthProvider = ({ children }) => {
         ).catch(() => {});
       } catch (_) {}
     }
+    // The key is revoked: the next login must issue a new one regardless of the 24h stamp.
+    try { if (currentToken) clearWidgetIssueStamp(currentToken); } catch (_) {}
     try { Promise.resolve(clearWidgetCredential()).catch(() => {}); } catch (_) {}
 
     // Backend'de push subscription'ları sil (FCM token'ı temizle)

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { useWidgetCredential } from './useWidgetCredential';
 import api from '../api/api';
 import * as widgets from './widgets';
+import { clearWidgetIssueStamp } from './widgetStamp';
 import { Capacitor } from '@capacitor/core';
 
 jest.mock('@capacitor/core', () => ({
@@ -89,6 +90,34 @@ test('re-issues on visible after 24h', async () => {
   await becomeVisible();
   expect(api.post).toHaveBeenCalledTimes(2);
   expect(widgets.setWidgetCredential).toHaveBeenCalledTimes(2);
+});
+
+test('does not post on mount when a recent issue stamp exists (cold start)', async () => {
+  localStorage.setItem('widget_key_issued:ali', String(Date.now() - 1000));
+  await render({ token: jwt('ali') });
+  expect(api.post).not.toHaveBeenCalled();
+});
+
+test('posts on mount when the stamp is older than 24h', async () => {
+  localStorage.setItem('widget_key_issued:ali', String(Date.now() - DAY - 1000));
+  await render({ token: jwt('ali') });
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+
+test('after the stamp is cleared (logout) the next mount posts', async () => {
+  await render({ token: jwt('ali') });
+  expect(api.post).toHaveBeenCalledTimes(1);
+  await render({ token: null });
+  clearWidgetIssueStamp(jwt('ali'));
+  await render({ token: jwt('ali') });
+  expect(api.post).toHaveBeenCalledTimes(2);
+});
+
+test('a token without sub never puts the JWT into a storage key', async () => {
+  const noSub = `h.${btoa(JSON.stringify({}))}.s`;
+  await render({ token: noSub });
+  expect(api.post).toHaveBeenCalledTimes(1);
+  expect(Object.keys(localStorage).some((k) => k.includes(noSub))).toBe(false);
 });
 
 test('no-op on web/android', async () => {
