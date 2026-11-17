@@ -1381,7 +1381,10 @@ async def lifespan(app: FastAPI):
         if app.db is not None and live_activity is not None:
             try:
                 await live_activity.registry.ensure_indexes(app.db)
-                await live_activity.widget_keys.ensure_indexes(app.db)
+                try:
+                    await live_activity.widget_keys.ensure_indexes(app.db)
+                except Exception as _wk_err:
+                    logging.warning(f"widget_keys index setup failed: {_wk_err}")
                 _la_db = app.db
 
                 async def _run_live_activity_sweep():
@@ -17772,7 +17775,8 @@ async def ai_chat_endpoint(
 app.include_router(api_router, prefix="/api")
 try:
     if live_activity is not None:
-        live_activity.endpoints.configure(get_current_user=get_current_user, get_db=get_db, transport=_LA_TRANSPORT)
+        live_activity.endpoints.configure(get_current_user=get_current_user, get_db=get_db, transport=_LA_TRANSPORT,
+                                          get_user_by_username=get_user_from_db)
         app.include_router(live_activity.endpoints.router, prefix="/api")
 except Exception as _la_router_err:
     logging.warning(f"Live Activity router registration failed: {_la_router_err}")

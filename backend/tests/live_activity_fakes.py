@@ -41,7 +41,7 @@ def _project(doc, projection):
     doc = copy.deepcopy(doc)
     if not projection:
         return doc
-    include = {k for k, v in projection.items() if v and k != "_id"}
+    include = {k for k, v in projection.items() if v and (k != "_id" or v)}
     if include:
         return {k: v for k, v in doc.items() if k in include}
     return {k: v for k, v in doc.items() if k not in projection}
@@ -52,7 +52,9 @@ class _Cursor:
         self._docs = docs
 
     def sort(self, key, direction=1):
-        self._docs.sort(key=lambda d: d.get(key), reverse=direction < 0)
+        pairs = key if isinstance(key, list) else [(key, direction)]
+        for k, d in reversed(pairs):  # stable sorts, last key first
+            self._docs.sort(key=lambda doc: doc.get(k), reverse=d < 0)
         return self
 
     async def to_list(self, _length):
@@ -86,7 +88,7 @@ class FakeCollection:
 
     async def create_index(self, keys, unique=False, **_kw):
         await asyncio.sleep(0)
-        self._note("create_index", keys)
+        self._note("create_index", keys, _kw)
         if unique:
             self.unique.append([k if isinstance(k, str) else k[0] for k in keys] if isinstance(keys, list) else [keys])
         return "idx"
@@ -123,6 +125,8 @@ class FakeCollection:
         await asyncio.sleep(0)
         self._note("insert_one", doc)
         doc = copy.deepcopy(doc)
+        doc.setdefault("_id", len(self.docs) + 1 + getattr(self, "_seq", 0))  # monotonic like an ObjectId
+        self._seq = getattr(self, "_seq", 0) + 1
         self._check_unique(doc)
         self.docs.append(doc)
         return _Result(1)
@@ -224,6 +228,7 @@ class CountingRedis:
     def __init__(self):
         self.counts = {}
         self.expiries = {}
+        self.expire_calls = []
 
     async def incr(self, key):
         self.counts[key] = self.counts.get(key, 0) + 1
@@ -231,6 +236,7 @@ class CountingRedis:
 
     async def expire(self, key, seconds):
         self.expiries[key] = seconds
+        self.expire_calls.append(key)
         return True
 
 

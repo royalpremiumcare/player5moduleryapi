@@ -50,8 +50,8 @@ async def issue_key(db, user: dict, *, now: datetime) -> tuple[str, datetime]:
             break
         except DuplicateKeyError:  # astronomically unlikely; draw again
             continue
-    rows = await db.widget_keys.find({"username": user["username"]}, {"key_hash": 1, "created_at": 1}) \
-        .sort("created_at", 1).to_list(None)
+    rows = await db.widget_keys.find({"username": user["username"]}, {"_id": 1, "key_hash": 1, "created_at": 1}) \
+        .sort([("created_at", 1), ("_id", 1)]).to_list(None)
     for old in rows[:-MAX_KEYS_PER_USER]:
         await db.widget_keys.delete_one({"key_hash": old["key_hash"]})
     return raw, expires_at
@@ -85,8 +85,7 @@ async def within_rate_limit(redis, key_hash: str, *, now: datetime) -> bool:
     window = f"widget_rl:{key_hash}:{now.strftime('%Y%m%d%H')}"
     try:
         count = await redis.incr(window)
-        if count == 1:
-            await redis.expire(window, RATE_WINDOW_SECONDS)
+        await redis.expire(window, RATE_WINDOW_SECONDS)  # every call: a lost EXPIRE can't orphan the counter
         return count <= RATE_LIMIT
     except Exception as exc:  # the widget must never break because of Redis
         logger.warning("widget rate limit skipped: %s", exc)

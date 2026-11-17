@@ -28,15 +28,21 @@ def env(monkeypatch):
     db.users.docs.append(user_doc("ali"))
     db.appointments.docs.append(apt("a1", "11:00"))
 
-    async def get_current_user(_request, token, db_):
+    async def load_user(_request, username, db_):
+        """Stands in for server.get_user_from_db: the one loader both auth paths share
+        (UserInDB defaults: role admin, status active, a default organization_id)."""
+        doc = await db_.users.find_one({"username": username}, {"_id": 0})
+        return None if doc is None else {"role": "admin", "status": "active", "organization_id": "default-org", **doc}
+
+    async def get_current_user(request, token, db_):
         if token != "valid":
             raise endpoints._unauthorized()
-        return await db_.users.find_one({"username": "ali"}, {"_id": 0})
+        return await load_user(request, "ali", db_)
 
     async def get_db(_request):
         return db
 
-    endpoints.configure(get_current_user, get_db)
+    endpoints.configure(get_current_user, get_db, get_user_by_username=load_user)
     monkeypatch.setattr(endpoints, "_now", lambda: NOW)
     app = FastAPI()
     app.include_router(endpoints.router, prefix="/api")
@@ -157,3 +163,46 @@ def test_delete_without_key_revokes_all_for_user(env):
     assert env.client.request("DELETE", "/api/widget/key", headers=env.jwt).status_code == 204
     assert get_summary(env, k1).status_code == 401 and get_summary(env, k2).status_code == 401
     assert [d["username"] for d in env.db.widget_keys.docs] == ["veli"]
+
+
+def test_key_path_normalises_user_like_jwt_path(env):
+    del env.db.users.docs[0]["role"]  # legacy row: the loader defaults it to admin
+    key = issue(env)
+    via_key = get_summary(env, key)
+    via_jwt = env.client.get("/api/widget/summary", headers=env.jwt)
+    assert via_key.status_code == 200
+    assert via_key.json() == via_jwt.json()
+    assert [i["id"] for i in via_key.json()["items"]] == ["a1"]
+
+
+def test_key_for_other_organization_row_401(env):
+    key = issue(env)
+    env.db.widget_keys.docs[0]["organization_id"] = "org-elsewhere"
+    assert get_summary(env, key).status_code == 401
+
+
+def test_summary_with_key_when_org_live_activity_flag_off(env):
+    env.db.settings.docs[0]["live_activity_enabled"] = False
+    assert get_summary(env, issue(env)).status_code == 200
+    env.db.settings.docs.clear()
+    assert get_summary(env, issue(env)).status_code == 200
+
+
+def test_ensure_indexes_unique_key_hash_and_ttl(env):
+    created = [e for e in env.db.log if e[0] == "widget_keys" and e[1] == "create_index"]
+    assert ["key_hash"] in env.db.widget_keys.unique
+    assert any(a[0] == "expires_at" and a[1].get("expireAfterSeconds") == 0 for _, _, a in created)
+
+
+def test_rate_limit_counter_always_gets_expiry():
+    redis = CountingRedis()
+    run(widget_keys.within_rate_limit(redis, "h", now=NOW))
+    run(widget_keys.within_rate_limit(redis, "h", now=NOW))
+    assert redis.expiries["widget_rl:h:2026111610"] == 3700 and len(redis.expire_calls) == 2
+
+
+def test_eviction_tiebreak_on_id_when_created_at_equal(env):
+    user = {"username": "ali", "organization_id": ORG}
+    keys = [run(widget_keys.issue_key(env.db, user, now=T0))[0] for _ in range(6)]
+    assert run(widget_keys.resolve(env.db, keys[0], now=T0)) is None
+    assert all(run(widget_keys.resolve(env.db, k, now=T0)) for k in keys[1:])

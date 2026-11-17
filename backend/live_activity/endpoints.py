@@ -37,16 +37,22 @@ ALIVE_REPORT_STATES = {"active", "stale", "pending"}  # ActivityKit states of a 
 
 _get_current_user = None
 _get_db = None
+_get_user_by_username = None
 _transport: LiveActivityTransport | None = None
 _background: set[asyncio.Task] = set()
 # Same token URL as server.oauth2_scheme; auto_error off so reconcile can fall back to the device secret.
 _bearer = OAuth2PasswordBearer(tokenUrl="/api/token", auto_error=False)
 
 
-def configure(get_current_user, get_db, *, transport: LiveActivityTransport | None = None) -> None:
-    """Bind server.get_current_user(request, token, db) and server.get_db(request)."""
-    global _get_current_user, _get_db, _transport
+def configure(get_current_user, get_db, *, transport: LiveActivityTransport | None = None,
+              get_user_by_username=None) -> None:
+    """Bind server.get_current_user(request, token, db) and server.get_db(request).
+
+    `get_user_by_username(request, username, db)` is the loader behind get_current_user
+    (server.get_user_from_db); widget keys use it so both paths see the same normalised user."""
+    global _get_current_user, _get_db, _transport, _get_user_by_username
     _get_current_user, _get_db, _transport = get_current_user, get_db, transport
+    _get_user_by_username = get_user_by_username
 
 
 def _now() -> datetime:
@@ -338,8 +344,12 @@ async def _summary_user(request: Request, key: str | None = Header(default=None,
     redis = getattr(request.app.state, "redis_client", None)
     if not await widget_keys.within_rate_limit(redis, row["key_hash"], now=now):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many widget requests")
-    doc = await db.users.find_one({"username": row["username"]}, {"_id": 0})
-    if doc is None or not _user_is_active(doc):
+    if _get_user_by_username is not None:
+        loaded = await _get_user_by_username(request, row["username"], db)
+        doc = None if loaded is None else _user_dict(loaded)
+    else:
+        doc = await db.users.find_one({"username": row["username"]}, {"_id": 0})
+    if doc is None or not _user_is_active(doc) or doc.get("organization_id") != row.get("organization_id"):
         raise _unauthorized()
     return doc
 
