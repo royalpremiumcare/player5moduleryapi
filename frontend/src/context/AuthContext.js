@@ -5,6 +5,7 @@ import i18n from '../i18n';
 import posthog from '../lib/posthog';
 import { clearPending } from '../lib/pendingDeepLink';
 import { unregister as unregisterLiveActivities } from '../native/liveActivities';
+import { clearWidgetCredential } from '../native/widgets';
 
 function localizeRegisterError(detail) {
   const raw = String(detail || '').trim();
@@ -251,6 +252,17 @@ export const AuthProvider = ({ children }) => {
     if (currentToken) {
       try { unregisterLiveActivities({ jwt: currentToken }); } catch (_) {}
     }
+
+    // Ana ekran widget'ları: anahtarı sunucuda iptal et ve native kimlik bilgisini sil.
+    // Beklenmez, asla hata atmaz; state temizlenmeden ve yönlendirmeden önce gönderilir.
+    if (currentToken) {
+      try {
+        Promise.resolve(
+          api.delete('/widget/key', { headers: { Authorization: `Bearer ${currentToken}` } })
+        ).catch(() => {});
+      } catch (_) {}
+    }
+    try { Promise.resolve(clearWidgetCredential()).catch(() => {}); } catch (_) {}
 
     // Backend'de push subscription'ları sil (FCM token'ı temizle)
     try {

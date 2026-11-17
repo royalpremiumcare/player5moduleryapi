@@ -58,6 +58,8 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import { openAppStore } from "@/lib/appStore";
 import { showLoadError, NETWORK_ERROR_TOAST_ID, APPOINTMENTS_LOAD_TIMEOUT_MS } from "@/lib/loadError";
 import { useLiveActivities, subOf } from "@/native/useLiveActivities";
+import { useWidgetCredential } from "@/native/useWidgetCredential";
+import { reloadWidgets } from "@/native/widgets";
 import { useLaConsentGate } from "@/native/laConsentGate";
 import { usePushHold } from "@/native/pushHold";
 import {
@@ -106,6 +108,7 @@ function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [settings, setSettings] = useState(null);
   useLiveActivities({ token, orgFlagEnabled: !!settings?.live_activity_enabled });
+  useWidgetCredential({ token });
   const [laConsentOpen, setLaConsentOpen] = useState(false);
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -1169,6 +1172,7 @@ function App() {
       // Real-time appointment events - use refs to get current function values
       socket.on('appointment_created', (data) => {
         console.log("🔔 WebSocket: appointment_created event received", data);
+        reloadWidgets();
         
         // Sadece public booking'den gelen randevular için in-app bildirim göster
         const appointment = data?.appointment;
@@ -1224,6 +1228,7 @@ function App() {
       });
       
       socket.on('appointment_updated', () => {
+        reloadWidgets();
         if (loadAppointmentsRef.current) {
           loadAppointmentsRef.current();
         }
@@ -1233,6 +1238,7 @@ function App() {
       });
       
       socket.on('appointment_deleted', () => {
+        reloadWidgets();
         if (loadAppointmentsRef.current) {
           loadAppointmentsRef.current();
         }
@@ -1242,6 +1248,7 @@ function App() {
       });
 
       socket.on('appointments_bulk_updated', () => {
+        reloadWidgets();
         if (loadAppointmentsRef.current) {
           loadAppointmentsRef.current();
         }
@@ -1396,6 +1403,7 @@ function App() {
   const handleAppointmentSaved = async () => {
     console.log("🔄 handleAppointmentSaved called - refreshing appointments...");
     await loadAppointments();
+    reloadWidgets();
     if (userRole === 'admin') {
       await loadStats();
     }
@@ -1744,6 +1752,7 @@ function App() {
             }}
             onRefresh={async () => {
               await loadAppointments();
+              reloadWidgets();
               if (userRole === 'admin') {
                 await loadStats();
               }
@@ -1787,6 +1796,7 @@ function App() {
             }}
             onRefresh={async () => {
               await loadAppointments();
+              reloadWidgets();
               if (userRole === "admin") await loadStats();
             }}
           />
@@ -1804,6 +1814,7 @@ function App() {
             }}
             onRefresh={async () => {
               await loadAppointments();
+              reloadWidgets();
               if (userRole === 'admin') await loadStats();
             }}
           />

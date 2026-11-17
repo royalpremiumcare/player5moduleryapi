@@ -24,7 +24,7 @@ export function subOf(token) {
   }
 }
 
-function apiBaseUrl() {
+export function apiBaseUrl() {
   const configured = process.env.REACT_APP_BACKEND_URL;
   if (configured) {
     try {
