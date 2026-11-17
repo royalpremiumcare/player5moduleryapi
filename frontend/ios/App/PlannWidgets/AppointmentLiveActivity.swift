@@ -54,10 +54,11 @@ private func badgeText(_ l: Look) -> String {
     }
 }
 
-private func symbolName(_ l: Look) -> String {
+/// Processing/overdue follow the business sector (symbolForIcon in LiveActivityCore/SectorIcon.swift).
+private func symbolName(_ l: Look, _ s: PlannAppointmentAttributes.ContentState) -> String {
     switch l {
     case .upcoming, .starting: return "clock"
-    case .processing, .overdue: return "scissors"
+    case .processing, .overdue: return symbolForIcon(s.icon)
     case .completed: return "checkmark"
     case .cancelled, .empty: return "xmark"
     }
@@ -282,7 +283,7 @@ private struct StatusRing: View {
                     .padding(lineWidth / 2)
             }
             if let symbolSize = symbolSize {
-                Image(systemName: symbolName(look))
+                Image(systemName: symbolName(look, state))
                     .font(.system(size: symbolSize, weight: .semibold))
                     .foregroundStyle(tint)
             }
@@ -401,7 +402,7 @@ private struct IslandIndicator: View {
         case .upcoming, .processing:
             StatusRing(look: look, state: state, size: 20, lineWidth: 3, symbolSize: nil)
         default:
-            Image(systemName: symbolName(look))
+            Image(systemName: symbolName(look, state))
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(accent(look))
                 .frame(width: 20, height: 20)

@@ -95,6 +95,8 @@ FILES = [
          group=EXT, disk="PlannWidgets/TodayWidget.swift", targets=(EXT,)),
     dict(k=19, name="TodayWidgetViews.swift", path="TodayWidgetViews.swift",
          group=EXT, disk="PlannWidgets/TodayWidgetViews.swift", targets=(EXT,)),
+    dict(k=20, name="SectorIcon.swift", path=CORE + "SectorIcon.swift",
+         group="LiveActivityCore", disk=CORE + "SectorIcon.swift", targets=(EXT,)),
 ]
 FILE_TYPES = {".swift": "sourcecode.swift", ".m": "sourcecode.c.objc"}
 for f in FILES:

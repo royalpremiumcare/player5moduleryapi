@@ -46,6 +46,7 @@
 		B2C3D4E5F607182900000146 /* WidgetPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000144 /* WidgetPresentation.swift */; };
 		B2C3D4E5F60718290000014A /* TodayWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000148 /* TodayWidget.swift */; };
 		B2C3D4E5F60718290000014E /* TodayWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718290000014C /* TodayWidgetViews.swift */; };
+		B2C3D4E5F607182900000152 /* SectorIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F607182900000150 /* SectorIcon.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -114,6 +115,7 @@
 		B2C3D4E5F607182900000144 /* WidgetPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/WidgetPresentation.swift; sourceTree = "<group>"; };
 		B2C3D4E5F607182900000148 /* TodayWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidget.swift; sourceTree = "<group>"; };
 		B2C3D4E5F60718290000014C /* TodayWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgetViews.swift; sourceTree = "<group>"; };
+		B2C3D4E5F607182900000150 /* SectorIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../LiveActivityCore/Sources/LiveActivityCore/SectorIcon.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -222,6 +224,7 @@
 				B2C3D4E5F60718290000013C /* WidgetTimelineLogic.swift */,
 				B2C3D4E5F607182900000140 /* WidgetAPI.swift */,
 				B2C3D4E5F607182900000144 /* WidgetPresentation.swift */,
+				B2C3D4E5F607182900000150 /* SectorIcon.swift */,
 			);
 			name = LiveActivityCore;
 			sourceTree = "<group>";
@@ -422,6 +425,7 @@
 				B2C3D4E5F607182900000146 /* WidgetPresentation.swift in Sources */,
 				B2C3D4E5F60718290000014A /* TodayWidget.swift in Sources */,
 				B2C3D4E5F60718290000014E /* TodayWidgetViews.swift in Sources */,
+				B2C3D4E5F607182900000152 /* SectorIcon.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
