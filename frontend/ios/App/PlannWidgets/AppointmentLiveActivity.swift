@@ -43,12 +43,11 @@ private func accent(_ l: Look) -> Color {
     }
 }
 
+/// Stale states keep their phase's badge; the hero carries "Başlıyor" / "Süre doldu", so no word repeats.
 private func badgeText(_ l: Look) -> String {
     switch l {
-    case .upcoming: return "Sıradaki"
-    case .starting: return "Başlıyor"
-    case .processing: return "İşlemde"
-    case .overdue: return "Süre doldu"
+    case .upcoming, .starting: return "Sıradaki"
+    case .processing, .overdue: return "İşlemde"
     case .completed: return "Tamamlandı"
     case .cancelled: return "İptal edildi"
     case .empty: return ""
@@ -64,15 +63,19 @@ private func symbolName(_ l: Look) -> String {
     }
 }
 
-/// Small line under the hero value; nil when the hero itself already says it (stale states).
+/// Small line under the hero value; nil where it would repeat the hero or the badge.
 private func heroCaption(_ l: Look) -> String? {
     switch l {
     case .upcoming: return "Başlamasına kalan"
     case .processing: return "Bitmesine kalan"
     case .completed: return "Bitiş saati"
-    case .cancelled: return "İptal edildi"
-    case .starting, .overdue, .empty: return nil
+    case .starting, .overdue, .cancelled, .empty: return nil
     }
+}
+
+/// Cancelled shows the range as its hero, so the range is not repeated in the meta / island bottom.
+private func showsRangeInMeta(_ l: Look) -> Bool {
+    l != .cancelled
 }
 
 private func titleLine(_ s: PlannAppointmentAttributes.ContentState) -> String {
@@ -131,11 +134,13 @@ struct AppointmentLiveActivity: Widget {
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
                                 Spacer(minLength: 4)
-                                Text(rangeLine(context.state))
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .monospacedDigit()
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
+                                if showsRangeInMeta(l) {
+                                    Text(rangeLine(context.state))
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .monospacedDigit()
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
                             }
                         }
                         .padding(.horizontal, 4)
@@ -182,7 +187,7 @@ private struct LockScreenCard: View {
                     StatusRing(look: l, state: state, size: 46, lineWidth: 4, symbolSize: 20)
                     HeroValue(look: l, state: state, valueSize: 30, timerWidth: 84, alignment: .leading)
                         .layoutPriority(1)
-                    MetaBlock(state: state)
+                    MetaBlock(look: l, state: state)
                 }
             }
         }
@@ -209,6 +214,7 @@ private struct StatusBadge: View {
 
 /// Service line and time range, right-aligned in secondary.
 private struct MetaBlock: View {
+    let look: Look
     let state: PlannAppointmentAttributes.ContentState
 
     var body: some View {
@@ -221,12 +227,14 @@ private struct MetaBlock: View {
                     .multilineTextAlignment(.trailing)
                     .lineLimit(1)
             }
-            Text(rangeLine(state))
-                .font(.system(size: 13, weight: .semibold))
-                .monospacedDigit()
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(1)
+            if showsRangeInMeta(look) {
+                Text(rangeLine(state))
+                    .font(.system(size: 13, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
@@ -315,7 +323,7 @@ private struct HeroValue: View {
         case .starting, .overdue, .completed:
             StaticValue(text: staticText, size: valueSize, color: .primary)
         case .cancelled:
-            StaticValue(text: state.startLabel, size: valueSize, color: .secondary)
+            StaticValue(text: rangeLine(state), size: valueSize, color: .secondary)
         case .empty:
             EmptyView()
         }
