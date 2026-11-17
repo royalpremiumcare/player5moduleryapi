@@ -13,14 +13,16 @@ const LAUNCH_KEY = 'plann_last_launch_url';
 
 let started = false;
 let unclaimedUrl = null;
+let consumers = 0; // App'in canlı appUrlOpen dinleyicisi bağlıyken bağlantıyı o işler
 let lastUrl = null;
 let lastAt = 0;
 
 function handleUrl(url) {
   const intent = parseAppDeepLink(url);
   if (!intent) {
-    // Checkout gibi bizim olmayan bağlantı: App'in dinleyicisi sonradan alabilsin
-    if (url) unclaimedUrl = url;
+    // Checkout gibi bizim olmayan bağlantı: App bağlı değilken gelirse App bağlanınca alabilsin.
+    // App bağlıyken kendi dinleyicisi işler; burada tutulursa yeniden bağlanmada tekrar çalışırdı.
+    if (url && consumers === 0) unclaimedUrl = url;
     return;
   }
   const now = Date.now();
@@ -36,6 +38,17 @@ export function takeUnclaimedUrl() {
   const url = unclaimedUrl;
   unclaimedUrl = null;
   return url;
+}
+
+// App'in appUrlOpen dinleyicisini kurduğu efekt çağırır: App bağlanmadan gelen bağlantıyı (bir kez)
+// döndürür; App bağlı kaldıkça yeni bağlantılar tutulmaz. Efekt temizlenirken detach çağrılır.
+export function attachUnclaimedConsumer() {
+  consumers += 1;
+  return takeUnclaimedUrl();
+}
+
+export function detachUnclaimedConsumer() {
+  consumers = Math.max(0, consumers - 1);
 }
 
 // Çıkış sayfayı yeniler (yeni JS çalışma zamanı) ama native getLaunchUrl son URL'i

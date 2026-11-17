@@ -67,7 +67,7 @@ import {
   subscribeCheckoutEvents,
 } from "@/lib/inAppSubscribe";
 import { takePending } from "@/lib/pendingDeepLink";
-import { DEEP_LINK_EVENT, takeUnclaimedUrl } from "@/native/deepLinkInbox";
+import { DEEP_LINK_EVENT, attachUnclaimedConsumer, detachUnclaimedConsumer } from "@/native/deepLinkInbox";
 
 const FCMTokenPlugin = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
   ? registerPlugin('FCMTokenPlugin')
@@ -1097,8 +1097,9 @@ function App() {
 
     const handleDeepLink = CapacitorApp.addListener('appUrlOpen', (event) => onUrl(event.url));
 
-    // deepLinkInbox ilk dinleyici olduğundan, App bağlanmadan gelen (tutulan) checkout URL'ini o saklar
-    const missed = takeUnclaimedUrl();
+    // deepLinkInbox ilk dinleyici olduğundan, App bağlanmadan gelen (tutulan) checkout URL'ini o saklar.
+    // Bağlıyken gelenleri bu dinleyici işler; inbox onları tutmaz, yeniden bağlanmada tekrar çalışmaz.
+    const missed = attachUnclaimedConsumer();
     if (missed) onUrl(missed);
 
     const unsubCheckout = subscribeCheckoutEvents((event) => {
@@ -1113,6 +1114,7 @@ function App() {
     });
 
     return () => {
+      detachUnclaimedConsumer();
       handleDeepLink.remove();
       unsubCheckout();
     };

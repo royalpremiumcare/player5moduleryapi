@@ -111,4 +111,38 @@ describe('deepLinkInbox', () => {
     await flush();
     expect(takePending(Date.now())).toEqual({ kind: 'appointment', id: '6' });
   });
+
+  describe('unclaimed (checkout) urls and the App consumer', () => {
+    const CHECKOUT = 'plannapp://checkout/success?session_id=abc';
+
+    it('a url that arrived before App attached is handed to App once', async () => {
+      start();
+      await flush();
+      mockUrlListener({ url: CHECKOUT });
+      const inbox = require('./deepLinkInbox');
+      expect(inbox.attachUnclaimedConsumer()).toBe(CHECKOUT);
+      inbox.detachUnclaimedConsumer();
+      expect(inbox.attachUnclaimedConsumer()).toBeNull();
+    });
+
+    it('a url App handled live is not replayed on re-mount or language change', async () => {
+      start();
+      await flush();
+      const inbox = require('./deepLinkInbox');
+      expect(inbox.attachUnclaimedConsumer()).toBeNull(); // App mounted, its own listener is live
+      mockUrlListener({ url: CHECKOUT }); // App's listener handles this one itself
+      inbox.detachUnclaimedConsumer(); // effect cleanup (route change / language change)
+      expect(inbox.attachUnclaimedConsumer()).toBeNull(); // re-mount: nothing to replay
+    });
+
+    it('a url that arrives while App is detached is kept for the next attach', async () => {
+      start();
+      await flush();
+      const inbox = require('./deepLinkInbox');
+      inbox.attachUnclaimedConsumer();
+      inbox.detachUnclaimedConsumer();
+      mockUrlListener({ url: CHECKOUT });
+      expect(inbox.attachUnclaimedConsumer()).toBe(CHECKOUT);
+    });
+  });
 });
