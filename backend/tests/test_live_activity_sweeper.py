@@ -691,3 +691,42 @@ async def test_non_int_duration_does_not_kill_device_sweep():
     assert stats["errors"] == 0
     assert events(t) == [("update", "tok")]
     assert t.sent[0]["aps"]["content-state"]["appointmentId"] == "a"
+
+
+# --- across midnight ---------------------------------------------------------------------
+
+LATE = datetime(2026, 11, 16, 23, 50, tzinfo=TR_TZ)
+TOMORROW = "2026-11-17"
+
+
+async def test_load_org_includes_tomorrow():
+    db = await make_db(apts=[apt("n", "00:15", date=TOMORROW), apt("far", "09:00", date="2026-11-18")])
+    org = await sweeper.load_org(db, settings(), LATE)
+    assert {a["id"] for a in org.apts} == {"n"}
+
+
+async def test_tomorrow_appointment_starts_inside_lead_without_opening_old_day():
+    db = await make_db(users=[user("ali")], devices=[device("d1", "ali", day=None)],
+                       apts=[apt("n", "00:15", date=TOMORROW)])
+    t = RecordingTransport()
+    await sweep(db, t, now=LATE)
+    assert [e for e, _ in events(t)] == ["start"]
+    assert t.sent[0]["aps"]["content-state"]["appointmentId"] == "n"
+    assert dev(db, "d1")["day"] != TODAY
+
+
+async def test_tomorrow_appointment_outside_lead_gets_no_start():
+    db = await make_db(users=[user("ali")], devices=[device("d1", "ali", day=TODAY)],
+                       apts=[apt("n", "00:15", date=TOMORROW)])
+    t = RecordingTransport()
+    await sweep(db, t, now=datetime(2026, 11, 16, 22, 0, tzinfo=TR_TZ))
+    assert events(t) == []
+
+
+async def test_widget_summary_still_today_only_near_midnight():
+    from live_activity.widget_summary import build_summary
+    db = await make_db(users=[user("ali")],
+                       apts=[apt("n", "00:15", date=TOMORROW), apt("t", "23:55", date=TODAY)])
+    body = await build_summary(db, {"organization_id": ORG, "username": "ali", "role": "admin"}, None, now=LATE)
+    assert body["counts"]["total"] == 1
+    assert [i["id"] for i in body["items"]] == ["t"]

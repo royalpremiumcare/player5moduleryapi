@@ -162,3 +162,25 @@ def test_non_int_duration_skipped():
     result = visible_for_user([bad_own, bad_service, good], STAFF, "own", now=NOW,
                               services_by_id={"s1": "forty"}, lead_min=30, day_open=True)
     assert ids(result) == ["good"]
+
+
+# --- across midnight: the lead window ignores the calendar date ------------------------
+
+LATE = datetime(2026, 11, 16, 23, 50, tzinfo=TR_TZ)
+TOMORROW_APT = apt("n", "00:15", date="2026-11-17")
+
+
+def test_upcoming_tomorrow_inside_lead_is_visible():
+    assert ids(visible([TOMORROW_APT], ADMIN, now=LATE, day_open=False)) == ["n"]
+    assert ids(visible([TOMORROW_APT], ADMIN, now=LATE, day_open=True)) == ["n"]
+
+
+def test_upcoming_tomorrow_outside_lead_not_visible_even_if_day_open():
+    now = datetime(2026, 11, 16, 22, 0, tzinfo=TR_TZ)
+    assert visible([TOMORROW_APT], ADMIN, now=now, day_open=True) == []
+
+
+def test_day_open_today_unchanged():
+    later = apt("l", "15:00")
+    assert ids(visible([later], ADMIN, day_open=True)) == ["l"]
+    assert visible([later], ADMIN, day_open=False) == []

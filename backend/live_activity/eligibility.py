@@ -91,9 +91,9 @@ def visible_for_user(
         if phase == Phase.PROCESSING:
             pass  # stays visible across midnight
         elif phase == Phase.UPCOMING:
-            if start.date() != today:
-                continue
-            if not day_open and start - lead > now:
+            # Inside the lead window is visible whatever its calendar date (00:15 shows at 23:50);
+            # outside it, only once the day is open and the appointment is today's.
+            if start - lead > now and not (day_open and start.date() == today):
                 continue
         else:
             continue

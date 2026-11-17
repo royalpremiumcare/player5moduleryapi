@@ -144,10 +144,10 @@ async def _acquire_lock(redis, now: datetime) -> bool:
 
 
 async def load_org(db, settings: dict, now: datetime) -> _Org:
-    """Read-only snapshot of one org: yesterday's and today's appointments, services, users, settings."""
+    """Read-only snapshot of one org: yesterday's, today's and tomorrow's appointments, services, users, settings."""
     org_id = settings["organization_id"]
     local = now.astimezone(TR_TZ)
-    days = [(local - timedelta(days=1)).strftime("%Y-%m-%d"), local.strftime("%Y-%m-%d")]
+    days = [(local + timedelta(days=d)).strftime("%Y-%m-%d") for d in (-1, 0, 1)]  # tomorrow: lead window across midnight
     apts = await db.appointments.find(
         {"organization_id": org_id, "appointment_date": {"$in": days}}, APT_PROJECTION
     ).to_list(None)
@@ -314,9 +314,9 @@ async def _execute(db, org: _Org | None, device: dict, slot: dict | None, action
         stats.sent += 1
         # The first start of the day opens it; so does a switch/update onto one of today's
         # appointments (a slot carried over from yesterday never starts again today).
-        opens_day = action.kind == "start" or (
-            action.kind == "update" and visible is not None
-            and visible.start.astimezone(TR_TZ).strftime("%Y-%m-%d") == today)
+        # A card for tomorrow's appointment (lead window before midnight) does not open today.
+        opens_day = visible is not None and action.kind in ("start", "update") \
+            and visible.start.astimezone(TR_TZ).strftime("%Y-%m-%d") == today
         if opens_day and device.get("day") != today:
             await db.live_activity_devices.update_one({"device_id": device_id}, {"$set": {"day": today}})
             device["day"] = today
@@ -496,7 +496,7 @@ async def start_locally(db, device_id: str, *, now: datetime) -> list[dict]:
             await registry.claim_slot(db, **claim, expect_version=(expect or 0) + 1, set_fields={"state": "ended"})
             break
         # No record_start: the push-to-start budget does not apply to a start the app makes itself.
-        if device.get("day") != today:
+        if device.get("day") != today and v.start.astimezone(TR_TZ).strftime("%Y-%m-%d") == today:
             await db.live_activity_devices.update_one({"device_id": device_id}, {"$set": {"day": today}})
         out.append({"slot_index": start.slot_index, "content": content,
                     "attributes": _slot_attributes(device_id, start.slot_index, org.org_id),
