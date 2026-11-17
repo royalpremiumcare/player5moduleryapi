@@ -12,6 +12,7 @@ ALERT_PROCESSING = ("Randevu başladı", "{name} · {service}")
 ATTRIBUTES_TYPE = "PlannAppointmentAttributes"
 MAX_PAYLOAD_BYTES = 4096
 SERVICE_NAME_MAX = 40
+MULTI_FIRST_MAX = 16  # first service name in "Name +N"; short enough that "+N" fits the card line
 MIN_START_STALE_SECONDS = 60
 
 
@@ -109,6 +110,23 @@ def relevance(phase: Phase, start: datetime, now: datetime, end: datetime | None
     return 0
 
 
+def service_display(apt: dict) -> str:
+    """Card service text: the service name, or "First +N" for a multi-service appointment.
+
+    The card line is narrow and shared with the staff name, so a long first name is cut with
+    "…" to keep "+N" visible. The full list stays in the app.
+    """
+    lines = apt.get("services") or []
+    if len(lines) > 1:
+        ordered = sorted(lines, key=lambda l: l.get("sequence") if isinstance(l.get("sequence"), (int, float)) else 0)
+        first = next((l["name_snapshot"].strip() for l in ordered if (l.get("name_snapshot") or "").strip()), "")
+        if first:
+            if len(first) > MULTI_FIRST_MAX:
+                first = first[:MULTI_FIRST_MAX - 1].rstrip() + "…"
+            return f"{first} +{len(lines) - 1}"
+    return (apt.get("service_name") or "")[:SERVICE_NAME_MAX]
+
+
 def build_content_state(
     apt: dict,
     phase: Phase,
@@ -127,7 +145,7 @@ def build_content_state(
         "startLabel": apt["appointment_time"],
         "endLabel": end.strftime("%H:%M"),
         "customerDisplay": display_name(apt.get("customer_name"), privacy_mode),
-        "serviceName": (apt.get("service_name") or "")[:SERVICE_NAME_MAX],
+        "serviceName": service_display(apt),
         "staffName": staff_display(staff_name),
         "version": version,
         "appointmentId": str(apt["id"]),

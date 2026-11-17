@@ -13,6 +13,7 @@ from live_activity.content import (
     format_alert,
     relevance,
     sector_icon,
+    service_display,
     stale_epoch,
 )
 from live_activity.phase import TR_TZ, Phase
@@ -264,3 +265,57 @@ def test_staff_name_shortening_leaves_customer_name_mode_alone():
     c = cs(privacy_mode="full", staff_name="Mustafa Bulut")
     assert c["customerDisplay"] == "Ayşe Kaya Yılmaz"
     assert c["staffName"] == "Mustafa B."
+
+
+def _multi(*names, seqs=None):
+    seqs = seqs or list(range(1, len(names) + 1))
+    return {"service_name": " + ".join(names),
+            "services": [{"name_snapshot": n, "sequence": q} for n, q in zip(names, seqs)]}
+
+
+def test_service_display_single_service_unchanged():
+    assert service_display({"service_name": "Saç Boyama"}) == "Saç Boyama"
+    assert service_display({"service_name": "Saç Boyama",
+                            "services": [{"name_snapshot": "Saç Boyama", "sequence": 1}]}) == "Saç Boyama"
+    assert service_display({"service_name": "x" * 50}) == "x" * 40
+    assert service_display({}) == ""
+    assert service_display({"service_name": None, "services": None}) == ""
+
+
+def test_service_display_multi_shows_first_plus_count():
+    assert service_display(_multi("Manikür", "Pedikür")) == "Manikür +1"
+    assert service_display(_multi("Kesim", "Fön", "Boya")) == "Kesim +2"
+
+
+def test_service_display_multi_shortens_long_first_name_so_count_stays_visible():
+    apt = _multi("Standart Koltuk Takımı Yıkama", "6 Adet Sandalye Yıkama")
+    assert service_display(apt) == "Standart Koltuk… +1"
+    apt = _multi("2 Adet Koltuk Yıkama", "B", "C", "D", "E")
+    assert service_display(apt) == "2 Adet Koltuk Y… +4"
+    assert service_display(_multi("Saç Kesimi Uzun", "Fön")) == "Saç Kesimi Uzun +1"  # 15 chars: kept whole
+
+
+def test_service_display_multi_uses_lowest_sequence_as_first():
+    assert service_display(_multi("Fön", "Kesim", seqs=[2, 1])) == "Kesim +1"
+
+
+def test_service_display_multi_skips_blank_line_names():
+    apt = {"service_name": "Kesim + Fön",
+           "services": [{"name_snapshot": "", "sequence": 1}, {"name_snapshot": "Fön", "sequence": 2}]}
+    assert service_display(apt) == "Fön +1"
+    apt = {"service_name": "Kesim + Fön", "services": [{"sequence": 1}, {"sequence": 2}]}
+    assert service_display(apt) == "Kesim + Fön"
+
+
+def test_content_state_uses_service_display():
+    apt = dict(APT, **_multi("Manikür", "Pedikür"))
+    c = build_content_state(apt, Phase.UPCOMING, START, END, privacy_mode="full",
+                            staff_name="M", version=1)
+    assert c["serviceName"] == "Manikür +1"
+
+
+def test_service_display_multi_tolerates_odd_sequence_values():
+    apt = {"services": [{"name_snapshot": "Kesim", "sequence": "1"},
+                        {"name_snapshot": "Fön", "sequence": None},
+                        {"name_snapshot": "Boya"}]}
+    assert service_display(apt).endswith(" +2")
