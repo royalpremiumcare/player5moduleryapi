@@ -116,11 +116,16 @@ def service_display(apt: dict) -> str:
     The card line is narrow and shared with the staff name, so a long first name is cut with
     "…" to keep "+N" visible. The full list stays in the app.
     """
-    lines = apt.get("services") or []
-    if len(lines) > 1:
-        ordered = sorted(lines, key=lambda l: l.get("sequence") if isinstance(l.get("sequence"), (int, float)) else 0)
-        first = next((l["name_snapshot"].strip() for l in ordered if (l.get("name_snapshot") or "").strip()), "")
-        if first:
+    lines = apt.get("services")
+    if isinstance(lines, list) and len(lines) > 1 and all(isinstance(l, dict) for l in lines):
+        def seq(l: dict) -> float:
+            q = l.get("sequence")
+            return q if isinstance(q, (int, float)) else 0
+
+        names = [n.strip() for n in (l.get("name_snapshot") for l in sorted(lines, key=seq))
+                 if isinstance(n, str) and n.strip()]
+        if names:
+            first = names[0]
             if len(first) > MULTI_FIRST_MAX:
                 first = first[:MULTI_FIRST_MAX - 1].rstrip() + "…"
             return f"{first} +{len(lines) - 1}"

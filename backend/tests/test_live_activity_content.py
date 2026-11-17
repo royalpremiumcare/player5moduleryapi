@@ -319,3 +319,14 @@ def test_service_display_multi_tolerates_odd_sequence_values():
                         {"name_snapshot": "Fön", "sequence": None},
                         {"name_snapshot": "Boya"}]}
     assert service_display(apt).endswith(" +2")
+
+
+def test_service_display_first_name_boundary_at_16_chars():
+    assert service_display(_multi("a" * 16, "b")) == "a" * 16 + " +1"
+    assert service_display(_multi("a" * 17, "b")) == "a" * 15 + "… +1"
+
+
+def test_service_display_malformed_lines_fall_back_to_service_name():
+    base = {"service_name": "Kesim + Fön"}
+    for bad in ({"a": 1, "b": 2}, ["Kesim", "Fön"], [{"name_snapshot": 5}, {"name_snapshot": ["x"]}], "Kesim,Fön"):
+        assert service_display(dict(base, services=bad)) == "Kesim + Fön"
