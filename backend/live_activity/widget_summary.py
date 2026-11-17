@@ -4,13 +4,13 @@ Never writes and never auto-completes: phases are derived from the stored status
 clock, exactly as for Live Activities.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from .content import build_content_state
 from .eligibility import effective_scope, in_scope, visible_for_user
-from .phase import TR_TZ, Phase, compute_phase
-from .sweeper import load_org
+from .phase import TR_TZ, Phase, appointment_window, compute_phase
+from .sweeper import APT_PROJECTION, load_org
 
 MAX_ITEMS = 6
 ITEM_KEYS = ("startLabel", "endLabel", "startEpoch", "endEpoch", "phase", "customerDisplay", "serviceName")
@@ -20,6 +20,37 @@ async def load_org_snapshot(db, org_id: str, now: datetime):
     """The sweeper's org snapshot, whether or not Live Activities are enabled for the org."""
     settings = await db.settings.find_one({"organization_id": org_id}, {"_id": 0}) or {}
     return await load_org(db, {**settings, "organization_id": org_id}, now)
+
+
+async def _org_name(db, org_id: str) -> str:
+    settings = await db.settings.find_one({"organization_id": org_id}, {"_id": 0, "company_name": 1}) or {}
+    return (settings.get("company_name") or "").strip()
+
+
+async def _tomorrow_first(db, org, viewer: dict, scope: str, now: datetime) -> dict | None:
+    """Earliest in-scope, not cancelled/removed appointment on the next TR calendar day (spec §7A.6)."""
+    tomorrow = (now.astimezone(TR_TZ) + timedelta(days=1)).strftime("%Y-%m-%d")
+    rows = await db.appointments.find(
+        {"organization_id": org.org_id, "appointment_date": tomorrow}, APT_PROJECTION
+    ).to_list(None)
+    candidates = []
+    for apt in rows:
+        if not in_scope(apt, viewer, scope):
+            continue
+        try:
+            phase = compute_phase(apt, now, org.duration(apt))
+            start, end = appointment_window(apt, org.duration(apt))
+        except (KeyError, ValueError, TypeError):
+            continue
+        if phase in (Phase.CANCELLED, Phase.REMOVED):
+            continue
+        candidates.append((start, apt, phase, end))
+    if not candidates:
+        return None
+    start, apt, phase, end = min(candidates, key=lambda c: c[0])
+    content = build_content_state(apt, phase, start, end, privacy_mode=org.privacy_mode,
+                                  staff_name=None, version=0)
+    return {k: content[k] for k in ("startLabel", "customerDisplay", "serviceName")}
 
 
 def user_view(org, user: dict) -> dict:
@@ -63,4 +94,6 @@ async def build_summary(db, user: dict, requested_scope: Literal["own", "all"] |
         "privacyMode": org.privacy_mode,
         "counts": {"total": completed + remaining, "completed": completed, "remaining": remaining},
         "items": items,
+        "orgName": await _org_name(db, user["organization_id"]),
+        "tomorrowFirst": await _tomorrow_first(db, org, viewer, scope, now),
     }
