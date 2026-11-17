@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-11-17T14:00:00.123456+03:00",
+  "scope": "all",
+  "privacyMode": "full",
+  "orgName": "Salon Güzel",
+  "counts": {"total": 5, "completed": 2, "remaining": 3},
+  "items": [
+    {"id": "apt-1", "startLabel": "13:30", "endLabel": "14:15", "startEpoch": 1794911400.0, "endEpoch": 1794914100.0, "phase": "processing", "customerDisplay": "Ayşe Yılmaz", "serviceName": "Saç Boyama", "staffName": "Mehmet"},
+    {"id": "apt-2", "startLabel": "14:30", "endLabel": "15:00", "startEpoch": 1794915000.0, "endEpoch": 1794916800.0, "phase": "upcoming", "customerDisplay": "Zeynep K.", "serviceName": "Fön", "staffName": "Elif"},
+    {"id": "apt-3", "startLabel": "16:00", "endLabel": "16:45", "startEpoch": 1794920400.0, "endEpoch": 1794923100.0, "phase": "upcoming", "customerDisplay": null, "serviceName": "Manikür", "staffName": "Elif"}
+  ],
+  "tomorrowFirst": {"startLabel": "09:30", "customerDisplay": null, "serviceName": "Kesim"}
+}
