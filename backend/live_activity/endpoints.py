@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, R
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field
 
-from . import registry
+from . import registry, widget_keys
 from .content import build_aps
 from .eligibility import MAX_SLOTS, MIN_SLOTS, effective_scope, is_manager, slot_count
 from .phase import TR_TZ
@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 SECRET_HEADER = "X-Plann-Device-Secret"
+WIDGET_KEY_HEADER = "X-Plann-Widget-Key"
+INACTIVE_STATUSES = {"inactive", "passive", "deactivated", "disabled", "suspended", "deleted"}
 USABLE_STATES = ("start_sent", "active")
 ALIVE_REPORT_STATES = {"active", "stale", "pending"}  # ActivityKit states of a card still on screen
 
@@ -319,7 +321,46 @@ async def update_preferences(body: Preferences, user=Depends(_current_user), db=
 
 # --- widget ------------------------------------------------------------------------------------
 
+def _user_is_active(doc: dict) -> bool:
+    return str(doc.get("status") or "active").lower() not in INACTIVE_STATUSES and doc.get("is_active") is not False
+
+
+async def _summary_user(request: Request, key: str | None = Header(default=None, alias=WIDGET_KEY_HEADER),
+                        token: str | None = Depends(_bearer), db=Depends(_db)):
+    """The summary accepts a widget key (checked first) or the login JWT. A key is resolved to the
+    user's current stored row, so role, status and preferences are always today's."""
+    if not key:
+        return await _resolve_jwt(request, token, db)
+    now = _now()
+    row = await widget_keys.resolve(db, key, now=now)
+    if row is None:
+        raise _unauthorized()
+    redis = getattr(request.app.state, "redis_client", None)
+    if not await widget_keys.within_rate_limit(redis, row["key_hash"], now=now):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many widget requests")
+    doc = await db.users.find_one({"username": row["username"]}, {"_id": 0})
+    if doc is None or not _user_is_active(doc):
+        raise _unauthorized()
+    return doc
+
+
 @router.get("/widget/summary")
 async def widget_summary(scope: Literal["own", "all"] | None = Query(default=None),
-                         user=Depends(_current_user), db=Depends(_db)):
+                         user=Depends(_summary_user), db=Depends(_db)):
     return await build_summary(db, _user_dict(user), scope, now=_now())
+
+
+class WidgetKeyRevoke(BaseModel):
+    key: str | None = Field(default=None, max_length=256)
+
+
+@router.post("/widget/key")
+async def issue_widget_key(user=Depends(_current_user), db=Depends(_db)):
+    raw, expires_at = await widget_keys.issue_key(db, _user_dict(user), now=_now())
+    return {"key": raw, "expires_at": expires_at.isoformat()}
+
+
+@router.delete("/widget/key", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_widget_key(body: WidgetKeyRevoke | None = None, user=Depends(_current_user), db=Depends(_db)):
+    await widget_keys.revoke(db, _user_dict(user)["username"], body.key if body else None)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

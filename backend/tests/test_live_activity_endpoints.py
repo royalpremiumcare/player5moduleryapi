@@ -100,6 +100,7 @@ def env(monkeypatch):
     app = FastAPI()
     app.include_router(endpoints.router, prefix="/api")
     app.dependency_overrides[endpoints._current_user] = lambda: current["user"]
+    app.dependency_overrides[endpoints._summary_user] = lambda: current["user"]
     app.dependency_overrides[endpoints._db] = lambda: db
     db.log.clear()
     return SimpleNamespace(db=db, client=TestClient(app), transport=transport, resyncs=resyncs, current=current)

@@ -940,6 +940,7 @@ _app_instance = None  # Global app instance for scheduler
 try:
     import live_activity.sweeper
     import live_activity.registry
+    import live_activity.widget_keys
     import live_activity.endpoints
     from live_activity.transport import FcmLiveActivityTransport
     # Tek transport; firebase_admin Step 6'da (lifespan) zaten initialize edilir, burada ikinci initialize YOK.
@@ -1380,6 +1381,7 @@ async def lifespan(app: FastAPI):
         if app.db is not None and live_activity is not None:
             try:
                 await live_activity.registry.ensure_indexes(app.db)
+                await live_activity.widget_keys.ensure_indexes(app.db)
                 _la_db = app.db
 
                 async def _run_live_activity_sweep():

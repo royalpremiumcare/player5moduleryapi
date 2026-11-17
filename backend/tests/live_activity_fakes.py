@@ -30,6 +30,8 @@ def _match(doc, flt):
                     return False
                 if op == "$lt" and not (k in doc and doc[k] < arg):
                     return False
+                if op == "$gt" and not (k in doc and doc[k] > arg):
+                    return False
         elif doc.get(k) != v:
             return False
     return True
@@ -117,6 +119,14 @@ class FakeCollection:
         self.docs.append(doc)
         return doc
 
+    async def insert_one(self, doc):
+        await asyncio.sleep(0)
+        self._note("insert_one", doc)
+        doc = copy.deepcopy(doc)
+        self._check_unique(doc)
+        self.docs.append(doc)
+        return _Result(1)
+
     async def find_one(self, flt, projection=None):
         await asyncio.sleep(0)
         self._note("find_one", flt, projection)
@@ -173,6 +183,14 @@ class FakeCollection:
                 return _Result(1)
         return _Result(0)
 
+    async def delete_many(self, flt):
+        await asyncio.sleep(0)
+        self._note("delete_many", flt)
+        keep = [d for d in self.docs if not _match(d, flt)]
+        n = len(self.docs) - len(keep)
+        self.docs[:] = keep
+        return _Result(n)
+
 
 class FakeDB:
     """Collections appear on first attribute access; every call is logged in ``log``."""
@@ -200,6 +218,25 @@ class FakeRedis:
         return True
 
 
+class CountingRedis:
+    """INCR/EXPIRE subset used by the widget rate limit."""
+
+    def __init__(self):
+        self.counts = {}
+        self.expiries = {}
+
+    async def incr(self, key):
+        self.counts[key] = self.counts.get(key, 0) + 1
+        return self.counts[key]
+
+    async def expire(self, key, seconds):
+        self.expiries[key] = seconds
+        return True
+
+
 class DownRedis:
     async def set(self, *_a, **_kw):
+        raise ConnectionError("redis down")
+
+    async def incr(self, *_a, **_kw):
         raise ConnectionError("redis down")
