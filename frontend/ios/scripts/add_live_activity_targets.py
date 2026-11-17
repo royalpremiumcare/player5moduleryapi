@@ -35,6 +35,7 @@ CP_EMBED = "9592DBEFFC6D2A0C8D5DEB22"
 
 EXT = "PlannWidgets"
 EXT_BUNDLE_ID = "co.plannapp.app.widgets"
+EXT_ENTITLEMENTS = "PlannWidgets/PlannWidgets.entitlements"  # shared keychain access group
 EXT_TARGET = u(0x01)
 EXT_SOURCES, EXT_FRAMEWORKS, EXT_RESOURCES = u(0x02), u(0x03), u(0x04)
 EMBED_PHASE = u(0x05)
@@ -173,7 +174,8 @@ def check(path):
                            "IPHONEOS_DEPLOYMENT_TARGET = 16.2;", "CODE_SIGN_STYLE = Manual;",
                            "DEVELOPMENT_TEAM = 9V42VGDN9U;",
                            "INFOPLIST_FILE = PlannWidgets/Info.plist;",
-                           "SKIP_INSTALL = YES;"):
+                           "SKIP_INSTALL = YES;",
+                           f"CODE_SIGN_ENTITLEMENTS = {EXT_ENTITLEMENTS};"):
                 need(needle in b, f"{cfg}: missing {needle}")
     need(f"{EXT_TARGET} /* {EXT} */," in src.split("targets = (", 1)[-1].split(");", 1)[0],
          "target not in project targets list")
@@ -304,6 +306,16 @@ def apply(path):
                 anchor = "\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER"
                 blk = blk.replace(anchor, "\t\t\t\tOTHER_LDFLAGS = \"$(inherited) -weak_framework ActivityKit\";\n" + anchor, 1)
                 src = src[:s[0]] + blk + src[s[1]:]
+
+    # ---- shared keychain group entitlements (idempotent; also upgrades an already-applied pbxproj)
+    ent_line = f"\t\t\t\tCODE_SIGN_ENTITLEMENTS = {EXT_ENTITLEMENTS};\n"
+    for cfg in (EXT_DEBUG, EXT_RELEASE):
+        s = block_span(src, cfg)
+        blk = src[s[0]:s[1]]
+        if "CODE_SIGN_ENTITLEMENTS" not in blk:
+            anchor = "\t\t\t\tCODE_SIGN_STYLE = Manual;\n"
+            assert blk.count(anchor) == 1
+            src = src[:s[0]] + blk.replace(anchor, ent_line + anchor, 1) + src[s[1]:]
 
     # ---- groups
     for name, (uid, gpath) in GROUPS.items():

@@ -271,6 +271,22 @@ workflows:
             tail -n 150 /tmp/xcodebuild_logs/*.log 2>/dev/null
           fi
           exit $status
+      - name: IPA içeriği (paylaşılan Keychain grubu kontrolü)
+        script: |
+          IPA=$(ls build/ios/ipa/*.ipa | head -1)
+          [ -n "$IPA" ] || { echo "HATA: IPA bulunamadı"; exit 1; }
+          # Paylasilan Keychain grubu (widget anahtari): imzali App ve appex'te entitlement olmali.
+          WORK=$(mktemp -d)
+          unzip -q "$IPA" -d "$WORK" || { echo "HATA: IPA açılamadı"; exit 1; }
+          for T in "Payload/App.app" "Payload/App.app/PlugIns/PlannWidgets.appex"; do
+            ENT=$(codesign -d --entitlements :- "$WORK/$T" 2>/dev/null)
+            if ! printf '%s' "$ENT" | grep -q "co.plannapp.app.shared"; then
+              echo "HATA: $T içinde keychain-access-groups co.plannapp.app.shared yok (paylaşılan Keychain grubu eksik)."
+              printf '%s\n' "$ENT"
+              exit 1
+            fi
+            echo "OK: $T paylaşılan Keychain grubunu taşıyor"
+          done
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
@@ -537,6 +553,18 @@ workflows:
         script: |
           IPA=$(ls build/ios/ipa/*.ipa | head -1)
           unzip -l "$IPA" | grep -E "PlugIns/PlannWidgets.appex/(Info.plist|PlannWidgets)$" || { echo "HATA: appex IPA içinde yok"; exit 1; }
+          # Paylasilan Keychain grubu (widget anahtari): imzali App ve appex'te entitlement olmali.
+          WORK=$(mktemp -d)
+          unzip -q "$IPA" -d "$WORK" || { echo "HATA: IPA açılamadı"; exit 1; }
+          for T in "Payload/App.app" "Payload/App.app/PlugIns/PlannWidgets.appex"; do
+            ENT=$(codesign -d --entitlements :- "$WORK/$T" 2>/dev/null)
+            if ! printf '%s' "$ENT" | grep -q "co.plannapp.app.shared"; then
+              echo "HATA: $T içinde keychain-access-groups co.plannapp.app.shared yok (paylaşılan Keychain grubu eksik)."
+              printf '%s\n' "$ENT"
+              exit 1
+            fi
+            echo "OK: $T paylaşılan Keychain grubunu taşıyor"
+          done
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

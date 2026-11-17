@@ -579,6 +579,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PlannWidgets/PlannWidgets.entitlements;
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_TEAM = 9V42VGDN9U;
@@ -602,6 +603,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PlannWidgets/PlannWidgets.entitlements;
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_TEAM = 9V42VGDN9U;
