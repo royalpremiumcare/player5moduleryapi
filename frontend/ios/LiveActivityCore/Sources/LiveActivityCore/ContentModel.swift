@@ -20,10 +20,12 @@ public struct PlannContentState: Codable, Hashable, Sendable {
     public var staffName: String?
     public var version: Int
     public var appointmentId: String
+    /// Sector token (hair, beauty, ...); nil from older servers.
+    public var icon: String?
 
     public init(phase: PlannPhase, startEpoch: Double, endEpoch: Double,
                 startLabel: String, endLabel: String, customerDisplay: String?,
-                serviceName: String, staffName: String?, version: Int, appointmentId: String) {
+                serviceName: String, staffName: String?, version: Int, appointmentId: String, icon: String? = nil) {
         self.phase = phase
         self.startEpoch = startEpoch
         self.endEpoch = endEpoch
@@ -34,6 +36,7 @@ public struct PlannContentState: Codable, Hashable, Sendable {
         self.staffName = staffName
         self.version = version
         self.appointmentId = appointmentId
+        self.icon = icon
     }
 
     public var startDate: Date { Date(timeIntervalSince1970: startEpoch) }

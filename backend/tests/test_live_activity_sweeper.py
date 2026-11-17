@@ -458,6 +458,32 @@ async def test_staff_name_only_on_all_scope_and_privacy_mode():
     assert by_dev["d1:1"]["alert"] == ("Sıradaki randevu", "Saç Kesimi · 10:20")
 
 
+async def test_sector_sets_icon_token_in_content_state():
+    db = await make_db(
+        settings_=[settings(sector="Kuaför")],
+        users=[user("ali")], devices=[device("d1", "ali")], apts=[apt("a", "10:20")],
+    )
+    t = RecordingTransport()
+    await sweep(db, t)
+    assert [s["aps"]["content-state"]["icon"] for s in t.sent] == ["hair"]
+
+
+async def test_missing_sector_sends_generic_icon():
+    db = await make_db(users=[user("ali")], devices=[device("d1", "ali")], apts=[apt("a", "10:20")])
+    t = RecordingTransport()
+    await sweep(db, t)
+    assert [s["aps"]["content-state"]["icon"] for s in t.sent] == ["generic"]
+
+
+async def test_removed_stub_sends_generic_icon():
+    db = await make_db(settings_=[settings(sector="Kuaför")], users=[user("ali")],
+                       devices=[device("d1", "ali", day=TODAY)], apts=[])
+    seed_slot(db, "d1", 1, "gone", "upcoming")
+    t = RecordingTransport()
+    await sweep(db, t)
+    assert t.sent[0]["aps"]["content-state"]["icon"] == "generic"
+
+
 async def test_resync_swallows_errors(caplog):
     db = await make_db()
 

@@ -8,5 +8,6 @@
   "serviceName": "Saç Boyama",
   "staffName": "Mehmet",
   "version": 3,
-  "appointmentId": "apt-123"
+  "appointmentId": "apt-123",
+  "icon": "hair"
 }

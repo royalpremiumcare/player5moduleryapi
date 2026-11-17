@@ -12,6 +12,7 @@ from live_activity.content import (
     display_name,
     format_alert,
     relevance,
+    sector_icon,
     stale_epoch,
 )
 from live_activity.phase import TR_TZ, Phase
@@ -29,7 +30,7 @@ APT = {
 }
 KEYS = {
     "phase", "startEpoch", "endEpoch", "startLabel", "endLabel",
-    "customerDisplay", "serviceName", "staffName", "version", "appointmentId",
+    "customerDisplay", "serviceName", "staffName", "version", "appointmentId", "icon",
 }
 FIXTURE = Path(__file__).parent / "contracts" / "live_activity_content_state.json"
 
@@ -154,7 +155,7 @@ def test_oversize_payload_raises():
 
 
 def test_matches_golden_fixture():
-    assert cs() == json.loads(FIXTURE.read_text())
+    assert cs(icon="hair") == json.loads(FIXTURE.read_text())
 
 
 def test_no_phone_or_price_keys():
@@ -177,3 +178,26 @@ def test_unknown_name_mode_is_initials():
         assert name_mode(bogus) == "initials"
         assert display_name("ayşe kaya", bogus) == "Ayşe K."
     assert cs(privacy_mode="everything")["customerDisplay"] == "Ayşe Y."
+
+
+@pytest.mark.parametrize("sector,token", [
+    ("Kuaför", "hair"),
+    ("Güzellik Salonu", "beauty"),
+    ("Masaj / SPA", "spa"),
+    ("Diyetisyen", "diet"),
+    ("Psikolog / Danışmanlık", "therapy"),
+    ("Diş Klinikleri", "dental"),
+    ("Diğer", "generic"),
+    ("Boş", "generic"),
+    ("", "generic"),
+    ("kuaför", "generic"),
+    ("Bilinmeyen", "generic"),
+    (None, "generic"),
+])
+def test_sector_icon_mapping(sector, token):
+    assert sector_icon(sector) == token
+
+
+def test_content_state_includes_icon():
+    assert cs()["icon"] == "generic"
+    assert cs(icon="beauty")["icon"] == "beauty"

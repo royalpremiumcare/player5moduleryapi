@@ -49,6 +49,21 @@ def name_mode(mode) -> Literal["initials", "full", "hidden"]:
     return mode if mode in NAME_MODES else "initials"
 
 
+SECTOR_ICONS = {
+    "Kuaför": "hair",
+    "Güzellik Salonu": "beauty",
+    "Masaj / SPA": "spa",
+    "Diyetisyen": "diet",
+    "Psikolog / Danışmanlık": "therapy",
+    "Diş Klinikleri": "dental",
+}
+
+
+def sector_icon(sector: str | None) -> str:
+    """Semantic icon token for `settings.sector`; anything unknown/missing is "generic"."""
+    return SECTOR_ICONS.get(sector, "generic") if isinstance(sector, str) else "generic"
+
+
 def display_name(full: str | None, mode: Literal["initials", "full", "hidden"]) -> str | None:
     mode = name_mode(mode)
     words = (full or "").split()
@@ -79,6 +94,7 @@ def build_content_state(
     privacy_mode: str,
     staff_name: str | None,
     version: int,
+    icon: str = "generic",
 ) -> dict:
     return {
         "phase": phase.value,
@@ -91,6 +107,7 @@ def build_content_state(
         "staffName": staff_name,
         "version": version,
         "appointmentId": str(apt["id"]),
+        "icon": icon,
     }
 
 

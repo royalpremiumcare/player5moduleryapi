@@ -24,6 +24,16 @@ final class ContentModelTests: XCTestCase {
         XCTAssertEqual(s.endDate.timeIntervalSince1970, 1794831300.0)
     }
 
+    func testDecodesIconAndToleratesMissingIcon() throws {
+        let withIcon = try JSONDecoder().decode(PlannContentState.self, from: fixtureData())
+        XCTAssertEqual(withIcon.icon, "hair")
+        let json = #"{"phase":"processing","startEpoch":1,"endEpoch":2,"startLabel":"a","endLabel":"b","customerDisplay":null,"serviceName":"s","staffName":null,"version":1,"appointmentId":"x"}"#
+        let old = try JSONDecoder().decode(PlannContentState.self, from: Data(json.utf8))
+        XCTAssertNil(old.icon)
+        let nul = json.replacingOccurrences(of: #""version":1"#, with: #""version":1,"icon":null"#)
+        XCTAssertNil(try JSONDecoder().decode(PlannContentState.self, from: Data(nul.utf8)).icon)
+    }
+
     func testFixtureMatchesBackendCopy() throws {
         // <repo>/frontend/ios/LiveActivityCore/Tests/LiveActivityCoreTests/ContentModelTests.swift
         var url = URL(fileURLWithPath: #filePath)
@@ -59,7 +69,7 @@ final class ContentModelTests: XCTestCase {
         let out = try JSONEncoder().encode(s)
         XCTAssertEqual(try JSONDecoder().decode(PlannContentState.self, from: out), s)
         let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: out) as? [String: Any])
-        XCTAssertEqual(Set(obj.keys), ["phase","startEpoch","endEpoch","startLabel","endLabel","customerDisplay","serviceName","staffName","version","appointmentId"])
+        XCTAssertEqual(Set(obj.keys), ["phase","startEpoch","endEpoch","startLabel","endLabel","customerDisplay","serviceName","staffName","version","appointmentId","icon"])
         XCTAssertEqual(obj["phase"] as? String, "upcoming")
     }
 

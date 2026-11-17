@@ -22,6 +22,7 @@ from .content import (
     build_content_state,
     format_alert,
     name_mode,
+    sector_icon,
     stale_epoch,
 )
 from .eligibility import (
@@ -101,6 +102,7 @@ class _Org:
     org_has_staff: bool
     lead_min: int
     privacy_mode: str
+    icon: str = "generic"
 
     def duration(self, apt: dict) -> int:
         return resolve_duration(apt, self.services_by_id)
@@ -161,6 +163,7 @@ async def load_org(db, settings: dict, now: datetime) -> _Org:
         org_has_staff=any(u.get("role") == "staff" and _active(u) for u in users),
         lead_min=effective_lead_minutes(settings.get("live_activity_lead_minutes")),
         privacy_mode=name_mode(settings.get("lock_screen_name_mode")),
+        icon=sector_icon(settings.get("sector")),
     )
 
 
@@ -225,7 +228,7 @@ def _end_content(org: _Org | None, action: Action, now: datetime, *, staff_name,
             start, end = appointment_window(apt, org.duration(apt))
             phase = action.phase or compute_phase(apt, now, org.duration(apt))
             return build_content_state(apt, phase, start, end, privacy_mode=org.privacy_mode,
-                                       staff_name=staff_name(apt), version=version), False
+                                       staff_name=staff_name(apt), version=version, icon=org.icon), False
         except (KeyError, ValueError, TypeError):
             pass
     # Deleted, out of scope or unreadable: no data left to show; dismissed immediately (spec §1.2).
@@ -376,7 +379,7 @@ async def _device_view(db, org: _Org, device: dict, *, now: datetime, stats: _St
 
     def content_for(v: VisibleAppt, version: int) -> dict:
         return build_content_state(v.apt, v.phase, v.start, v.end, privacy_mode=org.privacy_mode,
-                                   staff_name=staff_name(v.apt), version=version)
+                                   staff_name=staff_name(v.apt), version=version, icon=org.icon)
 
     return _DeviceView(user=user, n_slots=slot_count(user, scope), slots=slots, visible=visible,
                        by_id={v.id: v for v in visible}, staff_name=staff_name, content_for=content_for)
