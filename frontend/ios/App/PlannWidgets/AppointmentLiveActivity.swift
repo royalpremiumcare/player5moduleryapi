@@ -117,7 +117,8 @@ struct AppointmentLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     if l != .empty {
-                        HeroValue(look: l, state: context.state, valueSize: 24, timerWidth: 70, alignment: .trailing)
+                        HeroValue(look: l, state: context.state, valueSize: 24, timerWidth: 70, alignment: .trailing,
+                                  captionFont: .caption)
                             .padding(.trailing, 4)
                     }
                 }
@@ -185,7 +186,8 @@ private struct LockScreenCard: View {
                 }
                 HStack(alignment: .center, spacing: 12) {
                     StatusRing(look: l, state: state, size: 46, lineWidth: 4, symbolSize: 20)
-                    HeroValue(look: l, state: state, valueSize: 30, timerWidth: 84, alignment: .leading)
+                    HeroValue(look: l, state: state, valueSize: 30, timerWidth: 84, alignment: .leading,
+                              captionFont: .system(size: 13))
                         .layoutPriority(1)
                     MetaBlock(look: l, state: state)
                 }
@@ -212,7 +214,7 @@ private struct StatusBadge: View {
     }
 }
 
-/// Service line and time range, right-aligned in secondary.
+/// Service line (primary) and time range (secondary), right-aligned.
 private struct MetaBlock: View {
     let look: Look
     let state: PlannAppointmentAttributes.ContentState
@@ -222,14 +224,14 @@ private struct MetaBlock: View {
         VStack(alignment: .trailing, spacing: 3) {
             if !service.isEmpty {
                 Text(service)
-                    .font(.system(size: 15))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 16))
+                    .foregroundColor(.primary)
                     .multilineTextAlignment(.trailing)
                     .lineLimit(1)
             }
             if showsRangeInMeta(look) {
                 Text(rangeLine(state))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .monospacedDigit()
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.trailing)
@@ -297,13 +299,15 @@ private struct HeroValue: View {
     /// Fixed width for the live timer, which would otherwise expand to fill the row.
     let timerWidth: CGFloat
     let alignment: HorizontalAlignment
+    /// Lock Screen passes an explicit 13 pt; the island keeps the `.caption` text style.
+    let captionFont: Font
 
     var body: some View {
         VStack(alignment: alignment, spacing: 4) {
             value
             if let caption = heroCaption(look) {
                 Text(caption)
-                    .font(.caption)
+                    .font(captionFont)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .fixedSize()
