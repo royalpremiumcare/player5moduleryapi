@@ -1,26 +1,10 @@
-// Slot Live Activity UI: Lock Screen card and Dynamic Island.
-// White card with a status bar on the left; terminal phases render no live timer.
-// The extension deploys at iOS 16.2, so no availability guards are needed inside it.
+// Slot Live Activity UI: Lock Screen card and Dynamic Island (design 3: ring with a state symbol, big countdown).
+// The card sits on the system Lock Screen material (no background tint). One accent per state, derived only from Look.
+// Terminal and stale phases render no live timer.
+// The extension deploys at iOS 16.2; the only newer API (numeric content transition) is behind #available(iOS 17.0, *).
 import ActivityKit
 import SwiftUI
 import WidgetKit
-
-private enum PC {
-    static let ink = Color(red: 10 / 255, green: 10 / 255, blue: 11 / 255)           // #0A0A0B
-    static let secondary = Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255)     // #52525B
-    static let muted = Color(red: 113 / 255, green: 113 / 255, blue: 122 / 255)      // #71717A
-    static let amberBar = Color(red: 217 / 255, green: 119 / 255, blue: 6 / 255)     // #D97706
-    static let amberText = Color(red: 180 / 255, green: 83 / 255, blue: 9 / 255)    // #B45309
-    static let amberDot = Color(red: 245 / 255, green: 158 / 255, blue: 11 / 255)    // #F59E0B
-    static let greenBar = Color(red: 22 / 255, green: 163 / 255, blue: 74 / 255)     // #16A34A
-    static let greenText = Color(red: 21 / 255, green: 128 / 255, blue: 61 / 255)    // #15803D
-    static let greenSoft = Color(red: 74 / 255, green: 222 / 255, blue: 128 / 255)   // #4ADE80 (on black)
-    static let redBar = Color(red: 220 / 255, green: 38 / 255, blue: 38 / 255)       // #DC2626
-    static let redText = Color(red: 185 / 255, green: 28 / 255, blue: 28 / 255)      // #B91C1C
-    static let redSoft = Color(red: 248 / 255, green: 113 / 255, blue: 113 / 255)    // #F87171 (on black)
-    static let track = Color(red: 237 / 255, green: 235 / 255, blue: 230 / 255)      // #EDEBE6
-    static let trackDone = Color(red: 214 / 255, green: 211 / 255, blue: 206 / 255)  // #D6D3CE
-}
 
 private enum Look { case upcoming, starting, processing, overdue, completed, cancelled, empty }
 
@@ -43,13 +27,51 @@ private func processingRange(_ s: PlannAppointmentAttributes.ContentState) -> Cl
     return s.startDate...end
 }
 
-private func barColor(_ l: Look) -> Color {
+/// Range for the countdown text. Only the upper bound sets what it shows (time left until it);
+/// the lower bound sits 12 h back so an activity started earlier than the ring window still counts live.
+private func countdownRange(to end: Date) -> ClosedRange<Date> {
+    end.addingTimeInterval(-12 * 3600)...end
+}
+
+/// The single accent for a state. Nothing else carries colour, so no colour outlives a state change.
+private func accent(_ l: Look) -> Color {
     switch l {
-    case .upcoming, .starting, .processing: return PC.amberBar
-    case .overdue: return PC.muted
-    case .completed: return PC.greenBar
-    case .cancelled: return PC.redBar
+    case .upcoming, .starting: return Color.orange
+    case .processing, .overdue, .completed: return Color.green
+    case .cancelled: return Color.secondary
     case .empty: return Color.clear
+    }
+}
+
+private func badgeText(_ l: Look) -> String {
+    switch l {
+    case .upcoming: return "Sıradaki"
+    case .starting: return "Başlıyor"
+    case .processing: return "İşlemde"
+    case .overdue: return "Süre doldu"
+    case .completed: return "Tamamlandı"
+    case .cancelled: return "İptal edildi"
+    case .empty: return ""
+    }
+}
+
+private func symbolName(_ l: Look) -> String {
+    switch l {
+    case .upcoming, .starting: return "clock"
+    case .processing, .overdue: return "scissors"
+    case .completed: return "checkmark"
+    case .cancelled, .empty: return "xmark"
+    }
+}
+
+/// Small line under the hero value; nil when the hero itself already says it (stale states).
+private func heroCaption(_ l: Look) -> String? {
+    switch l {
+    case .upcoming: return "Başlamasına kalan"
+    case .processing: return "Bitmesine kalan"
+    case .completed: return "Bitiş saati"
+    case .cancelled: return "İptal edildi"
+    case .starting, .overdue, .empty: return nil
     }
 }
 
@@ -57,16 +79,15 @@ private func titleLine(_ s: PlannAppointmentAttributes.ContentState) -> String {
     s.customerDisplay ?? s.serviceName
 }
 
-private func firstName(_ s: PlannAppointmentAttributes.ContentState) -> String {
-    let t = titleLine(s)
-    return t.split(separator: " ").first.map(String.init) ?? t
-}
-
 private func serviceLine(_ s: PlannAppointmentAttributes.ContentState) -> String {
     var parts: [String] = []
     if s.customerDisplay != nil { parts.append(s.serviceName) }
     if let staff = s.staffName, !staff.isEmpty { parts.append(staff) }
     return parts.joined(separator: " · ")
+}
+
+private func rangeLine(_ s: PlannAppointmentAttributes.ContentState) -> String {
+    "\(s.startLabel)–\(s.endLabel)"
 }
 
 private func deepLink(_ s: PlannAppointmentAttributes.ContentState) -> URL? {
@@ -77,67 +98,61 @@ private func deepLink(_ s: PlannAppointmentAttributes.ContentState) -> URL? {
 struct AppointmentLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PlannAppointmentAttributes.self) { context in
+            // Background tint left unset (nil): the system Lock Screen material stays underneath.
             LockScreenCard(state: context.state, isStale: context.isStale)
-                .padding(.leading, 14)
-                .padding(.trailing, 16)
-                .padding(.vertical, 12)
-                .activityBackgroundTint(Color.white)
-                .activitySystemActionForegroundColor(PC.ink)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
                 .widgetURL(deepLink(context.state))
         } dynamicIsland: { context in
             let l = lookFor(context.state, context.isStale)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     if l != .empty {
-                    HStack(spacing: 10) {
-                        IslandMark(look: l, size: 30)
-                        Text(titleLine(context.state))
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                    }
-                    .padding(.leading, 4)
+                        StatusRing(look: l, state: context.state, size: 40, lineWidth: 4, symbolSize: 17)
+                            .padding(.leading, 4)
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     if l != .empty {
-                    Text("\(context.state.startLabel)–\(context.state.endLabel)")
-                        .font(.system(size: 15, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundColor(.white)
-                        .padding(.trailing, 4)
+                        HeroValue(look: l, state: context.state, valueSize: 24, timerWidth: 70, alignment: .trailing)
+                            .padding(.trailing, 4)
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     if l != .empty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(serviceLine(context.state))
-                            .font(.system(size: 14))
-                            .foregroundColor(.gray)
-                            .lineLimit(1)
-                        TimerRow(look: l, state: context.state, onDark: true, valueSize: 24)
-                        ProgressLine(look: l, state: context.state, onDark: true)
-                    }
-                    .padding(.horizontal, 4)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(titleLine(context.state))
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            HStack(spacing: 8) {
+                                Text(serviceLine(context.state))
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text(rangeLine(context.state))
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .monospacedDigit()
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(.horizontal, 4)
                     }
                 }
             } compactLeading: {
                 if l != .empty {
-                HStack(spacing: 6) {
-                    IslandMark(look: l, size: 21)
-                    Text(firstName(context.state))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                }
+                    IslandIndicator(look: l, state: context.state)
                 }
             } compactTrailing: {
                 CompactValue(look: l, state: context.state)
             } minimal: {
                 if l != .empty {
-                    IslandMark(look: l, size: 21)
+                    StatusRing(look: l, state: context.state, size: 20, lineWidth: 3, symbolSize: nil)
                 }
             }
+            .keylineTint(accent(l))
             .widgetURL(deepLink(context.state))
         }
     }
@@ -152,293 +167,233 @@ private struct LockScreenCard: View {
     var body: some View {
         let l = lookFor(state, isStale)
         if l == .empty {
-            Color.white
+            Color.clear
         } else {
-        HStack(alignment: .top, spacing: 12) {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(barColor(l))
-                .frame(width: l == .processing ? 6 : 4)
-            VStack(alignment: .leading, spacing: 4) {
-                NameRow(look: l, state: state)
-                SubRow(look: l, state: state)
-                switch l {
-                case .completed:
-                    FinalRow(symbol: "checkmark.circle", color: PC.greenText,
-                             text: "Tamamlandı · \(state.endLabel)")
-                case .cancelled:
-                    FinalRow(symbol: "xmark.circle", color: PC.redText, text: "Randevu iptal edildi")
-                default:
-                    CompactTimerRow(look: l, state: state)
-                        .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(titleLine(state))
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    StatusBadge(look: l)
+                }
+                HStack(alignment: .center, spacing: 12) {
+                    StatusRing(look: l, state: state, size: 46, lineWidth: 4, symbolSize: 20)
+                    HeroValue(look: l, state: state, valueSize: 30, timerWidth: 84, alignment: .leading)
+                        .layoutPriority(1)
+                    MetaBlock(state: state)
                 }
             }
         }
-        }
     }
 }
 
-private struct NameRow: View {
+/// Coloured dot plus `.primary` text; colour lives only in the dot.
+private struct StatusBadge: View {
     let look: Look
-    let state: PlannAppointmentAttributes.ContentState
 
     var body: some View {
-        let cancelled = (look == .cancelled)
-        let nameColor: Color = cancelled ? PC.secondary : PC.ink
-        HStack(alignment: .center, spacing: 8) {
-            Text(titleLine(state))
-                .font(.system(size: 17, weight: .bold))
-                .foregroundColor(nameColor)
+        HStack(spacing: 6) {
+            Circle()
+                .fill(accent(look))
+                .frame(width: 8, height: 8)
+            Text(badgeText(look))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.primary)
                 .lineLimit(1)
-            Spacer(minLength: 4)
-            StatusLabel(look: look)
         }
+        .fixedSize()
     }
 }
 
-/// Second line: service · staff on the left, time range on the right.
-private struct SubRow: View {
-    let look: Look
+/// Service line and time range, right-aligned in secondary.
+private struct MetaBlock: View {
     let state: PlannAppointmentAttributes.ContentState
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(serviceLine(state))
-                .font(.system(size: 13))
-                .foregroundColor(PC.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            Text("\(state.startLabel)–\(state.endLabel)")
+        let service = serviceLine(state)
+        VStack(alignment: .trailing, spacing: 3) {
+            if !service.isEmpty {
+                Text(service)
+                    .font(.system(size: 15))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+            }
+            Text(rangeLine(state))
                 .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
-                .foregroundColor(PC.secondary)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
-/// Third line: "Başlamasına 12:41" then the progress bar filling the rest of the row.
-private struct CompactTimerRow: View {
+// MARK: - Shared pieces
+
+/// The ring. Live looks (upcoming, processing) use the system circular timer ProgressView, which
+/// drains on its own; every other look draws a static full ring with no timer.
+/// Kept in this one view so it can be swapped (e.g. for a linear bar) if the circular style
+/// renders badly on a device.
+private struct StatusRing: View {
     let look: Look
     let state: PlannAppointmentAttributes.ContentState
+    let size: CGFloat
+    let lineWidth: CGFloat
+    /// nil draws the ring without the state symbol (minimal island).
+    let symbolSize: CGFloat?
 
     var body: some View {
-        let labelColor: Color = (look == .overdue) ? PC.secondary : PC.amberText
-        HStack(alignment: .center, spacing: 8) {
-            Text(label)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(labelColor)
-                .lineLimit(1)
-                .fixedSize()
-            value
-                .font(.system(size: 20, weight: .bold))
-                .monospacedDigit()
-                .foregroundColor(PC.ink)
-                .lineLimit(1)
-                .frame(width: 74, alignment: .leading)
-            ProgressLine(look: look, state: state, onDark: false)
-                .frame(maxWidth: .infinity)
-        }
-    }
-
-    private var label: String {
-        switch look {
-        case .upcoming: return "Başlamasına kalan"
-        case .starting: return "Başlıyor ·"
-        case .processing: return "Bitmesine kalan"
-        case .overdue: return "Süre doldu ·"
-        default: return ""
-        }
-    }
-
-    private var value: Text {
-        switch look {
-        case .upcoming: return Text(state.startDate, style: .timer)
-        case .processing: return Text(state.endDate, style: .timer)
-        case .starting: return Text(state.startLabel)
-        default: return Text(state.endLabel)
-        }
-    }
-}
-
-private struct StatusLabel: View {
-    let look: Look
-
-    var body: some View {
-        switch look {
-        case .upcoming, .starting:
-            Text("Sıradaki")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(PC.amberText)
-        case .processing:
-            HStack(spacing: 5) {
+        let tint = accent(look)
+        ZStack {
+            switch look {
+            case .upcoming:
+                ProgressView(timerInterval: leadRange(state), countsDown: true) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .progressViewStyle(.circular)
+                .tint(tint)
+            case .processing:
+                ProgressView(timerInterval: processingRange(state), countsDown: true) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .progressViewStyle(.circular)
+                .tint(tint)
+            default:
                 Circle()
-                    .fill(PC.greenSoft)
-                    .frame(width: 6, height: 6)
-                Text("İşlemde")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
+                    .stroke(tint, lineWidth: lineWidth)
+                    .padding(lineWidth / 2)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(PC.ink))
-        case .overdue:
-            Text("Süre doldu")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(PC.secondary)
-        case .completed:
-            HStack(spacing: 4) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .bold))
-                Text("Tamamlandı")
-                    .font(.system(size: 12, weight: .semibold))
+            if let symbolSize = symbolSize {
+                Image(systemName: symbolName(look))
+                    .font(.system(size: symbolSize, weight: .semibold))
+                    .foregroundStyle(tint)
             }
-            .foregroundColor(PC.greenText)
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+/// Big value with its caption: a live countdown for upcoming/processing, otherwise a static label.
+private struct HeroValue: View {
+    let look: Look
+    let state: PlannAppointmentAttributes.ContentState
+    let valueSize: CGFloat
+    /// Fixed width for the live timer, which would otherwise expand to fill the row.
+    let timerWidth: CGFloat
+    let alignment: HorizontalAlignment
+
+    var body: some View {
+        VStack(alignment: alignment, spacing: 4) {
+            value
+            if let caption = heroCaption(look) {
+                Text(caption)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var value: some View {
+        switch look {
+        case .upcoming:
+            CountdownText(end: state.startDate, size: valueSize, width: timerWidth, alignment: alignment,
+                          color: .primary)
+        case .processing:
+            CountdownText(end: state.endDate, size: valueSize, width: timerWidth, alignment: alignment,
+                          color: .primary)
+        case .starting, .overdue, .completed:
+            StaticValue(text: staticText, size: valueSize, color: .primary)
         case .cancelled:
-            Text("İptal edildi")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(PC.redText)
+            StaticValue(text: state.startLabel, size: valueSize, color: .secondary)
         case .empty:
             EmptyView()
         }
     }
-}
 
-private struct FinalRow: View {
-    let symbol: String
-    let color: Color
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(color)
-            Text(text)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(PC.ink)
-                .lineLimit(1)
-        }
-        .padding(.top, 2)
-    }
-}
-
-/// Label on the left, value on the right. Only upcoming/processing render a live timer.
-private struct TimerRow: View {
-    let look: Look
-    let state: PlannAppointmentAttributes.ContentState
-    let onDark: Bool
-    let valueSize: CGFloat
-
-    var body: some View {
-        let labelColor: Color = (look == .overdue) ? (onDark ? .gray : PC.secondary) : (onDark ? PC.amberDot : PC.amberText)
-        let valueColor: Color = onDark ? .white : PC.ink
-        HStack(alignment: .firstTextBaseline) {
-            Text(label)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(labelColor)
-            Spacer(minLength: 8)
-            value
-                .font(.system(size: valueSize, weight: .bold))
-                .monospacedDigit()
-                .foregroundColor(valueColor)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(1)
-        }
-    }
-
-    private var label: String {
+    private var staticText: String {
         switch look {
-        case .upcoming: return "Başlamasına kalan"
-        case .starting: return "Başlıyor ·"
-        case .processing: return "Bitmesine kalan"
-        case .overdue: return "Süre doldu ·"
-        case .completed: return "Tamamlandı"
-        case .cancelled: return "İptal edildi"
-        case .empty: return ""
-        }
-    }
-
-    private var value: Text {
-        switch look {
-        case .upcoming: return Text(state.startDate, style: .timer)
-        case .processing: return Text(state.endDate, style: .timer)
-        case .starting: return Text(state.startLabel)
-        case .overdue, .completed: return Text(state.endLabel)
-        case .cancelled, .empty: return Text("")
+        case .starting: return "Başlıyor"
+        case .overdue: return "Süre doldu"
+        default: return state.endLabel
         }
     }
 }
 
-private struct ProgressLine: View {
-    let look: Look
-    let state: PlannAppointmentAttributes.ContentState
-    let onDark: Bool
-
-    var body: some View {
-        switch look {
-        case .upcoming:
-            ProgressView(timerInterval: leadRange(state), countsDown: false) {
-                EmptyView()
-            } currentValueLabel: {
-                EmptyView()
-            }
-            .tint(onDark ? PC.amberDot : PC.amberBar)
-        case .processing:
-            ProgressView(timerInterval: processingRange(state), countsDown: false) {
-                EmptyView()
-            } currentValueLabel: {
-                EmptyView()
-            }
-            .tint(onDark ? PC.greenSoft : PC.greenBar)
-        case .starting:
-            Capsule()
-                .fill(onDark ? PC.amberDot : PC.amberBar)
-                .frame(height: 4)
-        default:
-            Capsule()
-                .fill(onDark ? Color.gray.opacity(0.5) : PC.trackDone)
-                .frame(height: 4)
-        }
-    }
-}
-
-// MARK: - Dynamic Island pieces (always on black)
-
-private struct IslandMark: View {
-    let look: Look
+private struct CountdownText: View {
+    let end: Date
     let size: CGFloat
+    let width: CGFloat
+    let alignment: HorizontalAlignment
+    let color: Color
 
     var body: some View {
-        ZStack {
-            switch look {
-            case .completed:
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: size * 0.9))
-                    .foregroundColor(PC.greenSoft)
-            case .cancelled:
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: size * 0.9))
-                    .foregroundColor(PC.redSoft)
-            case .processing:
-                Circle()
-                    .fill(PC.amberDot)
-                Text("P")
-                    .font(.system(size: size * 0.5, weight: .heavy))
-                    .foregroundColor(.black)
-            case .overdue:
-                Circle()
-                    .stroke(Color.gray, lineWidth: 2)
-                Text("P")
-                    .font(.system(size: size * 0.5, weight: .heavy))
-                    .foregroundColor(.gray)
-            default:
-                Circle()
-                    .stroke(PC.amberDot, lineWidth: 2)
-                Text("P")
-                    .font(.system(size: size * 0.5, weight: .heavy))
-                    .foregroundColor(.white)
-            }
+        Text(timerInterval: countdownRange(to: end), countsDown: true)
+            .font(.system(size: size, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .foregroundColor(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
+            .frame(width: width, alignment: Alignment(horizontal: alignment, vertical: .center))
+            .numericCountdownTransition()
+    }
+}
+
+private struct StaticValue: View {
+    let text: String
+    let size: CGFloat
+    let color: Color
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: size, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .foregroundColor(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+    }
+}
+
+private extension View {
+    /// Rolling digits where the system supports it; earlier versions just change the digits in place.
+    @ViewBuilder
+    func numericCountdownTransition() -> some View {
+        if #available(iOS 17.0, *) {
+            self.contentTransition(.numericText(countsDown: true))
+        } else {
+            self
         }
-        .frame(width: size, height: size)
+    }
+}
+
+// MARK: - Dynamic Island compact pieces (system black background)
+
+/// Compact leading: the live ring for upcoming/processing, otherwise the state symbol.
+private struct IslandIndicator: View {
+    let look: Look
+    let state: PlannAppointmentAttributes.ContentState
+
+    var body: some View {
+        switch look {
+        case .upcoming, .processing:
+            StatusRing(look: look, state: state, size: 20, lineWidth: 3, symbolSize: nil)
+        default:
+            Image(systemName: symbolName(look))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(accent(look))
+                .frame(width: 20, height: 20)
+        }
     }
 }
 
@@ -447,36 +402,33 @@ private struct CompactValue: View {
     let state: PlannAppointmentAttributes.ContentState
 
     var body: some View {
-        Group {
-            switch look {
-            case .upcoming:
-                Text(state.startDate, style: .timer)
-                    .monospacedDigit()
-                    .foregroundColor(PC.amberDot)
-            case .processing:
-                Text(state.endDate, style: .timer)
-                    .monospacedDigit()
-                    .foregroundColor(PC.greenSoft)
-            case .starting:
-                Text(state.startLabel)
-                    .monospacedDigit()
-                    .foregroundColor(PC.amberDot)
-            case .overdue:
-                Text(state.endLabel)
-                    .monospacedDigit()
-                    .foregroundColor(.gray)
-            case .completed:
-                Text("Bitti")
-                    .foregroundColor(PC.greenSoft)
-            case .cancelled:
-                Text("İptal")
-                    .foregroundColor(PC.redSoft)
-            case .empty:
-                EmptyView()
-            }
+        let tint = accent(look)
+        switch look {
+        case .upcoming:
+            CountdownText(end: state.startDate, size: 15, width: 48, alignment: .trailing, color: tint)
+        case .processing:
+            CountdownText(end: state.endDate, size: 15, width: 48, alignment: .trailing, color: tint)
+        case .starting, .cancelled:
+            CompactLabel(text: state.startLabel, color: tint)
+        case .overdue, .completed:
+            CompactLabel(text: state.endLabel, color: tint)
+        case .empty:
+            EmptyView()
         }
-        .font(.system(size: 15, weight: .semibold))
-        .multilineTextAlignment(.trailing)
-        .frame(maxWidth: 56)
+    }
+}
+
+private struct CompactLabel: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 15, weight: .semibold, design: .rounded))
+            .monospacedDigit()
+            .foregroundColor(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: 48, alignment: .trailing)
     }
 }
