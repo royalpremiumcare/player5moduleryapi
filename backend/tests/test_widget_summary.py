@@ -63,3 +63,10 @@ def test_tomorrow_first_respects_privacy_mode(env):
     assert body["privacyMode"] == "hidden"
     assert body["tomorrowFirst"]["customerDisplay"] is None
     assert body["tomorrowFirst"]["startLabel"] == "09:30"
+
+
+def test_tomorrow_first_excludes_payment_pending(env):
+    seed_day(env)
+    env.db.appointments.docs.append(
+        apt("t-pay", "08:00", staff="elif", date=TOMORROW, status="Ödeme Bekleniyor"))
+    assert summary(env)["tomorrowFirst"]["startLabel"] == "10:30"  # seed_day's tomorrow row, not 08:00

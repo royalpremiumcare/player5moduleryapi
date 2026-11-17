@@ -28,7 +28,7 @@ async def _org_name(db, org_id: str) -> str:
 
 
 async def _tomorrow_first(db, org, viewer: dict, scope: str, now: datetime) -> dict | None:
-    """Earliest in-scope, not cancelled/removed appointment on the next TR calendar day (spec §7A.6)."""
+    """Earliest in-scope, not cancelled/removed/payment-pending appointment on the next TR calendar day (spec §7A.6)."""
     tomorrow = (now.astimezone(TR_TZ) + timedelta(days=1)).strftime("%Y-%m-%d")
     rows = await db.appointments.find(
         {"organization_id": org.org_id, "appointment_date": tomorrow}, APT_PROJECTION
@@ -42,7 +42,7 @@ async def _tomorrow_first(db, org, viewer: dict, scope: str, now: datetime) -> d
             start, end = appointment_window(apt, org.duration(apt))
         except (KeyError, ValueError, TypeError):
             continue
-        if phase in (Phase.CANCELLED, Phase.REMOVED):
+        if phase in (Phase.CANCELLED, Phase.REMOVED, Phase.INELIGIBLE):
             continue
         candidates.append((start, apt, phase, end))
     if not candidates:
