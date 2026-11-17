@@ -169,8 +169,8 @@ def test_relevance_on_every_action():
     assert [(a.kind, a.slot_index, a.relevance) for a in actions] == [
         ("end", 5, 0.0),  # slot count 4 < slot 5
         ("update", 1, pytest.approx(100 + 99 * (1 - 629 / 1440))),  # processing, ends 10:29
-        ("update", 2, 44.0),
-        ("start", 3, 38.0),
+        ("update", 2, pytest.approx(1 + 98 * (1 - 660 / 1440))),  # upcoming, starts 11:00
+        ("start", 3, pytest.approx(1 + 98 * (1 - 720 / 1440))),  # upcoming, starts 12:00
     ]
     assert all(isinstance(a.relevance, float) for a in actions)
 

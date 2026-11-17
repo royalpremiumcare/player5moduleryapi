@@ -101,12 +101,24 @@ def _processing_relevance(start: datetime, end: datetime | None) -> float:
     return 100 + 99 * (1 - minutes / 1440)
 
 
+def _upcoming_relevance(start: datetime) -> float:
+    """1..99, higher for an earlier start; independent of the push time.
+
+    An update is pushed only when the card's content changes, so a score based on the time left
+    would freeze at whatever was left when it was pushed (two cards pushed 15 min before their
+    starts tied). Minutes are counted from the start's local midnight, like processing; stays
+    below processing's floor of 100.
+    """
+    midnight = start.astimezone(TR_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    minutes = min(max((start.astimezone(TR_TZ) - midnight).total_seconds() / 60, 0), 1440)
+    return 1 + 98 * (1 - minutes / 1440)
+
+
 def relevance(phase: Phase, start: datetime, now: datetime, end: datetime | None = None) -> float:
     if phase is Phase.PROCESSING:
         return _processing_relevance(start, end)
     if phase is Phase.UPCOMING:
-        minutes_to_start = (start - now).total_seconds() / 60
-        return max(1, 50 - minutes_to_start / 10)
+        return _upcoming_relevance(start)
     return 0
 
 

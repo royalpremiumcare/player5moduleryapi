@@ -64,8 +64,7 @@ def test_display_name_modes():
 
 def test_relevance_values():
     assert relevance(Phase.PROCESSING, START, NOW) == 100
-    assert relevance(Phase.UPCOMING, START, NOW + timedelta(minutes=10)) == 48
-    assert relevance(Phase.UPCOMING, START + timedelta(minutes=900), NOW) == 1
+    assert relevance(Phase.UPCOMING, START, NOW) == pytest.approx(1 + 98 * (1 - 870 / 1440))  # starts 14:30
     assert relevance(Phase.COMPLETED, START, NOW) == 0
 
 
@@ -230,7 +229,7 @@ def test_processing_relevance_independent_of_push_time():
 
 def test_processing_still_outranks_upcoming():
     worst_processing = relevance(Phase.PROCESSING, _at(23, 0), _at(23, 30), _at(23, 59))
-    best_upcoming = relevance(Phase.UPCOMING, START, START - timedelta(minutes=1))
+    best_upcoming = relevance(Phase.UPCOMING, _at(0, 0), _at(0, 0))
     assert worst_processing > best_upcoming
     assert relevance(Phase.PROCESSING, START, NOW, None) == 100
     # ends at/after midnight: clamped to the floor of the range
@@ -238,10 +237,27 @@ def test_processing_still_outranks_upcoming():
     assert relevance(Phase.PROCESSING, _at(23, 0), _at(23, 30), _at(0, 30, day=17)) == 100
 
 
-def test_upcoming_and_terminal_relevance_unchanged():
+def test_upcoming_earlier_start_has_higher_relevance_whenever_pushed():
+    # Field case 2026-11-18: Gizem (02:35) was pushed at 02:20 and İpek (02:45) at 02:30, both
+    # 15 min ahead, so the old "minutes until start" score tied and İpek showed above Gizem.
+    gizem = relevance(Phase.UPCOMING, _at(2, 35), _at(2, 20))
+    ipek = relevance(Phase.UPCOMING, _at(2, 45), _at(2, 30))
+    assert gizem > ipek
+    assert relevance(Phase.UPCOMING, _at(2, 35), _at(2, 34)) > relevance(Phase.UPCOMING, _at(2, 45), _at(2, 0))
+
+
+def test_upcoming_relevance_independent_of_push_time():
+    assert len({relevance(Phase.UPCOMING, _at(9, 0), _at(h, m)) for h, m in ((6, 0), (8, 30), (8, 59))}) == 1
+
+
+def test_upcoming_relevance_range_stays_below_processing():
+    assert relevance(Phase.UPCOMING, _at(0, 0), _at(0, 0)) == pytest.approx(99)
+    assert relevance(Phase.UPCOMING, _at(23, 59), _at(23, 30)) >= 1
+    assert relevance(Phase.UPCOMING, _at(0, 0), _at(0, 0)) < relevance(Phase.PROCESSING, _at(0, 0), _at(0, 0), _at(23, 59, ))
+
+
+def test_terminal_relevance_unchanged():
     end = END
-    assert relevance(Phase.UPCOMING, START, NOW + timedelta(minutes=10), end) == 48
-    assert relevance(Phase.UPCOMING, START + timedelta(minutes=900), NOW, end) == 1
     assert relevance(Phase.COMPLETED, START, NOW, end) == 0
     assert relevance(Phase.CANCELLED, START, NOW, end) == 0
 

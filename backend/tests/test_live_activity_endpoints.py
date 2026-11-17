@@ -368,7 +368,7 @@ def test_reconcile_start_locally_only_without_push_to_start(env):
     start = body["start_locally"][0]
     start_epoch = int(NOW.replace(minute=20).timestamp())
     assert (start["slot_index"], start["stale_epoch"]) == (1, start_epoch)
-    assert start["relevance"] == pytest.approx(48.0)
+    assert start["relevance"] == pytest.approx(1 + 98 * (1 - 620 / 1440))  # upcoming, starts 10:20
     content = start["content"]
     assert (content["appointmentId"], content["phase"], content["customerDisplay"]) == ("a1", "upcoming", "Ayşe Kaya")
     assert env.transport.sent == []  # handed to the app, never pushed
