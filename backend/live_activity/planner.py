@@ -136,7 +136,7 @@ def plan_device(
                 and v.id not in already_processing:
             alert, alert_used = "processing", True
         actions.append(Action("update", s["slot_index"], v.id, v.phase, priority, alert,
-                              float(relevance(v.phase, v.start, now)), None))
+                              float(relevance(v.phase, v.start, now, v.end)), None))
 
     # One start per sweep at most: its alert is mandatory and the sweep may carry only one.
     # A slot dismissed today is not closed for the day (a few accidental swipes must not stop
@@ -160,5 +160,5 @@ def plan_device(
             index, v = None, None
         if v is not None:
             actions.append(Action("start", index, v.id, v.phase, 10, "start",
-                                  float(relevance(v.phase, v.start, now)), None))
+                                  float(relevance(v.phase, v.start, now, v.end)), None))
     return actions

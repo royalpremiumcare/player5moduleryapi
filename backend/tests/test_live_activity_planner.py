@@ -1,3 +1,4 @@
+import pytest
 from datetime import datetime, timedelta
 
 from live_activity.eligibility import VisibleAppt, visible_for_user
@@ -167,7 +168,7 @@ def test_relevance_on_every_action():
     actions = plan(slots, visible, n=4)
     assert [(a.kind, a.slot_index, a.relevance) for a in actions] == [
         ("end", 5, 0.0),  # slot count 4 < slot 5
-        ("update", 1, 100.0),
+        ("update", 1, pytest.approx(100 + 99 * (1 - 629 / 1440))),  # processing, ends 10:29
         ("update", 2, 44.0),
         ("start", 3, 38.0),
     ]

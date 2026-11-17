@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from typing import Literal
 
-from .phase import Phase
+from .phase import TR_TZ, Phase
 
 ALERT_START = ("Sıradaki randevu", "{name} · {service} · {time}")
 ALERT_PROCESSING = ("Randevu başladı", "{name} · {service}")
@@ -76,9 +76,23 @@ def display_name(full: str | None, mode: Literal["initials", "full", "hidden"]) 
     return f"{_capitalize(words[0])} {_tr_upper(words[-1][0])}."
 
 
-def relevance(phase: Phase, start: datetime, now: datetime) -> float:
-    if phase is Phase.PROCESSING:
+def _processing_relevance(start: datetime, end: datetime | None) -> float:
+    """100..199, higher for an earlier end; independent of the push time.
+
+    Minutes are counted from the appointment's local (Europe/Istanbul) midnight,
+    so an end at/after the next midnight clamps to 1440 and scores the floor, 100.
+    """
+    if end is None:
         return 100
+    midnight = start.astimezone(TR_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    minutes = (end.astimezone(TR_TZ) - midnight).total_seconds() / 60
+    minutes = min(max(minutes, 0), 1440)
+    return 100 + 99 * (1 - minutes / 1440)
+
+
+def relevance(phase: Phase, start: datetime, now: datetime, end: datetime | None = None) -> float:
+    if phase is Phase.PROCESSING:
+        return _processing_relevance(start, end)
     if phase is Phase.UPCOMING:
         minutes_to_start = (start - now).total_seconds() / 60
         return max(1, 50 - minutes_to_start / 10)

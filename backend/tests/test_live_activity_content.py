@@ -201,3 +201,45 @@ def test_sector_icon_mapping(sector, token):
 def test_content_state_includes_icon():
     assert cs()["icon"] == "generic"
     assert cs(icon="beauty")["icon"] == "beauty"
+
+
+def _at(h, m, day=16):
+    return datetime(2026, 11, day, h, m, tzinfo=TR_TZ)
+
+
+SELIN_START, SELIN_END = _at(1, 10), _at(1, 55)
+ECE_START, ECE_END = _at(1, 45), _at(2, 30)
+
+
+def test_processing_earlier_end_has_higher_relevance():
+    # Cards are pushed at different times: Ece's push is later than Selin's.
+    selin = relevance(Phase.PROCESSING, SELIN_START, _at(1, 20), SELIN_END)
+    ece = relevance(Phase.PROCESSING, ECE_START, _at(1, 50), ECE_END)
+    assert selin > ece
+    # ... and the order holds with the pushes swapped.
+    selin = relevance(Phase.PROCESSING, SELIN_START, _at(1, 50), SELIN_END)
+    ece = relevance(Phase.PROCESSING, ECE_START, _at(1, 46), ECE_END)
+    assert selin > ece
+
+
+def test_processing_relevance_independent_of_push_time():
+    scores = {relevance(Phase.PROCESSING, SELIN_START, _at(1, m), SELIN_END) for m in (11, 30, 54)}
+    assert len(scores) == 1
+
+
+def test_processing_still_outranks_upcoming():
+    worst_processing = relevance(Phase.PROCESSING, _at(23, 0), _at(23, 30), _at(23, 59))
+    best_upcoming = relevance(Phase.UPCOMING, START, START - timedelta(minutes=1))
+    assert worst_processing > best_upcoming
+    assert relevance(Phase.PROCESSING, START, NOW, None) == 100
+    # ends at/after midnight: clamped to the floor of the range
+    assert relevance(Phase.PROCESSING, _at(23, 0), _at(23, 30), _at(0, 0, day=17)) == 100
+    assert relevance(Phase.PROCESSING, _at(23, 0), _at(23, 30), _at(0, 30, day=17)) == 100
+
+
+def test_upcoming_and_terminal_relevance_unchanged():
+    end = END
+    assert relevance(Phase.UPCOMING, START, NOW + timedelta(minutes=10), end) == 48
+    assert relevance(Phase.UPCOMING, START + timedelta(minutes=900), NOW, end) == 1
+    assert relevance(Phase.COMPLETED, START, NOW, end) == 0
+    assert relevance(Phase.CANCELLED, START, NOW, end) == 0
