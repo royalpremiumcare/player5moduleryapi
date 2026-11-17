@@ -730,3 +730,37 @@ async def test_widget_summary_still_today_only_near_midnight():
     body = await build_summary(db, {"organization_id": ORG, "username": "ali", "role": "admin"}, None, now=LATE)
     assert body["counts"]["total"] == 1
     assert [i["id"] for i in body["items"]] == ["t"]
+
+
+async def test_start_into_dismissed_today_slot_is_recorded_and_keeps_the_dismissal():
+    db = await make_db(users=[user("ali", live_activity_slot_count=2)], devices=[device("d1", "ali")],
+                       apts=[apt("a", "10:20"), apt("b", "10:25"), apt("c", "10:28")])
+    t = RecordingTransport()
+    await sweep(db, t)                                   # a -> slot 1
+    await sweep(db, t, now=NOW + timedelta(seconds=30))  # b -> slot 2
+    await registry.record_slot_token(db, device_id="d1", slot_index=1, activity_id="A1", update_token="t1")
+    await registry.record_slot_token(db, device_id="d1", slot_index=2, activity_id="A2", update_token="t2")
+    await registry.apply_device_report(db, device_id="d1", slots=[{"slot_index": 1, "activity_id": "A1",
+                                                                   "state": "dismissed"}],
+                                       activities_enabled=True, complete=False, now=NOW + timedelta(seconds=40))
+    version = slot(db, "d1", 1)["version"]
+    t.sent.clear()
+
+    await sweep(db, t, now=NOW + timedelta(seconds=60))  # c (inside the lead) reopens the dismissed slot 1
+    assert events(t) == [("start", "pts-d1")]
+    assert t.sent[0]["aps"]["content-state"]["appointmentId"] == "c"
+    assert t.sent[0]["aps"]["attributes"]["slotId"] == "d1:1"
+    s = slot(db, "d1", 1)
+    assert (s["state"], s["appointment_id"], s["update_token"], s["activity_id"], s["day"]) == (
+        "start_sent", "c", None, None, TODAY)
+    assert s["version"] == version + 1
+    assert (s["dismissed_day"], s["dismissed_ids"]) == (TODAY, ["a"])
+
+    # a stays hidden: when b's slot frees up, a does not come back in either slot
+    await registry.record_slot_token(db, device_id="d1", slot_index=1, activity_id="A3", update_token="t3")
+    db.appointments.docs[:] = [d for d in db.appointments.docs if d["id"] != "b"]
+    t.sent.clear()
+    for k in range(2, 5):
+        await sweep(db, t, now=NOW + timedelta(seconds=60 * k))
+    assert all(x["aps"]["content-state"].get("appointmentId") != "a" for x in t.sent)
+    assert [e for e, _ in events(t)] == ["end"]  # b's card is removed; nothing else is sent

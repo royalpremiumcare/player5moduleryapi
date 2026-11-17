@@ -210,3 +210,44 @@ async def test_remove_device_ends_slots_and_deletes_row(db):
     assert {(s["state"], s["version"]) for s in await registry.slots_for_device(db, "dev1")} == {("ended", 2)}
     _, secret = await registry.upsert_device(db, **DEVICE)
     assert secret  # re-registering after logout issues a fresh secret
+
+
+async def _dismiss(db, idx, now):
+    await registry.apply_device_report(
+        db, device_id="dev1", slots=[{"slot_index": idx, "activity_id": f"act{idx}", "state": "dismissed"}],
+        activities_enabled=True, complete=False, now=now)
+
+
+async def test_report_dismissed_remembers_the_days_dismissed_appointments(db):
+    # The slot may be restarted for another appointment; the dismissed ones must stay known.
+    await _seed_slot(db, 1, appointment_id="a")
+    await _dismiss(db, 1, NOW)
+    s = (await registry.slots_for_device(db, "dev1"))[0]
+    assert (s["dismissed_day"], s["dismissed_ids"]) == ("2026-11-16", ["a"])
+    # restarted for b (as the sweeper's start claim does), then dismissed again the same day
+    assert await registry.claim_slot(db, device_id="dev1", slot_index=1, expect_version=s["version"],
+                                     set_fields={"state": "active", "appointment_id": "b"})
+    await _dismiss(db, 1, NOW)
+    s = (await registry.slots_for_device(db, "dev1"))[0]
+    assert (s["state"], s["dismissed_day"], s["dismissed_ids"]) == ("dismissed_by_user", "2026-11-16", ["a", "b"])
+    # a new day starts a fresh list
+    await registry.claim_slot(db, device_id="dev1", slot_index=1, expect_version=s["version"],
+                              set_fields={"state": "active", "appointment_id": "c"})
+    await _dismiss(db, 1, datetime(2026, 11, 17, 9, 0, tzinfo=TR_TZ))
+    s = (await registry.slots_for_device(db, "dev1"))[0]
+    assert (s["dismissed_day"], s["dismissed_ids"]) == ("2026-11-17", ["c"])
+
+
+async def test_owner_change_and_logout_forget_dismissals(db):
+    await registry.upsert_device(db, **DEVICE)
+    await _seed_slot(db, 1, appointment_id="a")
+    await _dismiss(db, 1, NOW)
+    await registry.upsert_device(db, **{**DEVICE, "user_id": "u2"})
+    s = (await registry.slots_for_device(db, "dev1"))[0]
+    assert "dismissed_ids" not in s and "dismissed_day" not in s
+    await registry.claim_slot(db, device_id="dev1", slot_index=1, expect_version=s["version"],
+                              set_fields={"state": "active", "appointment_id": "b"})
+    await _dismiss(db, 1, NOW)
+    await registry.remove_device(db, "dev1")
+    s = (await registry.slots_for_device(db, "dev1"))[0]
+    assert "dismissed_ids" not in s and "dismissed_day" not in s

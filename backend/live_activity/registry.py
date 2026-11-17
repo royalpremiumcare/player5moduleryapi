@@ -11,6 +11,8 @@ from pymongo.errors import DuplicateKeyError
 from live_activity.phase import TR_TZ
 
 START_WINDOW_SEC = 3600
+# Ending every slot (owner change, logout) also forgets the day's dismissed appointments.
+FORGET_DISMISSALS = {"dismissed_day": "", "dismissed_ids": ""}
 
 
 def _hash_secret(secret: str) -> str:
@@ -56,7 +58,7 @@ async def upsert_device(
             ended_slots.extend(await _live_slots(db, device_id))
         # $inc: a sweep still holding the old owner's slot snapshot then fails its claim_slot CAS
         await db.live_activity_slots.update_many(
-            {"device_id": device_id}, {"$set": {"state": "ended"}, "$inc": {"version": 1}}
+            {"device_id": device_id}, {"$set": {"state": "ended"}, "$unset": FORGET_DISMISSALS, "$inc": {"version": 1}}
         )
     row = await db.live_activity_devices.find_one_and_update(
         {"device_id": device_id}, update, upsert=True, return_document=ReturnDocument.AFTER
@@ -139,7 +141,7 @@ async def remove_device(db, device_id: str) -> list[dict]:
     live = await _live_slots(db, device_id)
     # $inc: a sweep holding a slot snapshot then fails its claim_slot CAS
     await db.live_activity_slots.update_many(
-        {"device_id": device_id}, {"$set": {"state": "ended"}, "$inc": {"version": 1}}
+        {"device_id": device_id}, {"$set": {"state": "ended"}, "$unset": FORGET_DISMISSALS, "$inc": {"version": 1}}
     )
     await db.live_activity_devices.delete_one({"device_id": device_id})
     return live
@@ -168,6 +170,11 @@ async def apply_device_report(
             fields = {"state": new_state}
             if new_state == "dismissed_by_user":
                 fields["day"] = today
+                # The slot may be reused today for another appointment; the planner keeps every
+                # appointment dismissed today hidden through this list.
+                earlier = (slot.get("dismissed_ids") or []) if slot.get("dismissed_day") == today else []
+                fields["dismissed_day"] = today
+                fields["dismissed_ids"] = [*earlier, slot.get("appointment_id")]
         elif complete and slot["state"] in ("start_sent", "active"):
             fields = {"state": "ended"}
         else:

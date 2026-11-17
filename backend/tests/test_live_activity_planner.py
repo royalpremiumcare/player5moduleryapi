@@ -7,6 +7,7 @@ from live_activity.planner import plan_device
 NOW = datetime(2026, 11, 16, 10, 0, tzinfo=TR_TZ)
 TODAY = "2026-11-16"
 P, U = Phase.PROCESSING, Phase.UPCOMING
+LEAD = timedelta(minutes=30)
 
 
 def va(id, phase, start_min, dur=30):
@@ -33,6 +34,7 @@ def plan(slots, visible, n=3, now=NOW, **kw):
     args = dict(
         slots=slots, visible=visible, n_slots=n, now=now, starts_last_hour=0, start_budget=8,
         start_alert_enabled=False, has_push_to_start=True, content_hash=lambda v: f"h-{v.id}",
+        lead=LEAD,
     )
     args.update(kw)
     return plan_device(**args)
@@ -295,7 +297,8 @@ def run_replay(user, scope, n):
                                    lead_min=LEAD_MIN, day_open=day_open)
         final = {a["id"]: compute_phase(a, now, a["service_duration"]) for a in apts}
         actions = plan_device(
-            slots=slots, visible=visible, n_slots=n, now=now, starts_last_hour=0, start_budget=8,
+            slots=slots, visible=visible, n_slots=n, now=now, lead=timedelta(minutes=LEAD_MIN),
+            starts_last_hour=0, start_budget=8,
             start_alert_enabled=True, has_push_to_start=True, content_hash=lambda v: v.id,
             final_phases=final,
         )
@@ -401,3 +404,84 @@ def test_out_of_scope_appointment_ends_now_removed():
         ("end", 1, "a", Phase.COMPLETED, 10, None, "soon")]
     assert summary(plan(s, [], n=1, final_phases={"a": Phase.CANCELLED})) == [
         ("end", 1, "a", Phase.CANCELLED, 10, None, "soon")]
+
+
+# --- a dismissed card hides its appointment; its slot reopens only for one needed soon -------
+
+def dismissed(i, aid, phase=U, *, earlier=()):
+    """A slot as the registry records a Lock Screen dismissal today (`earlier`: ids dismissed before)."""
+    return {**slot(i, aid, phase, state="dismissed_by_user"), "dismissed_day": TODAY,
+            "dismissed_ids": [*earlier, aid]}
+
+
+def starts(actions):
+    return [(a.kind, a.slot_index, a.appointment_id, a.phase) for a in actions if a.kind == "start"]
+
+
+def test_dismissed_appointment_stays_hidden_for_the_day():
+    vis = [va("a", U, 10), va("b", U, 20)]
+    slots = [dismissed(1, "a")]
+    actions = plan(slots, vis, n=1)
+    assert starts(actions) == [("start", 1, "b", U)]  # the slot reopens, but not for a
+    slots = apply(slots, actions, NOW)
+    # the slot now holds b; a stays hidden even with a free slot (index 2) on offer
+    assert plan(slots, vis, n=2) == []
+    later = NOW + timedelta(minutes=5)
+    assert all(a.appointment_id != "a" for a in plan(slots, [va("a", U, 5)], n=2, now=later))
+    # dismissed again later today in the same slot: both stay hidden
+    again = [dismissed(1, "b", earlier=["a"])]
+    assert plan(again, vis, n=2) == []
+    # yesterday's dismissal no longer hides anything
+    old = [{**dismissed(1, "a"), "day": "2026-11-15", "dismissed_day": "2026-11-15"}]
+    assert starts(plan(old, vis, n=1)) == [("start", 1, "a", U)]
+
+
+def test_dismissed_slot_reopens_for_next_appointment_inside_lead():
+    assert summary(plan([dismissed(1, "a")], [va("a", U, 10), va("b", U, 25)], n=1)) == [
+        ("start", 1, "b", U, 10, "start", None)]
+    # the edge of the lead window counts as inside (start - lead <= now)
+    assert starts(plan([dismissed(1, "a")], [va("a", U, 10), va("b", U, 30)], n=1)) == [("start", 1, "b", U)]
+
+
+def test_dismissed_slot_does_not_reopen_for_appointment_outside_lead_even_if_day_open():
+    # b is visible only because the device's day is open; it does not need a card yet
+    assert plan([dismissed(1, "a")], [va("a", U, 10), va("b", U, 31)], n=1) == []
+    assert plan([dismissed(1, "a")], [va("b", U, 45)], n=1) == []
+    # it reopens once b enters the lead window
+    assert starts(plan([dismissed(1, "a")], [va("b", U, 45)], n=1, now=NOW + timedelta(minutes=15))) == [
+        ("start", 1, "b", U)]
+
+
+def test_dismissed_slot_reopens_for_processing_appointment():
+    vis = [va("p", P, -10), va("a", U, 10)]
+    assert summary(plan([dismissed(1, "a")], vis, n=1)) == [("start", 1, "p", P, 10, "start", None)]
+
+
+def test_three_dismissals_then_one_start_per_sweep_within_budget():
+    vis = [va("d", P, -5), va("a", U, 5), va("b", U, 10), va("c", U, 15), va("e", U, 20), va("f", U, 25),
+           va("g", U, 50)]
+    initial = [dismissed(1, "a"), dismissed(2, "b"), dismissed(3, "c")]
+    for budget, expected in ((2, [("start", 1, "d", P), ("start", 2, "e", U)]),
+                             (8, [("start", 1, "d", P), ("start", 2, "e", U), ("start", 3, "f", U)])):
+        slots, started, used = initial, [], 0
+        for _ in range(6):  # successive sweeps; tokens not yet arrived
+            actions = plan(slots, vis, n=3, starts_last_hour=used, start_budget=budget)
+            assert len(starts(actions)) <= 1  # one start per sweep
+            used += len(starts(actions))
+            started += starts(actions)
+            slots = apply(slots, actions, NOW, token=None)
+        assert started == expected  # a, b, c stay hidden; g (outside the lead) never opens a dismissed slot
+        assert used <= budget
+
+
+def test_free_never_dismissed_index_preferred_over_dismissed_one():
+    vis = [va("a", U, 5), va("b", U, 10), va("c", U, 20)]
+    # index 1 dismissed, 2 held by b, 3 never used: c goes to 3
+    assert starts(plan([dismissed(1, "a"), slot(2, "b", U)], vis, n=3)) == [("start", 3, "c", U)]
+    # among never-dismissed free indices the lowest wins
+    assert starts(plan([slot(1, "b", U), dismissed(2, "a")], vis, n=4)) == [("start", 3, "c", U)]
+    # with a never-dismissed index free, an appointment outside the lead still starts there (unchanged)
+    assert starts(plan([dismissed(1, "a")], [va("a", U, 5), va("g", U, 50)], n=2)) == [("start", 2, "g", U)]
+    # only dismissed indices free: the lowest one
+    assert starts(plan([slot(1, "b", U), dismissed(2, "a"), dismissed(3, "x")], vis, n=3)) == [
+        ("start", 2, "c", U)]

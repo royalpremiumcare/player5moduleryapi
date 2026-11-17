@@ -388,7 +388,7 @@ async def _device_view(db, org: _Org, device: dict, *, now: datetime, stats: _St
 def _plan(org: _Org, device: dict, view: _DeviceView, *, now: datetime, has_push_to_start: bool,
           start_alert_enabled: bool) -> list[Action]:
     return plan_device(
-        slots=view.slots, visible=view.visible, n_slots=view.n_slots, now=now,
+        slots=view.slots, visible=view.visible, n_slots=view.n_slots, now=now, lead=timedelta(minutes=org.lead_min),
         starts_last_hour=registry.starts_last_hour(device, now.timestamp()), start_budget=start_budget(),
         start_alert_enabled=start_alert_enabled, has_push_to_start=has_push_to_start,
         content_hash=lambda v: content_hash(view.content_for(v, 0)),

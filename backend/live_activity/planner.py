@@ -5,7 +5,7 @@ Pure: no DB, no network, no clock reads. The caller supplies `now` and persists 
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from .content import MIN_START_STALE_SECONDS, relevance, stale_epoch
@@ -36,6 +36,7 @@ def plan_device(
     visible: list[VisibleAppt],
     n_slots: int,
     now: datetime,
+    lead: timedelta,
     starts_last_hour: int,
     start_budget: int,
     start_alert_enabled: bool,
@@ -46,6 +47,8 @@ def plan_device(
     """Plan one sweep for one device.
 
     `visible` is `visible_for_user` output (processing by end, then upcoming by start).
+    `lead` is the org's effective lead window: a slot the user dismissed today reopens only
+    for an appointment that needs a card soon (processing, or upcoming inside the lead).
     `final_phases` maps appointment ids to their derived phase so an `end` can show
     "completed"/"cancelled"; without it an end repeats the slot's last phase.
     At most one action carries an alert, so a start (whose alert is mandatory) waits for
@@ -60,8 +63,12 @@ def plan_device(
         return s.get("state") == DISMISSED_STATE and s.get("day") == today
 
     # A card the user dismissed today is not reopened that day, in any slot (even one beyond a
-    # lowered slot count), and it does not take one of the top-N places either.
+    # lowered slot count), and it does not take one of the top-N places either. The registry keeps
+    # the day's dismissed ids on the slot, so they stay hidden after the slot is reused.
     hidden = {s.get("appointment_id") for s in ordered if dismissed_today(s)}
+    for s in ordered:
+        if s.get("dismissed_day") == today:
+            hidden.update(s.get("dismissed_ids") or ())
     top = [v for v in visible if v.id not in hidden][:n_slots]
     by_id = {v.id: v for v in top}
     visible_ids = {v.id for v in visible}
@@ -132,12 +139,24 @@ def plan_device(
                               float(relevance(v.phase, v.start, now)), None))
 
     # One start per sweep at most: its alert is mandatory and the sweep may carry only one.
-    closed = {s["slot_index"] for s in ordered if s.get("state") in USABLE_STATES or dismissed_today(s)}
-    openable = [i for i in range(1, n_slots + 1) if i not in closed]
-    if queue and openable and has_push_to_start and starts_last_hour < start_budget and not alert_used:
+    # A slot dismissed today is not closed for the day (a few accidental swipes must not stop
+    # every card), but it reopens only for an appointment needed soon, which keeps a burst of
+    # dismissals from spending the start budget on far-off appointments.
+    closed = {s["slot_index"] for s in ordered if s.get("state") in USABLE_STATES}
+    dismissed_idx = {s["slot_index"] for s in ordered if dismissed_today(s)}
+    fresh = [i for i in range(1, n_slots + 1) if i not in closed and i not in dismissed_idx]
+    reopenable = [i for i in range(1, n_slots + 1) if i not in closed and i in dismissed_idx]
+    if queue and (fresh or reopenable) and has_push_to_start and starts_last_hour < start_budget \
+            and not alert_used:
         startable = [v for v in queue if (stale_epoch(v.phase, v.start, v.end) or 0) - now_epoch >= MIN_START_STALE_SECONDS]
-        if startable:
-            v = startable[0]
-            actions.append(Action("start", openable[0], v.id, v.phase, 10, "start",
+        soon = [v for v in startable if v.phase is Phase.PROCESSING or v.start - lead <= now]
+        if fresh and startable:
+            index, v = fresh[0], startable[0]
+        elif reopenable and soon:
+            index, v = reopenable[0], soon[0]
+        else:
+            index, v = None, None
+        if v is not None:
+            actions.append(Action("start", index, v.id, v.phase, 10, "start",
                                   float(relevance(v.phase, v.start, now)), None))
     return actions
