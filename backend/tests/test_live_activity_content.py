@@ -252,8 +252,8 @@ def test_upcoming_relevance_independent_of_push_time():
 
 def test_upcoming_relevance_range_stays_below_processing():
     assert relevance(Phase.UPCOMING, _at(0, 0), _at(0, 0)) == pytest.approx(99)
-    assert relevance(Phase.UPCOMING, _at(23, 59), _at(23, 30)) >= 1
-    assert relevance(Phase.UPCOMING, _at(0, 0), _at(0, 0)) < relevance(Phase.PROCESSING, _at(0, 0), _at(0, 0), _at(23, 59, ))
+    assert relevance(Phase.UPCOMING, _at(23, 59), _at(23, 30)) == pytest.approx(1 + 98 / 1440)
+    assert relevance(Phase.UPCOMING, _at(0, 0), _at(0, 0)) < relevance(Phase.PROCESSING, _at(0, 0), _at(0, 0), _at(23, 59))
 
 
 def test_terminal_relevance_unchanged():
