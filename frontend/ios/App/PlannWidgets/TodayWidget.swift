@@ -23,6 +23,8 @@ struct TodayProvider: TimelineProvider {
             completion(TodayEntry(date: now, content: .summary(TodaySample.summary(around: now))))
             return
         }
+        // Privacy: outside the gallery the snapshot shows the real state (signed out, unreachable or
+        // this key's cache), never sample rows, so a signed-in salon never sees made-up customer names.
         let key = WidgetCredentialStore.read()?.key
         completion(TodayEntry(date: now, content: widgetContent(fetched: nil, cache: TodayCache.read(), currentKey: key)))
     }
@@ -31,6 +33,9 @@ struct TodayProvider: TimelineProvider {
         let now = Date()
         guard let credential = WidgetCredentialStore.read() else {
             // Signed out: never show (or keep on disk) the previous user's rows.
+            // A failed Keychain read also lands here, e.g. errSecInteractionNotAllowed before the first
+            // unlock after a reboot (items are AfterFirstUnlock). That is transient: the 15-min policy
+            // below retries, and the app's setWidgetCredential reloads at once.
             TodayCache.remove()
             completion(Timeline(entries: [TodayEntry(date: now, content: .signedOut)],
                                 policy: .after(nextReload(nil, from: now))))

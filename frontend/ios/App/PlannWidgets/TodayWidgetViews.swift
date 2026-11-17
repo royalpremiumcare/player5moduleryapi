@@ -266,6 +266,9 @@ private struct LargeView: View {
 }
 
 // MARK: - Home Screen pieces
+// Glyph-on-fill pieces (PlusBadge, AddPill, PlannMark) accent only their background shape: in
+// accented rendering (iOS 18 tinted) only opacity survives, so an accented glyph would merge into
+// its equally opaque fill.
 
 /// A row opens its appointment; an id the app would not accept renders as a plain row.
 private struct RowLink<Content: View>: View {
@@ -346,8 +349,7 @@ private struct PlusBadge: View {
             .font(.system(size: 12, weight: .bold))
             .foregroundColor(.white)
             .frame(width: 22, height: 22)
-            .background(Circle().fill(palette.amber))
-            .widgetAccentable()
+            .background(Circle().fill(palette.amber).widgetAccentable())
     }
 }
 
@@ -362,8 +364,7 @@ private struct AddPill: View {
             .lineLimit(1)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(Capsule().fill(palette.amber))
-            .widgetAccentable()
+            .background(Capsule().fill(palette.amber).widgetAccentable())
     }
 }
 
@@ -452,8 +453,7 @@ private struct PlannMark: View {
             .font(.system(size: size * 0.55, weight: .heavy))
             .foregroundColor(.white)
             .frame(width: size, height: size)
-            .background(RoundedRectangle(cornerRadius: size * 0.28).fill(palette.amber))
-            .widgetAccentable()
+            .background(RoundedRectangle(cornerRadius: size * 0.28).fill(palette.amber).widgetAccentable())
     }
 }
 
