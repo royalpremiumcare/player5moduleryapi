@@ -79,6 +79,10 @@ FILES = [
          group="App", disk="App/PlannLiveActivityPlugin.swift", targets=("App",)),
     dict(k=11, name="PlannLiveActivityPlugin.m", path="PlannLiveActivityPlugin.m",
          group="App", disk="App/PlannLiveActivityPlugin.m", targets=("App",)),
+    dict(k=12, name="WidgetBridge.swift", path=CORE + "WidgetBridge.swift",
+         group="LiveActivityCore", disk=CORE + "WidgetBridge.swift", targets=("App",)),
+    dict(k=13, name="WidgetCredentialStore.swift", path="WidgetCredentialStore.swift",
+         group="App", disk="App/WidgetCredentialStore.swift", targets=("App",)),
 ]
 FILE_TYPES = {".swift": "sourcecode.swift", ".m": "sourcecode.c.objc"}
 for f in FILES:

@@ -1,11 +1,14 @@
 import Foundation
 import Capacitor
 import UIKit
+import WidgetKit
 
 /// JS bridge for the slot Live Activities (`PlannLiveActivity`). Compiles for the iOS 15 app
-/// target: every method gates itself on iOS 16.2 on an iPhone and resolves `{supported:false}`
-/// otherwise (iPad has no lock-screen Live Activities).
+/// target: every Live Activity method gates itself on iOS 16.2 on an iPhone and resolves
+/// `{supported:false}` otherwise (iPad has no lock-screen Live Activities).
 /// The JWT arrives only for register/unregister and is handed straight to the coordinator.
+/// The Home Screen widget methods (setWidgetCredential, clearWidgetCredential, reloadWidgets) gate
+/// on iOS 16.2 only (the widget extension's deployment target), not on iPhone: iPad has widgets.
 @objc(PlannLiveActivityPlugin)
 public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "PlannLiveActivityPlugin"
@@ -15,7 +18,10 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "reconcile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "unregister", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getStatus", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setWidgetCredential", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearWidgetCredential", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "reloadWidgets", returnType: CAPPluginReturnPromise)
     ]
 
     /// Live Activities exist on iPhone only; iPad and Mac (iPad idiom) report unsupported.
@@ -76,6 +82,79 @@ public class PlannLiveActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             UIApplication.shared.open(url, options: [:]) { opened in
                 call.resolve(["supported": true, "opened": opened])
+            }
+        }
+    }
+
+    // MARK: Home Screen widgets (iPhone and iPad, iOS 16.2+)
+
+    // setWidgetCredential({key, baseUrl}) -> {}; rejects INVALID_URL unless baseUrl is https
+    @objc func setWidgetCredential(_ call: CAPPluginCall) {
+        guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
+        guard let key = call.getString("key"), !key.isEmpty else {
+            call.reject("key is required", "INVALID_ARGUMENTS")
+            return
+        }
+        let baseUrl = call.getString("baseUrl") ?? ""
+        guard WidgetBridge.isAcceptableBaseURL(baseUrl) else {
+            call.reject("baseUrl must be an https URL", "INVALID_URL")
+            return
+        }
+        do {
+            try WidgetCredentialStore.write(key: key, baseURL: baseUrl)
+        } catch {
+            call.reject("Widget credential could not be saved", "KEYCHAIN_ERROR")
+            return
+        }
+        Task { @MainActor in
+            Self.reloadWidgetTimelinesNow()
+            call.resolve([:])
+        }
+    }
+
+    // clearWidgetCredential() -> {}; the widget then shows the signed-out state
+    @objc func clearWidgetCredential(_ call: CAPPluginCall) {
+        guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
+        WidgetCredentialStore.clear()
+        Task { @MainActor in
+            Self.reloadWidgetTimelinesNow()
+            call.resolve([:])
+        }
+    }
+
+    // reloadWidgets() -> {}; at most one reload per 5 s
+    @objc func reloadWidgets(_ call: CAPPluginCall) {
+        guard #available(iOS 16.2, *) else { call.resolve(["supported": false]); return }
+        Task { @MainActor in
+            Self.requestWidgetReload()
+            call.resolve([:])
+        }
+    }
+
+    @MainActor private static var lastWidgetReload: Date?
+    @MainActor private static var trailingWidgetReload: Task<Void, Never>?
+
+    /// Reloads at once (a credential change must show immediately) and restarts the 5 s window.
+    @MainActor private static func reloadWidgetTimelinesNow() {
+        trailingWidgetReload?.cancel()
+        trailingWidgetReload = nil
+        lastWidgetReload = Date()
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// Debounced reload: the first call reloads; calls inside the 5 s window collapse into one
+    /// reload at the end of the window, so the last data change still reaches the widget.
+    @MainActor private static func requestWidgetReload() {
+        let now = Date()
+        if WidgetBridge.shouldReload(last: lastWidgetReload, now: now) {
+            reloadWidgetTimelinesNow()
+        } else if trailingWidgetReload == nil {
+            let delay = WidgetBridge.reloadDelay(last: lastWidgetReload, now: now)
+            trailingWidgetReload = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                Self.trailingWidgetReload = nil
+                Self.reloadWidgetTimelinesNow()
             }
         }
     }
