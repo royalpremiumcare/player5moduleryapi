@@ -764,3 +764,37 @@ async def test_start_into_dismissed_today_slot_is_recorded_and_keeps_the_dismiss
         await sweep(db, t, now=NOW + timedelta(seconds=60 * k))
     assert all(x["aps"]["content-state"].get("appointmentId") != "a" for x in t.sent)
     assert [e for e, _ in events(t)] == ["end"]  # b's card is removed; nothing else is sent
+
+
+def sent_ids(t):
+    return [x["aps"]["content-state"].get("appointmentId") for x in t.sent]
+
+
+async def test_start_into_pre_deploy_dismissed_slot_keeps_its_appointment_hidden():
+    # A dismissal recorded before dismissed_ids existed: only the slot's state says a was dismissed.
+    db = await make_db(users=[user("ali", live_activity_slot_count=1)], devices=[device("d1", "ali", day=TODAY)],
+                       apts=[apt("a", "10:20"), apt("b", "10:25")])
+    seed_slot(db, "d1", 1, "a", "upcoming", state="dismissed_by_user", token=None)
+    t = RecordingTransport()
+    await sweep(db, t)
+    assert (events(t), sent_ids(t)) == ([("start", "pts-d1")], ["b"])
+    s = slot(db, "d1", 1)
+    assert (s["state"], s["appointment_id"], s["dismissed_day"], s["dismissed_ids"]) == (
+        "start_sent", "b", TODAY, ["a"])
+    await registry.record_slot_token(db, device_id="d1", slot_index=1, activity_id="A1", update_token="t1")
+    db.users.docs[0]["live_activity_slot_count"] = 2  # a free index: a must still not come back
+    t.sent.clear()
+    await sweep(db, t, now=NOW + timedelta(seconds=30))
+    assert events(t) == []
+
+
+async def test_start_locally_into_pre_deploy_dismissed_slot_keeps_its_appointment_hidden():
+    db = await make_db(users=[user("ali", live_activity_slot_count=1)],
+                       devices=[device("d1", "ali", push_to_start_token=None, day=TODAY)],
+                       apts=[apt("a", "10:20"), apt("b", "10:25")])
+    seed_slot(db, "d1", 1, "a", "upcoming", state="dismissed_by_user", token=None)
+    out = await sweeper.start_locally(db, "d1", now=NOW)
+    assert [(o["slot_index"], o["content"]["appointmentId"]) for o in out] == [(1, "b")]
+    assert (slot(db, "d1", 1)["dismissed_day"], slot(db, "d1", 1)["dismissed_ids"]) == (TODAY, ["a"])
+    db.users.docs[0]["live_activity_slot_count"] = 2
+    assert await sweeper.start_locally(db, "d1", now=NOW + timedelta(seconds=30)) == []

@@ -142,6 +142,8 @@ def plan_device(
     # A slot dismissed today is not closed for the day (a few accidental swipes must not stop
     # every card), but it reopens only for an appointment needed soon, which keeps a burst of
     # dismissals from spending the start budget on far-off appointments.
+    # Intentional: once a reopened card has ended, its index is an ordinary free one again (its
+    # dismissed appointments stay hidden; the budget and one start per sweep still apply).
     closed = {s["slot_index"] for s in ordered if s.get("state") in USABLE_STATES}
     dismissed_idx = {s["slot_index"] for s in ordered if dismissed_today(s)}
     fresh = [i for i in range(1, n_slots + 1) if i not in closed and i not in dismissed_idx]

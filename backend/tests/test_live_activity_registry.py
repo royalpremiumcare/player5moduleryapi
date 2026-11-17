@@ -251,3 +251,33 @@ async def test_owner_change_and_logout_forget_dismissals(db):
     await registry.remove_device(db, "dev1")
     s = (await registry.slots_for_device(db, "dev1"))[0]
     assert "dismissed_ids" not in s and "dismissed_day" not in s
+
+
+async def test_dismissal_write_does_not_drop_a_concurrently_recorded_id(db, monkeypatch):
+    await _seed_slot(db, 1, appointment_id="b", dismissed_day="2026-11-16", dismissed_ids=["a"])
+    real = registry.slots_for_device
+
+    async def snapshot_then_concurrent_write(db_, device_id):
+        slots = await real(db_, device_id)
+        # another writer records x for this slot right after the report's snapshot
+        await db_.live_activity_slots.update_one({"device_id": device_id, "slot_index": 1},
+                                                 {"$set": {"dismissed_ids": ["a", "x"]}, "$inc": {"version": 1}})
+        monkeypatch.setattr(registry, "slots_for_device", real)
+        return slots
+
+    monkeypatch.setattr(registry, "slots_for_device", snapshot_then_concurrent_write)
+    await _dismiss(db, 1, NOW)
+    s = (await real(db, "dev1"))[0]
+    assert (s["state"], s["dismissed_ids"]) == ("dismissed_by_user", ["a", "x", "b"])
+
+
+async def test_new_device_row_forgets_dismissals_left_by_a_stale_report(db):
+    await registry.upsert_device(db, **DEVICE)
+    await _seed_slot(db, 1, appointment_id="a")
+    await registry.remove_device(db, "dev1")
+    # a report racing the logout still marks the (now ended) slot... as a late dismissal would
+    await db.live_activity_slots.update_one({"device_id": "dev1", "slot_index": 1},
+                                            {"$set": {"dismissed_day": "2026-11-16", "dismissed_ids": ["a"]}})
+    await registry.upsert_device(db, **{**DEVICE, "user_id": "u2"})
+    s = (await registry.slots_for_device(db, "dev1"))[0]
+    assert "dismissed_ids" not in s and "dismissed_day" not in s

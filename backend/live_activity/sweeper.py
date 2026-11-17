@@ -241,11 +241,13 @@ def removed_content(appointment_id: str | None, now: datetime, *, version: int) 
     return build_content_state(stub, Phase.REMOVED, now, now, privacy_mode="hidden", staff_name=None, version=version)
 
 
-def _start_fields(v: VisibleAppt, content: dict, now: datetime) -> dict:
-    """Slot fields claimed for a start; a reused slot drops the previous activity's token."""
+def _start_fields(v: VisibleAppt, content: dict, now: datetime, slot: dict | None) -> dict:
+    """Slot fields claimed for a start; a reused slot drops the previous activity's token.
+    Reusing a slot dismissed today records its appointment as dismissed, so it stays hidden."""
+    today = now.astimezone(TR_TZ).strftime("%Y-%m-%d")
     return {"appointment_id": v.id, "phase_sent": v.phase.value, "content_hash": content_hash(content),
-            "state": "start_sent", "started_at": now.timestamp(), "day": now.astimezone(TR_TZ).strftime("%Y-%m-%d"),
-            "update_token": None, "activity_id": None}
+            "state": "start_sent", "started_at": now.timestamp(), "day": today,
+            "update_token": None, "activity_id": None, **registry.carry_dismissal(slot, today)}
 
 
 async def _execute(db, org: _Org | None, device: dict, slot: dict | None, action: Action, visible: VisibleAppt | None,
@@ -276,7 +278,7 @@ async def _execute(db, org: _Org | None, device: dict, slot: dict | None, action
                                 stale_epoch=stale, dismissal_epoch=None, slot_id=attrs["slotId"],
                                 org_id=attrs["orgId"],
                                 input_push_token=_supports_input_push_token(device.get("os_version")))
-                fields = _start_fields(v, content, now)
+                fields = _start_fields(v, content, now, slot)
                 la_token = device.get("push_to_start_token")
             else:
                 aps = build_aps("update", content, now_epoch=now_epoch, relevance=action.relevance,
@@ -490,7 +492,7 @@ async def start_locally(db, device_id: str, *, now: datetime) -> list[dict]:
         expect = slot.get("version") if slot else None
         content = view.content_for(v, (expect or 0) + 1)
         claim = dict(device_id=device_id, slot_index=start.slot_index)
-        if not await registry.claim_slot(db, **claim, expect_version=expect, set_fields=_start_fields(v, content, now)):
+        if not await registry.claim_slot(db, **claim, expect_version=expect, set_fields=_start_fields(v, content, now, slot)):
             break  # a concurrent sweep or report changed the slot; the next reconcile retries
         if not await _same_owner(db, device):
             await registry.claim_slot(db, **claim, expect_version=(expect or 0) + 1, set_fields={"state": "ended"})

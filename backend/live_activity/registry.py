@@ -11,8 +11,26 @@ from pymongo.errors import DuplicateKeyError
 from live_activity.phase import TR_TZ
 
 START_WINDOW_SEC = 3600
+REPORT_RETRIES = 3
 # Ending every slot (owner change, logout) also forgets the day's dismissed appointments.
 FORGET_DISMISSALS = {"dismissed_day": "", "dismissed_ids": ""}
+
+
+def _dismissal(slot: dict, today: str) -> dict:
+    """The day's dismissed appointments of a slot, including the one it holds now."""
+    ids = list(slot.get("dismissed_ids") or []) if slot.get("dismissed_day") == today else []
+    if slot.get("appointment_id") not in ids:
+        ids.append(slot.get("appointment_id"))
+    return {"dismissed_day": today, "dismissed_ids": ids}
+
+
+def carry_dismissal(slot: dict | None, today: str) -> dict:
+    """Fields for a claim that reuses a slot dismissed today, so its appointment stays hidden
+    (also for a slot dismissed before dismissed_ids existed). The caller's claim_slot CAS makes
+    the write atomic with the snapshot the list was built from."""
+    if not slot or slot.get("state") != "dismissed_by_user" or slot.get("day") != today:
+        return {}
+    return _dismissal(slot, today)
 
 
 def _hash_secret(secret: str) -> str:
@@ -53,6 +71,8 @@ async def upsert_device(
     update = {"$set": fields}
     if existing is None:
         update["$setOnInsert"] = {"start_log": []}
+        # A report that raced a logout must not hand its dismissed ids to the next user.
+        await db.live_activity_slots.update_many({"device_id": device_id}, {"$unset": FORGET_DISMISSALS})
     if owner_changed:
         if ended_slots is not None:
             ended_slots.extend(await _live_slots(db, device_id))
@@ -158,33 +178,43 @@ async def apply_device_report(
     reported = {s["slot_index"]: s for s in slots}
     changed = []
     for slot in await slots_for_device(db, device_id):
-        report = reported.get(slot["slot_index"])
-        if report is not None:
-            new_state = {"dismissed": "dismissed_by_user", "ended": "ended", "active": "active"}.get(
-                report.get("state")
+        key = {"device_id": device_id, "slot_index": slot["slot_index"]}
+        for _ in range(REPORT_RETRIES):
+            fields = _report_fields(slot, reported.get(slot["slot_index"]), complete=complete, today=today)
+            if fields is None:
+                break
+            # CAS on version: a concurrent claim or report is never overwritten from a stale snapshot
+            # (its dismissed ids kept), and a concurrent sweep's claim_slot CAS then fails.
+            result = await db.live_activity_slots.update_one(
+                {**key, "version": slot.get("version")}, {"$set": fields, "$inc": {"version": 1}}
             )
-            # "active" only lists the slot: the token callback alone makes a slot active, so a
-            # report can neither revive an ended slot nor pre-empt a pending start's token.
-            if new_state in (None, "active") or new_state == slot["state"]:
-                continue
-            fields = {"state": new_state}
-            if new_state == "dismissed_by_user":
-                fields["day"] = today
-                # The slot may be reused today for another appointment; the planner keeps every
-                # appointment dismissed today hidden through this list.
-                earlier = (slot.get("dismissed_ids") or []) if slot.get("dismissed_day") == today else []
-                fields["dismissed_day"] = today
-                fields["dismissed_ids"] = [*earlier, slot.get("appointment_id")]
-        elif complete and slot["state"] in ("start_sent", "active"):
-            fields = {"state": "ended"}
-        else:
-            continue
-        await db.live_activity_slots.update_one(
-            {"device_id": device_id, "slot_index": slot["slot_index"]},
-            {"$set": fields, "$inc": {"version": 1}},  # a concurrent sweep's claim_slot CAS then fails
-        )
-        changed.append({**slot, **fields})
+            if result.matched_count == 1:
+                changed.append({**slot, **fields})
+                break
+            slot = await db.live_activity_slots.find_one(key)
+            if slot is None:
+                break
     return changed
+
+
+def _report_fields(slot: dict, report: dict | None, *, complete: bool, today: str) -> dict | None:
+    """The slot fields a device report changes, or None."""
+    if report is not None:
+        new_state = {"dismissed": "dismissed_by_user", "ended": "ended", "active": "active"}.get(
+            report.get("state")
+        )
+        # "active" only lists the slot: the token callback alone makes a slot active, so a
+        # report can neither revive an ended slot nor pre-empt a pending start's token.
+        if new_state in (None, "active") or new_state == slot["state"]:
+            return None
+        if new_state == "dismissed_by_user":
+            # The slot may be reused today for another appointment; the planner keeps every
+            # appointment dismissed today hidden through this list.
+            return {"state": new_state, "day": today, **_dismissal(slot, today)}
+        return {"state": new_state}
+    if complete and slot["state"] in ("start_sent", "active"):
+        return {"state": "ended"}
+    return None
 
 
 async def record_start(db, device_id: str, now_epoch: float) -> None:
