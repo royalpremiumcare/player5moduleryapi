@@ -685,3 +685,55 @@ async def test_stripe_audit_reads_real_price_and_expanded_product_metadata(env):
     passed = {r["lookup_key"]: r["metadata_source"] for r in results["pass"]}
     assert passed == {"professional_monthly_try": "Price", "premium_monthly_try": "Product"}
     assert not [f for f in results["fail"] if "Unexpected error" in f["error"]]
+
+
+# --- corporate: 39-digit product appointment_limit must be stored as -1 (Mongo int64) -----------
+
+HUGE_LIMIT = "999999999999999999999999999999999999999"
+
+
+def _assert_mongo_storable(doc):
+    import bson
+
+    bson.encode({k: v for k, v in doc.items() if k != "_id"})
+
+
+def _real_corporate_line_items():
+    return {"object": "list", "data": [
+        {"id": "li_c", "object": "item",
+         "price": {"id": "price_corp_m", "object": "price", "lookup_key": "corporate_monthly_try",
+                   "metadata": {},
+                   "product": {"id": "prod_corp", "object": "product",
+                               "metadata": {"appointment_limit": HUGE_LIMIT}}}}]}
+
+
+async def test_confirm_corporate_with_huge_product_limit_stores_unlimited(env):
+    client, db, fs = env
+    await _org(db, plan_id="tier_trial", stripe_subscription_id=None)
+    fs.session_retrieve_result = so({
+        "id": "cs_corp", "object": "checkout.session", "mode": "subscription", "payment_status": "paid",
+        "status": "complete", "subscription": "sub_corp", "customer": "cus_1",
+        "metadata": {"plan_id": "tier_6_kurumsal", "organization_id": ORG, "billing_cycle": "monthly"},
+        "line_items": _real_corporate_line_items()})
+    r = await client.post("/api/payments/confirm-checkout-session", json={"session_id": "cs_corp"})
+    assert r.status_code == 200, r.text
+    doc = await _plan(db)
+    assert (doc["plan_id"], doc["quota_limit"]) == ("tier_6_kurumsal", -1)
+    _assert_mongo_storable(doc)
+
+
+async def test_webhook_corporate_with_huge_product_limit_stores_unlimited(env):
+    client, db, fs = env
+    await _org(db, plan_id="tier_trial", stripe_subscription_id=None)
+    fs.session_retrieve_result = so({"id": "cs_corp", "object": "checkout.session",
+                                     "line_items": _real_corporate_line_items()})
+    event = so({"id": "evt_corp", "object": "event", "type": "checkout.session.completed",
+                "data": {"object": {"id": "cs_corp", "object": "checkout.session", "mode": "subscription",
+                                    "subscription": "sub_corp", "customer": "cus_1", "amount_total": 100000,
+                                    "metadata": {"plan_id": "tier_6_kurumsal", "organization_id": ORG,
+                                                 "billing_cycle": "monthly"}}}})
+    r = await _post_webhook(client, fs, event)
+    assert r.status_code == 200
+    doc = await _plan(db)
+    assert (doc["plan_id"], doc["quota_limit"]) == ("tier_6_kurumsal", -1)
+    _assert_mongo_storable(doc)

@@ -463,3 +463,41 @@ def test_quota_from_real_stripe_price_metadata():
 def test_quota_from_real_expanded_stripe_product():
     p = so({"id": "price_1", "metadata": {}, "product": {"id": "prod_1", "metadata": {"appointment_limit": "555"}}})
     assert sc.resolve_quota_limit(FakeStripe(), p, PLANS["tier_2_profesyonel"]) == 555
+
+
+# --- unlimited quota sentinel (live corporate product: 39-digit appointment_limit) ---------------
+
+HUGE = "999999999999999999999999999999999999999"
+CORPORATE = {"id": "tier_6_kurumsal", "quota_monthly_appointments": -1}
+
+
+def _real_price(price_limit=None, product_limit=None):
+    return so({"id": "price_c", "object": "price",
+               "metadata": {} if price_limit is None else {"appointment_limit": price_limit},
+               "product": {"id": "prod_c", "object": "product",
+                           "metadata": {} if product_limit is None else {"appointment_limit": product_limit}}})
+
+
+def test_huge_product_limit_means_unlimited():
+    assert sc.resolve_quota_limit(FakeStripe(), _real_price(product_limit=HUGE), CORPORATE) == -1
+
+
+def test_minus_one_means_unlimited():
+    assert sc.resolve_quota_limit(FakeStripe(), _real_price(price_limit="-1"), CORPORATE) == -1
+
+
+@pytest.mark.parametrize("value", ["-5", "10000001"])
+def test_out_of_range_limits_mean_unlimited(value):
+    assert sc.resolve_quota_limit(FakeStripe(), _real_price(price_limit=value), PLANS["tier_1_standard"]) == -1
+
+
+def test_upper_bound_is_still_a_real_limit():
+    assert sc.resolve_quota_limit(FakeStripe(), _real_price(price_limit="10000000"),
+                                  PLANS["tier_1_standard"]) == 10_000_000
+
+
+def test_non_numeric_limit_falls_through_to_the_next_source():
+    assert sc.resolve_quota_limit(FakeStripe(), _real_price(price_limit="abc", product_limit="450"),
+                                  PLANS["tier_1_standard"]) == 450
+    assert sc.resolve_quota_limit(FakeStripe(), _real_price(price_limit="abc"),
+                                  PLANS["tier_1_standard"]) == 300

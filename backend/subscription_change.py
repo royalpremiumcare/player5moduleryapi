@@ -166,11 +166,22 @@ def stripe_error_message(err) -> str:
     return GENERIC_STRIPE_MESSAGE
 
 
+UNLIMITED_QUOTA = -1
+MAX_QUOTA_LIMIT = 10_000_000
+
+
 def _int_or_none(value):
+    """appointment_limit metadata -> int; None (try the next source) when not numeric or 0.
+
+    Negative or absurdly large values mean unlimited (-1, as in PLANS): the live corporate
+    product carries a 39-digit limit, which Mongo cannot store (8-byte ints only).
+    """
     try:
         n = int(value)
     except (TypeError, ValueError):
         return None
+    if n < 0 or n > MAX_QUOTA_LIMIT:
+        return UNLIMITED_QUOTA
     return n or None
 
 
