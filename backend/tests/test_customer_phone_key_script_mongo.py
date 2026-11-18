@@ -611,6 +611,47 @@ async def test_crash_is_reported_without_exception_text(env, capsys, tmp_path, m
     assert json.loads((tmp_path / "b" / "meta.json").read_text())["status"] == "crashed"
 
 
+@pytest.mark.parametrize("target, argv", [
+    ("plan_backfill", ["backfill", "--dry-run"]),
+    ("plan_merge", ["merge", "--dry-run"]),
+    ("keyed_duplicates", ["index", "--dry-run"]),
+    ("run_verify", ["verify", "--dry-run"]),
+    ("plan_merge", ["merge", "--apply", "--backup-dir", "{tmp}/m", "--plan-id", "x"]),
+])
+async def test_planning_crash_is_masked(env, capsys, tmp_path, monkeypatch, target, argv):
+    """A crash before the apply block goes through the same masked report: type only."""
+    db, _ = env
+    await _seed(db)
+    monkeypatch.delenv("PK_SCRIPT_DEBUG", raising=False)
+    cpk = _cpk()
+
+    async def boom(*a, **kw):
+        raise RuntimeError(f"dup key {ORG_TR} 905551110001 Canan Çelik")
+
+    monkeypatch.setattr(cpk, target, boom)
+    code, out = await _run(capsys, *[a.replace("{tmp}", str(tmp_path)) for a in argv])
+    assert code == 1, out
+    assert "CRASHED" in out and "RuntimeError" in out
+    assert "Traceback" not in out
+    for secret in (ORG_TR, "905551110001", "Canan"):
+        assert secret not in out, secret
+    assert not any(tmp_path.iterdir())  # nothing written, no backup dir
+
+
+async def test_planning_crash_raises_with_debug(env, capsys, monkeypatch):
+    db, _ = env
+    await _seed(db)
+    monkeypatch.setenv("PK_SCRIPT_DEBUG", "1")
+    cpk = _cpk()
+
+    async def boom(*a, **kw):
+        raise RuntimeError("planning failed")
+
+    monkeypatch.setattr(cpk, "plan_backfill", boom)
+    with pytest.raises(RuntimeError, match="planning failed"):
+        await _run(capsys, "backfill", "--dry-run")
+
+
 class _StaleCustomers:
     """find_one returns the survivor as it was before someone keyed it meanwhile."""
 

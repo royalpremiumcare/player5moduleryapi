@@ -798,7 +798,24 @@ async def amain(argv=None) -> int:
         client.close()
 
 
-async def _dispatch(db, db_name: str, args, out) -> int:
+def _debug() -> bool:
+    return os.environ.get("PK_SCRIPT_DEBUG") == "1"
+
+
+def _report_crash(exc: BaseException, out, backup: Optional[BackupDir] = None) -> None:
+    """Exception type only: its text and traceback can carry customer data."""
+    if backup is None:
+        out(f"CRASHED ({type(exc).__name__}; details withheld from the report). "
+            "Set PK_SCRIPT_DEBUG=1 to see the traceback (keep it out of chat).")
+        return
+    backup.finish("crashed", error=type(exc).__name__)
+    out(f"CRASHED ({type(exc).__name__}; details withheld from the report) — the backup "
+        f"so far is in {backup.path}; restore with "
+        f"python {os.path.join(backup.path, 'restore.py')}")
+
+
+async def _plan_step(db, args, out):
+    """Everything before the first write. Returns an exit code, or ``(plan, plans)`` to apply."""
     org = args.org_id
     if args.command == "verify":
         return 0 if await run_verify(db, org, out) else 1
@@ -809,6 +826,7 @@ async def _dispatch(db, db_name: str, args, out) -> int:
             out(f"FAIL: {no_id} customer(s) have no id; fix them before {args.command}.")
             return 1
 
+    plan = plans = plan_id = None
     if args.command == "backfill":
         plan = await plan_backfill(db, org)
         print_backfill(plan, out)
@@ -817,8 +835,6 @@ async def _dispatch(db, db_name: str, args, out) -> int:
         plans = await plan_merge(db, org)
         print_merge(plans, out)
         plan_id = merge_plan_id(plans)
-    else:
-        plan_id = None
 
     if not args.apply:
         if args.command == "index":
@@ -829,8 +845,22 @@ async def _dispatch(db, db_name: str, args, out) -> int:
         out(f"REFUSED: plan changed since the dry run (expected {args.plan_id}, now "
             f"{plan_id}). Nothing was written. Review a new dry run.")
         return 1
+    return plan, plans
 
-    backup = BackupDir(args.backup_dir, args.command, db_name)
+
+async def _dispatch(db, db_name: str, args, out) -> int:
+    try:
+        step = await _plan_step(db, args, out)
+        if isinstance(step, int):
+            return step
+        plan, plans = step
+        backup = BackupDir(args.backup_dir, args.command, db_name)
+    except BaseException as exc:  # planning, dry runs, verify: same masking as apply
+        _report_crash(exc, out)
+        if _debug():
+            raise
+        return 1
+
     ok = True
     try:
         if args.command == "backfill":
@@ -846,11 +876,8 @@ async def _dispatch(db, db_name: str, args, out) -> int:
         else:
             ok = await run_index(db, True, backup, out)
     except BaseException as exc:
-        backup.finish("crashed", error=type(exc).__name__)
-        out(f"CRASHED ({type(exc).__name__}; details withheld from the report) — the backup "
-            f"so far is in {backup.path}; restore with "
-            f"python {os.path.join(backup.path, 'restore.py')}")
-        if os.environ.get("PK_SCRIPT_DEBUG") == "1":
+        _report_crash(exc, out, backup)
+        if _debug():
             raise
         return 1
     backup.finish("ok" if ok else "failed")
