@@ -26,7 +26,9 @@ Usage (inside the backend container, MONGO_URL and DB_NAME come from the environ
 
 Take each step's dry run right before its apply: backfill changes the merge plan (the
 survivors then already hold their key), so the merge plan id is only known after backfill.
---plan-id refuses an apply whose plan differs from the reviewed dry run.
+--plan-id is required with backfill/merge --apply and refuses a plan that differs from
+the reviewed dry run. Set PK_SCRIPT_DEBUG=1 to see a crash's traceback (it can contain
+customer data; keep it out of chat).
 
 Every --apply needs a --backup-dir that does not exist yet. It receives ``backup.jsonl``
 (prior state of every touched document, written before each write), ``meta.json`` and
@@ -380,6 +382,7 @@ class GroupPlan:
     survivor: Optional[dict]
     sources: list = field(default_factory=list)       # A/B
     mark_shared: list = field(default_factory=list)   # CD: member dicts
+    shared_skipped: list = field(default_factory=list)  # A/B: shared_phone members (R12)
     set_survivor_key: bool = False
     skip_reason: Optional[str] = None
 
@@ -471,6 +474,10 @@ async def plan_merge(db, organization_id: Optional[str] = None) -> list:
             gp.mark_shared = [m for m in others
                               if not m.get("shared_phone") or m.get("phone_key")]
             continue
+        # R12: a shared_phone record is an owner's "Farklı kişi"; name similarity never
+        # overrides it. It merges only through the in-app suggestion.
+        gp.shared_skipped = [m for m in others if m.get("shared_phone")]
+        others = [m for m in others if not m.get("shared_phone")]
         gp.sources = await _predict_sources(db, org, surv, others, countries[org])
         bad = [s for s in gp.sources if s.error]
         if bad:
@@ -515,6 +522,9 @@ def print_merge(plans: list, out) -> None:
             totals["cd_groups"] += 1
             totals["marked_shared"] += len(p.mark_shared)
             continue
+        if p.shared_skipped:
+            head += " | shared, skipped: " + ", ".join(who(m) for m in p.shared_skipped)
+            totals["shared_skipped"] += len(p.shared_skipped)
         out(head + f" merge {len(p.sources)} into survivor")
         totals["merge_groups"] += 1
         for s in p.sources:
@@ -534,7 +544,8 @@ def print_merge(plans: list, out) -> None:
     out(f"TOTAL groups={len(plans)} A={by_class['A']} B={by_class['B']} CD={by_class['CD']} "
         f"merge_groups={totals['merge_groups']} merged_records={totals['merged_records']} "
         f"cd_groups={totals['cd_groups']} marked_shared={totals['marked_shared']} "
-        f"skipped={totals['skipped_groups']} refs: " + " ".join(
+        f"skipped={totals['skipped_groups']} shared_skipped={totals['shared_skipped']} "
+        "refs: " + " ".join(
             f"{v}={totals['ref:' + v]}" for v in _SHORT.values()))
     out(f"plan id: {merge_plan_id(plans)}")
 
@@ -548,11 +559,11 @@ async def _set_survivor_key(db, plan: GroupPlan, backup: list) -> str:
         return "kept"
     remember(backup, "customers", doc)
     try:
-        await db.customers.update_one({"_id": doc["_id"], "phone_key": {"$exists": False}},
-                                      {"$set": {"phone_key": plan.key}})
+        res = await db.customers.update_one({"_id": doc["_id"], "phone_key": {"$exists": False}},
+                                            {"$set": {"phone_key": plan.key}})
     except DuplicateKeyError:
         return "key conflict"
-    return "set"
+    return "set" if res.modified_count == 1 else "not set (record changed meanwhile)"
 
 
 async def apply_merge(db, plans: list, backup: list) -> list:
@@ -583,8 +594,10 @@ async def apply_merge(db, plans: list, backup: list) -> list:
             try:
                 summary = await merge_into(db, org, p.survivor["id"], s.source_id, backup=backup)
             except Exception as exc:  # stop this group; others continue
+                # No str(exc): it can carry dup-key values and full ids (report goes to chat).
                 results.append({"kind": "merge", "organization_id": org,
-                                "source_id": s.source_id, "error": str(exc)})
+                                "source_id": s.source_id, "error": type(exc).__name__,
+                                "hint": f"merging {s.label} into {who(p.survivor)}"})
                 failed = True
                 break
             results.append({"kind": "merge", "organization_id": org, **summary})
@@ -648,8 +661,9 @@ async def run_verify(db, organization_id: Optional[str], out) -> bool:
         f"(appointments: {sum(unresolved.values())}; without phone, ignored: {no_phone})")
     for (org, phone), n in sorted(unresolved.items())[:50]:
         out(f"    org={org8(org)} number={tail2(phone)} appointments={n}")
+    customers = await load_customers(db, organization_id)
     mismatches = []
-    for c in await load_customers(db, organization_id):
+    for c in customers:
         got = counts.get(c.get("id"), Counter())
         stored = (int(c.get("total_appointments") or 0), int(c.get("completed_appointments") or 0))
         if stored != (got["total"], got["completed"]):
@@ -659,9 +673,22 @@ async def run_verify(db, organization_id: Optional[str], out) -> bool:
         out(f"    org={org8(c.get('organization_id'))} {who(c)} stored total={stored[0]} "
             f"completed={stored[1]} recomputed total={got['total']} "
             f"completed={got['completed']}")
+    unkeyed = []
+    countries: dict = {}
+    for c in customers:
+        if c.get("phone_key") or c.get("shared_phone"):
+            continue
+        org = c.get("organization_id")
+        if org not in countries:
+            countries[org] = await org_country(db, org)
+        if phone_key(c.get("phone"), countries[org]):
+            unkeyed.append(c)
+    out(f"unkeyed keyable customers: {len(unkeyed)} (no phone_key, not shared_phone)")
+    for c in unkeyed[:50]:
+        out(f"    org={org8(c.get('organization_id'))} {who(c)}")
     info = (await db.customers.index_information()).get(INDEX_NAME)
     out(f"index {INDEX_NAME}: {'present' if _is_exact(info) else 'MISSING'} (info only)")
-    ok = not dups and not unresolved and not mismatches
+    ok = not dups and not unresolved and not mismatches and not unkeyed
     out("VERIFY " + ("OK" if ok else "FAIL (reported only, nothing was changed)"))
     return ok
 
@@ -705,8 +732,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--backup-dir", help="new directory for the backup (must not exist)")
         p.add_argument("--org-id", help="limit to one organization")
         if name in ("backfill", "merge"):
-            p.add_argument("--plan-id", help="refuse to apply unless the plan still has "
-                                             "this id (printed by the dry run)")
+            p.add_argument("--plan-id", help="required with --apply: the id printed by the "
+                                             "reviewed dry run; refuses a changed plan")
     return parser
 
 
@@ -720,6 +747,9 @@ async def amain(argv=None) -> int:
     except SystemExit as exc:
         return int(exc.code or 0)
 
+    if args.command == "index" and args.org_id:
+        out("index is global (one index over all orgs): --org-id is not accepted")
+        return 2
     if args.command == "verify" and args.apply:
         out("verify is read-only: use --dry-run")
         return 2
@@ -729,6 +759,10 @@ async def amain(argv=None) -> int:
             return 2
         if os.path.exists(args.backup_dir):
             out(f"--backup-dir {args.backup_dir} already exists; pass a new directory")
+            return 2
+        if args.command in ("backfill", "merge") and not args.plan_id:
+            out(f"{args.command} --apply requires --plan-id <id printed by the dry run you "
+                "reviewed>")
             return 2
 
     url, db_name = os.environ.get("MONGO_URL"), os.environ.get("DB_NAME")
@@ -777,7 +811,7 @@ async def _dispatch(db, db_name: str, args, out) -> int:
             return 0 if await run_index(db, False, None, out) else 1
         return 0
 
-    if plan_id and args.plan_id and args.plan_id != plan_id:
+    if plan_id and args.plan_id != plan_id:
         out(f"REFUSED: plan changed since the dry run (expected {args.plan_id}, now "
             f"{plan_id}). Nothing was written. Review a new dry run.")
         return 1
@@ -797,11 +831,14 @@ async def _dispatch(db, db_name: str, args, out) -> int:
             ok = _report_merge_results(await apply_merge(db, plans, backup.journal), out)
         else:
             ok = await run_index(db, True, backup, out)
-    except BaseException:
-        backup.finish("crashed")
-        out(f"CRASHED — the backup so far is in {backup.path}; restore with "
+    except BaseException as exc:
+        backup.finish("crashed", error=type(exc).__name__)
+        out(f"CRASHED ({type(exc).__name__}; details withheld from the report) — the backup "
+            f"so far is in {backup.path}; restore with "
             f"python {os.path.join(backup.path, 'restore.py')}")
-        raise
+        if os.environ.get("PK_SCRIPT_DEBUG") == "1":
+            raise
+        return 1
     backup.finish("ok" if ok else "failed")
     out(f"backup: {len(backup.journal)} document state(s) in "
         f"{os.path.join(backup.path, 'backup.jsonl')}")
@@ -816,7 +853,8 @@ def _report_merge_results(results: list, out) -> bool:
     for r in results:
         org = org8(r["organization_id"])
         if r.get("error"):
-            out(f"ERROR org={org}: merge stopped for this group: {r['error']}")
+            out(f"ERROR org={org}: merge stopped for this group: {r['error']} while "
+                f"{r.get('hint', '?')}")
             ok = False
         elif r["kind"] == "merge":
             merged["merged" if r.get("merged") else "already_gone"] += 1

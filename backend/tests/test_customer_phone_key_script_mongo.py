@@ -164,10 +164,20 @@ async def _by_id(db, doc):
     return await db.customers.find_one({"id": doc["id"]}, {"_id": 0})
 
 
+async def _apply(capsys, cmd, backup_dir, *extra):
+    """``--apply`` with the plan id of a dry run taken right before (backfill/merge)."""
+    argv = [cmd, "--apply", "--backup-dir", str(backup_dir), *extra]
+    if cmd in ("backfill", "merge"):
+        code, out = await _run(capsys, cmd, "--dry-run", *extra)
+        assert code == 0, out
+        argv += ["--plan-id", re.search(r"plan id: (\w+)", out).group(1)]
+    return await _run(capsys, *argv)
+
+
 async def _apply_all(capsys, tmp_path, tag=""):
     outputs = []
     for cmd in ("backfill", "merge", "index"):
-        code, out = await _run(capsys, cmd, "--apply", "--backup-dir", str(tmp_path / f"{cmd}{tag}"))
+        code, out = await _apply(capsys, cmd, tmp_path / f"{cmd}{tag}")
         assert code == 0, out
         outputs.append(out)
     return outputs
@@ -198,7 +208,7 @@ async def test_backfill_then_merge_then_index_then_verify_clean(env, capsys, tmp
     assert re.search(r"landline_keys=2\b", out), out
     assert re.search(r"group_member=7\b", out), out
 
-    code, out = await _run(capsys, "backfill", "--apply", "--backup-dir", str(tmp_path / "b"))
+    code, out = await _apply(capsys, "backfill", tmp_path / "b")
     assert code == 0, out
     keys = {c["id"]: (await _by_id(db, c)).get("phone_key") for c in s.all}
     # Singles: punctuation, 0090, landlines (R6), UK 10-digit.
@@ -221,7 +231,7 @@ async def test_backfill_then_merge_then_index_then_verify_clean(env, capsys, tmp
     assert (tmp_path / "b" / "backup.jsonl").exists()
     assert (tmp_path / "b" / "restore.py").exists()
 
-    code, out = await _run(capsys, "merge", "--apply", "--backup-dir", str(tmp_path / "m"))
+    code, out = await _apply(capsys, "merge", tmp_path / "m")
     assert code == 0, out
     tr = {c["id"]: c for c in await db.customers.find({"organization_id": ORG_TR}, {"_id": 0}).to_list(None)}
     for gone in (s.canan_src, s.ayse_src, s.ali_old, s.selin_1, s.selin_2):
@@ -258,6 +268,7 @@ async def test_backfill_then_merge_then_index_then_verify_clean(env, capsys, tmp
     assert "keyed duplicates: 0" in out
     assert "unresolved appointment phones: 0" in out
     assert "counter mismatches: 0" in out
+    assert "unkeyed keyable customers: 0" in out
 
 
 async def test_apply_requires_fresh_backup_dir(env, capsys, tmp_path):
@@ -368,7 +379,7 @@ async def test_restore_scripts_put_every_document_back(env, capsys, tmp_path):
 async def test_restore_refuses_another_db(env, capsys, tmp_path):
     db, name = env
     await _seed(db)
-    await _run(capsys, "backfill", "--apply", "--backup-dir", str(tmp_path / "b"))
+    await _apply(capsys, "backfill", tmp_path / "b")
     child_env = {**os.environ, "MONGO_URL": MONGO_URL, "DB_NAME": name + "_other"}
     proc = subprocess.run([sys.executable, str(tmp_path / "b" / "restore.py")],
                           env=child_env, capture_output=True, text=True, timeout=120)
@@ -387,7 +398,7 @@ async def test_merge_without_backfill_keys_survivors_and_unkeys_cd_others(env, c
     await db.customers.insert_many([a_surv, a_src, cd_surv, cd_other])
     await db.appointments.insert_many(_appts("905551110001", "Canan Çelik", 1)
                                       + _appts("905553330003", "Mehmet Kaya", 1))
-    code, out = await _run(capsys, "merge", "--apply", "--backup-dir", str(tmp_path / "m"))
+    code, out = await _apply(capsys, "merge", tmp_path / "m")
     assert code == 0, out
     assert (await _by_id(db, a_surv))["phone_key"] == "905551110001"
     assert await _by_id(db, a_src) is None
@@ -430,7 +441,10 @@ async def test_verify_reports_problems_without_fixing(env, capsys):
     await db.customers.insert_many([
         _cust("905551110001", "A Bir", phone_key="905551110001", total=1),
         _cust("05551110001", "B Iki", phone_key="905551110001"),
-        _cust("905552220002", "C Uc", total=5),                  # counter says 5, has 1
+        _cust("905552220002", "C Uc", phone_key="905552220002", total=5),  # counter 5, has 1
+        _cust("905554440004", "D Dort", phone_key="905554440004"),
+        _cust("0", "E Bes"),                                     # walk-in: not keyable
+        _cust("905556660006", "F Alti"),                         # keyable, no key, not shared
     ])
     await db.appointments.insert_many(
         _appts("905551110001", "A Bir", 1) + _appts("905552220002", "C Uc", 1)
@@ -441,6 +455,8 @@ async def test_verify_reports_problems_without_fixing(env, capsys):
     assert "keyed duplicates: 1" in out
     assert "unresolved appointment phones: 1" in out
     assert "counter mismatches: 1" in out
+    assert "unkeyed keyable customers: 1" in out
+    assert re.search(r"org=a1b2c3d4 F\.A\. …06", out), out
     assert "C.U." in out and "stored total=5" in out and "recomputed total=1" in out
     assert await _dump(db) == before
 
@@ -474,7 +490,6 @@ async def test_ensure_index_build_over_duplicates(env):
             [("organization_id", 1), ("phone_key", 1)], name=INDEX_NAME, unique=True,
             partialFilterExpression=PARTIAL_FILTER)
     assert exc.value.code == 11000
-    print("index build over duplicates raised", type(exc.value).__name__)
     assert await ensure_customer_indexes(db) == "skipped_duplicates"
     assert INDEX_NAME not in await db.customers.index_information()
 
@@ -486,3 +501,118 @@ async def test_concurrent_ensure_customer_indexes(env):
     assert set(results) <= {"created", "exists"} and "created" in results, results
     info = (await db.customers.index_information())[INDEX_NAME]
     assert info["unique"] is True and info["partialFilterExpression"] == PARTIAL_FILTER
+
+
+# ---------------------------------------------------------------- fix round 1
+
+async def test_apply_requires_plan_id(env, capsys, tmp_path):
+    db, _ = env
+    await _seed(db)
+    before = await _dump(db)
+    for cmd in ("backfill", "merge"):
+        code, out = await _run(capsys, cmd, "--apply", "--backup-dir", str(tmp_path / cmd))
+        assert code == 2 and "--plan-id" in out, out
+        assert not (tmp_path / cmd).exists()
+    assert await _dump(db) == before
+
+
+async def test_merge_never_merges_shared_phone_records(env, capsys, tmp_path):
+    """R12: a "Farklı kişi" record is never merged by the script, even with the same name."""
+    db, _ = env
+    surv = _cust("905551110001", "Canan Çelik", total=1)
+    plain = _cust("+90 555 111 00 01", "Canan Çelik", created="2026-01-01T00:00:00+00:00")
+    shared = _cust("05551110001", "Canan Çelik", shared_phone=True,
+                   created="2026-02-01T00:00:00+00:00")
+    await db.customers.insert_many([surv, plain, shared])
+    await db.appointments.insert_many(_appts("905551110001", "Canan Çelik", 1))
+    shared_before = await _by_id(db, shared)
+    code, out = await _run(capsys, "merge", "--dry-run")
+    assert code == 0, out
+    assert "shared, skipped: C.Ç. …01" in out, out
+    assert "merge 1 into survivor" in out, out
+    code, out = await _apply(capsys, "merge", tmp_path / "m")
+    assert code == 0, out
+    assert await _by_id(db, plain) is None
+    assert await _by_id(db, shared) == shared_before
+    assert (await _by_id(db, surv))["phone_key"] == "905551110001"
+
+
+async def test_merge_error_is_reported_without_exception_text(env, capsys, tmp_path, monkeypatch):
+    db, _ = env
+    await _seed(db)
+    cpk = _cpk()
+
+    async def boom(*a, **kw):
+        raise ValueError(f"E11000 dup key {ORG_TR} 905551110001 Canan Çelik")
+
+    monkeypatch.setattr(cpk, "merge_into", boom)
+    code, out = await _apply(capsys, "merge", tmp_path / "m")
+    assert code == 1, out
+    assert "ValueError" in out
+    for secret in ("E11000", ORG_TR, "905551110001", "Canan"):
+        assert secret not in out, secret
+
+
+async def test_crash_is_reported_without_exception_text(env, capsys, tmp_path, monkeypatch):
+    db, _ = env
+    await _seed(db)
+    cpk = _cpk()
+
+    async def boom(*a, **kw):
+        raise RuntimeError(f"dup key {ORG_TR} 905551110001 Canan Çelik")
+
+    monkeypatch.setattr(cpk, "apply_backfill", boom)
+    code, out = await _apply(capsys, "backfill", tmp_path / "b")
+    assert code == 1, out
+    assert "CRASHED" in out and "RuntimeError" in out
+    for secret in (ORG_TR, "905551110001", "Canan"):
+        assert secret not in out, secret
+    import json
+    assert json.loads((tmp_path / "b" / "meta.json").read_text())["status"] == "crashed"
+
+
+class _StaleCustomers:
+    """find_one returns the survivor as it was before someone keyed it meanwhile."""
+
+    def __init__(self, real):
+        self.real = real
+
+    async def find_one(self, *a, **kw):
+        doc = await self.real.find_one(*a, **kw)
+        if doc:
+            doc.pop("phone_key", None)
+        return doc
+
+    async def update_one(self, *a, **kw):
+        return await self.real.update_one(*a, **kw)
+
+
+class _StaleDB:
+    def __init__(self, db):
+        self.customers = _StaleCustomers(db.customers)
+
+
+async def test_set_survivor_key_says_set_only_when_it_wrote(env):
+    db, _ = env
+    cpk = _cpk()
+    surv = _cust("905551110001", "Canan Çelik", phone_key="905551110001")
+    await db.customers.insert_one(dict(surv))
+    plan = cpk.GroupPlan(ORG_TR, "905551110001", "A", [surv], surv, set_survivor_key=True)
+    assert await cpk._set_survivor_key(_StaleDB(db), plan, []) != "set"
+
+
+async def test_index_rejects_org_id(env, capsys, tmp_path):
+    for argv in (["index", "--dry-run", "--org-id", ORG_TR],
+                 ["index", "--apply", "--backup-dir", str(tmp_path / "i"), "--org-id", ORG_TR]):
+        code, out = await _run(capsys, *argv)
+        assert code == 2 and "--org-id" in out, out
+    assert not (tmp_path / "i").exists()
+
+
+async def test_verify_fails_on_an_unkeyed_keyable_customer_alone(env, capsys):
+    db, _ = env
+    await db.customers.insert_many([_cust("905556660006", "F Alti"), _cust("0", "E Bes")])
+    code, out = await _run(capsys, "verify", "--dry-run")
+    assert "keyed duplicates: 0" in out and "counter mismatches: 0" in out, out
+    assert "unkeyed keyable customers: 1" in out
+    assert code == 1 and "VERIFY FAIL" in out, out
