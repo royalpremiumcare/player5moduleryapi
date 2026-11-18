@@ -208,8 +208,8 @@ Each `--apply` writes a JSON backup plus `restore.py` instructions into the back
 
 1. **Code deploy.** Merge, then build the backend code-only and the web from `git archive`; OTA via Capgo internal, then production.
    - New writes start keying.
-   - The index does not exist yet. That is expected: `ensure_customer_indexes` returns `skipped_duplicates` and only logs.
+   - No index is created until step 4 (ruling R14). Startup calls `ensure_customer_indexes_if_applied`: without the `db.migration_log` marker `{name: "customer_phone_key_index", status: "applied"}` it logs one INFO line and creates nothing.
 2. **Backfill.** Run `backfill --dry-run` and show the report. **Owner approves**, then run `--apply` with a backup dir under `/root/backups/`.
 3. **Merge.** Run `merge --dry-run` and show the report. **Owner approves**, then run `--apply` with a backup.
-4. **Index.** Run `index --apply`, then `verify`.
+4. **Index.** Run `index --apply`, then `verify`. A successful `index --apply` writes the `customer_phone_key_index` marker into `db.migration_log`; from then on startup re-ensures the index (fresh environments re-create it). The index run's `restore.py` drops the index and removes the marker.
 5. **Re-run `verify` the next day** and report.

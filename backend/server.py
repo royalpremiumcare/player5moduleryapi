@@ -6,7 +6,7 @@ from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from name_sync import propagate_service_rename, sync_customer_to_appointments
 from customer_identity import names_match, normalize_name, phone_key, phone_variants as key_phone_variants
 from customer_resolver import find_customer_for, org_country, phone_for_appointment, resolve_customer
-from customer_indexes import ensure_customer_indexes
+from customer_indexes import ensure_customer_indexes_if_applied
 from customer_merge import merge_into, mark_not_duplicate
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 from meta_capi_service import get_meta_capi_service, split_full_name
@@ -1587,7 +1587,9 @@ async def lifespan(app: FastAPI):
             #     kızına randevu) → paylaşılan telefon geçerli bir senaryo.
             # Bu yüzden aşağıdaki NON-UNIQUE index efektif olandır. Tekillik artık
             # (organization_id, phone_key) üzerinde PARTIAL unique index ile sağlanır
-            # (customer_indexes.ensure_customer_indexes); mükerrer veri varsa atlanır ve loglanır.
+            # (customer_indexes). O index'i yalnız rollout script'i (`customer_phone_key.py
+            # index --apply`, sahip onaylı 4. adım) kurar ve migration_log'a işaret yazar;
+            # startup yalnız bu işaret varsa index'i yeniden sağlar, yoksa INFO loglayıp geçer.
             try:
                 await app.db.customers.create_index(
                     [("organization_id", 1), ("phone", 1)],
@@ -1595,7 +1597,7 @@ async def lifespan(app: FastAPI):
                 )
             except Exception as idx_err:
                 logging.debug(f"customers (org_id, phone) non-unique index skipped: {idx_err}")
-            await ensure_customer_indexes(app.db)
+            await ensure_customer_indexes_if_applied(app.db)
             try:
                 await app.db.customers.create_index(
                     [("organization_id", 1), ("name", 1), ("_id", 1)],

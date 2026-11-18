@@ -13,7 +13,7 @@ import pytest
 import pytest_asyncio
 from pymongo.errors import OperationFailure
 
-from customer_indexes import INDEX_NAME, PARTIAL_FILTER, ensure_customer_indexes
+from customer_indexes import INDEX_MARKER, INDEX_NAME, PARTIAL_FILTER, ensure_customer_indexes
 
 MONGO_URL = os.environ.get("PK_TEST_MONGO_URL")
 pytestmark = pytest.mark.skipif(not MONGO_URL, reason="PK_TEST_MONGO_URL not set")
@@ -21,7 +21,8 @@ pytestmark = pytest.mark.skipif(not MONGO_URL, reason="PK_TEST_MONGO_URL not set
 ORG_TR = "a1b2c3d4-0000-4000-8000-00000000aaaa"
 ORG_UK = "e5f6a7b8-0000-4000-8000-00000000bbbb"
 COLLECTIONS = ("customers", "appointments", "customer_notes", "marketing_autopilot_tasks",
-               "merchant_transactions", "refund_requests", "stripe_customers", "settings")
+               "merchant_transactions", "refund_requests", "stripe_customers", "settings",
+               "migration_log")
 DONE = "Tamamlandı"
 
 
@@ -149,6 +150,9 @@ async def _seed(db) -> Seed:
     ])
     await db.refund_requests.insert_one(
         {"organization_id": ORG_TR, "customer_phone": "05551110001", "amount": 50})
+    # Prod already logs the financial migrations here; the index marker lands next to them.
+    await db.migration_log.insert_one({"name": "20260421_bootstrap_indexes",
+                                       "status": "completed", "reversible": False})
     return s
 
 
@@ -434,6 +438,42 @@ async def test_index_apply_fails_loudly_on_keyed_duplicates(env, capsys, tmp_pat
     code, out = await _run(capsys, "index", "--apply", "--backup-dir", str(tmp_path / "i"))
     assert code == 1 and "FAIL" in out and "keyed duplicates: 1" in out, out
     assert INDEX_NAME not in await db.customers.index_information()
+    assert await db.migration_log.find_one({"name": INDEX_MARKER}) is None
+
+
+async def test_index_apply_writes_the_startup_marker(env, capsys, tmp_path):
+    db, _ = env
+    await _seed(db)
+    for cmd in ("backfill", "merge"):
+        code, out = await _apply(capsys, cmd, tmp_path / cmd)
+        assert code == 0, out
+    assert await db.migration_log.find_one({"name": INDEX_MARKER}) is None
+    code, out = await _run(capsys, "index", "--dry-run")
+    assert code == 0, out
+    assert await db.migration_log.find_one({"name": INDEX_MARKER}) is None
+    code, out = await _run(capsys, "index", "--apply", "--backup-dir", str(tmp_path / "i"))
+    assert code == 0, out
+    marker = await db.migration_log.find_one({"name": INDEX_MARKER}, {"_id": 0})
+    assert marker["status"] == "applied" and isinstance(marker["applied_at"], str), marker
+    assert "marker" in out
+    # Re-running keeps exactly one marker.
+    code, out = await _run(capsys, "index", "--apply", "--backup-dir", str(tmp_path / "i2"))
+    assert code == 0, out
+    assert await db.migration_log.count_documents({"name": INDEX_MARKER}) == 1
+
+
+async def test_restore_of_the_index_run_removes_the_marker(env, capsys, tmp_path):
+    db, name = env
+    await _seed(db)
+    await _apply_all(capsys, tmp_path)
+    assert await db.migration_log.find_one({"name": INDEX_MARKER}) is not None
+    child_env = {**os.environ, "MONGO_URL": MONGO_URL, "DB_NAME": name}
+    proc = subprocess.run([sys.executable, str(tmp_path / "index" / "restore.py")],
+                          env=child_env, capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert INDEX_NAME not in await db.customers.index_information()
+    assert await db.migration_log.find_one({"name": INDEX_MARKER}) is None
+    assert await db.migration_log.count_documents({}) == 1  # other entries untouched
 
 
 async def test_verify_reports_problems_without_fixing(env, capsys):

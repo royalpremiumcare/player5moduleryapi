@@ -10,7 +10,9 @@ after the owner has reviewed the dry-run report:
               (``customer_merge.merge_into``), then key the survivor.
               Class CD: never merged; the others get ``shared_phone: true`` and no key.
     index     create ``customers_org_phone_key_unique``; fails (exit 1) while any keyed
-              duplicate remains.
+              duplicate remains. On success it writes the ``migration_log`` marker
+              ``customer_phone_key_index`` (status ``applied``); backend startup ensures the
+              index only once that marker exists, never before this step.
     verify    read-only: keyed duplicates, appointment phones that resolve to no
               customer, counters that differ from a recount. Reports, never fixes.
 
@@ -60,7 +62,9 @@ from bson import json_util  # noqa: E402  (pymongo ships bson)
 from pymongo.errors import DuplicateKeyError  # noqa: E402
 
 from customer_identity import names_match, phone_key  # noqa: E402
-from customer_indexes import INDEX_NAME, _is_exact, ensure_customer_indexes  # noqa: E402
+from customer_indexes import (  # noqa: E402
+    INDEX_MARKER, INDEX_NAME, _is_exact, ensure_customer_indexes, write_index_marker,
+)
 from customer_merge import (  # noqa: E402
     _NAMED, REFERENCE_FIELDS, _survivor, find_duplicate_groups, merge_into,
 )
@@ -133,6 +137,8 @@ DB_NAME from the environment, refuses any database other than the one this run w
 asks nothing, and replaces each backed-up document with its prior state
 (customer_merge.restore_from_backup). --drop-index drops {index_name} first; a restored
 record can need that, because the index refuses two keyed records with the same number.
+Dropping the index also removes the migration_log marker {index_marker}, so backend
+startup does not build the index again.
 """
 import asyncio
 import json
@@ -150,6 +156,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from customer_merge import restore_from_backup
 
 INDEX_NAME = {index_name!r}
+INDEX_MARKER = {index_marker!r}
 
 
 async def main() -> int:
@@ -172,6 +179,10 @@ async def main() -> int:
         if drop and INDEX_NAME in await db.customers.index_information():
             await db.customers.drop_index(INDEX_NAME)
             print(f"dropped index {{INDEX_NAME}}")
+        if drop:
+            gone = await db.migration_log.delete_many({{"name": INDEX_MARKER}})
+            if gone.deleted_count:
+                print(f"removed migration_log marker {{INDEX_MARKER}}")
         await restore_from_backup(db, entries)
         print(f"restored {{len(entries)}} backup entries from {{meta['command']}} run "
               f"{{meta['started_at']}}")
@@ -194,7 +205,8 @@ class BackupDir:
                      "status": "running", "index_created_by_this_run": False}
         self._write_meta()
         with open(os.path.join(path, "restore.py"), "w", encoding="utf-8") as fh:
-            fh.write(RESTORE_PY.format(backup_dir=path, backend=_BACKEND, index_name=INDEX_NAME))
+            fh.write(RESTORE_PY.format(backup_dir=path, backend=_BACKEND, index_name=INDEX_NAME,
+                                        index_marker=INDEX_MARKER))
         self.journal = Journal(os.path.join(path, "backup.jsonl"))
 
     def _write_meta(self) -> None:
@@ -714,6 +726,8 @@ async def run_index(db, apply: bool, backup: Optional[BackupDir], out) -> bool:
     if backup is not None and not before:
         backup.meta["index_created_by_this_run"] = True
     out(f"index {INDEX_NAME}: present")
+    await write_index_marker(db)
+    out(f"marker: migration_log {INDEX_MARKER} applied (startup re-ensures the index from now on)")
     return True
 
 

@@ -3,7 +3,9 @@ import logging
 import pytest
 from pymongo.errors import DuplicateKeyError, OperationFailure
 
-from customer_indexes import INDEX_NAME, ensure_customer_indexes
+from customer_indexes import (
+    INDEX_MARKER, INDEX_NAME, ensure_customer_indexes, ensure_customer_indexes_if_applied,
+)
 
 KEYS = [("organization_id", 1), ("phone_key", 1)]
 PARTIAL = {"phone_key": {"$exists": True}}
@@ -25,9 +27,23 @@ class _Customers:
         return kw.get("name")
 
 
+class _MigrationLog:
+    def __init__(self, docs=()):
+        self.docs = list(docs)
+        self.queries = []
+
+    async def find_one(self, flt, *a, **kw):
+        self.queries.append(flt)
+        for d in self.docs:
+            if all(d.get(k) == v for k, v in flt.items()):
+                return dict(d)
+        return None
+
+
 class _DB:
-    def __init__(self, customers):
+    def __init__(self, customers, migration_log=None):
         self.customers = customers
+        self.migration_log = migration_log or _MigrationLog()
 
 
 def _exact_info():
@@ -93,9 +109,52 @@ async def test_unexpected_error_never_raises(caplog):
     assert any(r.levelno == logging.ERROR for r in caplog.records)
 
 
+async def test_startup_without_marker_creates_nothing(caplog):
+    c = _Customers()
+    with caplog.at_level(logging.INFO, logger="customer_indexes"):
+        assert await ensure_customer_indexes_if_applied(_DB(c)) == "skipped_no_marker"
+    assert c.calls == []
+    infos = [r for r in caplog.records if r.name == "customer_indexes"]
+    assert len(infos) == 1 and infos[0].levelno == logging.INFO
+    assert INDEX_NAME in infos[0].getMessage()
+
+
+async def test_startup_ignores_a_marker_that_is_not_applied():
+    c = _Customers()
+    log = _MigrationLog([{"name": INDEX_MARKER, "status": "rolled_back"}])
+    assert await ensure_customer_indexes_if_applied(_DB(c, log)) == "skipped_no_marker"
+    assert c.calls == []
+
+
+async def test_startup_with_marker_ensures_index():
+    c = _Customers()
+    log = _MigrationLog([{"name": INDEX_MARKER, "status": "applied",
+                          "applied_at": "2026-11-18T00:00:00+00:00"}])
+    assert await ensure_customer_indexes_if_applied(_DB(c, log)) == "created"
+    assert c.calls == [(KEYS, {"name": INDEX_NAME, "unique": True,
+                               "partialFilterExpression": PARTIAL})]
+
+
+async def test_startup_marker_read_failure_never_raises(caplog):
+    class _BrokenLog:
+        async def find_one(self, *a, **kw):
+            raise RuntimeError("down")
+
+    c = _Customers()
+    with caplog.at_level(logging.ERROR):
+        assert await ensure_customer_indexes_if_applied(_DB(c, _BrokenLog())) == \
+            "skipped_no_marker"
+    assert c.calls == []
+
+
+def test_index_marker_name():
+    assert INDEX_MARKER == "customer_phone_key_index"
+
+
 def test_server_startup_wiring():
     from pathlib import Path
     src = (Path(__file__).resolve().parent.parent / "server.py").read_text(encoding="utf-8")
     assert "customers_org_phone_unique" not in src
-    assert "ensure_customer_indexes" in src
+    assert "await ensure_customer_indexes_if_applied(app.db)" in src
+    assert "await ensure_customer_indexes(app.db)" not in src
     assert "customers_org_phone_nonunique" in src
