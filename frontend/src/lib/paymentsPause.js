@@ -10,3 +10,9 @@ const ALL_PAYMENT_RULES = ['on_site', 'online', 'deposit'];
 export function selectablePaymentRules(paused = MERCHANT_PAYMENTS_PAUSED) {
   return paused ? ['on_site'] : ALL_PAYMENT_RULES;
 }
+
+/** How a stored service rule behaves now: while paused online / deposit is pay-at-salon. */
+export function effectivePaymentRule(rule, paused = MERCHANT_PAYMENTS_PAUSED) {
+  const r = rule || 'on_site';
+  return paused && r !== 'on_site' ? 'on_site' : r;
+}

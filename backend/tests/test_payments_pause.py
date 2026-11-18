@@ -59,3 +59,10 @@ def test_payment_link_refused_while_paused(client):
     })
     assert resp.status_code == 403
     assert resp.json()["detail"] == payments_pause.PAUSED_DETAIL
+
+
+@pytest.mark.parametrize("rule", ["online", "deposit", "full_online"])
+def test_stored_online_rules_read_as_pay_at_salon_while_paused(rule):
+    assert payments_pause.effective_payment_rule(rule, paused=True) == "on_site"
+    assert payments_pause.effective_payment_rule(rule, paused=False) == rule
+    assert payments_pause.effective_payment_rule(None, paused=True) is None

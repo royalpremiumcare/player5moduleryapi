@@ -3,7 +3,7 @@ import { Briefcase, Edit, Trash2, Plus, ArrowLeft, GripVertical, Tag, ListChecks
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
-import { MERCHANT_PAYMENTS_PAUSED, selectablePaymentRules } from "../lib/paymentsPause";
+import { MERCHANT_PAYMENTS_PAUSED, effectivePaymentRule, selectablePaymentRules } from "../lib/paymentsPause";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -136,7 +136,7 @@ const SortableServiceCard = ({ service, categoryName, i18n, t, onEdit, onDelete 
                     <Tag className="w-3 h-3" />{categoryName}
                   </span>
                 )}
-                {service.payment_rule && service.payment_rule !== 'on_site' && (
+                {effectivePaymentRule(service.payment_rule) !== 'on_site' && (
                   <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                     service.payment_rule === 'online' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                   }`}>
@@ -363,7 +363,7 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
       duration: (service.duration || 30).toString(),
       isSessionPackage: !!(service.session_count && service.session_count > 1),
       sessionCount: (service.session_count && service.session_count > 1) ? service.session_count.toString() : "2",
-      paymentRule: service.payment_rule || "on_site",
+      paymentRule: effectivePaymentRule(service.payment_rule),
       depositAmount: service.deposit_amount ? service.deposit_amount.toString() : "",
       categoryId: service.category_id || ""
     });

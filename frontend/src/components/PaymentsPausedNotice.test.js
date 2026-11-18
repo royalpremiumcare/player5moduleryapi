@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import PaymentsPausedNotice from './PaymentsPausedNotice';
-import { MERCHANT_PAYMENTS_PAUSED, selectablePaymentRules } from '../lib/paymentsPause';
+import { MERCHANT_PAYMENTS_PAUSED, effectivePaymentRule, selectablePaymentRules } from '../lib/paymentsPause';
 
 // t() resolves from the shipped Turkish translation file, so the tests check the copy users see.
 jest.mock('react-i18next', () => {
@@ -49,4 +49,11 @@ test('while paused only pay-at-salon can be chosen for a service', () => {
   expect(MERCHANT_PAYMENTS_PAUSED).toBe(true);
   expect(selectablePaymentRules()).toEqual(['on_site']);
   expect(selectablePaymentRules(false)).toEqual(['on_site', 'online', 'deposit']);
+});
+
+test('a stored online or deposit rule behaves as pay-at-salon while paused', () => {
+  expect(effectivePaymentRule('online')).toBe('on_site');
+  expect(effectivePaymentRule('deposit')).toBe('on_site');
+  expect(effectivePaymentRule('online', false)).toBe('online');
+  expect(effectivePaymentRule(undefined)).toBe('on_site');
 });

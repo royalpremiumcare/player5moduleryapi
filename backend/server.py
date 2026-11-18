@@ -125,7 +125,7 @@ else:
 from bulk_session_idempotency import BulkSessionCreate, SessionSlot, canonical_bulk_session_hash as _canonical_bulk_session_hash
 from bulk_package import BulkPackageCreate
 from session_wave_planner import plan_wave_remaining_sessions
-from financial.payments_pause import coerce_payment_rule, payments_paused
+from financial.payments_pause import coerce_payment_rule, effective_payment_rule, payments_paused
 from appointment_refund_flags import (
     REFUNDABLE_MERCHANT_STATES,
     attach_refund_eligible,
@@ -6374,6 +6374,9 @@ async def resolve_services(db, organization_id: str, appointment, *, multi_enabl
             merged_service["payment_rule"] = "deposit"
         else:
             merged_service["payment_rule"] = "on_site"
+    if "payment_rule" in merged_service:
+        # Ödemeler durdurulduysa kayıtlı online/kapora kuralı salonda ödeme gibi işler.
+        merged_service["payment_rule"] = effective_payment_rule(merged_service.get("payment_rule"))
     return snapshot_lines, total_duration, total_price, merged_service, ordered_ids
 
 
@@ -13975,6 +13978,9 @@ async def get_public_business(request: Request, slug: str):
     
     # Hizmetleri çek
     services = await db.services.find({"organization_id": organization_id}, {"_id": 0}).to_list(1000)
+    for _svc in services:
+        if "payment_rule" in _svc:
+            _svc["payment_rule"] = effective_payment_rule(_svc.get("payment_rule"))
 
     def sort_key(svc: dict):
         order = svc.get("order")

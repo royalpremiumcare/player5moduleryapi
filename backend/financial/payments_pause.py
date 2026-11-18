@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 PAUSED_DETAIL = "Online ödeme geçici olarak kapalı. Ödemeyi salonda alabilirsiniz."
 _FALSE = {"false", "0", "no", "off"}
-_ONLINE_RULES = {"online", "deposit"}
+_ONLINE_RULES = {"online", "deposit", "full_online"}
 
 
 def payments_paused() -> bool:
@@ -26,6 +26,13 @@ def coerce_payment_rule(
     if paused and rule in _ONLINE_RULES:
         return "on_site", None
     return rule, deposit
+
+
+def effective_payment_rule(rule: Optional[str], *, paused: Optional[bool] = None) -> Optional[str]:
+    """How a stored rule behaves now: while paused every online / deposit service is pay-at-salon."""
+    if paused is None:
+        paused = payments_paused()
+    return "on_site" if paused and rule in _ONLINE_RULES else rule
 
 
 def ensure_payments_open() -> None:
