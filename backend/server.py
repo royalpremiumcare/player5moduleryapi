@@ -4,6 +4,7 @@ from funnel_registry import is_frontend_owned, is_valid_event
 from funnel_service import ensure_funnel_indexes, record_funnel_event, track_webhook_event
 from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from name_sync import propagate_service_rename, sync_customer_to_appointments
+import subscription_change
 from meta_capi_service import get_meta_capi_service, split_full_name
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
@@ -9079,6 +9080,46 @@ async def checkout_return_page(
     )
 
 
+async def _change_subscription_plan_response(request, db, current_user, plan_request, plan,
+                                             billing_cycle, subscription, price):
+    """Aktif aboneliği olan org: mevcut abonelik yeni fiyata taşınır, ikinci abonelik açılmaz.
+
+    Ödeme hemen alınırsa plan şimdi güncellenir; 3DS/red durumunda değişiklik Stripe'ta bekler,
+    müşteri faturayı öder ve customer.subscription.updated webhook'u planı günceller.
+    """
+    org_id = current_user.organization_id
+    sub_id = _stripe_obj_get(subscription, 'id')
+    try:
+        outcome = subscription_change.change_subscription_plan(
+            stripe, subscription, price, plan_id=plan_request.plan_id,
+            organization_id=org_id, billing_cycle=billing_cycle,
+        )
+    except subscription_change.PlanChangeError as e:
+        logger.warning(f"Plan değişikliği reddedildi: org={org_id} sub={sub_id} plan={plan_request.plan_id} reason={e.message}")
+        raise HTTPException(status_code=400, detail=e.message)
+
+    if outcome["status"] == "pending":
+        logger.info(f"Plan değişikliği ödeme bekliyor: org={org_id} sub={sub_id} plan={plan_request.plan_id} ({billing_cycle})")
+        return {"checkout_url": outcome["hosted_invoice_url"], "session_id": None, "pending": True}
+
+    quota_limit = subscription_change.resolve_quota_limit(stripe, price, plan)
+    update_data = subscription_change.plan_change_fields(
+        plan_request.plan_id, billing_cycle, quota_limit, datetime.now(timezone.utc).isoformat())
+    update_data["stripe_subscription_id"] = sub_id
+    customer_id = _stripe_obj_get(outcome["subscription"], 'customer') or _stripe_obj_get(subscription, 'customer')
+    if customer_id:
+        update_data["stripe_customer_id"] = customer_id
+    await db.organization_plans.update_one({"organization_id": org_id}, {"$set": update_data})
+    logger.info(f"✅ Plan değişikliği uygulandı: org={org_id} sub={sub_id} plan={plan_request.plan_id} ({billing_cycle}) quota_limit={quota_limit}")
+
+    is_native = plan_request.platform in ['android', 'ios']
+    return {
+        "checkout_url": subscription_change.upgrade_success_url(_get_domain_from_request(request), is_native),
+        "session_id": None,
+        "upgraded": True,
+    }
+
+
 @api_router.post("/payments/create-checkout-session")
 async def create_checkout_session(
     request: Request,
@@ -9171,9 +9212,18 @@ async def create_checkout_session(
         currency_upper = currency.upper()  # 'GBP' veya 'TRY'
         
         logger.info(f"💱 Para birimi algılandı: {currency_upper} (plan_id={plan_request.plan_id}, phone={user_phone})")
-        
+
+        # Takip edilen abonelik varsa plan değişikliği onu günceller (ikinci abonelik/müşteri açılmaz).
+        org_plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id}) or {}
+        tracked_subscription_id = org_plan_doc.get("stripe_subscription_id")
+        stored_customer_id = org_plan_doc.get("stripe_customer_id")
+        if tracked_subscription_id and subscription_change.is_same_plan(org_plan_doc, plan_request.plan_id, billing_cycle):
+            raise HTTPException(status_code=400, detail=subscription_change.SAME_PLAN_MESSAGE)
+
         # Stripe Checkout Session oluştur
         try:
+            active_subscription = subscription_change.get_active_subscription(stripe, tracked_subscription_id)
+
             # Yıllık veya aylık fiyat belirleme
             if is_yearly:
                 # Yıllık abonelik - tek seferlik yıllık ödeme
@@ -9240,7 +9290,14 @@ async def create_checkout_session(
                     # lookup_key kullanmıyoruz - çakışma önlemek için
                 )
                 logger.info(f"✅ Dinamik Stripe fiyat oluşturuldu (fallback): currency={currency}, amount={price_kurus}, lookup_key={lookup_key} (kullanılmadı)")
-            
+
+            if active_subscription is not None:
+                # Plan değişikliği: kupon yok, Checkout yok; mevcut abonelik güncellenir.
+                return await _change_subscription_plan_response(
+                    request, db, current_user, plan_request, plan, billing_cycle,
+                    active_subscription, price,
+                )
+
             logger.info(f"💰 Fiyat Hesaplama - Plan: {plan_request.plan_id}")
             logger.info(f"💰 Billing Cycle: {billing_cycle}")
             logger.info(f"💰 Currency: {currency_upper}")
@@ -9290,7 +9347,6 @@ async def create_checkout_session(
                     'price': price.id,
                     'quantity': 1,
                 }],
-                'customer_email': user_email,
                 'metadata': {
                     'user_id': current_user.organization_id,
                     'plan_id': plan_request.plan_id,
@@ -9304,7 +9360,12 @@ async def create_checkout_session(
                 'cancel_url': cancel_url,
                 'billing_address_collection': 'auto',
             }
-            
+            # Kayıtlı Stripe müşterisi varsa onu kullan (yeniden abonelikte ikinci müşteri açılmasın)
+            if stored_customer_id:
+                session_params['customer'] = stored_customer_id
+            else:
+                session_params['customer_email'] = user_email
+
             # COUPON_MAP'ten gelen coupon'u uygula (sadece monthly planlar için)
             if coupon_id:
                 session_params['discounts'] = [{'coupon': coupon_id}]
@@ -9314,7 +9375,16 @@ async def create_checkout_session(
                 session_params['allow_promotion_codes'] = True
             
             try:
-                session = stripe.checkout.Session.create(**session_params)
+                try:
+                    session = stripe.checkout.Session.create(**session_params)
+                except stripe.error.InvalidRequestError as customer_err:
+                    # Kayıtlı müşteri Stripe'ta yoksa (silinmiş) e-posta ile devam et; kullanıcı kilitlenmesin
+                    if 'customer' not in session_params or getattr(customer_err, 'param', None) != 'customer':
+                        raise
+                    logger.warning(f"Kayıtlı Stripe müşterisi kullanılamadı ({session_params['customer']}): {customer_err}; customer_email ile tekrar deneniyor")
+                    session_params.pop('customer')
+                    session_params['customer_email'] = user_email
+                    session = stripe.checkout.Session.create(**session_params)
             except stripe.error.StripeError as stripe_err:
                 # Stripe hatası durumunda detaylı log
                 logger.error(f"❌ Stripe Checkout Session Creation Failed:")
@@ -9358,9 +9428,11 @@ async def create_checkout_session(
                 "session_id": session.id
             }
             
+        except HTTPException:
+            raise
         except stripe.error.StripeError as e:
-            logger.error(f"Stripe hatası: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Ödeme oturumu oluşturulamadı: {str(e)}")
+            logger.error(f"Stripe hatası (org={current_user.organization_id}, plan={plan_request.plan_id}): {type(e).__name__}: {str(e)}")
+            raise HTTPException(status_code=400, detail=subscription_change.stripe_error_message(e))
         except Exception as e:
             logger.error(f"Stripe checkout session oluşturma hatası: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
@@ -9763,44 +9835,12 @@ async def confirm_stripe_checkout_session(
 
         billing_cycle = metadata.get('billing_cycle', 'monthly')
 
-        appointment_limit = None
-        quota_limit = None
         try:
+            # Price metadata -> Product metadata -> session metadata -> plan (webhook ile aynı helper)
             line_items = _stripe_line_items_data(session)
-
-            if line_items and len(line_items) > 0:
-                price_obj = _stripe_obj_get(line_items[0], 'price')
-                if price_obj:
-                    price_metadata = _stripe_metadata_dict(price_obj)
-                    appointment_limit = price_metadata.get('appointment_limit')
-                    if not appointment_limit:
-                        product_obj = _stripe_obj_get(price_obj, 'product')
-                        if isinstance(product_obj, dict):
-                            product_metadata = product_obj.get('metadata', {})
-                            appointment_limit = product_metadata.get('appointment_limit')
-                        elif isinstance(product_obj, str):
-                            try:
-                                product_retrieved = stripe.Product.retrieve(product_obj)
-                                product_metadata = _stripe_metadata_dict(product_retrieved)
-                                appointment_limit = product_metadata.get('appointment_limit')
-                            except Exception as e:
-                                logger.warning(f"⚠️ Product retrieve hatası: {e}")
-
-                    if appointment_limit:
-                        try:
-                            quota_limit = int(appointment_limit)
-                        except (ValueError, TypeError):
-                            quota_limit = None
-
-            if not quota_limit:
-                appointment_limit = metadata.get('appointment_limit')
-                if appointment_limit:
-                    try:
-                        quota_limit = int(appointment_limit)
-                    except (ValueError, TypeError):
-                        quota_limit = None
-            if not quota_limit:
-                quota_limit = plan_data.get('quota_monthly_appointments', 100)
+            price_obj = _stripe_obj_get(line_items[0], 'price') if line_items else None
+            quota_limit = subscription_change.resolve_quota_limit(
+                stripe, price_obj, plan_data, fallback_metadata=metadata)
         except Exception as e:
             logger.error(f"❌ Confirm: appointment_limit alınırken hata: {e}")
             quota_limit = plan_data.get('quota_monthly_appointments', 100)
@@ -9830,6 +9870,8 @@ async def confirm_stripe_checkout_session(
             update_data['stripe_subscription_id'] = subscription_id
             update_data['stripe_customer_id'] = customer_id
             update_data['next_billing_date'] = quota_reset.isoformat()
+            # Güvenlik ağı: takip edilen farklı ve hâlâ aktif abonelik varsa iptal et (çift abonelik)
+            await subscription_change.cancel_superseded_subscription(db, stripe, organization_id, subscription_id)
 
         await db.organization_plans.update_one(
             {"organization_id": organization_id},
@@ -9991,9 +10033,6 @@ async def handle_stripe_webhook(request: Request):
             
             # TASK 1: appointment_limit'i Price Object'in metadata'sından al (Single Source of Truth)
             # Stripe session'da line_items var, onun içindeki price'ın metadata'sına bakmalıyız
-            appointment_limit = None
-            quota_limit = None
-            
             try:
                 # TASK 1: Price Object'in metadata'sından appointment_limit almak için
                 # Stripe session'da line_items expand edilmemiş olabilir, retrieve et
@@ -10002,64 +10041,11 @@ async def handle_stripe_webhook(request: Request):
                     session_id,
                     expand=['line_items.data.price.product']
                 )
-                
                 line_items = _stripe_line_items_data(session_expanded)
-                
-                # İlk line item'dan price'ı al
-                if line_items and len(line_items) > 0:
-                    price_obj = _stripe_obj_get(line_items[0], 'price')
-                    if price_obj:
-                        # FALLBACK STRATEGY: First check price.metadata, then product.metadata
-                        # Step 1: Check Price metadata
-                        price_metadata = _stripe_metadata_dict(price_obj)
-                        appointment_limit = price_metadata.get('appointment_limit')
-                        
-                        # Step 2: If not found in price, check product metadata
-                        if not appointment_limit:
-                            product_obj = _stripe_obj_get(price_obj, 'product')
-                            if product_obj:
-                                # product_obj can be a string (ID) or dict (expanded)
-                                if isinstance(product_obj, dict):
-                                    product_metadata = product_obj.get('metadata', {})
-                                    appointment_limit = product_metadata.get('appointment_limit')
-                                    if appointment_limit:
-                                        logger.info(f"✅ Appointment limit Product metadata'dan alındı (fallback): {appointment_limit}")
-                                elif isinstance(product_obj, str):
-                                    # Product not expanded, retrieve it
-                                    try:
-                                        product_retrieved = stripe.Product.retrieve(product_obj)
-                                        product_metadata = _stripe_metadata_dict(product_retrieved)
-                                        appointment_limit = product_metadata.get('appointment_limit')
-                                        if appointment_limit:
-                                            logger.info(f"✅ Appointment limit Product metadata'dan alındı (fallback, retrieved): {appointment_limit}")
-                                    except Exception as e:
-                                        logger.warning(f"⚠️ Product retrieve hatası: {e}")
-                        
-                        if appointment_limit:
-                            try:
-                                quota_limit = int(appointment_limit)
-                                source = "Price metadata" if price_metadata.get('appointment_limit') else "Product metadata"
-                                logger.info(f"✅ Appointment limit {source}'dan alındı: {quota_limit} (Monthly Capacity)")
-                            except (ValueError, TypeError):
-                                logger.warning(f"⚠️ Metadata'daki appointment_limit geçersiz: {appointment_limit}")
-                        else:
-                            logger.warning(f"⚠️ Price ve Product metadata'da appointment_limit bulunamadı. Price ID: {_stripe_obj_get(price_obj, 'id')}")
-                
-                if not quota_limit:
-                    # Fallback: Session metadata'dan dene
-                    appointment_limit = metadata.get('appointment_limit')
-                    if appointment_limit:
-                        try:
-                            quota_limit = int(appointment_limit)
-                            logger.info(f"✅ Appointment limit session metadata'dan alındı: {quota_limit}")
-                        except (ValueError, TypeError):
-                            pass
-                
-                # Son fallback: Plan'dan al
-                if not quota_limit:
-                    quota_limit = plan_data.get('quota_monthly_appointments', 100)
-                    logger.warning(f"⚠️ Appointment limit Price metadata'dan alınamadı, plan'dan alındı: {quota_limit}")
-                    
+                price_obj = _stripe_obj_get(line_items[0], 'price') if line_items else None
+                # Price metadata -> Product metadata -> session metadata -> plan (plan değişikliğiyle ortak helper)
+                quota_limit = subscription_change.resolve_quota_limit(
+                    stripe, price_obj, plan_data, fallback_metadata=metadata)
             except Exception as e:
                 logger.error(f"❌ Price metadata'dan appointment_limit alınırken hata: {e}")
                 # Fallback: Plan'dan al
@@ -10103,6 +10089,9 @@ async def handle_stripe_webhook(request: Request):
                 update_data['stripe_customer_id'] = customer_id
                 update_data['next_billing_date'] = quota_reset.isoformat()
                 logger.info(f"Stripe subscription kaydedildi: organization_id={organization_id}, subscription_id={subscription_id}, billing_cycle={billing_cycle}")
+                # Güvenlik ağı (eski app sürümleri / yarış): takip edilen farklı ve hâlâ aktif
+                # abonelik varsa hemen, kıstelyevm ile iptal et; aksi halde iki abonelik faturalanır.
+                await subscription_change.cancel_superseded_subscription(db, stripe, organization_id, subscription_id)
             
             await db.organization_plans.update_one(
                 {"organization_id": organization_id},
@@ -10235,7 +10224,17 @@ async def handle_stripe_webhook(request: Request):
                     organization_id = plan_doc.get('organization_id')
                     # İsteğe bağlı: Organization'a bildirim gönderebilirsiniz
                     logger.info(f"ℹ️ Organization {organization_id} aboneliğini dönem sonunda iptal edecek")
-        
+
+            # Uygulanan plan değişikliği (3DS sonrası ödenen bekleyen güncelleme veya Customer Portal):
+            # sadece takip edilen abonelik, fiyat değiştiyse ve abonelik active/trialing ise.
+            await subscription_change.apply_subscription_updated(
+                db, stripe, subscription,
+                get_plan_info=get_plan_info,
+                plan_ids=[p['id'] for p in PLANS],
+                make_lookup_key=get_stripe_lookup_key,
+                previous_attributes=_stripe_obj_get(event['data'], 'previous_attributes'),
+            )
+
         # customer.subscription.deleted - Abonelik iptal edildi
         elif event['type'] == 'customer.subscription.deleted':
             subscription = event['data']['object']
