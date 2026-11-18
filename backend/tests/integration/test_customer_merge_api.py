@@ -20,6 +20,15 @@ class _PagedCursor(_Cursor):
 
 
 class PagedCollection(FakeCollection):
+    # ids whose next phone_key $set loses a race to a concurrent insert
+    dup_key_set_for: set = set()
+
+    async def update_one(self, flt, update, upsert=False):
+        if flt.get("id") in self.dup_key_set_for and "phone_key" in update.get("$set", {}):
+            from pymongo.errors import DuplicateKeyError
+            raise DuplicateKeyError("E11000 phone_key")
+        return await super().update_one(flt, update, upsert)
+
     def find(self, flt=None, projection=None):
         return _PagedCursor([_project(d, projection) for d in self.docs if _match(d, flt or {})])
 
@@ -33,8 +42,8 @@ def _cust(org, cid, name, phone, **extra):
 async def world(integration_client, integration_db, org_id, monkeypatch):
     import server
     fake = FakeDB()
-    for name in ("customers",):
-        fake._collections[name] = PagedCollection(name, fake.log)
+    fake._collections["customers"] = PagedCollection("customers", fake.log)
+    fake._collections["customers"].dup_key_set_for = set()
     for attr in ("customers", "appointments", "settings", "customer_notes",
                  "marketing_autopilot_tasks", "merchant_transactions", "refund_requests",
                  "stripe_customers"):
@@ -173,3 +182,94 @@ async def test_merge_refuses_different_unkeyed_numbers_and_self(world, org_id):
     r = await client.post("/api/customers/merge", json={"survivor_id": "a", "source_id": "a"})
     assert r.status_code == 400
     assert len(db.customers.docs) == 2
+
+
+RACE_DETAIL = "Bu numara az önce başka bir kayıtta kullanıldı. Lütfen listeyi yenileyip tekrar deneyin."
+
+
+def _carry_pair(org_id):
+    return [
+        _cust(org_id, "s", "Ayse", "05551112233", shared_phone=True),
+        _cust(org_id, "k", "Ayşe", "905551112233", phone_key="905551112233"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_carry_race_on_survivor_set_is_409_and_key_goes_back(world, org_id):
+    client, db, _e = world
+    db.customers.docs += _carry_pair(org_id)
+    db.customers.dup_key_set_for = {"s"}
+    r = await client.post("/api/customers/merge", json={"survivor_id": "s", "source_id": "k"})
+    assert r.status_code == 409 and r.json()["detail"] == RACE_DETAIL
+    by_id = {d["id"]: d for d in db.customers.docs}
+    assert set(by_id) == {"s", "k"}
+    assert by_id["k"]["phone_key"] == "905551112233" and "phone_key" not in by_id["s"]
+
+
+@pytest.mark.asyncio
+async def test_carry_race_when_key_cannot_go_back_stays_409_unkeyed(world, org_id):
+    client, db, _e = world
+    db.customers.docs += _carry_pair(org_id)
+    db.customers.dup_key_set_for = {"s", "k"}
+    r = await client.post("/api/customers/merge", json={"survivor_id": "s", "source_id": "k"})
+    assert r.status_code == 409 and r.json()["detail"] == RACE_DETAIL
+    assert all("phone_key" not in d for d in db.customers.docs)
+
+
+@pytest.mark.asyncio
+async def test_rollback_after_merge_refusal_survives_duplicate_key(world, org_id, monkeypatch):
+    import server
+    client, db, _e = world
+    db.customers.docs += _carry_pair(org_id)
+
+    async def refuse(*a, **k):
+        db.customers.dup_key_set_for = {"k"}  # the rollback $set onto the source loses a race
+        raise ValueError("no shared key")
+
+    monkeypatch.setattr(server, "merge_into", refuse)
+    r = await client.post("/api/customers/merge", json={"survivor_id": "s", "source_id": "k"})
+    assert r.status_code == 400 and r.json()["detail"] == DIFF_DETAIL
+
+
+@pytest.mark.asyncio
+async def test_404_after_carry_leaves_key_on_survivor(world, org_id, monkeypatch):
+    import server
+    client, db, _e = world
+    db.customers.docs += _carry_pair(org_id)
+
+    async def vanished(*a, **k):
+        return {"merged": False, "reason": "source_missing"}
+
+    monkeypatch.setattr(server, "merge_into", vanished)
+    r = await client.post("/api/customers/merge", json={"survivor_id": "s", "source_id": "k"})
+    assert r.status_code == 404
+    by_id = {d["id"]: d for d in db.customers.docs}
+    assert by_id["s"]["phone_key"] == "905551112233"
+
+
+@pytest.mark.asyncio
+async def test_merge_repoints_third_record_suggestions(world, org_id):
+    client, db, _e = world
+    db.customers.docs += [
+        _cust(org_id, "a", "Ayşe", "905551112233", phone_key="905551112233"),
+        _cust(org_id, "b", "Ayse", "905551112233", shared_phone=True, merge_suggestion_for="a"),
+        _cust(org_id, "c", "Ayshe", "905551112233", shared_phone=True, merge_suggestion_for="b"),
+    ]
+    r = await client.post("/api/customers/merge", json={"survivor_id": "a", "source_id": "b"})
+    assert r.status_code == 200
+    by_id = {d["id"]: d for d in db.customers.docs}
+    assert by_id["c"]["merge_suggestion_for"] == "a"
+    assert "merge_suggestion_for" not in by_id["a"]
+
+
+@pytest.mark.asyncio
+async def test_merge_unkeyed_survivor_drops_third_record_suggestions(world, org_id):
+    client, db, _e = world
+    db.customers.docs += [
+        _cust(org_id, "a", "Ayşe", "905551112233", shared_phone=True),
+        _cust(org_id, "b", "Ayse", "905551112233", shared_phone=True),
+        _cust(org_id, "c", "Ayshe", "905551112233", shared_phone=True, merge_suggestion_for="b"),
+    ]
+    r = await client.post("/api/customers/merge", json={"survivor_id": "a", "source_id": "b"})
+    assert r.status_code == 200
+    assert "merge_suggestion_for" not in next(d for d in db.customers.docs if d["id"] == "c")

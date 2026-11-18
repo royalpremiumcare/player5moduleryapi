@@ -12982,6 +12982,16 @@ class CustomerMergeRequest(BaseModel):
 
 
 _MERGE_DIFFERENT_NUMBERS = "Bu iki müşteri farklı numaralara sahip; birleştirilemez."
+_MERGE_KEY_RACE = "Bu numara az önce başka bir kayıtta kullanıldı. Lütfen listeyi yenileyip tekrar deneyin."
+
+
+async def _restore_key(db, org_id: str, customer_id: str, key: str) -> None:
+    """Put a phone_key back; if someone else already holds it, leave the record unkeyed."""
+    try:
+        await db.customers.update_one({"organization_id": org_id, "id": customer_id},
+                                      {"$set": {"phone_key": key}})
+    except DuplicateKeyError:
+        logging.warning(f"Customer merge: phone_key could not be restored (org {org_id}); left unkeyed")
 
 
 @api_router.post("/customers/merge")
@@ -13013,8 +13023,14 @@ async def merge_customers(request: Request, body: CustomerMergeRequest,
     if source.get("phone_key") and not survivor.get("phone_key"):
         await db.customers.update_one({"organization_id": org_id, "id": body.source_id},
                                       {"$unset": {"phone_key": ""}})
-        await db.customers.update_one({"organization_id": org_id, "id": body.survivor_id},
-                                      {"$set": {"phone_key": source["phone_key"]}})
+        try:
+            await db.customers.update_one({"organization_id": org_id, "id": body.survivor_id},
+                                          {"$set": {"phone_key": source["phone_key"]}})
+        except DuplicateKeyError:
+            # A concurrent create took the freed key. Give it back if it is still free.
+            logging.warning(f"Customer merge: phone_key taken during carry (org {org_id})")
+            await _restore_key(db, org_id, body.source_id, source["phone_key"])
+            raise HTTPException(status_code=409, detail=_MERGE_KEY_RACE)
         carried = True
 
     try:
@@ -13023,8 +13039,7 @@ async def merge_customers(request: Request, body: CustomerMergeRequest,
         if carried:  # put the key back where it was
             await db.customers.update_one({"organization_id": org_id, "id": body.survivor_id},
                                           {"$unset": {"phone_key": ""}})
-            await db.customers.update_one({"organization_id": org_id, "id": body.source_id},
-                                          {"$set": {"phone_key": source["phone_key"]}})
+            await _restore_key(db, org_id, body.source_id, source["phone_key"])
         logging.warning(f"Customer merge refused: {exc}")
         raise HTTPException(status_code=400, detail=_MERGE_DIFFERENT_NUMBERS)
     if not summary.get("merged"):
@@ -13039,6 +13054,13 @@ async def merge_customers(request: Request, body: CustomerMergeRequest,
         unset = {"merge_suggestion_for": ""}
     if unset:
         await db.customers.update_one({"organization_id": org_id, "id": body.survivor_id}, {"$unset": unset})
+    # Third records that suggested the deleted source now follow the survivor (or drop it).
+    dangling = {"organization_id": org_id, "merge_suggestion_for": body.source_id,
+                "id": {"$ne": body.survivor_id}}
+    if done and done.get("phone_key"):
+        await db.customers.update_many(dangling, {"$set": {"merge_suggestion_for": body.survivor_id}})
+    else:
+        await db.customers.update_many(dangling, {"$unset": {"merge_suggestion_for": ""}})
 
     try:
         await invalidate_cache(request, "customers_list", current_user)
