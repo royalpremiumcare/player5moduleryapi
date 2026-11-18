@@ -4,7 +4,7 @@ from funnel_registry import is_frontend_owned, is_valid_event
 from funnel_service import ensure_funnel_indexes, record_funnel_event, track_webhook_event
 from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from name_sync import propagate_service_rename, sync_customer_to_appointments
-from customer_identity import phone_key
+from customer_identity import names_match, phone_key
 from customer_resolver import find_customer_for, org_country
 from pymongo.errors import DuplicateKeyError
 from meta_capi_service import get_meta_capi_service, split_full_name
@@ -5120,7 +5120,12 @@ async def _apply_customer_delta(
         if new_key:
             set_on_insert["phone_key"] = new_key
         set_ops: dict = {"updated_at": now_iso}
-        if name and name.strip():
+        keeps_name = bool(
+            existing
+            and (existing.get("name") or "").strip()
+            and not names_match(existing.get("name"), name, allow_subset=True)
+        )  # fallback to a record of another person: counters only, name untouched
+        if name and name.strip() and not keeps_name:
             set_ops["name"] = name.strip()
         else:
             set_on_insert["name"] = ""

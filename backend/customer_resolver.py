@@ -8,7 +8,7 @@ from typing import Literal, Optional
 
 from pymongo.errors import DuplicateKeyError
 
-from customer_identity import country_for_currency, names_match, phone_key
+from customer_identity import country_for_currency, names_match, phone_key, phone_variants
 
 Mode = Literal["admin", "appointment", "public"]
 
@@ -23,7 +23,8 @@ async def org_country(db, organization_id: str) -> str:
 async def _candidates(db, organization_id: str, phone: str, key: Optional[str]) -> list:
     flt: dict = {"organization_id": organization_id}
     if key:
-        flt["$or"] = [{"phone_key": key}, {"phone": phone}]
+        variants = list(dict.fromkeys([phone, *phone_variants(key)]))
+        flt["$or"] = [{"phone_key": key}, {"phone": {"$in": variants}}]
     else:
         flt["phone"] = phone
     return await db.customers.find(flt, {"_id": 0}).to_list(50)
@@ -89,11 +90,12 @@ async def resolve_customer(
             return _pick(exact, name), False
         if len(candidates) == 1 and names_match(candidates[0].get("name"), name, allow_subset=True):
             return candidates[0], False
-        if key is None:
-            return _pick(candidates, name), False  # unkeyed phone: today's behaviour
-        keyed = next((c for c in candidates if c.get("phone_key")), candidates[0])
-        doc = _new_doc(organization_id, phone, name,
-                       {"shared_phone": True, "merge_suggestion_for": keyed["id"]})
+        if key is None:  # unkeyed phone, other person: plain new record
+            doc = _new_doc(organization_id, phone, name, {})
+        else:
+            keyed = next((c for c in candidates if c.get("phone_key")), candidates[0])
+            doc = _new_doc(organization_id, phone, name,
+                           {"shared_phone": True, "merge_suggestion_for": keyed["id"]})
         await db.customers.insert_one(dict(doc))
         return doc, True
 

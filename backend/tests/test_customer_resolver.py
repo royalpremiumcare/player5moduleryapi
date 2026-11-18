@@ -10,7 +10,7 @@ from pymongo.errors import DuplicateKeyError
 
 import customer_resolver
 from customer_resolver import find_customer_for, org_country, resolve_customer
-from customer_identity import phone_key
+from customer_identity import names_match, phone_key
 from tests.live_activity_fakes import FakeDB
 from tests.test_live_activity_wiring import _block
 
@@ -22,6 +22,7 @@ def _load_delta():
         "datetime": datetime, "timezone": timezone, "uuid": uuid, "logging": logging,
         "Optional": Optional, "find_customer_for": customer_resolver.find_customer_for,
         "org_country": customer_resolver.org_country, "phone_key": phone_key,
+        "names_match": names_match,
         "DuplicateKeyError": DuplicateKeyError,
     }
     exec(_block(r"^def _appointment_datetime_iso", r"\n(?=(?:async def|def|class|@)\b)"), ns)
@@ -188,3 +189,61 @@ async def test_find_customer_for_prefers_name_then_keyed():
     assert (await find_customer_for(db, ORG, "05551112233", "Kadir"))["id"] == shared["id"]
     assert (await find_customer_for(db, ORG, "05551112233", "Zeynep"))["id"] == keyed["id"]
     assert await find_customer_for(db, ORG, "05559998877", "X") is None
+
+
+async def test_delta_finds_unkeyed_variant_record_and_leaves_it_unkeyed():
+    old = _cust("905551112233", "Ayşe")  # pre-backfill: no key
+    db = _db(old)
+    await apply_delta(db, ORG, "05551112233", "Ayşe", delta_total=1)
+    assert len(db.customers.docs) == 1
+    assert db.customers.docs[0]["total_appointments"] == 1
+    assert "phone_key" not in db.customers.docs[0]
+
+
+async def test_shared_record_found_in_another_phone_format():
+    keyed = _cust("05551112233", "Makbule", phone_key="905551112233")
+    shared = _cust("05551112233", "Kadir Burak", shared_phone=True)
+    db = _db(keyed, shared)
+    await apply_delta(db, ORG, "905551112233", "Kadir Burak", delta_total=1)
+    assert len(db.customers.docs) == 2
+    assert {d["name"]: d["total_appointments"] for d in db.customers.docs} == {
+        "Makbule": 0, "Kadir Burak": 1}
+
+
+async def test_public_repeat_booking_other_format_reuses_shared_record():
+    keyed = _cust("05551112233", "Makbule", phone_key="905551112233")
+    shared = _cust("05551112233", "Kadir Burak", shared_phone=True)
+    db = _db(keyed, shared)
+    doc, created = await resolve_customer(db, ORG, "905551112233", "Kadir Burak", mode="public")
+    assert created is False and doc["id"] == shared["id"]
+    assert len(db.customers.docs) == 2
+
+
+async def test_public_unkeyed_variant_record_same_name_not_duplicated():
+    old = _cust("905551112233", "Ayşe")
+    db = _db(old)
+    doc, created = await resolve_customer(db, ORG, "05551112233", "Ayşe", mode="public")
+    assert created is False and doc["id"] == old["id"]
+    assert len(db.customers.docs) == 1
+
+
+async def test_delta_does_not_rename_a_fallback_record_with_other_name():
+    keyed = _cust("905551112233", "Makbule", phone_key="905551112233")
+    db = _db(keyed, _cust("05551112233", "Zeynep", shared_phone=True))
+    await apply_delta(db, ORG, "05551112233", "Kadir", delta_total=1)
+    assert [d["name"] for d in db.customers.docs] == ["Makbule", "Zeynep"]
+    assert db.customers.docs[0]["total_appointments"] == 1
+
+
+async def test_delta_still_updates_name_spelling_on_matching_record():
+    db = _db(_cust("905551112233", "ayse", phone_key="905551112233"))
+    await apply_delta(db, ORG, "05551112233", "Ayşe Hanım".replace(" Hanım", ""), delta_total=1)
+    assert db.customers.docs[0]["name"] == "Ayşe"
+
+
+async def test_public_unkeyed_phone_other_name_gets_plain_new_record():
+    db = _db(_cust("0", "Walk-in A"))
+    doc, created = await resolve_customer(db, ORG, "0", "Başka", mode="public")
+    assert created is True
+    assert "phone_key" not in doc and "shared_phone" not in doc and "merge_suggestion_for" not in doc
+    assert len(db.customers.docs) == 2

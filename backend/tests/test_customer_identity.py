@@ -52,3 +52,23 @@ def test_names_match():
     assert not names_match("Makbule", "Kadir Burak", allow_subset=False)
     assert not names_match("Makbule", "Kadir Burak", allow_subset=True)
     assert not names_match("", "", allow_subset=True)
+
+
+from customer_identity import phone_variants
+
+
+@pytest.mark.parametrize(
+    "key,expected",
+    [
+        ("905551112233", {"905551112233", "05551112233", "5551112233", "+905551112233"}),
+        ("447700900123", {"447700900123", "07700900123", "+447700900123"}),
+        ("4915123456789", {"4915123456789", "+4915123456789"}),
+    ],
+)
+def test_phone_variants_cover_stored_formats(key, expected):
+    assert set(phone_variants(key)) == expected
+
+
+def test_phone_variants_roundtrip_to_same_key():
+    for v in phone_variants("905551112233"):
+        assert phone_key(v, "TR") == "905551112233"

@@ -31,6 +31,16 @@ def phone_key(phone: Optional[str], default_country: Country = "TR") -> Optional
     return None
 
 
+def phone_variants(key: str) -> list:
+    """Every stored format of a canonical key (for exact-string lookups)."""
+    out = [key, "+" + key]
+    if key.startswith("90") and len(key) == 12:
+        out += ["0" + key[2:], key[2:]]
+    elif key.startswith("44") and len(key) == 12:
+        out += ["0" + key[2:]]
+    return out
+
+
 def normalize_name(name: Optional[str]) -> str:
     text = (name or "").replace("İ", "i").replace("I", "ı").lower()
     text = text.replace("i̇", "i").translate(_TR_FOLD)
