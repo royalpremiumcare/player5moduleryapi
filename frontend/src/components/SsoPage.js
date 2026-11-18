@@ -2,6 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 
+// A login code is single-use. If the page mounts twice (re-mount during app start), both mounts
+// must share one exchange; a second POST is answered "Code expired or already used".
+const exchanges = new Map();
+const exchangeOnce = (code) => {
+  if (!exchanges.has(code)) exchanges.set(code, axios.post('/api/sso/exchange', { code }));
+  return exchanges.get(code);
+};
+
 const SsoPage = () => {
   const location = useLocation();
   const [error, setError] = useState('');
@@ -21,7 +29,7 @@ const SsoPage = () => {
       }
 
       try {
-        const resp = await axios.post('/api/sso/exchange', { code });
+        const resp = await exchangeOnce(code);
         const accessToken = resp?.data?.access_token;
 
         if (!accessToken) {
