@@ -21,6 +21,13 @@ MULTI_ITEM_MESSAGE = ("Aboneliğiniz birden fazla kalem içerdiği için paket o
                       "Lütfen destek ile iletişime geçin.")
 NO_INVOICE_URL_MESSAGE = ("Ödeme onayı gerekiyor ama ödeme sayfası alınamadı. "
                           "Lütfen biraz sonra tekrar deneyin.")
+PAST_DUE_MESSAGE = ("Bekleyen bir ödemeniz var. Paket değiştirmeden önce lütfen "
+                    "bekleyen ödemenizi tamamlayın.")
+
+
+def no_price_message(currency: str) -> str:
+    return (f"Seçilen paket aboneliğinizin para birimi ({(currency or '').upper()}) ile "
+            "sunulmuyor. Lütfen destek ile iletişime geçin.")
 
 
 class PlanChangeError(Exception):
@@ -91,7 +98,12 @@ def change_subscription_plan(stripe_mod, subscription, price, *, plan_id: str,
     ``{"status": "pending", "hosted_invoice_url": url, "subscription": sub}`` when the charge needs
     the customer (3DS or a declined card). With ``pending_if_incomplete`` the plan only changes
     once that invoice is paid.
+
+    A ``past_due`` subscription is refused: its change could be paid but never applied, because
+    the webhook only applies changes on active/trialing subscriptions.
     """
+    if sget(subscription, "status") == "past_due":
+        raise PlanChangeError(PAST_DUE_MESSAGE)
     items = _items(subscription)
     if len(items) != 1:
         raise PlanChangeError(MULTI_ITEM_MESSAGE)
@@ -214,11 +226,10 @@ def plan_from_lookup_key(lookup_key: Optional[str], plan_ids, make_lookup_key):
 
 
 def plan_from_subscription(subscription, plan_ids, make_lookup_key):
-    """(plan_id, billing_cycle) the subscription bills for, else None.
+    """(plan_id, billing_cycle) the subscription bills for, from a known price lookup_key only.
 
-    The item price's lookup_key comes first: it is what Stripe actually bills, and a Customer
-    Portal change moves the price without touching (possibly stale) PLANN metadata. The metadata
-    PLANN writes on a plan change is the fallback for prices without a known lookup_key.
+    Subscription metadata is never used: PLANN's own change writes plan_id metadata that nothing
+    clears, so after a Customer Portal move it can name a plan nobody pays for.
     """
     items = _items(subscription)
     price = sget(items[0], "price") if len(items) == 1 else None
@@ -226,17 +237,15 @@ def plan_from_subscription(subscription, plan_ids, make_lookup_key):
     found = plan_from_lookup_key(lookup_key, plan_ids, make_lookup_key)
     if found:
         return found
-    meta = smeta(subscription)
-    if meta.get("plan_id"):
-        return meta["plan_id"], meta.get("billing_cycle") or "monthly"
-    logger.warning("subscription %s: price %s has %s lookup_key %r and no PLANN metadata; "
-                   "plan left unchanged", sget(subscription, "id"), sget(price, "id"),
+    logger.warning("subscription %s: price %s has %s lookup_key %r; plan left unchanged",
+                   sget(subscription, "id"), sget(price, "id"),
                    "an unknown" if lookup_key else "no", lookup_key)
     return None
 
 
 def _price_changed(subscription, previous_attributes) -> bool:
-    """True when the event's previous_attributes show the item price moved."""
+    """True when the event's previous_attributes show the item price moved to another id.
+    An unreadable previous price counts as no change."""
     prev_items = sget(previous_attributes, "items")
     if not prev_items:
         return False
@@ -245,7 +254,9 @@ def _price_changed(subscription, previous_attributes) -> bool:
     prev_price_id = prev_price if isinstance(prev_price, str) else sget(prev_price, "id")
     items = _items(subscription)
     cur_price_id = sget(sget(items[0], "price"), "id") if items else None
-    return prev_price_id is None or prev_price_id != cur_price_id
+    if not prev_price_id:
+        return False
+    return prev_price_id != cur_price_id
 
 
 async def apply_subscription_updated(db, stripe_mod, subscription, *, get_plan_info, plan_ids,
@@ -294,25 +305,29 @@ async def apply_subscription_updated(db, stripe_mod, subscription, *, get_plan_i
     return True
 
 
-async def cancel_superseded_subscription(db, stripe_mod, organization_id: str,
-                                         new_subscription_id: Optional[str]) -> Optional[str]:
-    """Safety net when a checkout activates a new subscription for an org that still tracks a
+def cancel_superseded_subscription(stripe_mod, organization_id: str,
+                                   previous_subscription_id: Optional[str],
+                                   new_subscription_id: Optional[str]) -> Optional[str]:
+    """Safety net when a checkout activates a new subscription for an org that tracked a
     different, still-active one (old app builds, races): cancel the old one now, prorated.
-    Returns the cancelled id. Never raises; the new plan must activate regardless."""
+
+    Call it AFTER organization_plans holds the new id, so the old subscription's
+    customer.subscription.deleted no longer matches the org and cannot drop it to trial.
+    Returns the cancelled id. Never raises; the new plan must stay active regardless.
+    """
     try:
-        if not new_subscription_id:
+        if not previous_subscription_id or not new_subscription_id:
             return None
-        plan_doc = await db.organization_plans.find_one({"organization_id": organization_id})
-        old_id = (plan_doc or {}).get("stripe_subscription_id")
-        if not old_id or old_id == new_subscription_id:
+        if previous_subscription_id == new_subscription_id:
             return None
-        if get_active_subscription(stripe_mod, old_id) is None:
+        if get_active_subscription(stripe_mod, previous_subscription_id) is None:
             return None
-        stripe_mod.Subscription.cancel(old_id, prorate=True, invoice_now=True)
+        stripe_mod.Subscription.cancel(previous_subscription_id, prorate=True, invoice_now=True)
         logger.warning("Superseded subscription cancelled: org=%s old=%s new=%s",
-                       organization_id, old_id, new_subscription_id)
-        return old_id
+                       organization_id, previous_subscription_id, new_subscription_id)
+        return previous_subscription_id
     except Exception as exc:
-        logger.error("Superseded subscription cancel failed: org=%s new=%s err=%s",
-                     organization_id, new_subscription_id, exc, exc_info=True)
+        logger.error("Superseded subscription cancel failed: org=%s old=%s new=%s err=%s",
+                     organization_id, previous_subscription_id, new_subscription_id, exc,
+                     exc_info=True)
         return None

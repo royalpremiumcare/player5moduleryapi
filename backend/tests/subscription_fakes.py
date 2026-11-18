@@ -56,6 +56,7 @@ class FakeStripe:
         self.session_error = None
         self.event = None
         self.session_retrieve_result = None
+        self.shared_log = None  # e.g. FakeDB.log, to check DB-vs-Stripe call order
         self.Subscription = SimpleNamespace(retrieve=self._sub_retrieve, modify=self._sub_modify,
                                             cancel=self._sub_cancel)
         self.Product = SimpleNamespace(retrieve=self._product_retrieve)
@@ -87,6 +88,8 @@ class FakeStripe:
 
     def _sub_cancel(self, sub_id, **kw):
         self.calls.append(("Subscription.cancel", (sub_id,), kw))
+        if self.shared_log is not None:
+            self.shared_log.append(("stripe", "Subscription.cancel", (sub_id,)))
         return Obj(id=sub_id, status="canceled")
 
     def _product_retrieve(self, product_id, **kw):

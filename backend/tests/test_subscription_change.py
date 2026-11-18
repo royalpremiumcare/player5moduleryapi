@@ -137,6 +137,15 @@ def test_currency_mismatch_is_rejected_before_any_stripe_call():
     assert fs.calls == []
 
 
+def test_past_due_subscription_cannot_change_plan():
+    fs = FakeStripe()
+    with pytest.raises(sc.PlanChangeError) as exc:
+        _change(fs, subscription(status="past_due"), price("price_pro_m", "professional_monthly_try"))
+    assert exc.value.message == ("Bekleyen bir ödemeniz var. Paket değiştirmeden önce lütfen "
+                                 "bekleyen ödemenizi tamamlayın.")
+    assert fs.calls == []
+
+
 def test_multi_item_subscription_is_rejected():
     fs = FakeStripe()
     sub = subscription(items=[Obj(id="si_1", price=price("a")), Obj(id="si_2", price=price("b"))])
@@ -309,14 +318,33 @@ async def test_updated_event_sets_plan_for_tracked_subscription():
     assert doc["quota_usage"] == 42
 
 
-async def test_updated_event_uses_metadata_when_price_has_no_lookup_key():
+@pytest.mark.parametrize("lookup_key", [None, "legacy_promo_try"])
+async def test_unknown_key_with_stale_plann_metadata_changes_nothing(lookup_key, caplog):
+    """PLANN's own modify leaves plan_id metadata behind; a later portal move to a price we
+    cannot map must not apply that stale plan (nobody pays for it)."""
     db, fs = FakeDB(), FakeStripe()
     await _org(db)
-    sub = subscription(price_obj=price("price_dyn", None),
-                       metadata={"plan_id": "tier_2_profesyonel", "billing_cycle": "monthly"})
-    assert await _apply(db, fs, sub) is True
+    sub = subscription(price_obj=price("price_odd", lookup_key),
+                       metadata={"plan_id": "tier_2_profesyonel", "billing_cycle": "monthly",
+                                 "organization_id": "org1"})
+    with caplog.at_level("WARNING", logger="subscription_change"):
+        assert await _apply(db, fs, sub) is False
     doc = await db.organization_plans.find_one({"organization_id": "org1"})
-    assert doc["plan_id"] == "tier_2_profesyonel"
+    assert (doc["plan_id"], doc["quota_limit"]) == ("tier_1_standard", 300)
+    assert any(r.levelname == "WARNING" for r in caplog.records)
+
+
+@pytest.mark.parametrize("previous", [
+    {"items": {"data": []}},
+    {"items": {"data": [{"id": "si_1"}]}},
+    {"items": {"data": [{"id": "si_1", "price": {}}]}},
+])
+async def test_unreadable_previous_price_counts_as_no_change(previous):
+    db, fs = FakeDB(), FakeStripe()
+    await _org(db)
+    sub = subscription(price_obj=price("price_pro_m", "professional_monthly_try"))
+    assert await _apply(db, fs, sub, previous_attributes=previous) is False
+    assert (await db.organization_plans.find_one({"organization_id": "org1"}))["plan_id"] == "tier_1_standard"
 
 
 async def test_updated_event_ignores_untracked_subscription():
@@ -348,46 +376,41 @@ async def test_updated_event_with_unchanged_plan_writes_nothing():
 
 
 # --- superseded subscription guard ----------------------------------------------------------
+# The caller writes the new id to organization_plans first, then passes the previous id here.
 
-async def test_guard_cancels_a_different_still_active_subscription():
-    db, fs = FakeDB(), FakeStripe()
-    await _org(db)
+def test_guard_cancels_a_different_still_active_subscription():
+    fs = FakeStripe()
     fs.subscriptions["sub_old"] = subscription(status="active")
-    cancelled = await sc.cancel_superseded_subscription(db, fs, "org1", "sub_new")
-    assert cancelled == "sub_old"
+    assert sc.cancel_superseded_subscription(fs, "org1", "sub_old", "sub_new") == "sub_old"
     name, args, kw = fs.call("Subscription.cancel")
     assert args == ("sub_old",)
     assert kw == {"prorate": True, "invoice_now": True}
 
 
-async def test_guard_leaves_same_subscription_alone():
-    db, fs = FakeDB(), FakeStripe()
-    await _org(db)
-    assert await sc.cancel_superseded_subscription(db, fs, "org1", "sub_old") is None
+def test_guard_leaves_same_subscription_alone():
+    fs = FakeStripe()
+    assert sc.cancel_superseded_subscription(fs, "org1", "sub_old", "sub_old") is None
     assert fs.calls == []
 
 
-async def test_guard_skips_already_cancelled_subscription():
-    db, fs = FakeDB(), FakeStripe()
-    await _org(db)
+def test_guard_skips_already_cancelled_subscription():
+    fs = FakeStripe()
     fs.subscriptions["sub_old"] = subscription(status="canceled")
-    assert await sc.cancel_superseded_subscription(db, fs, "org1", "sub_new") is None
+    assert sc.cancel_superseded_subscription(fs, "org1", "sub_old", "sub_new") is None
     assert "Subscription.cancel" not in fs.names()
 
 
-async def test_guard_without_tracked_subscription_does_nothing():
-    db, fs = FakeDB(), FakeStripe()
-    await _org(db, stripe_subscription_id=None)
-    assert await sc.cancel_superseded_subscription(db, fs, "org1", "sub_new") is None
+def test_guard_without_previous_subscription_does_nothing():
+    fs = FakeStripe()
+    assert sc.cancel_superseded_subscription(fs, "org1", None, "sub_new") is None
     assert fs.calls == []
 
 
-async def test_guard_never_raises():
-    db, fs = FakeDB(), FakeStripe()
-    await _org(db)
+def test_guard_never_raises():
+    fs = FakeStripe()
 
     def boom(*a, **k):
         raise real_stripe.error.APIConnectionError("down")
 
     fs.Subscription.retrieve = boom
-    assert await sc.cancel_superseded_subscription(db, fs, "org1", "sub_new") is None
+    assert sc.cancel_superseded_subscription(fs, "org1", "sub_old", "sub_new") is None

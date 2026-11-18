@@ -66,10 +66,10 @@ async def _plan(db):
     return await db.organization_plans.find_one({"organization_id": ORG})
 
 
-async def _post(client, plan_id, cycle="monthly", platform="ios"):
+async def _post(client, plan_id, cycle="monthly", platform="ios", currency="try"):
     return await client.post("/api/payments/create-checkout-session",
                              json={"plan_id": plan_id, "billing_cycle": cycle,
-                                   "platform": platform, "currency": "try"},
+                                   "platform": platform, "currency": currency},
                              headers={"origin": "https://plannapp.co.uk"})
 
 
@@ -247,14 +247,71 @@ async def test_stripe_error_on_plan_change_returns_400(env):
     assert (await _plan(db))["plan_id"] == "tier_1_standard"
 
 
-async def test_currency_mismatch_returns_400_without_modify(env):
+async def test_plan_change_prices_in_the_subscription_currency_not_the_browser_currency(env):
+    """An English browser on a TRY subscription asks for gbp; the change still uses the TRY price."""
+    client, db, fs = env
+    await _org(db)
+    fs.subscriptions["sub_old"] = subscription(price_obj=STD_M, currency="try")
+    fs.modify_result = subscription(price_obj=PRO_M)
+    r = await _post(client, "tier_2_profesyonel", currency="gbp")
+    assert r.status_code == 200, r.text
+    _, _, kw = fs.call("Subscription.modify")
+    assert kw["items"] == [{"id": "si_1", "price": "price_pro_m"}]
+    _, _, list_kw = fs.call("Price.list")
+    assert list_kw["lookup_keys"] == ["professional_monthly_try"]
+
+
+async def test_plan_change_without_a_price_in_the_subscription_currency_returns_400(env):
     client, db, fs = env
     await _org(db)
     fs.subscriptions["sub_old"] = subscription(price_obj=STD_M, currency="gbp")
-    r = await _post(client, "tier_2_profesyonel")
+    # No professional_monthly_gbp price exists: no dynamic price may be invented for a change
+    # (it would have no lookup_key, so a pending change could never be applied by the webhook).
+    r = await _post(client, "tier_2_profesyonel", currency="gbp")
     assert r.status_code == 400
     assert "para birimi" in r.json()["detail"].lower()
     assert "Subscription.modify" not in fs.names()
+    assert "Price.create" not in fs.names()
+
+
+async def test_past_due_subscription_cannot_change_plan(env):
+    client, db, fs = env
+    await _org(db)
+    fs.subscriptions["sub_old"] = subscription(status="past_due", price_obj=STD_M)
+    r = await _post(client, "tier_2_profesyonel")
+    assert r.status_code == 400
+    assert r.json()["detail"] == ("Bekleyen bir ödemeniz var. Paket değiştirmeden önce lütfen "
+                                  "bekleyen ödemenizi tamamlayın.")
+    assert "Subscription.modify" not in fs.names()
+    assert "checkout.Session.create" not in fs.names()
+
+
+async def test_past_due_subscription_same_plan_opens_no_second_subscription(env):
+    client, db, fs = env
+    await _org(db)
+    fs.subscriptions["sub_old"] = subscription(status="past_due", price_obj=STD_M)
+    r = await _post(client, "tier_1_standard", "monthly")
+    assert r.status_code == 400
+    assert not {"Subscription.modify", "checkout.Session.create"} & set(fs.names())
+
+
+def test_live_lookup_keys_map_to_plann_plans():
+    """All 24 live keys, through the real server mapping and PLANS."""
+    import server
+    import subscription_change as sc
+
+    tiers = {"standart": "tier_1_standard", "professional": "tier_2_profesyonel",
+             "premium": "tier_3_premium", "business": "tier_4_business",
+             "enterprise": "tier_5_enterprise", "corporate": "tier_6_kurumsal"}
+    plan_ids = [p["id"] for p in server.PLANS]
+    checked = 0
+    for tier, plan_id in tiers.items():
+        for cycle in ("monthly", "yearly"):
+            for currency in ("try", "gbp"):
+                key = f"{tier}_{cycle}_{currency}"
+                assert sc.plan_from_lookup_key(key, plan_ids, server.get_stripe_lookup_key) == (plan_id, cycle), key
+                checked += 1
+    assert checked == 24
 
 
 async def test_stripe_error_on_subscription_lookup_returns_400(env):
@@ -325,6 +382,21 @@ async def test_portal_switch_to_an_unknown_price_changes_nothing(env):
     assert (doc["plan_id"], doc["quota_limit"]) == ("tier_1_standard", 300)
 
 
+async def test_unknown_price_after_plann_change_does_not_apply_stale_metadata(env):
+    """Review repro: PLANN's change wrote plan_id=professional metadata; a later portal move put the
+    org on premium; another portal move to an unmappable price must not bring back professional."""
+    client, db, fs = env
+    await _org(db, plan_id="tier_3_premium", quota_limit=1500)
+    stale = {"plan_id": "tier_2_profesyonel", "organization_id": ORG, "billing_cycle": "monthly"}
+    from_premium = Obj(items=Obj(data=[Obj(id="si_1", price=Obj(id="price_premium_m"))]))
+    r = await _webhook(client, fs, "customer.subscription.updated",
+                       subscription(price_obj=price("price_odd", "legacy_promo_try"), metadata=stale),
+                       previous=from_premium)
+    assert r.status_code == 200
+    doc = await _plan(db)
+    assert (doc["plan_id"], doc["quota_limit"]) == ("tier_3_premium", 1500)
+
+
 async def test_subscription_updated_ignores_an_untracked_subscription(env):
     client, db, fs = env
     await _org(db)
@@ -343,6 +415,15 @@ async def test_subscription_updated_to_incomplete_changes_nothing(env):
     assert (await _plan(db))["plan_id"] == "tier_1_standard"
 
 
+def _new_id_written_before_cancel(db, new_id):
+    write = next(i for i, (coll, method, args) in enumerate(db.log)
+                 if coll == "organization_plans" and method == "update_one"
+                 and args[1].get("$set", {}).get("stripe_subscription_id") == new_id)
+    cancel = next(i for i, (coll, method, _a) in enumerate(db.log)
+                  if coll == "stripe" and method == "Subscription.cancel")
+    return write < cancel
+
+
 def _completed_session(sub_id="sub_new"):
     return Obj(id="cs_new", mode="subscription", subscription=sub_id, customer="cus_1",
                amount_total=80000, metadata=Obj(plan_id="tier_2_profesyonel", organization_id=ORG,
@@ -356,6 +437,7 @@ async def test_checkout_completed_cancels_a_different_still_active_subscription(
                                       "plan_id": "tier_2_profesyonel", "status": "pending"})
     fs.subscriptions["sub_old"] = subscription(status="active")
     fs.session_retrieve_result = Obj(id="cs_new", line_items=Obj(data=[Obj(price=PRO_M)]))
+    fs.shared_log = db.log
 
     r = await _webhook(client, fs, "checkout.session.completed", _completed_session())
 
@@ -365,6 +447,7 @@ async def test_checkout_completed_cancels_a_different_still_active_subscription(
     assert kw == {"prorate": True, "invoice_now": True}
     doc = await _plan(db)
     assert (doc["stripe_subscription_id"], doc["plan_id"]) == ("sub_new", "tier_2_profesyonel")
+    assert _new_id_written_before_cancel(db, "sub_new")
 
 
 async def test_checkout_completed_for_the_tracked_subscription_cancels_nothing(env):
@@ -386,6 +469,7 @@ async def test_confirm_checkout_also_cancels_a_superseded_subscription(env):
     session = _completed_session()
     session.update(payment_status="paid", status="complete", line_items=Obj(data=[Obj(price=PRO_M)]))
     fs.session_retrieve_result = session
+    fs.shared_log = db.log
 
     r = await client.post("/api/payments/confirm-checkout-session", json={"session_id": "cs_new"})
 
@@ -393,6 +477,7 @@ async def test_confirm_checkout_also_cancels_a_superseded_subscription(env):
     _, args, _ = fs.call("Subscription.cancel")
     assert args == ("sub_old",)
     assert (await _plan(db))["stripe_subscription_id"] == "sub_new"
+    assert _new_id_written_before_cancel(db, "sub_new")
 
 
 # --- subscription deleted keeps the customer (controller ruling, concern 1) -------------------

@@ -9234,6 +9234,12 @@ async def create_checkout_session(
             if active_subscription is not None and subscription_change.is_same_plan(
                     org_plan_doc, plan_request.plan_id, billing_cycle):
                 raise HTTPException(status_code=400, detail=subscription_change.SAME_PLAN_MESSAGE)
+            if active_subscription is not None:
+                # Plan değişikliği aboneliğin kendi para biriminde fiyatlanır (tarayıcı dili değil)
+                subscription_currency = (_stripe_obj_get(active_subscription, 'currency') or '').lower()
+                if subscription_currency:
+                    currency = subscription_currency
+                    currency_upper = currency.upper()
 
             # Yıllık veya aylık fiyat belirleme
             if is_yearly:
@@ -9261,7 +9267,12 @@ async def create_checkout_session(
             logger.info(f"🔑 Generated Lookup Key: '{lookup_key}'")
             
             stripe_price = get_stripe_price_by_lookup_key(lookup_key)
-            
+            if active_subscription is not None and not stripe_price:
+                # Plan değişikliğinde dinamik fiyat üretilmez: lookup_key'siz fiyat webhook'ta
+                # plana eşlenemez (bekleyen değişiklik hiç uygulanmazdı).
+                logger.warning(f"Plan değişikliği: {lookup_key} fiyatı yok (org={current_user.organization_id})")
+                raise HTTPException(status_code=400, detail=subscription_change.no_price_message(currency))
+
             # COUPON_MAP için lookup_key'i normalize et (standart -> standard)
             # Normalize: lowercase, strip whitespace, standart -> standard
             coupon_lookup_key = lookup_key.lower().strip()
@@ -9881,14 +9892,18 @@ async def confirm_stripe_checkout_session(
             update_data['stripe_subscription_id'] = subscription_id
             update_data['stripe_customer_id'] = customer_id
             update_data['next_billing_date'] = quota_reset.isoformat()
-            # Güvenlik ağı: takip edilen farklı ve hâlâ aktif abonelik varsa iptal et (çift abonelik)
-            await subscription_change.cancel_superseded_subscription(db, stripe, organization_id, subscription_id)
 
+        previous_subscription_id = ((await db.organization_plans.find_one(
+            {"organization_id": organization_id})) or {}).get("stripe_subscription_id")
         await db.organization_plans.update_one(
             {"organization_id": organization_id},
             {"$set": update_data},
             upsert=True
         )
+        # Güvenlik ağı: önce yeni id yazıldı, sonra takip edilen farklı ve hâlâ aktif abonelik
+        # iptal edilir (eski aboneliğin deleted webhook'u org'u artık trial'a düşüremez).
+        subscription_change.cancel_superseded_subscription(
+            stripe, organization_id, previous_subscription_id, subscription_id)
 
         # Gerçek Stripe tahsilat tutarını al (kuruş/cent → TL/GBP)
         stripe_amount_total = _stripe_obj_get(session, 'amount_total')
@@ -10100,15 +10115,19 @@ async def handle_stripe_webhook(request: Request):
                 update_data['stripe_customer_id'] = customer_id
                 update_data['next_billing_date'] = quota_reset.isoformat()
                 logger.info(f"Stripe subscription kaydedildi: organization_id={organization_id}, subscription_id={subscription_id}, billing_cycle={billing_cycle}")
-                # Güvenlik ağı (eski app sürümleri / yarış): takip edilen farklı ve hâlâ aktif
-                # abonelik varsa hemen, kıstelyevm ile iptal et; aksi halde iki abonelik faturalanır.
-                await subscription_change.cancel_superseded_subscription(db, stripe, organization_id, subscription_id)
-            
+
+            previous_subscription_id = ((await db.organization_plans.find_one(
+                {"organization_id": organization_id})) or {}).get("stripe_subscription_id")
             await db.organization_plans.update_one(
                 {"organization_id": organization_id},
                 {"$set": update_data},
                 upsert=True
             )
+            # Güvenlik ağı (eski app sürümleri / yarış): önce yeni id yazıldı; takip edilen farklı ve
+            # hâlâ aktif abonelik varsa şimdi kıstelyevm ile iptal et (yoksa iki abonelik faturalanır).
+            # Sıra önemli: eski aboneliğin deleted webhook'u artık org'u trial'a düşüremez.
+            subscription_change.cancel_superseded_subscription(
+                stripe, organization_id, previous_subscription_id, subscription_id)
             
             # 5. Ödeme kaydını 'active' yap + gerçek Stripe tutarını güncelle
             wh_payment_update = {
