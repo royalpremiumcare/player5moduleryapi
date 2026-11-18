@@ -3510,17 +3510,9 @@ async def register_user(request: Request, user_in: UserCreate, db = Depends(get_
     # bularak ilk randevuyu owner'ın kendi numarasına gönderir.
     if support_phone_value:
         try:
-            owner_customer_doc = {
-                "id": str(uuid.uuid4()),
-                "organization_id": new_org_id,
-                "name": user_in.full_name or user_in.username,
-                "phone": support_phone_value,
-                "source": "owner_self_seed",
-                "is_owner_profile": True,
-                "owner_user_id": new_user_id,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            await db.customers.insert_one(owner_customer_doc)
+            await _seed_owner_customer(
+                db, new_org_id, support_phone_value, user_in.full_name or user_in.username, new_user_id
+            )
         except Exception as e:
             logging.warning(f"Owner-customer seed başarısız ({user_in.username}): {e}")
 
@@ -5056,30 +5048,6 @@ def build_turkish_case_insensitive_pattern(s: str) -> str:
     return ''.join(parts)
 
 
-def _phone_match_variants(phone: str) -> list:
-    """Bir telefonun olası saklama formatlarını üretir (05.. / +90.. / 90.. / 10 hane).
-
-    Randevudan otomatik müşteri eklemede, aynı kişinin farklı formatla girilip
-    mükerrer kayıt oluşturmasını engellemek için kullanılır. 10 haneden kısa
-    (ör. "0" telefonsuz walk-in) değerlerde davranış DEĞİŞMEZ: sadece kendisini döner.
-    """
-    raw = (phone or "").strip()
-    clean = re.sub(r"\D", "", raw)
-    if len(clean) < 10:
-        return [raw] if raw else []
-    variants = {raw, clean}
-    core = None
-    if clean.startswith("90") and len(clean) == 12:
-        core = clean[2:]
-    elif clean.startswith("0") and len(clean) == 11:
-        core = clean[1:]
-    elif len(clean) == 10 and not clean.startswith("0"):
-        core = clean
-    if core and len(core) == 10:
-        variants.update({core, "0" + core, "90" + core, "+90" + core})
-    return list(variants)
-
-
 async def _apply_customer_delta(
     db,
     organization_id: str,
@@ -5182,6 +5150,45 @@ async def _apply_customer_delta(
             f"_apply_customer_delta failed org={organization_id[:8] if organization_id else '?'} "
             f"phone={phone} total={delta_total} completed={delta_completed}: {exc}"
         )
+
+
+async def _booking_customer(
+    db,
+    organization_id: str,
+    phone: str,
+    name: Optional[str],
+    *,
+    mode: str,
+    context: str,
+    unkeyed_mode: Optional[str] = None,
+) -> tuple:
+    """Resolve an appointment's customer by phone key (Faz 7, decision 1).
+
+    Returns ``(phone to store on the appointment, newly created customer doc or None)``.
+    The phone is the matched customer's stored string, so history, deltas and the merge
+    keep an exact-string link. ``unkeyed_mode`` overrides ``mode`` for numbers without a key
+    (walk-in "0"). Never raises: a customer write must not block a booking, so on any
+    error the typed phone is kept.
+    """
+    try:
+        if unkeyed_mode and phone_key(phone, await org_country(db, organization_id)) is None:
+            mode = unkeyed_mode
+        doc, created = await resolve_customer(db, organization_id, phone, name, mode=mode)
+        return (doc.get("phone") or phone), (doc if created else None)
+    except Exception as exc:
+        logging.error(
+            f"customer resolve ({context}) failed org={organization_id[:8] if organization_id else '?'}: {exc}"
+        )
+        return phone, None
+
+
+async def _seed_owner_customer(db, organization_id: str, phone: str, name: str, owner_user_id: str) -> None:
+    """Aha-flow owner profile, created through the resolver so it carries the phone key."""
+    doc, _ = await resolve_customer(db, organization_id, phone, name, mode="appointment")
+    await db.customers.update_one(
+        {"organization_id": organization_id, "id": doc["id"]},
+        {"$set": {"source": "owner_self_seed", "is_owner_profile": True, "owner_user_id": owner_user_id}},
+    )
 
 
 async def _record_appointment_deletions(db, organization_id: str, appointments: list, deleted_by: str, reason: str):
@@ -5512,6 +5519,20 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
             )
             send_sms(appointment['phone'], sms_message)
         except Exception as e: logging.error(f"İptal SMS'i gönderilirken hata oluştu: {e}")
+    # Telefon değiştiyse (Faz 7): yeni numara mevcut bir müşteriyle eşleşiyorsa randevu onun
+    # saklı telefonuyla kaydedilir; sayaçlar aşağıda eski müşteriden yenisine taşınır.
+    _old_phone = appointment.get("phone") or ""
+    if update_data.get("phone") and update_data["phone"] != _old_phone:
+        try:
+            _match = await find_customer_for(
+                db, current_user.organization_id, update_data["phone"],
+                update_data.get("customer_name") or appointment.get("customer_name"),
+            )
+            if _match and _match.get("phone"):
+                update_data["phone"] = _match["phone"]
+        except Exception as _match_err:
+            logger.warning(f"customer match (update_appointment) skipped: {_match_err}")
+    _phone_changed = bool(update_data.get("phone")) and update_data["phone"] != _old_phone
     if update_data: await db.appointments.update_one(query, {"$set": update_data})
     updated_appointment = await db.appointments.find_one(query, {"_id": 0})
     if isinstance(updated_appointment['created_at'], str): updated_appointment['created_at'] = datetime.fromisoformat(updated_appointment['created_at'].replace('Z', '+00:00'))
@@ -5557,9 +5578,27 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
             _delta_completed = 1
         elif _old_st == "Tamamlandı" and _new_st != "Tamamlandı":
             _delta_completed = -1
-        # Telefon nadiren değişir; buraya ekstra kompleksite eklemiyoruz — customer
-        # PUT endpoint'i zaten kendi delta'sını yönetir.
-        if _phone and (_delta_completed or _name):
+        if _phone_changed:
+            # Sayaçlar eski müşteriden yenisine taşınır; ikisi de telefon anahtarıyla çözülür.
+            await _apply_customer_delta(
+                db,
+                organization_id=current_user.organization_id,
+                phone=_old_phone,
+                name=appointment.get("customer_name"),
+                delta_total=-1,
+                delta_completed=-1 if _old_st == "Tamamlandı" else 0,
+            )
+            await _apply_customer_delta(
+                db,
+                organization_id=current_user.organization_id,
+                phone=_phone,
+                name=_name,
+                delta_total=1,
+                delta_completed=1 if _new_st == "Tamamlandı" else 0,
+                appointment_date=updated_appointment.get("appointment_date"),
+                appointment_time=updated_appointment.get("appointment_time"),
+            )
+        elif _phone and (_delta_completed or _name):
             await _apply_customer_delta(
                 db,
                 organization_id=current_user.organization_id,
@@ -6111,6 +6150,14 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, b
         if now >= completion_threshold: appointment_data['status'] = 'Tamamlandı'; appointment_data['completed_at'] = datetime.now(timezone.utc).isoformat()
         else: appointment_data['status'] = 'Bekliyor'
     except (ValueError, TypeError) as e: logging.warning(f"Randevu durumu ayarlanırken tarih hatası: {e}"); appointment_data['status'] = 'Bekliyor'
+    # Müşteri telefon anahtarıyla çözülür (Faz 7): eşleşen müşteri varsa randevu onun
+    # saklı telefonuyla kaydedilir (geçmiş, sayaç ve birleştirme aynı string'e bağlı kalır).
+    resolved_customer_phone, _new_customer = await _booking_customer(
+        db, current_user.organization_id, appointment.phone, appointment.customer_name,
+        mode="appointment", context="create_appointment",
+        unkeyed_mode="public",  # walk-in "0": a different name gets its own record, as before
+    )
+    appointment_data['phone'] = resolved_customer_phone
     appointment_obj = Appointment(**appointment_data, organization_id=current_user.organization_id)
     doc = appointment_obj.model_dump(); doc['created_at'] = doc['created_at'].isoformat()
     await db.appointments.insert_one(doc)
@@ -6134,63 +6181,22 @@ async def create_appointment(request: Request, appointment: AppointmentCreate, b
     except Exception as e:
         logging.error(f"❌ Süpürge işlemi sırasında hata oluştu: {e}")
     # ---------------------------------------------------------
-    # Müşteriyi customers collection'ına ekle (eğer yoksa)
-    # Format-dedup: aynı kişi farklı telefon formatıyla (05.. / +90.. / 90..) girilirse
-    # yeni müşteri açılmasın, mevcut kayda bağlansın. resolved_customer_phone, sayaç
-    # upsert'inin doğru (mevcut) dokümana yazması için aşağıda kullanılır.
-    resolved_customer_phone = appointment.phone
-    try:
-        # Aynı telefonun tüm format varyantlarıyla eşleşen müşterileri bul
-        _phone_variants = _phone_match_variants(appointment.phone)
-        customers_with_phone = await db.customers.find(
-            {
-                "organization_id": current_user.organization_id,
-                "phone": {"$in": _phone_variants}
-            },
-            {"_id": 0, "name": 1, "phone": 1}
-        ).to_list(100)
-        
-        # İsim-soyisim kontrolü (büyük-küçük harf duyarsız)
-        customer_name_normalized = appointment.customer_name.strip().lower()
-        existing_customer = None
-        for customer in customers_with_phone:
-            if customer.get("name", "").strip().lower() == customer_name_normalized:
-                existing_customer = customer
-                break
-        if existing_customer and existing_customer.get("phone"):
-            # Mevcut kaydın saklı telefon formatını kanonik kabul et (sayaç oraya yazılsın)
-            resolved_customer_phone = existing_customer.get("phone")
-        
-        if not existing_customer:
-            # Müşteri yoksa ekle
-            customer_doc = {
-                "id": str(uuid.uuid4()),
-                "organization_id": current_user.organization_id,
-                "name": appointment.customer_name.strip(),
-                "phone": appointment.phone,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "notes": ""
-            }
-            await db.customers.insert_one(customer_doc)
-            logging.info(f"Customer auto-added: {appointment.customer_name} ({appointment.phone}) for org {current_user.organization_id}")
-            
-            # Cache invalidation SONRASI müşteri eklendi — tekrar temizle (race condition fix)
-            try:
-                await invalidate_cache(request, "customers_list", current_user)
-            except Exception:
-                pass
-            
-            # WebSocket event gönder (müşteriler listesini güncellemek için)
-            try:
-                await emit_to_organization(
-                    current_user.organization_id,
-                    'customer_added',
-                    {'customer': customer_doc}
-                )
-            except Exception as emit_error:
-                logging.warning(f"Failed to emit customer_added event: {emit_error}")
-    except Exception as e:
-        logging.warning(f"Error adding customer to collection: {e}")
+    # Yeni müşteri açıldıysa listeyi tazele ve panellere bildir.
+    if _new_customer:
+        logging.info(f"Customer auto-added for org {current_user.organization_id}")
+        # Cache invalidation SONRASI müşteri eklendi — tekrar temizle (race condition fix)
+        try:
+            await invalidate_cache(request, "customers_list", current_user)
+        except Exception:
+            pass
+        try:
+            await emit_to_organization(
+                current_user.organization_id,
+                'customer_added',
+                {'customer': _new_customer}
+            )
+        except Exception as emit_error:
+            logging.warning(f"Failed to emit customer_added event: {emit_error}")
 
     # Denormalize sayaç güncellemesi — mevcut customer doc'a +1 total (+1 completed
     # eğer randevu anında Tamamlandı geldiyse). Yeni customer'sa upsert oluşturur.
@@ -6766,7 +6772,12 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
         group_id = bulk.session_group_id or str(uuid.uuid4())
         session_total = bulk.session_total or total_sessions
         created_appointments = []
-        
+        # Müşteri telefon anahtarıyla çözülür (Faz 7): seanslar eşleşen müşterinin saklı telefonuyla kaydedilir.
+        customer_phone, _ = await _booking_customer(
+            db, current_user.organization_id, bulk.phone, bulk.customer_name,
+            mode="appointment", context="bulk-session",
+        )
+
         for idx, session in enumerate(bulk.sessions):
             session_number = bulk.starting_session_number + idx
             is_first_session = (session_number == 1)
@@ -6786,7 +6797,7 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                 "id": str(uuid.uuid4()),
                 "organization_id": current_user.organization_id,
                 "customer_name": bulk.customer_name,
-                "phone": bulk.phone,
+                "phone": customer_phone,
                 "service_id": bulk.service_id,
                 "service_name": service['name'],
                 "service_price": service['price'] if is_first_session else 0,
@@ -6825,20 +6836,8 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
             if not tx_ok:
                 await db.appointments.insert_many(created_appointments)
         
-        # Müşteri kaydı (upsert)
-        try:
-            existing_customer = await db.customers.find_one({"phone": bulk.phone, "organization_id": current_user.organization_id})
-            if not existing_customer:
-                await db.customers.insert_one({
-                    "id": str(uuid.uuid4()), "organization_id": current_user.organization_id,
-                    "name": bulk.customer_name, "phone": bulk.phone,
-                    "created_at": datetime.now(timezone.utc).isoformat(), "notes": ""
-                })
-        except Exception as e:
-            logging.warning(f"Customer upsert error in bulk-session: {e}")
-
         # Denormalize sayaç: her bir seans için +1 total ve auto-Tamamlandı gelenler
-        # için +1 completed. Tek müşteri (bulk.phone) — birleştirilmiş delta uygula.
+        # için +1 completed. Tek müşteri (customer_phone) — birleştirilmiş delta uygula.
         try:
             _bulk_total = len(created_appointments)
             _bulk_completed = sum(1 for a in created_appointments if a.get("status") == "Tamamlandı")
@@ -6847,7 +6846,7 @@ async def create_bulk_session(request: Request, bulk: BulkSessionCreate, current
                 await _apply_customer_delta(
                     db,
                     organization_id=current_user.organization_id,
-                    phone=bulk.phone,
+                    phone=customer_phone,
                     name=bulk.customer_name,
                     delta_total=_bulk_total,
                     delta_completed=_bulk_completed,
@@ -15650,7 +15649,14 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
         except (ValueError, TypeError) as e:
             logging.warning(f"Public randevu durumu ayarlanırken tarih hatası: {e}")
             appointment_data['status'] = 'Bekliyor'
-    
+
+    # Müşteri telefon anahtarıyla çözülür (Faz 7). İsim eşleşirse mevcut müşteri ve onun saklı
+    # telefonu kullanılır; eşleşmezse "aynı kişi mi?" önerili ayrı kayıt açılır. Asla hata vermez.
+    resolved_customer_phone, _new_customer = await _booking_customer(
+        db, organization_id, appointment.phone, appointment.customer_name,
+        mode="public", context="public/appointments",
+    )
+    appointment_data['phone'] = resolved_customer_phone
     appointment_obj = Appointment(**appointment_data, organization_id=organization_id)
     doc = appointment_obj.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
@@ -15672,61 +15678,23 @@ async def create_public_appointment(request: Request, appointment: AppointmentCr
         logging.info(f"🧹 Public randevu sonrası admin cache temizlendi: {organization_id}")
     except Exception as e:
         logging.error(f"❌ Public süpürge hatası: {e}")
-    # Müşteriyi customers collection'ına ekle (eğer yoksa)
-    # Format-dedup: aynı kişi farklı telefon formatıyla girilirse yeni müşteri açılmasın.
-    resolved_customer_phone = appointment.phone
-    try:
-        # Aynı telefonun tüm format varyantlarıyla eşleşen müşterileri bul
-        _phone_variants = _phone_match_variants(appointment.phone)
-        customers_with_phone = await db.customers.find(
-            {
-                "organization_id": organization_id,
-                "phone": {"$in": _phone_variants}
-            },
-            {"_id": 0, "name": 1, "phone": 1}
-        ).to_list(100)
-        
-        # İsim-soyisim kontrolü (büyük-küçük harf duyarsız)
-        customer_name_normalized = appointment.customer_name.strip().lower()
-        existing_customer = None
-        for customer in customers_with_phone:
-            if customer.get("name", "").strip().lower() == customer_name_normalized:
-                existing_customer = customer
-                break
-        if existing_customer and existing_customer.get("phone"):
-            resolved_customer_phone = existing_customer.get("phone")
-        
-        if not existing_customer:
-            # Müşteri yoksa ekle
-            customer_doc = {
-                "id": str(uuid.uuid4()),
-                "organization_id": organization_id,
-                "name": appointment.customer_name.strip(),
-                "phone": appointment.phone,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "notes": ""
-            }
-            await db.customers.insert_one(customer_doc)
-            logging.info(f"Customer auto-added from public booking: {appointment.customer_name} ({appointment.phone}) for org {organization_id}")
-            
-            # Cache invalidation SONRASI müşteri eklendi — tekrar temizle (race condition fix)
-            try:
-                mock_user = type('obj', (object,), {'organization_id': organization_id})
-                await invalidate_cache(request, "customers_list", mock_user)
-            except Exception:
-                pass
-            
-            # WebSocket event gönder (müşteriler listesini güncellemek için)
-            try:
-                await emit_to_organization(
-                    organization_id,
-                    'customer_added',
-                    {'customer': customer_doc}
-                )
-            except Exception as emit_error:
-                logging.warning(f"Failed to emit customer_added event: {emit_error}")
-    except Exception as e:
-        logging.warning(f"Error adding customer to collection: {e}")
+    # Yeni müşteri açıldıysa listeyi tazele ve panellere bildir.
+    if _new_customer:
+        logging.info(f"Customer auto-added from public booking for org {organization_id}")
+        # Cache invalidation SONRASI müşteri eklendi — tekrar temizle (race condition fix)
+        try:
+            mock_user = type('obj', (object,), {'organization_id': organization_id})
+            await invalidate_cache(request, "customers_list", mock_user)
+        except Exception:
+            pass
+        try:
+            await emit_to_organization(
+                organization_id,
+                'customer_added',
+                {'customer': _new_customer}
+            )
+        except Exception as emit_error:
+            logging.warning(f"Failed to emit customer_added event: {emit_error}")
 
     # Denormalize sayaç: public randevu → +1 total (+1 completed nadiren; genellikle Bekliyor).
     # Ödeme bekleyen (pending_payment) randevu ise atla — sayaç ödeme onaylanınca
@@ -16016,17 +15984,14 @@ async def verify_code_and_create_appointment(request: Request):
                 detail="Seçtiğiniz saat az önce doldu. Lütfen sayfayı yenileyip başka bir saat seçin.",
             )
 
-    await db.appointments.insert_one(doc)
-
-    # Müşteriyi kaydet
-    await db.customers.update_one(
-        {"organization_id": org_id, "phone": stored_phone},
-        {
-            "$set": {"name": apt_dict.get("customer_name", ""), "phone": stored_phone, "organization_id": org_id, "updated_at": datetime.now(timezone.utc).isoformat()},
-            "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": datetime.now(timezone.utc).isoformat(), "notes": ""},
-        },
-        upsert=True,
+    # Müşteri telefon anahtarıyla çözülür (Faz 7); randevu eşleşen müşterinin saklı telefonuyla
+    # kaydedilir. Başka bir kişinin adı ezilmez. Asla hata vermez (doğrulanmış randevu bozulmasın).
+    customer_phone, _ = await _booking_customer(
+        db, org_id, stored_phone, apt_dict.get("customer_name"),
+        mode="public", context="verify-code",
     )
+    doc["phone"] = customer_phone
+    await db.appointments.insert_one(doc)
 
     # Denormalize sayaç — pending_payment değilse +1 total (+1 completed nadiren).
     try:
@@ -16034,7 +15999,7 @@ async def verify_code_and_create_appointment(request: Request):
             await _apply_customer_delta(
                 db,
                 organization_id=org_id,
-                phone=stored_phone,
+                phone=customer_phone,
                 name=apt_dict.get("customer_name"),
                 delta_total=1,
                 delta_completed=1 if apt_status == "Tamamlandı" else 0,
@@ -18169,25 +18134,13 @@ async def _process_whatsapp_verification(db, redis_client, from_wa_number: str, 
                 return {"reply": "❌ Seçtiğiniz saat az önce doldu. Lütfen yeniden randevu oluşturun."}
             return {"reply": "❌ Your selected time slot was just taken. Please book again."}
 
-        await db.appointments.insert_one(doc)
-
-        await db.customers.update_one(
-            {"organization_id": org_id, "phone": apt_dict.get("phone", "")},
-            {
-                "$set": {
-                    "name": apt_dict.get("customer_name", ""),
-                    "phone": apt_dict.get("phone", ""),
-                    "organization_id": org_id,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                },
-                "$setOnInsert": {
-                    "id": str(uuid.uuid4()),
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "notes": "",
-                },
-            },
-            upsert=True,
+        # Müşteri telefon anahtarıyla çözülür (Faz 7); /public/verify-code ile aynı kural.
+        customer_phone, _ = await _booking_customer(
+            db, org_id, apt_dict.get("phone", ""), apt_dict.get("customer_name"),
+            mode="public", context="wa-verification",
         )
+        doc["phone"] = customer_phone
+        await db.appointments.insert_one(doc)
 
         phone_map_key = f"plann:pending:phone:{stored_phone}:{org_id}"
         await redis_client.delete(pending_key)

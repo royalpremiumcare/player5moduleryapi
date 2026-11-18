@@ -12,6 +12,8 @@ import google.generativeai as genai
 import uuid
 from dotenv import load_dotenv
 from difflib import SequenceMatcher
+
+from customer_resolver import resolve_customer
 from google.api_core import exceptions as google_exceptions
 import asyncio
 
@@ -530,17 +532,11 @@ async def delete_appointment_tool(db, org_id: str, apt_id: str) -> Dict:
 async def add_customer_tool(db, org_id: str, name: str, phone: str) -> Dict:
     """Müşteri ekle"""
     try:
-        exists = await db.customers.find_one({"organization_id": org_id, "phone": phone})
-        if exists:
+        # Telefon anahtarıyla tekilleştirme (Faz 7): farklı formatta yazılmış aynı numara "kayıtlı" sayılır.
+        _customer, created = await resolve_customer(db, org_id, phone, name, mode="admin")
+        if not created:
             return {"success": False, "message": f"⚠️ {phone} kayıtlı"}
-        
-        customer = {
-            "id": str(uuid.uuid4()), "organization_id": org_id,
-            "name": name, "phone": phone,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        await db.customers.insert_one(customer)
-        
+
         # Websocket ile tüm organizasyon kullanıcılarına bildir
         if sio:
             try:
