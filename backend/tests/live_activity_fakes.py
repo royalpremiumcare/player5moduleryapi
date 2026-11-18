@@ -109,6 +109,7 @@ class FakeCollection:
         self.log = log if log is not None else []
         self.docs = []
         self.unique = []
+        self.partial = {}  # unique field tuple -> partialFilterExpression (or None)
 
     def _note(self, method, *args):
         self.log.append((self.name, method, args))
@@ -117,12 +118,19 @@ class FakeCollection:
         await asyncio.sleep(0)
         self._note("create_index", keys, _kw)
         if unique:
-            self.unique.append([k if isinstance(k, str) else k[0] for k in keys] if isinstance(keys, list) else [keys])
+            fields = [k if isinstance(k, str) else k[0] for k in keys] if isinstance(keys, list) else [keys]
+            self.unique.append(fields)
+            self.partial[tuple(fields)] = _kw.get("partialFilterExpression")
         return "idx"
 
     def _check_unique(self, doc):
         for fields in self.unique:
+            pfe = self.partial.get(tuple(fields))
+            if pfe and not _match(doc, pfe):
+                continue  # documents outside a partial index are not indexed
             for other in self.docs:
+                if pfe and not _match(other, pfe):
+                    continue
                 if all(other.get(f) == doc.get(f) for f in fields):
                     raise DuplicateKeyError("duplicate key")
 

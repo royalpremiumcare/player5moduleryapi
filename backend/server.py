@@ -4,6 +4,9 @@ from funnel_registry import is_frontend_owned, is_valid_event
 from funnel_service import ensure_funnel_indexes, record_funnel_event, track_webhook_event
 from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from name_sync import propagate_service_rename, sync_customer_to_appointments
+from customer_identity import phone_key
+from customer_resolver import find_customer_for, org_country
+from pymongo.errors import DuplicateKeyError
 from meta_capi_service import get_meta_capi_service, split_full_name
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
@@ -5099,7 +5102,11 @@ async def _apply_customer_delta(
         return
 
     try:
-        query = {"organization_id": organization_id, "phone": phone}
+        existing = await find_customer_for(db, organization_id, phone, name)
+        if existing:
+            query = {"organization_id": organization_id, "id": existing["id"]}
+        else:
+            query = {"organization_id": organization_id, "phone": phone}
         now_iso = datetime.now(timezone.utc).isoformat()
 
         set_on_insert = {
@@ -5109,6 +5116,9 @@ async def _apply_customer_delta(
             "created_at": now_iso,
             "notes": "",
         }
+        new_key = None if existing else phone_key(phone, await org_country(db, organization_id))
+        if new_key:
+            set_on_insert["phone_key"] = new_key
         set_ops: dict = {"updated_at": now_iso}
         if name and name.strip():
             set_ops["name"] = name.strip()
@@ -5136,7 +5146,16 @@ async def _apply_customer_delta(
         if min_ops:
             update_doc["$min"] = min_ops
 
-        await db.customers.update_one(query, update_doc, upsert=True)
+        try:
+            await db.customers.update_one(query, update_doc, upsert=not existing)
+        except DuplicateKeyError:
+            # Concurrent insert of the same keyed number: apply to the winner instead.
+            winner = await find_customer_for(db, organization_id, phone, name)
+            if not winner:
+                raise
+            query = {"organization_id": organization_id, "id": winner["id"]}
+            update_doc.pop("$setOnInsert", None)
+            await db.customers.update_one(query, update_doc)
 
         # Negatif sayaç clamp (delete edilen randevu customers'a hiç yansımadıysa
         # inc -1 → -1'e düşebilir; kullanıcıya yanlış sayı göstermemek için 0'a çek).
