@@ -160,13 +160,28 @@ async def test_pending_charge_returns_the_hosted_invoice_and_keeps_the_plan(env)
 
 # --- same plan ----------------------------------------------------------------------------
 
-async def test_same_plan_and_cycle_returns_400_without_any_stripe_call(env):
+async def test_same_plan_and_cycle_on_a_live_subscription_returns_400_without_changing_stripe(env):
     client, db, fs = env
     await _org(db)
+    fs.subscriptions["sub_old"] = subscription(price_obj=STD_M)
     r = await _post(client, "tier_1_standard", "monthly")
     assert r.status_code == 400
     assert "zaten" in r.json()["detail"].lower()
-    assert fs.calls == []
+    assert fs.names() == ["Subscription.retrieve"]
+
+
+@pytest.mark.parametrize("stripe_state", ["canceled", "missing"])
+async def test_same_plan_on_a_dead_stored_subscription_goes_to_checkout_with_stored_customer(env, stripe_state):
+    client, db, fs = env
+    await _org(db)
+    if stripe_state == "canceled":
+        fs.subscriptions["sub_old"] = subscription(status="canceled", price_obj=STD_M)
+    r = await _post(client, "tier_1_standard", "monthly")
+    assert r.status_code == 200, r.text
+    assert r.json()["checkout_url"] == "https://checkout.stripe.test/cs_test_1"
+    _, _, kw = fs.call("checkout.Session.create")
+    assert kw["customer"] == "cus_1" and "customer_email" not in kw
+    assert "Subscription.modify" not in fs.names()
 
 
 # --- new subscription ----------------------------------------------------------------------
@@ -378,3 +393,74 @@ async def test_confirm_checkout_also_cancels_a_superseded_subscription(env):
     _, args, _ = fs.call("Subscription.cancel")
     assert args == ("sub_old",)
     assert (await _plan(db))["stripe_subscription_id"] == "sub_new"
+
+
+# --- subscription deleted keeps the customer (controller ruling, concern 1) -------------------
+
+async def test_subscription_deleted_keeps_the_customer_and_resubscribe_reuses_it(env):
+    client, db, fs = env
+    await _org(db)
+    r = await _webhook(client, fs, "customer.subscription.deleted",
+                       subscription(status="canceled", price_obj=STD_M))
+    assert r.status_code == 200
+    doc = await _plan(db)
+    assert doc["plan_id"] == "tier_trial"
+    assert doc["stripe_subscription_id"] is None
+    assert doc["stripe_customer_id"] == "cus_1"
+
+    fs.calls.clear()
+    r = await _post(client, "tier_2_profesyonel")
+    assert r.status_code == 200, r.text
+    assert "Subscription.retrieve" not in fs.names()
+    _, _, kw = fs.call("checkout.Session.create")
+    assert kw["customer"] == "cus_1" and "customer_email" not in kw
+
+
+# --- failed plan-change charge is not a renewal failure (controller ruling, concern 2) ---------
+
+def _failed_invoice(billing_reason):
+    return Obj(id="in_1", subscription="sub_old", billing_reason=billing_reason,
+               customer_email="owner@salon.test", hosted_invoice_url="https://invoice.stripe.test/in_1")
+
+
+@pytest.fixture
+def sent_emails(monkeypatch):
+    import server
+
+    sent = []
+
+    async def fake_send_email(**kw):
+        sent.append(kw)
+        return True
+
+    monkeypatch.setattr(server, "send_email", fake_send_email)
+    return sent
+
+
+async def test_failed_plan_change_charge_sends_no_grace_email_and_keeps_grace_state(env, sent_emails, caplog):
+    import server
+
+    client, db, fs = env
+    await _org(db)
+    with caplog.at_level("INFO"):
+        r = await _webhook(client, fs, "invoice.payment_failed", _failed_invoice("subscription_update"))
+    assert r.status_code == 200
+    assert sent_emails == []
+    doc = await _plan(db)
+    assert "hosted_invoice_url" not in doc
+    assert "grace_email_sent" not in doc
+    assert "dunning_updated_at" not in doc
+    assert any(rec.levelname == "INFO" and "subscription_update" in rec.getMessage()
+               for rec in caplog.records)
+    assert await server.notify_saas_invoice_payment_failed(db, _failed_invoice("subscription_update")) is False
+
+
+async def test_failed_renewal_still_sends_the_grace_email(env, sent_emails):
+    client, db, fs = env
+    await _org(db)
+    r = await _webhook(client, fs, "invoice.payment_failed", _failed_invoice("subscription_cycle"))
+    assert r.status_code == 200
+    assert sent_emails and sent_emails[0]["to_email"] == "owner@salon.test"
+    doc = await _plan(db)
+    assert doc["hosted_invoice_url"] == "https://invoice.stripe.test/in_1"
+    assert doc["grace_email_sent"] is True

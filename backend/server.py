@@ -844,6 +844,14 @@ async def notify_saas_invoice_payment_failed(db, invoice) -> bool:
     sub_id = saas_invoice_subscription_id(invoice)
     if isinstance(sub_id, dict):
         sub_id = sub_id.get("id")
+    if (_stripe_obj_get(invoice, "billing_reason") or "") == "subscription_update":
+        # Plan değişikliği tahsilatı (pending_if_incomplete): eski plan ödenmiş ve aktif.
+        # Yenileme başarısız değil → grace maili, CTA ve grace durumu değişmez.
+        logging.info(
+            f"invoice.payment_failed: billing_reason=subscription_update, grace akışı atlandı "
+            f"sub={sub_id} invoice={_stripe_obj_get(invoice, 'id')}"
+        )
+        return False
     hosted_url = (_stripe_obj_get(invoice, "hosted_invoice_url") or "").strip()
     customer_email = (_stripe_obj_get(invoice, "customer_email") or "").strip()
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -9217,12 +9225,15 @@ async def create_checkout_session(
         org_plan_doc = await db.organization_plans.find_one({"organization_id": current_user.organization_id}) or {}
         tracked_subscription_id = org_plan_doc.get("stripe_subscription_id")
         stored_customer_id = org_plan_doc.get("stripe_customer_id")
-        if tracked_subscription_id and subscription_change.is_same_plan(org_plan_doc, plan_request.plan_id, billing_cycle):
-            raise HTTPException(status_code=400, detail=subscription_change.SAME_PLAN_MESSAGE)
 
         # Stripe Checkout Session oluştur
         try:
             active_subscription = subscription_change.get_active_subscription(stripe, tracked_subscription_id)
+            # Aynı paket+dönem sadece abonelik Stripe'ta gerçekten canlıysa reddedilir;
+            # ölü kayıtlı abonelikte normal Checkout'a (kayıtlı müşteriyle) devam edilir.
+            if active_subscription is not None and subscription_change.is_same_plan(
+                    org_plan_doc, plan_request.plan_id, billing_cycle):
+                raise HTTPException(status_code=400, detail=subscription_change.SAME_PLAN_MESSAGE)
 
             # Yıllık veya aylık fiyat belirleme
             if is_yearly:
@@ -10264,7 +10275,7 @@ async def handle_stripe_webhook(request: Request):
                 "trial_end_date": trial_end.isoformat(),
                 "is_first_month": False,
                 "stripe_subscription_id": None,
-                "stripe_customer_id": None,
+                # stripe_customer_id korunur: yeniden abonelik aynı Stripe müşterisini kullanır
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }
             
