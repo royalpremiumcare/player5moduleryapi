@@ -171,17 +171,20 @@ MAX_QUOTA_LIMIT = 10_000_000
 
 
 def _int_or_none(value):
-    """appointment_limit metadata -> int; None (try the next source) when not numeric or 0.
+    """appointment_limit metadata -> int, or None (try the next source, finally the PLANS
+    default) when it is not numeric, 0, below -1 or above MAX_QUOTA_LIMIT.
 
-    Negative or absurdly large values mean unlimited (-1, as in PLANS): the live corporate
-    product carries a 39-digit limit, which Mongo cannot store (8-byte ints only).
+    Out-of-range values are ignored rather than read as unlimited, so a typo cannot grant
+    unlimited appointments. The live corporate product's 39-digit limit (which Mongo could not
+    store: 8-byte ints only) therefore falls through to tier_6_kurumsal's PLANS default, -1.
+    An explicit "-1" stays -1 (unlimited).
     """
     try:
         n = int(value)
     except (TypeError, ValueError):
         return None
-    if n < 0 or n > MAX_QUOTA_LIMIT:
-        return UNLIMITED_QUOTA
+    if n < UNLIMITED_QUOTA or n > MAX_QUOTA_LIMIT:
+        return None
     return n or None
 
 

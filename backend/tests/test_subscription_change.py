@@ -478,7 +478,7 @@ def _real_price(price_limit=None, product_limit=None):
                            "metadata": {} if product_limit is None else {"appointment_limit": product_limit}}})
 
 
-def test_huge_product_limit_means_unlimited():
+def test_huge_corporate_product_limit_ends_as_unlimited_via_the_plan_default():
     assert sc.resolve_quota_limit(FakeStripe(), _real_price(product_limit=HUGE), CORPORATE) == -1
 
 
@@ -486,9 +486,18 @@ def test_minus_one_means_unlimited():
     assert sc.resolve_quota_limit(FakeStripe(), _real_price(price_limit="-1"), CORPORATE) == -1
 
 
-@pytest.mark.parametrize("value", ["-5", "10000001"])
-def test_out_of_range_limits_mean_unlimited(value):
-    assert sc.resolve_quota_limit(FakeStripe(), _real_price(price_limit=value), PLANS["tier_1_standard"]) == -1
+STANDART = {"id": "tier_1_standard", "quota_monthly_appointments": 100}  # real PLANS value
+
+
+@pytest.mark.parametrize("value", ["30000000", "10000001", "-5", HUGE])
+def test_out_of_range_limits_fall_through_to_the_plan_default(value):
+    """A typo must not grant unlimited appointments: out-of-range values are ignored."""
+    assert sc.resolve_quota_limit(FakeStripe(), _real_price(price_limit=value), STANDART) == 100
+
+
+def test_out_of_range_price_limit_falls_through_to_the_product_limit():
+    assert sc.resolve_quota_limit(FakeStripe(), _real_price(price_limit="30000000", product_limit="450"),
+                                  STANDART) == 450
 
 
 def test_upper_bound_is_still_a_real_limit():
