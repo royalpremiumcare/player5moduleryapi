@@ -6,6 +6,7 @@ from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from name_sync import propagate_service_rename, sync_customer_to_appointments
 from customer_identity import names_match, normalize_name, phone_key, phone_variants as key_phone_variants
 from customer_resolver import find_customer_for, org_country, phone_for_appointment, resolve_customer
+from customer_indexes import ensure_customer_indexes
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 from meta_capi_service import get_meta_capi_service, split_full_name
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
@@ -1583,26 +1584,17 @@ async def lifespan(app: FastAPI):
             #     birden çok farklı kişi aynı "0" değerine sahip olabilir (veri değil, tasarım).
             #   • Aynı telefon farklı isimle ayrı müşteri olabilir (ör. anne telefonuyla
             #     kızına randevu) → paylaşılan telefon geçerli bir senaryo.
-            # Bu yüzden aşağıdaki NON-UNIQUE index efektif olandır. Unique'i yine de bir kez
-            # deniyoruz (kurulursa bonus veri bütünlüğü); kurulamazsa bu beklenen bir durum,
-            # bu nedenle DEBUG seviyesinde loglanır (WARNING değil — prod loglarını kirletmesin).
+            # Bu yüzden aşağıdaki NON-UNIQUE index efektif olandır. Tekillik artık
+            # (organization_id, phone_key) üzerinde PARTIAL unique index ile sağlanır
+            # (customer_indexes.ensure_customer_indexes); mükerrer veri varsa atlanır ve loglanır.
             try:
                 await app.db.customers.create_index(
                     [("organization_id", 1), ("phone", 1)],
-                    unique=True,
-                    name="customers_org_phone_unique",
+                    name="customers_org_phone_nonunique",
                 )
             except Exception as idx_err:
-                logging.debug(
-                    f"customers (org_id, phone) unique index atlandı (beklenen: paylaşılan/boş telefonlar): {idx_err}"
-                )
-                try:
-                    await app.db.customers.create_index(
-                        [("organization_id", 1), ("phone", 1)],
-                        name="customers_org_phone_nonunique",
-                    )
-                except Exception:
-                    pass
+                logging.debug(f"customers (org_id, phone) non-unique index skipped: {idx_err}")
+            await ensure_customer_indexes(app.db)
             try:
                 await app.db.customers.create_index(
                     [("organization_id", 1), ("name", 1), ("_id", 1)],
