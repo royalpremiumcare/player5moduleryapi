@@ -619,6 +619,16 @@
     "addTitle": "Yeni Müşteri Ekle",
     "addDescription": "Müşteri bilgilerini girin. Randevu oluştururken bu müşteriyi seçebilirsiniz.",
     "addSuccess": "Müşteri başarıyla eklendi",
+    "samePerson": {
+      "prompt": "Bu numara zaten {{name}} adına kayıtlı. Aynı kişi mi?",
+      "same": "Aynı kişi",
+      "different": "Farklı kişi"
+    },
+    "mergeSuggestion": {
+      "prompt": "Bu numarada zaten {{name}} kayıtlı. Aynı kişi mi?",
+      "merge": "Birleştir",
+      "different": "Farklı kişi"
+    },
     "addError": "Müşteri eklenirken bir hata oluştu",
     "addValidationNamePhone": "Lütfen müşteri adı ve telefon numarasını girin",
     "addValidationPhone": "Geçerli bir telefon numarası girin",

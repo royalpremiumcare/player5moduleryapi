@@ -617,6 +617,16 @@
     "addTitle": "Add New Customer",
     "addDescription": "Enter customer information. You can select this customer when creating an appointment.",
     "addSuccess": "Customer added successfully",
+    "samePerson": {
+      "prompt": "This number is already saved for {{name}}. Is it the same person?",
+      "same": "Same person",
+      "different": "Different person"
+    },
+    "mergeSuggestion": {
+      "prompt": "{{name}} is already saved with this number. Same person?",
+      "merge": "Merge",
+      "different": "Different person"
+    },
     "addError": "An error occurred while adding the customer",
     "addValidationNamePhone": "Please enter customer name and phone number",
     "addValidationPhone": "Please enter a valid phone number",

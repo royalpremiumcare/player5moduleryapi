@@ -6,6 +6,8 @@ import api from "../api/api";
 import { formatApiError } from "@/lib/apiError";
 import { useAuth } from "../context/AuthContext";
 import useDebounce from "../hooks/useDebounce";
+import SamePersonPrompt, { findExistingCustomer } from "./SamePersonPrompt";
+import MergeSuggestion from "./MergeSuggestion";
 
 // --- HİBRİT YAPI İÇİN GEREKLİ IMPORTLAR ---
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -53,6 +55,9 @@ import { format } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 
+// Backend'in tekrar eden numara için döndürdüğü sabit mesaj.
+const DUPLICATE_PHONE_DETAIL = "Bu telefon numarasına sahip bir müşteri zaten var";
+
 const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
   const { userRole, token } = useAuth();
   const { t, i18n } = useTranslation();
@@ -66,6 +71,7 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
   const [hasMore, setHasMore] = useState(false);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [samePrompt, setSamePrompt] = useState(null); // { existing, payload }
   const [customerHistory, setCustomerHistory] = useState(null);
   const [customerNotes, setCustomerNotes] = useState("");
   const [detailTab, setDetailTab] = useState("overview");
@@ -202,6 +208,8 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
     id: c.id,
     name: c.name || "",
     phone: c.phone || "",
+    sharedPhone: Boolean(c.shared_phone),
+    merge_suggestion_for: c.merge_suggestion_for || null,
     totalAppointments: c.total_appointments || 0,
     isPending: (c.total_appointments || 0) === 0,
   });
@@ -372,11 +380,36 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
       // Arka planda tam listeyi de yenile
       loadCustomers();
     } catch (error) {
+      if (error.response?.status === 400 && error.response?.data?.detail === DUPLICATE_PHONE_DETAIL) {
+        // Numara kayıtlı: mevcut kişinin adını bulup "aynı kişi mi?" diye sor.
+        try {
+          const existing = await findExistingCustomer(newCustomerData.phone);
+          if (existing) {
+            setSamePrompt({ existing, payload: { name: newCustomerData.name.trim(), phone: newCustomerData.phone.trim() } });
+            return;
+          }
+        } catch (lookupError) { /* arama başarısızsa aşağıda API mesajı gösterilir */ }
+      }
       const errorMessage = error.response?.data?.detail || t('customers.addError');
       toast.error(errorMessage);
     } finally {
       setSavingCustomer(false);
     }
+  };
+
+  const closeSamePrompt = () => setSamePrompt(null);
+  const handleSamePerson = () => {
+    const existing = samePrompt?.existing;
+    setSamePrompt(null);
+    setNewCustomerDialogOpen(false);
+    setNewCustomerData({ name: "", phone: "" });
+    if (existing) handleCustomerClick(mapCustomer(existing));
+  };
+  const handleDifferentPersonSaved = () => {
+    setSamePrompt(null);
+    setNewCustomerDialogOpen(false);
+    setNewCustomerData({ name: "", phone: "" });
+    loadCustomers();
   };
 
   // --- MÜŞTERİ DÜZENLEME ---
@@ -1108,7 +1141,7 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
           ) : (
             <>
               {filteredCustomers.map((customer) => (
-              <div key={customer.phone} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:bg-white/50 transition-all duration-300">
+              <div key={customer.id || customer.phone} className="backdrop-blur-xl bg-white/40 border border-white/20 rounded-2xl p-4 shadow-lg hover:shadow-xl hover:bg-white/50 transition-all duration-300">
                 <div className="flex items-center gap-4">
                     <div onClick={() => handleCustomerClick(customer)} className="w-12 h-12 bg-gradient-to-br from-zinc-800 to-zinc-950 text-white rounded-xl flex items-center justify-center font-semibold text-base flex-shrink-0 cursor-pointer shadow-sm ring-1 ring-black/5">
                     {getInitials(customer.name)}
@@ -1126,6 +1159,13 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
                     <ChevronRight onClick={() => handleCustomerClick(customer)} className="w-5 h-5 text-zinc-400 cursor-pointer" />
                   </div>
                 </div>
+                {customer.merge_suggestion_for && (
+                  <MergeSuggestion
+                    customer={customer}
+                    survivorName={customers.find((c) => c.id === customer.merge_suggestion_for)?.name}
+                    onDone={loadCustomers}
+                  />
+                )}
               </div>
               ))}
               {/* Infinite scroll sentinel — görünür olunca sonraki cursor sayfası çekilir */}
@@ -1141,6 +1181,15 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
         </div>
       </div>
       
+      <SamePersonPrompt
+        open={Boolean(samePrompt)}
+        name={samePrompt?.existing?.name || ""}
+        payload={samePrompt?.payload}
+        onSame={handleSamePerson}
+        onDone={handleDifferentPersonSaved}
+        onClose={closeSamePrompt}
+      />
+
       {/* Silme Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent className="backdrop-blur-2xl bg-white/95 border-white/30 rounded-3xl shadow-2xl">
