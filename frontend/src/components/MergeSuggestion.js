@@ -5,14 +5,16 @@ import api from "../api/api";
 import { formatApiError } from "../lib/apiError";
 
 // Liste satırında, aynı numaralı olası çift kayıt için "birleştir mi?" önerisi.
-const MergeSuggestion = ({ customer, survivorName, onDone }) => {
+// Yalnız yöneticiye gösterilir (birleştirme yönetici işi); personel hiçbir şey görmez.
+const MergeSuggestion = ({ customer, survivorName, userRole, onDone }) => {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [lookedUpName, setLookedUpName] = useState("");
   const survivorId = customer.merge_suggestion_for;
+  const isAdmin = userRole === "admin";
 
   useEffect(() => {
-    if (survivorName) return undefined;
+    if (!isAdmin || survivorName) return undefined;
     let cancelled = false;
     const digits = String(customer.phone || "").replace(/\D/g, "");
     api.get("/customers", { params: { search: digits, limit: 5 } })
@@ -22,7 +24,7 @@ const MergeSuggestion = ({ customer, survivorName, onDone }) => {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [survivorName, survivorId, customer.phone]);
+  }, [isAdmin, survivorName, survivorId, customer.phone]);
 
   const run = async (request, successKey) => {
     setBusy(true);
@@ -41,6 +43,8 @@ const MergeSuggestion = ({ customer, survivorName, onDone }) => {
   const merge = () => run(() => api.post("/customers/merge", { survivor_id: survivorId, source_id: customer.id }));
   const notDuplicate = () => run(() => api.post(`/customers/${customer.id}/not-duplicate`));
   const name = survivorName || lookedUpName;
+
+  if (!isAdmin) return null;
 
   return (
     <div role="group" aria-label={t("customers.mergeSuggestion.prompt", { name })} className="mt-3 rounded-xl bg-amber-50 border border-amber-200 p-3">

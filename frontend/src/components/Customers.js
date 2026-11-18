@@ -1160,6 +1160,7 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
                   <MergeSuggestion
                     customer={customer}
                     survivorName={customers.find((c) => c.id === customer.merge_suggestion_for)?.name}
+                    userRole={userRole}
                     onDone={loadCustomers}
                   />
                 )}

@@ -35,7 +35,7 @@ afterEach(() => {
 });
 async function render(props) {
   await act(async () => {
-    root.render(<MergeSuggestion customer={row} survivorName="Ayşe Yılmaz" onDone={jest.fn()} {...props} />);
+    root.render(<MergeSuggestion customer={row} survivorName="Ayşe Yılmaz" userRole="admin" onDone={jest.fn()} {...props} />);
   });
 }
 
@@ -77,4 +77,12 @@ test('looks up the keyed customer name when it was not passed in', async () => {
   api.get.mockResolvedValue({ data: { items: [{ id: 'other', name: 'X' }, { id: 'key1', name: 'Ayşe Yılmaz' }] } });
   await render({ survivorName: undefined });
   expect(container.textContent).toContain('Ayşe Yılmaz');
+});
+
+test.each(['staff', undefined])('renders nothing and looks nothing up for role %s', async (userRole) => {
+  api.get.mockResolvedValue({ data: { items: [{ id: 'key1', name: 'Ayşe Yılmaz' }] } });
+  await render({ userRole, survivorName: undefined });
+  expect(container.innerHTML).toBe('');
+  expect(button('Birleştir')).toBeUndefined();
+  expect(api.get).not.toHaveBeenCalled();
 });

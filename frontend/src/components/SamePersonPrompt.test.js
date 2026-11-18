@@ -80,14 +80,26 @@ test('different person failure keeps the prompt open and does not call onDone', 
   expect(dialog()).not.toBeNull();
 });
 
-test('findExistingCustomer searches by digits and returns the exact same-number match', async () => {
+test('findExistingCustomer searches by the last 10 digits and returns the exact same-number match', async () => {
   api.get.mockResolvedValue({ data: { items: [
     { id: 'c0', name: 'Başkası', phone: '905329991122' },
     { id: 'c1', name: 'Ayşe Yılmaz', phone: '905321112233' },
   ], has_more: false } });
   const found = await findExistingCustomer('0532 111 22 33');
-  expect(api.get).toHaveBeenCalledWith('/customers', { params: { search: '05321112233', limit: 5 } });
+  expect(api.get).toHaveBeenCalledWith('/customers', { params: { search: '5321112233', limit: 5 } });
   expect(found.id).toBe('c1');
+});
+
+test('findExistingCustomer finds a stored 05... number when 905... is typed', async () => {
+  // The list search is a substring match on the stored phone string.
+  const stored = [{ id: 'c1', name: 'Ayşe Yılmaz', phone: '05321112233' }];
+  api.get.mockImplementation(async (_url, { params }) => ({
+    data: { items: stored.filter((c) => c.phone.includes(params.search)) },
+  }));
+  for (const typed of ['905321112233', '+90 532 111 22 33']) {
+    const found = await findExistingCustomer(typed);
+    expect(found && found.id).toBe('c1');
+  }
 });
 
 test('findExistingCustomer returns null when nothing is the same number', async () => {

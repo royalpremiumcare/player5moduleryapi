@@ -29,10 +29,11 @@ export function pickSameNumber(items, phone) {
   return (items || []).find((c) => last10(c.phone) === wanted) || null;
 }
 
-// Mevcut kaydı bulmak için API sözleşmesini değiştirmeden numarayla arar.
+// Mevcut kaydı bulmak için API sözleşmesini değiştirmeden numarayla arar. Arama saklı
+// numarada alt-dizge eşleşmesi yaptığından son 10 hane gönderilir: "905…" yazılınca
+// "05…" olarak saklanan kayıt da bulunur; kesin eşleşmeyi pickSameNumber seçer.
 export async function findExistingCustomer(phone) {
-  const digits = String(phone || "").replace(/\D/g, "");
-  const res = await api.get("/customers", { params: { search: digits, limit: 5 } });
+  const res = await api.get("/customers", { params: { search: last10(phone), limit: 5 } });
   const items = Array.isArray(res.data?.items) ? res.data.items : [];
   return pickSameNumber(items, phone);
 }
