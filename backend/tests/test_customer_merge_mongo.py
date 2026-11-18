@@ -131,3 +131,42 @@ async def test_merge_rerun_after_merge_is_noop(db):
     again = await merge_into(db, ORG, survivor["id"], source["id"], backup=backup)
     assert again["merged"] is False
     assert await _dump(db) == after and len(backup) == n
+
+
+async def test_three_member_group_sequential_merges_restore_from_one_backup(db):
+    """A 3-member group merged one source at a time into one survivor, all prior states in a
+    single shared backup list: restoring that list gives back the exact starting data."""
+    survivor, source = await _seed(db)
+    third = _cust("+90 555 111 00 01", "Canan Çelik", total=2, notes="Kına",
+                  created_at="2026-02-01T00:00:00+00:00")
+    await db.customers.insert_one(dict(third))
+    await db.appointments.insert_many([
+        _appt("+90 555 111 00 01", "Canan Çelik", "2026-04-01", "11:00", "Tamamlandı"),
+        _appt("+90 555 111 00 01", "Canan Çelik", "2026-04-08", "11:00"),
+    ])
+    await db.customer_notes.insert_one(
+        {"organization_id": ORG, "phone": "+90 555 111 00 01", "notes": "Sıcak su"})
+    await db.stripe_customers.insert_one(
+        {"organization_id": ORG, "customer_phone": "+90 555 111 00 01", "stripe_id": "cus_3"})
+    before = await _dump(db)
+
+    (group,) = await find_duplicate_groups(db, ORG)
+    assert len(group.members) == 3 and group.survivor_id == survivor["id"]
+
+    backup: list = []
+    for src in (source, third):
+        summary = await merge_into(db, ORG, survivor["id"], src["id"], backup=backup)
+        assert summary["merged"] is True
+
+    assert await db.customers.count_documents({"organization_id": ORG}) == 1
+    cust = await db.customers.find_one({"id": survivor["id"]})
+    assert cust["notes"] == "VIP\nAlerji\nKına"
+    assert cust["total_appointments"] == 5 and cust["completed_appointments"] == 3
+    assert {a["phone"] for a in await db.appointments.find({"organization_id": ORG}).to_list(None)} \
+        == {"905551110001"}
+    # Survivor touched twice: its earliest prior state must win on restore.
+    assert sum(1 for e in backup if e["collection"] == "customers"
+               and e["doc"].get("id") == survivor["id"]) >= 2
+
+    await restore_from_backup(db, backup)
+    assert await _dump(db) == before
