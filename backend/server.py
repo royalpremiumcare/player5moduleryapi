@@ -4,8 +4,8 @@ from funnel_registry import is_frontend_owned, is_valid_event
 from funnel_service import ensure_funnel_indexes, record_funnel_event, track_webhook_event
 from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from name_sync import propagate_service_rename, sync_customer_to_appointments
-from customer_identity import names_match, phone_key, phone_variants as key_phone_variants
-from customer_resolver import find_customer_for, org_country, resolve_customer
+from customer_identity import names_match, normalize_name, phone_key, phone_variants as key_phone_variants
+from customer_resolver import find_customer_for, org_country, phone_for_appointment, resolve_customer
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 from meta_capi_service import get_meta_capi_service, split_full_name
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
@@ -5073,6 +5073,8 @@ async def _apply_customer_delta(
         existing = await find_customer_for(db, organization_id, phone, name)
         if existing:
             query = {"organization_id": organization_id, "id": existing["id"]}
+        elif delta_total <= 0 and delta_completed <= 0 and (delta_total < 0 or delta_completed < 0):
+            return  # R9: a decrement for a number nobody has never creates a zero-count record
         else:
             query = {"organization_id": organization_id, "phone": phone}
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -5088,11 +5090,16 @@ async def _apply_customer_delta(
         if new_key:
             set_on_insert["phone_key"] = new_key
         set_ops: dict = {"updated_at": now_iso}
+        # Name untouched when the record belongs to another person (fallback: counters only) or
+        # when the typed name is shorter (R8: "Ayşe" never shortens "Ayşe Yılmaz").
         keeps_name = bool(
             existing
             and (existing.get("name") or "").strip()
-            and not names_match(existing.get("name"), name, allow_subset=True)
-        )  # fallback to a record of another person: counters only, name untouched
+            and (
+                not names_match(existing.get("name"), name, allow_subset=True)
+                or len(normalize_name(name).split()) < len(normalize_name(existing.get("name")).split())
+            )
+        )
         if name and name.strip() and not keeps_name:
             set_ops["name"] = name.strip()
         else:
@@ -5165,8 +5172,9 @@ async def _booking_customer(
     """Resolve an appointment's customer by phone key (Faz 7, decision 1).
 
     Returns ``(phone to store on the appointment, newly created customer doc or None)``.
-    The phone is the matched customer's stored string, so history, deltas and the merge
-    keep an exact-string link. ``unkeyed_mode`` overrides ``mode`` for numbers without a key
+    The phone is the matched customer's stored string when it reaches the same WhatsApp
+    recipient (R7), so history, deltas and the merge keep an exact-string link; otherwise the
+    typed phone, which the key lookup still links for counters. ``unkeyed_mode`` overrides ``mode`` for numbers without a key
     (walk-in "0"). Never raises: a customer write must not block a booking, so on any
     error the typed phone is kept.
     """
@@ -5174,7 +5182,7 @@ async def _booking_customer(
         if unkeyed_mode and phone_key(phone, await org_country(db, organization_id)) is None:
             mode = unkeyed_mode
         doc, created = await resolve_customer(db, organization_id, phone, name, mode=mode)
-        return (doc.get("phone") or phone), (doc if created else None)
+        return phone_for_appointment(doc.get("phone"), phone), (doc if created else None)
     except Exception as exc:
         logging.error(
             f"customer resolve ({context}) failed org={organization_id[:8] if organization_id else '?'}: {exc}"
@@ -5528,8 +5536,8 @@ async def update_appointment(request: Request, appointment_id: str, appointment_
                 db, current_user.organization_id, update_data["phone"],
                 update_data.get("customer_name") or appointment.get("customer_name"),
             )
-            if _match and _match.get("phone"):
-                update_data["phone"] = _match["phone"]
+            if _match:
+                update_data["phone"] = phone_for_appointment(_match.get("phone"), update_data["phone"])
         except Exception as _match_err:
             logger.warning(f"customer match (update_appointment) skipped: {_match_err}")
     _phone_changed = bool(update_data.get("phone")) and update_data["phone"] != _old_phone

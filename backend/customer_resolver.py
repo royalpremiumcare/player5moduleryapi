@@ -9,8 +9,20 @@ from typing import Literal, Optional
 from pymongo.errors import DuplicateKeyError
 
 from customer_identity import country_for_currency, names_match, phone_key, phone_variants
+from whatsapp_service import format_phone_number
 
 Mode = Literal["admin", "appointment", "public"]
+
+
+def phone_for_appointment(stored: Optional[str], typed: str) -> str:
+    """Phone to store on an appointment whose customer matched (decision 1 + R7).
+
+    The customer's stored string only when it reaches the same WhatsApp recipient as the
+    typed one; otherwise the typed phone (the key lookup still links them for counters).
+    """
+    if stored and format_phone_number(stored) == format_phone_number(typed or ""):
+        return stored
+    return typed
 
 
 async def org_country(db, organization_id: str) -> str:

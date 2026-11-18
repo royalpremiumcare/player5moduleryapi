@@ -10,7 +10,7 @@ from pymongo.errors import DuplicateKeyError
 
 import customer_resolver
 from customer_resolver import find_customer_for, org_country, resolve_customer
-from customer_identity import names_match, phone_key
+from customer_identity import names_match, normalize_name, phone_key
 from tests.live_activity_fakes import FakeDB
 from tests.test_live_activity_wiring import _block
 
@@ -22,7 +22,7 @@ def _load_delta():
         "datetime": datetime, "timezone": timezone, "uuid": uuid, "logging": logging,
         "Optional": Optional, "find_customer_for": customer_resolver.find_customer_for,
         "org_country": customer_resolver.org_country, "phone_key": phone_key,
-        "names_match": names_match,
+        "names_match": names_match, "normalize_name": normalize_name,
         "DuplicateKeyError": DuplicateKeyError,
     }
     exec(_block(r"^def _appointment_datetime_iso", r"\n(?=(?:async def|def|class|@)\b)"), ns)
@@ -239,6 +239,38 @@ async def test_delta_still_updates_name_spelling_on_matching_record():
     db = _db(_cust("905551112233", "ayse", phone_key="905551112233"))
     await apply_delta(db, ORG, "05551112233", "Ayşe Hanım".replace(" Hanım", ""), delta_total=1)
     assert db.customers.docs[0]["name"] == "Ayşe"
+
+
+async def test_delta_never_shortens_stored_name():
+    """R8: "Ayşe" matches "Ayşe Yılmaz" but must not shorten it; counters still apply."""
+    db = _db(_cust("905551112233", "Ayşe Yılmaz", phone_key="905551112233"))
+    await apply_delta(db, ORG, "05551112233", "Ayşe", delta_total=1)
+    assert db.customers.docs[0]["name"] == "Ayşe Yılmaz"
+    assert db.customers.docs[0]["total_appointments"] == 1
+
+
+async def test_delta_equal_length_name_fix_applies():
+    """R8 guard: same token count (a spelling or case fix) still updates the name."""
+    db = _db(_cust("905551112233", "ayşe yılmaz", phone_key="905551112233"))
+    await apply_delta(db, ORG, "05551112233", "Ayşe Yılmaz", delta_total=1)
+    assert db.customers.docs[0]["name"] == "Ayşe Yılmaz"
+
+
+async def test_negative_only_delta_without_customer_is_noop():
+    """R9: a decrement for a number nobody has never creates a zero-count record."""
+    db = _db()
+    await apply_delta(db, ORG, "05551112233", "Ayşe", delta_total=-1, delta_completed=-1)
+    assert db.customers.docs == []
+
+
+def test_phone_for_appointment_uses_stored_phone_for_same_recipient():
+    assert customer_resolver.phone_for_appointment("905551112233", "0555 111 22 33") == "905551112233"
+
+
+def test_phone_for_appointment_keeps_typed_when_recipient_differs():
+    """R7: UK local "07…" formats to an invalid WhatsApp recipient, so the typed "+44…" stays."""
+    assert customer_resolver.phone_for_appointment("07700900123", "+447700900123") == "+447700900123"
+    assert customer_resolver.phone_for_appointment(None, "05551112233") == "05551112233"
 
 
 async def test_public_unkeyed_phone_other_name_gets_plain_new_record():

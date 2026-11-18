@@ -77,6 +77,7 @@ async def test_appointment_with_variant_phone_stored_as_customer_phone(integrati
     assert db.appointments.docs[0]["phone"] == STORED
     assert len(_customers(db, org_id)) == 1  # no duplicate for the variant
     assert _c1(db)["total_appointments"] == 3
+    assert _c1(db)["name"] == "Ayşe Yılmaz"  # R8: a shorter matching name never shortens it
 
 
 @pytest.mark.asyncio
@@ -248,6 +249,7 @@ async def test_verify_code_matching_name_uses_customer_phone(code_client, org_id
     assert resp.status_code == 200, resp.text
     assert len(_customers(db, org_id)) == 1
     assert _c1(db)["total_appointments"] == 3
+    assert _c1(db)["name"] == "Ayşe Yılmaz"  # R8
     assert db.appointments.docs[0]["phone"] == STORED
 
 
@@ -346,3 +348,125 @@ async def test_ai_tool_customer_uses_resolver(integration_db, org_id):
     [new] = [d for d in _customers(db, org_id) if d["id"] != "c1"]
     assert new["phone_key"] == "905442223344"
     assert new["phone"] == "0544 222 33 44"
+
+
+# ── R7: stored phone only when it reaches the same WhatsApp recipient ─────
+
+UK_STORED = "07700900123"  # local UK form: format_phone_number gives an invalid recipient
+UK_TYPED = "+447700900123"
+
+
+def _uk(db, org_id):
+    db.settings.docs[0]["base_currency"] = "GBP"
+    db.customers.docs.append({"id": "u1", "organization_id": org_id, "name": "John Smith", "phone": UK_STORED,
+                              "phone_key": "447700900123", "total_appointments": 0, "completed_appointments": 0})
+    return lambda: next(d for d in db.customers.docs if d["id"] == "u1")
+
+
+@pytest.mark.asyncio
+async def test_uk_local_stored_customer_keeps_typed_international_phone(integration_client, org_id):
+    client, _r, db = integration_client
+    u1 = _uk(db, org_id)
+    resp = await client.post("/api/appointments", json={
+        "customer_name": "John Smith", "phone": UK_TYPED, "service_id": "svc1",
+        "staff_member_id": "admin_integration", "appointment_date": FUTURE, "appointment_time": "10:00",
+    })
+    assert resp.status_code == 200, resp.text
+    assert db.appointments.docs[0]["phone"] == UK_TYPED
+    assert u1()["total_appointments"] == 1  # counters still reach the stored customer by key
+    assert len(_customers(db, org_id)) == 2  # c1 + u1, no duplicate
+
+
+@pytest.mark.asyncio
+async def test_bulk_session_uk_keeps_typed_phone_for_session_package(integration_client, org_id):
+    client, _r, db = integration_client
+    u1 = _uk(db, org_id)
+    resp = await client.post("/api/appointments/bulk-session", json={
+        "customer_name": "John Smith", "phone": UK_TYPED, "service_id": "svc1", "staff_member_id": None,
+        "notes": "", "session_group_id": "grpuk", "starting_session_number": 1, "session_total": 1,
+        "sessions": [{"date": FUTURE, "time": "10:00"}],
+    })
+    assert resp.status_code == 201, resp.text
+    assert db.appointments.docs[0]["phone"] == UK_TYPED  # SESSION_PACKAGE reads this phone
+    assert u1()["total_appointments"] == 1
+
+
+@pytest.mark.asyncio
+async def test_public_booking_uk_keeps_typed_phone(integration_client, org_id):
+    client, _r, db = integration_client
+    u1 = _uk(db, org_id)
+    resp = await client.post(f"/api/public/appointments?organization_id={org_id}",
+                             json=_public_body("John Smith", UK_TYPED))
+    assert resp.status_code == 200, resp.text
+    assert db.appointments.docs[0]["phone"] == UK_TYPED
+    assert u1()["total_appointments"] == 1
+    assert len(_customers(db, org_id)) == 2
+
+
+def _apt(org_id, phone, **kw):
+    doc = {"id": "apt1", "organization_id": org_id, "customer_name": "Ayşe Yılmaz", "phone": phone,
+           "service_id": "svc1", "service_name": "Saç", "service_price": 100, "appointment_date": FUTURE,
+           "appointment_time": "09:00", "status": "Bekliyor", "staff_member_id": "admin_integration",
+           "created_at": "2026-11-18T08:00:00+00:00"}
+    doc.update(kw)
+    return doc
+
+
+@pytest.mark.asyncio
+async def test_phone_change_uk_keeps_typed_phone(integration_client, org_id):
+    client, _r, db = integration_client
+    u1 = _uk(db, org_id)
+    db.appointments.docs.append(_apt(org_id, STORED, customer_name="John Smith"))
+    resp = await client.put("/api/appointments/apt1", json={"phone": UK_TYPED})
+    assert resp.status_code == 200, resp.text
+    assert db.appointments.docs[0]["phone"] == UK_TYPED
+    assert u1()["total_appointments"] == 1
+
+
+# ── R9: decrements never create phantom records ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_phone_change_from_unknown_phone_creates_no_phantom(integration_client, org_id):
+    client, _r, db = integration_client
+    db.appointments.docs.append(_apt(org_id, "05329998877"))  # nobody saved under this number
+    resp = await client.put("/api/appointments/apt1", json={"phone": TYPED})
+    assert resp.status_code == 200, resp.text
+    assert [d["id"] for d in _customers(db, org_id)] == ["c1"]
+    assert _c1(db)["total_appointments"] == 3
+
+
+# ── R10: AI tool appointment follows decision 1 / R7 ──────────────────────
+
+
+@pytest.fixture
+def ai_db(integration_db, org_id, monkeypatch):
+    import server
+
+    import ai_service
+
+    monkeypatch.setattr(server, "send_sms", lambda *a, **k: None)
+    monkeypatch.setattr(ai_service, "sio", None)  # no socket.io publish in tests
+    integration_db.users.docs.append({"username": "staff1", "organization_id": org_id, "full_name": "Staff"})
+    return integration_db
+
+
+@pytest.mark.asyncio
+async def test_ai_appointment_uses_customer_phone(ai_db, org_id):
+    import ai_service
+
+    out = await ai_service.create_appointment_tool(ai_db, org_id, "Ayşe", "05551112233", service_id="svc1",
+                                                   apt_date=FUTURE, apt_time="10:00", staff_id="staff1")
+    assert out["success"] is True, out
+    assert ai_db.appointments.docs[0]["phone"] == STORED
+
+
+@pytest.mark.asyncio
+async def test_ai_appointment_uk_keeps_typed_phone(ai_db, org_id):
+    import ai_service
+
+    _uk(ai_db, org_id)
+    out = await ai_service.create_appointment_tool(ai_db, org_id, "John Smith", UK_TYPED, service_id="svc1",
+                                                   apt_date=FUTURE, apt_time="10:00", staff_id="staff1")
+    assert out["success"] is True, out
+    assert ai_db.appointments.docs[0]["phone"] == UK_TYPED

@@ -13,7 +13,7 @@ import uuid
 from dotenv import load_dotenv
 from difflib import SequenceMatcher
 
-from customer_resolver import resolve_customer
+from customer_resolver import find_customer_for, phone_for_appointment, resolve_customer
 from google.api_core import exceptions as google_exceptions
 import asyncio
 
@@ -395,9 +395,18 @@ async def create_appointment_tool(db, org_id: str, customer_name: str, phone: st
                 service_id = service.get('id')
             except Exception:
                 service_id = None
+        # Faz 7 (karar 1 / R7): kayıtlı müşteriyle eşleşirse, aynı WhatsApp alıcısına gidiyorsa
+        # randevu müşterinin saklı telefonuyla kaydedilir; aksi halde yazılan telefon kalır.
+        apt_phone = phone
+        try:
+            match = await find_customer_for(db, org_id, phone, customer_name)
+            if match:
+                apt_phone = phone_for_appointment(match.get("phone"), phone)
+        except Exception as e:
+            logger.warning(f"create_appointment_tool customer match skipped: {e}")
         apt = {
             "id": str(uuid.uuid4()), "organization_id": org_id,
-            "customer_name": customer_name, "phone": phone, "address": "",
+            "customer_name": customer_name, "phone": apt_phone, "address": "",
             "service_id": service_id, "service_name": service['name'],
             "service_price": service['price'], "duration": service['duration'],
             "appointment_date": apt_date, "appointment_time": apt_time,
