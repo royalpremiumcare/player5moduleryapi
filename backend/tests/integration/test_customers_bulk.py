@@ -20,10 +20,13 @@ class _PhoneColl:
 
     async def distinct(self, field: str, query: dict):
         self.distinct_queries.append(query)
-        wanted = set(query["phone"]["$in"])
+        cond = next(v for k, v in query.items() if k != "organization_id")  # {"field": {"$in": [...]}}
+        wanted = set(cond["$in"])
+        match_field = next(k for k in query if k != "organization_id")
         return sorted({
             d[field] for d in self.docs
-            if d.get("organization_id") == query["organization_id"] and d.get(field) in wanted
+            if d.get("organization_id") == query["organization_id"] and d.get(match_field) in wanted
+            and field in d
         })
 
     async def insert_many(self, docs: List[dict], ordered: bool = True):

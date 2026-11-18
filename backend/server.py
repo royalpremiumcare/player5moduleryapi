@@ -4,8 +4,8 @@ from funnel_registry import is_frontend_owned, is_valid_event
 from funnel_service import ensure_funnel_indexes, record_funnel_event, track_webhook_event
 from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from name_sync import propagate_service_rename, sync_customer_to_appointments
-from customer_identity import names_match, phone_key
-from customer_resolver import find_customer_for, org_country
+from customer_identity import names_match, phone_key, phone_variants as key_phone_variants
+from customer_resolver import find_customer_for, org_country, resolve_customer
 from pymongo.errors import DuplicateKeyError
 from meta_capi_service import get_meta_capi_service, split_full_name
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
@@ -12748,6 +12748,8 @@ async def get_customers(
 class CustomerCreate(BaseModel):
     name: str = Field(..., min_length=1, description="Müşteri adı")
     phone: str = Field(..., min_length=10, description="Telefon numarası")
+    # Yalnızca istek bayrağı ("Farklı kişi" onayı); müşteri kaydına yazılmaz.
+    allow_shared_phone: bool = False
 
 
 CUSTOMER_BULK_MAX = 500
@@ -12796,35 +12798,28 @@ async def create_customer(request: Request, customer_data: CustomerCreate, curre
     phone_variants = _customer_phone_variants(clean_phone)
 
     # Aynı telefon numarasına sahip müşteri var mı kontrol et (randevulardan ve customers collection'ından)
-    existing_appointment = await db.appointments.find_one(
-        {"organization_id": current_user.organization_id, "phone": {"$in": phone_variants}},
-        {"_id": 0, "id": 1}
-    )
-    
-    if existing_appointment:
-        raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip bir müşteri zaten var")
-    
-    # customers collection'ında da kontrol et
-    existing_customer = await db.customers.find_one(
-        {"organization_id": current_user.organization_id, "phone": {"$in": phone_variants}},
-        {"_id": 0, "id": 1}
-    )
-    
-    if existing_customer:
-        raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip bir müşteri zaten var")
-    
+    if not customer_data.allow_shared_phone:
+        existing_appointment = await db.appointments.find_one(
+            {"organization_id": current_user.organization_id, "phone": {"$in": phone_variants}},
+            {"_id": 0, "id": 1}
+        )
+
+        if existing_appointment:
+            raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip bir müşteri zaten var")
+
+        # customers collection'ında kanonik numara anahtarı (ve her yazım) ile kontrol et
+        existing_customer = await find_customer_for(db, current_user.organization_id, clean_phone, name)
+
+        if existing_customer:
+            raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip bir müşteri zaten var")
+
     # Müşteriyi customers collection'ına kaydet (eğer collection yoksa otomatik oluşturulur)
-    customer_doc = {
-        "id": str(uuid.uuid4()),
-        "organization_id": current_user.organization_id,
-        "name": name,
-        "phone": clean_phone,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "notes": ""
-    }
-    
-    # customers collection'ına kaydet
-    await db.customers.insert_one(customer_doc)
+    customer_doc, created = await resolve_customer(
+        db, current_user.organization_id, clean_phone, name,
+        mode="admin", allow_shared=customer_data.allow_shared_phone,
+    )
+    if not created:  # eşzamanlı istek aynı numarayı az önce ekledi
+        raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip bir müşteri zaten var")
     
     # Audit log
     await create_audit_log(
@@ -12876,6 +12871,8 @@ async def create_customers_bulk(request: Request, body: CustomerBulkCreate, curr
     invalid = 0
     batch_duplicates = 0
     seen_variants: set = set()
+    seen_keys: set = set()
+    country = await org_country(db, org_id)
     candidates = []
     for item in body.contacts:
         name = (item.name or "").strip()
@@ -12883,34 +12880,45 @@ async def create_customers_bulk(request: Request, body: CustomerBulkCreate, curr
         if not name or len(clean_phone) < 10:
             invalid += 1
             continue
-        variants = _customer_phone_variants(clean_phone)
-        if any(v in seen_variants for v in variants):
+        key = phone_key(clean_phone, country)
+        variants = list(dict.fromkeys(
+            _customer_phone_variants(clean_phone) + (key_phone_variants(key) if key else [])))
+        if (key and key in seen_keys) or any(v in seen_variants for v in variants):
             batch_duplicates += 1
             continue
         seen_variants.update(variants)
-        candidates.append((name, clean_phone, variants))
+        if key:
+            seen_keys.add(key)
+        candidates.append((name, clean_phone, variants, key))
 
     existing_phones: set = set()
     if seen_variants:
         phone_query = {"organization_id": org_id, "phone": {"$in": list(seen_variants)}}
         existing_phones.update(await db.appointments.distinct("phone", phone_query))
         existing_phones.update(await db.customers.distinct("phone", phone_query))
+    existing_keys: set = set()
+    if seen_keys:
+        existing_keys.update(await db.customers.distinct(
+            "phone_key", {"organization_id": org_id, "phone_key": {"$in": list(seen_keys)}}))
 
     now_iso = datetime.now(timezone.utc).isoformat()
     new_docs = []
     existing_duplicates = 0
-    for name, clean_phone, variants in candidates:
-        if any(v in existing_phones for v in variants):
+    for name, clean_phone, variants, key in candidates:
+        if (key and key in existing_keys) or any(v in existing_phones for v in variants):
             existing_duplicates += 1
             continue
-        new_docs.append({
+        doc = {
             "id": str(uuid.uuid4()),
             "organization_id": org_id,
             "name": name,
             "phone": clean_phone,
             "created_at": now_iso,
             "notes": "",
-        })
+        }
+        if key:
+            doc["phone_key"] = key
+        new_docs.append(doc)
 
     if new_docs:
         await db.customers.insert_many([dict(d) for d in new_docs], ordered=False)
@@ -12960,24 +12968,41 @@ async def update_customer(request: Request, phone: str, update_data: CustomerUpd
         raise HTTPException(status_code=404, detail="Müşteri bulunamadı")
     
     updates = {}
+    db_extra: dict = {}
     if update_data.name and update_data.name.strip():
         updates["name"] = update_data.name.strip()
-    
+
     new_phone = None
     if update_data.phone and update_data.phone.strip():
         new_phone = re.sub(r'\D', '', update_data.phone.strip())
         if len(new_phone) < 10:
             raise HTTPException(status_code=400, detail="Geçerli bir telefon numarası girin")
         if new_phone != phone:
-            existing = await db.customers.find_one({"phone": new_phone, "organization_id": current_user.organization_id})
+            new_key = phone_key(new_phone, await org_country(db, current_user.organization_id))
+            clash = [{"phone": new_phone}]
+            if new_key:
+                clash = [{"phone_key": new_key},
+                         {"phone": {"$in": list(dict.fromkeys([new_phone, *key_phone_variants(new_key)]))}}]
+            existing = await db.customers.find_one({
+                "organization_id": current_user.organization_id,
+                "id": {"$ne": customer.get("id")},
+                "$or": clash,
+            })
             if existing:
                 raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip başka bir müşteri zaten var")
             updates["phone"] = new_phone
+            if new_key and not customer.get("shared_phone"):
+                db_extra["set"] = {"phone_key": new_key}
+            elif customer.get("phone_key"):
+                db_extra["unset"] = {"phone_key": ""}
     
     if not updates:
         raise HTTPException(status_code=400, detail="Güncellenecek bir bilgi yok")
     
-    await db.customers.update_one({"phone": phone, "organization_id": current_user.organization_id}, {"$set": updates})
+    db_update = {"$set": {**updates, **db_extra.get("set", {})}}
+    if "unset" in db_extra:
+        db_update["$unset"] = db_extra["unset"]
+    await db.customers.update_one({"phone": phone, "organization_id": current_user.organization_id}, db_update)
     
     # Telefon/isim değiştiyse randevulara da yansıt; randevu değiştiyse açık panolar
     # ve Live Activity kartları hemen yenilensin diye org'a randevu olayı yayınlanır.
