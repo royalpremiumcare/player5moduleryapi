@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import SamePersonPrompt, { findExistingCustomer } from './SamePersonPrompt';
+import SamePersonPrompt, { findExistingCustomer, pickSameNumber, isDuplicatePhoneError } from './SamePersonPrompt';
 import api from '../api/api';
 import tr from '../i18n/locales/tr/translation.json';
 import en from '../i18n/locales/en/translation.json';
@@ -80,11 +80,54 @@ test('different person failure keeps the prompt open and does not call onDone', 
   expect(dialog()).not.toBeNull();
 });
 
-test('findExistingCustomer searches by digits and returns the first match', async () => {
-  api.get.mockResolvedValue({ data: { items: [{ id: 'c1', name: 'Ayşe Yılmaz', phone: '905321112233' }], has_more: false } });
+test('findExistingCustomer searches by digits and returns the exact same-number match', async () => {
+  api.get.mockResolvedValue({ data: { items: [
+    { id: 'c0', name: 'Başkası', phone: '905329991122' },
+    { id: 'c1', name: 'Ayşe Yılmaz', phone: '905321112233' },
+  ], has_more: false } });
   const found = await findExistingCustomer('0532 111 22 33');
   expect(api.get).toHaveBeenCalledWith('/customers', { params: { search: '05321112233', limit: 5 } });
   expect(found.id).toBe('c1');
+});
+
+test('findExistingCustomer returns null when nothing is the same number', async () => {
+  api.get.mockResolvedValue({ data: { items: [{ id: 'c0', name: 'Başkası', phone: '905329991122' }] } });
+  expect(await findExistingCustomer('0532 111 22 33')).toBeNull();
+});
+
+describe('pickSameNumber', () => {
+  const items = [
+    { id: 'a', phone: '905321112200' },
+    { id: 'b', phone: '905321112233' },
+    { id: 'c', phone: '905001112233' },
+  ];
+  test('picks the exact match among several substring hits', () => {
+    expect(pickSameNumber(items, '5321112233').id).toBe('b');
+  });
+  test('matches the same number in 905..., 05... and 5... formats', () => {
+    for (const typed of ['+90 532 111 22 33', '0532 111 22 33', '532-111-22-33']) {
+      expect(pickSameNumber([{ id: 'x', phone: '5321112233' }], typed).id).toBe('x');
+    }
+    expect(pickSameNumber([{ id: 'y', phone: '05321112233' }], '905321112233').id).toBe('y');
+  });
+  test('returns null when no item matches', () => {
+    expect(pickSameNumber(items, '5329990000')).toBeNull();
+    expect(pickSameNumber([], '5321112233')).toBeNull();
+  });
+});
+
+describe('isDuplicatePhoneError', () => {
+  const err = (status, detail) => ({ response: { status, data: { detail } } });
+  test('matches 400 with the exact duplicate detail', () => {
+    expect(isDuplicatePhoneError(err(400, 'Bu telefon numarasına sahip bir müşteri zaten var'))).toBe(true);
+  });
+  test('rejects another 400 detail', () => {
+    expect(isDuplicatePhoneError(err(400, 'Geçersiz telefon'))).toBe(false);
+  });
+  test('rejects a 500 and a missing response', () => {
+    expect(isDuplicatePhoneError(err(500, 'Bu telefon numarasına sahip bir müşteri zaten var'))).toBe(false);
+    expect(isDuplicatePhoneError(new Error('network'))).toBe(false);
+  });
 });
 
 test('TR and EN copy match the approved text', () => {

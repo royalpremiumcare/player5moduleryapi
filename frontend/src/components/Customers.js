@@ -6,7 +6,7 @@ import api from "../api/api";
 import { formatApiError } from "@/lib/apiError";
 import { useAuth } from "../context/AuthContext";
 import useDebounce from "../hooks/useDebounce";
-import SamePersonPrompt, { findExistingCustomer } from "./SamePersonPrompt";
+import SamePersonPrompt, { findExistingCustomer, isDuplicatePhoneError } from "./SamePersonPrompt";
 import MergeSuggestion from "./MergeSuggestion";
 
 // --- HİBRİT YAPI İÇİN GEREKLİ IMPORTLAR ---
@@ -54,9 +54,6 @@ import {
 import { format } from "date-fns";
 import { tr, enGB } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
-
-// Backend'in tekrar eden numara için döndürdüğü sabit mesaj.
-const DUPLICATE_PHONE_DETAIL = "Bu telefon numarasına sahip bir müşteri zaten var";
 
 const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
   const { userRole, token } = useAuth();
@@ -380,7 +377,7 @@ const Customers = ({ onNavigate, onNewAppointment, onRefresh }) => {
       // Arka planda tam listeyi de yenile
       loadCustomers();
     } catch (error) {
-      if (error.response?.status === 400 && error.response?.data?.detail === DUPLICATE_PHONE_DETAIL) {
+      if (isDuplicatePhoneError(error)) {
         // Numara kayıtlı: mevcut kişinin adını bulup "aynı kişi mi?" diye sor.
         try {
           const existing = await findExistingCustomer(newCustomerData.phone);

@@ -13,12 +13,28 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 
+// Backend'in tekrar eden numara için döndürdüğü sabit mesaj (400).
+export const DUPLICATE_PHONE_DETAIL = "Bu telefon numarasına sahip bir müşteri zaten var";
+
+export const isDuplicatePhoneError = (error) =>
+  error?.response?.status === 400 && error?.response?.data?.detail === DUPLICATE_PHONE_DETAIL;
+
+// 905..., 05... ve 5... biçimleri aynı numara sayılsın diye son 10 hane karşılaştırılır.
+const last10 = (phone) => String(phone || "").replace(/\D/g, "").slice(-10);
+
+// Arama alt-dizge eşleşmesi yaptığı için sonuçlar arasından yalnızca aynı numarayı seç.
+export function pickSameNumber(items, phone) {
+  const wanted = last10(phone);
+  if (wanted.length < 10) return null;
+  return (items || []).find((c) => last10(c.phone) === wanted) || null;
+}
+
 // Mevcut kaydı bulmak için API sözleşmesini değiştirmeden numarayla arar.
 export async function findExistingCustomer(phone) {
   const digits = String(phone || "").replace(/\D/g, "");
   const res = await api.get("/customers", { params: { search: digits, limit: 5 } });
   const items = Array.isArray(res.data?.items) ? res.data.items : [];
-  return items[0] || null;
+  return pickSameNumber(items, phone);
 }
 
 // Yeni müşteri eklenirken numara zaten kayıtlıysa "aynı kişi mi?" sorusu.
