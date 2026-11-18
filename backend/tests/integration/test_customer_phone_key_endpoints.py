@@ -132,14 +132,17 @@ async def test_create_landline_without_zero_matches_stored_zero_form(integration
 
 
 @pytest.mark.asyncio
-async def test_create_unkeyed_number_matches_stored_variant(integration_client, cust, org_id, monkeypatch):
-    import server
-    monkeypatch.setattr(server, "phone_key", lambda *a, **k: None)
+async def test_create_unkeyed_number_matches_stored_variant(integration_client, cust, org_id):
+    """The variant safety net: a typed number with no key ("712…" is neither a TR mobile nor
+    a landline) still finds the same number stored with a leading zero."""
+    from customer_identity import phone_key
+    assert phone_key("7121234567", "TR") is None  # really unkeyed, the resolver can't link it
     client, _r, _d = integration_client
-    cust.docs.append({"id": "c9", "organization_id": org_id, "name": "Hat", "phone": "02121234567"})
-    resp = await client.post("/api/customers", json={"name": "Hat", "phone": "2121234567"})
+    cust.docs.append({"id": "c9", "organization_id": org_id, "name": "Hat", "phone": "07121234567"})
+    resp = await client.post("/api/customers", json={"name": "Hat", "phone": "7121234567"})
     assert resp.status_code == 400
     assert resp.json()["detail"] == DUP_DETAIL
+    assert len([d for d in cust.docs if d.get("name") == "Hat"]) == 1
 
 
 @pytest.mark.asyncio
@@ -175,6 +178,36 @@ async def test_bulk_write_error_counts_failed_rows_as_duplicates(integration_cli
     assert resp.status_code == 200
     assert resp.json() == {"created": 1, "duplicates": 1, "invalid": 0}
     assert emitted == [{"bulk": True, "count": 1}]
+
+
+@pytest.mark.parametrize("write_errors", [
+    [{"index": 1, "code": 121, "errmsg": "Document failed validation"}],
+    [{"index": 1, "code": 11000}, {"index": 2, "code": 121}],
+])
+@pytest.mark.asyncio
+async def test_bulk_write_error_other_than_duplicate_is_raised(integration_client, cust, monkeypatch,
+                                                               write_errors):
+    """Only E11000 rows are duplicates; any other write error must surface, not be counted."""
+    from pymongo.errors import BulkWriteError
+    client, _r, _d = integration_client
+    emitted = []
+
+    async def fake_emit(org, ev, payload):
+        emitted.append(payload)
+
+    import server
+    monkeypatch.setattr(server, "emit_to_organization", fake_emit)
+
+    async def boom(docs, ordered=True):
+        cust.docs.append(dict(docs[0]))
+        raise BulkWriteError({"nInserted": 1, "writeErrors": write_errors})
+
+    cust.insert_many = boom
+    with pytest.raises(BulkWriteError):
+        await client.post("/api/customers/bulk", json={"contacts": [
+            {"name": "A", "phone": "905441112233"}, {"name": "B", "phone": "905331112233"},
+            {"name": "C", "phone": "905321112233"}]})
+    assert emitted == []
 
 
 @pytest.mark.asyncio
@@ -255,3 +288,30 @@ async def test_response_shapes_unchanged(integration_client, cust):
     p = await client.put("/api/customers/905551112233", json={"phone": "05367778899"})
     assert set(p.json()) == {"message", "updates"}
     assert set(p.json()["updates"]) == {"phone"}
+
+
+PUT_DUP_DETAIL = "Bu telefon numarasına sahip başka bir müşteri zaten var"
+
+
+@pytest.mark.asyncio
+async def test_put_phone_change_losing_a_key_race_is_400(integration_client, cust, monkeypatch):
+    """The pre-check passed but a concurrent write took the key: the index answers with E11000."""
+    from pymongo.errors import DuplicateKeyError
+    import server
+    synced = []
+
+    async def fake_sync(*a, **k):
+        synced.append(a)
+
+    monkeypatch.setattr(server, "sync_customer_to_appointments", fake_sync)
+
+    async def raced(query, update):
+        raise DuplicateKeyError("E11000 duplicate key customers_org_phone_key_unique")
+
+    cust.update_one = raced
+    client, _r, _d = integration_client
+    resp = await client.put("/api/customers/905551112233", json={"phone": "05367778899"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == PUT_DUP_DETAIL
+    assert synced == []
+    assert cust.docs[0]["phone"] == "905551112233"

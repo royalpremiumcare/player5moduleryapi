@@ -348,3 +348,18 @@ async def test_public_unkeyed_phone_other_name_gets_plain_new_record():
     assert created is True
     assert "phone_key" not in doc and "shared_phone" not in doc and "merge_suggestion_for" not in doc
     assert len(db.customers.docs) == 2
+
+
+async def test_delta_on_a_customer_without_id_updates_it_by_phone():
+    """Legacy records can lack ``id``: the delta must update them by stored phone, not crash."""
+    legacy = _cust("905551112233", "Ayşe Yılmaz", phone_key="905551112233", total_appointments=2)
+    legacy.pop("id")
+    other_org = _cust("905551112233", "Ayşe Yılmaz", organization_id="org-2")
+    other_org.pop("id")
+    db = _db(legacy, other_org)
+    await apply_delta(db, ORG, "0555 111 22 33", "Ayşe Yılmaz", delta_total=1)
+    assert len(db.customers.docs) == 2
+    assert db.customers.docs[0]["total_appointments"] == 3
+    assert db.customers.docs[1]["total_appointments"] == 0
+    await apply_delta(db, ORG, "05551112233", "Ayşe Yılmaz", delta_total=-5)
+    assert db.customers.docs[0]["total_appointments"] == 0  # clamp uses the same filter

@@ -5065,9 +5065,15 @@ async def _apply_customer_delta(
         return
 
     try:
+        def _match_query(doc: dict) -> dict:
+            # Legacy records can lack ``id``: fall back to their stored phone string.
+            if doc.get("id"):
+                return {"organization_id": organization_id, "id": doc["id"]}
+            return {"organization_id": organization_id, "phone": doc.get("phone")}
+
         existing = await find_customer_for(db, organization_id, phone, name)
         if existing:
-            query = {"organization_id": organization_id, "id": existing["id"]}
+            query = _match_query(existing)
         elif delta_total <= 0 and delta_completed <= 0 and (delta_total < 0 or delta_completed < 0):
             return  # R9: a decrement for a number nobody has never creates a zero-count record
         else:
@@ -5128,7 +5134,7 @@ async def _apply_customer_delta(
             winner = await find_customer_for(db, organization_id, phone, name)
             if not winner:
                 raise
-            query = {"organization_id": organization_id, "id": winner["id"]}
+            query = _match_query(winner)
             update_doc.pop("$setOnInsert", None)
             await db.customers.update_one(query, update_doc)
 
@@ -12936,9 +12942,13 @@ async def create_customers_bulk(request: Request, body: CustomerBulkCreate, curr
             await db.customers.insert_many([dict(d) for d in new_docs], ordered=False)
         except BulkWriteError as e:
             # Eşzamanlı istek aynı numarayı eklediyse (benzersiz indeks): kayıp satırlar tekrar sayılır.
-            failed = {err.get("index") for err in (e.details or {}).get("writeErrors", [])}
-            if not failed:
+            # Yalnız E11000 tekrar sayılır; başka her yazma hatası yukarı fırlatılır.
+            details = e.details or {}
+            write_errors = details.get("writeErrors", [])
+            if (not write_errors or details.get("writeConcernErrors")
+                    or any(err.get("code") != 11000 for err in write_errors)):
                 raise
+            failed = {err.get("index") for err in write_errors}
             existing_duplicates += len(failed)
             new_docs = [d for i, d in enumerate(new_docs) if i not in failed]
 
@@ -13150,8 +13160,12 @@ async def update_customer(request: Request, phone: str, update_data: CustomerUpd
     db_update = {"$set": {**updates, **db_extra.get("set", {})}}
     if "unset" in db_extra:
         db_update["$unset"] = db_extra["unset"]
-    await db.customers.update_one({"phone": phone, "organization_id": current_user.organization_id}, db_update)
-    
+    try:
+        await db.customers.update_one({"phone": phone, "organization_id": current_user.organization_id}, db_update)
+    except DuplicateKeyError:
+        # Ön kontrolden sonra eşzamanlı bir kayıt aynı numara anahtarını aldı (benzersiz index).
+        raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip başka bir müşteri zaten var")
+
     # Telefon/isim değiştiyse randevulara da yansıt; randevu değiştiyse açık panolar
     # ve Live Activity kartları hemen yenilensin diye org'a randevu olayı yayınlanır.
     await sync_customer_to_appointments(
