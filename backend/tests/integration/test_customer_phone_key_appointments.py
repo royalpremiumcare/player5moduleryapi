@@ -129,6 +129,40 @@ async def test_bulk_session_variant_phone_stored_as_customer_phone(integration_c
 
 
 @pytest.mark.asyncio
+async def test_appointment_other_name_on_known_number_creates_shared_suggestion(integration_client, org_id):
+    """R15: an admin appointment for Ayşe's number under another name never lands on Ayşe."""
+    client, _r, db = integration_client
+    resp = await client.post("/api/appointments", json={
+        "customer_name": "Kadir Burak", "phone": TYPED, "service_id": "svc1",
+        "staff_member_id": "admin_integration", "appointment_date": FUTURE, "appointment_time": "13:00",
+    })
+    assert resp.status_code == 200, resp.text
+    (new,) = [d for d in _customers(db, org_id) if d["id"] != "c1"]
+    assert new["name"] == "Kadir Burak" and new["shared_phone"] is True
+    assert new["merge_suggestion_for"] == "c1" and "phone_key" not in new
+    assert new["total_appointments"] == 1
+    assert _c1(db)["total_appointments"] == 2 and _c1(db)["name"] == "Ayşe Yılmaz"
+    assert db.appointments.docs[0]["phone"] == TYPED
+
+
+@pytest.mark.asyncio
+async def test_bulk_session_other_name_on_known_number_creates_shared_suggestion(integration_client, org_id):
+    client, _r, db = integration_client
+    resp = await client.post("/api/appointments/bulk-session", json={
+        "customer_name": "Kadir Burak", "phone": "05551112233", "service_id": "svc1",
+        "staff_member_id": None, "notes": "", "session_group_id": "grp2",
+        "starting_session_number": 1, "session_total": 2,
+        "sessions": [{"date": FUTURE, "time": "14:00"}, {"date": "2099-03-17", "time": "14:00"}],
+    })
+    assert resp.status_code == 201, resp.text
+    (new,) = [d for d in _customers(db, org_id) if d["id"] != "c1"]
+    assert new["shared_phone"] is True and new["merge_suggestion_for"] == "c1"
+    assert new["total_appointments"] == 2
+    assert _c1(db)["total_appointments"] == 2
+    assert {a["phone"] for a in db.appointments.docs} == {"05551112233"}
+
+
+@pytest.mark.asyncio
 async def test_register_owner_seed_is_keyed(org_id):
     import server
 

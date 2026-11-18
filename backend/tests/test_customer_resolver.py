@@ -138,13 +138,82 @@ async def test_public_subset_not_used_when_number_has_several_customers():
     assert created is True and doc["shared_phone"] is True
 
 
-@pytest.mark.parametrize("mode", ["admin", "appointment"])
-async def test_admin_and_appointment_reuse_whatever_the_name(mode):
+async def test_admin_reuses_whatever_the_name():
     keyed = _cust("905551112233", "Makbule", phone_key="905551112233")
     db = _db(keyed)
-    doc, created = await resolve_customer(db, ORG, "05551112233", "Başka Biri", mode=mode)
+    doc, created = await resolve_customer(db, ORG, "05551112233", "Başka Biri", mode="admin")
     assert created is False and doc["id"] == keyed["id"]
     assert len(db.customers.docs) == 1
+
+
+async def test_appointment_name_mismatch_creates_shared_suggestion():
+    """R15: an admin appointment for a known number under another name asks, never merges."""
+    keyed = _cust("905551112233", "Makbule Yılmaz", phone_key="905551112233")
+    db = _db(keyed)
+    doc, created = await resolve_customer(db, ORG, "05551112233", "Kadir Burak", mode="appointment")
+    assert created is True
+    assert doc["shared_phone"] is True
+    assert doc["merge_suggestion_for"] == keyed["id"]
+    assert doc["phone"] == "05551112233" and doc["name"] == "Kadir Burak"
+    assert "phone_key" not in doc
+    assert len(db.customers.docs) == 2
+
+
+async def test_appointment_suggestion_points_at_the_keyed_record():
+    unkeyed_old = _cust("05551112233", "Zeynep", shared_phone=True)
+    keyed = _cust("905551112233", "Makbule", phone_key="905551112233")
+    db = _db(unkeyed_old, keyed)
+    doc, created = await resolve_customer(db, ORG, "05551112233", "Kadir", mode="appointment")
+    assert created is True and doc["merge_suggestion_for"] == keyed["id"]
+
+
+async def test_appointment_single_token_matches_when_only_customer():
+    keyed = _cust("905551112233", "Alara Kaya", phone_key="905551112233")
+    db = _db(keyed)
+    doc, created = await resolve_customer(db, ORG, "05551112233", "alara", mode="appointment")
+    assert created is False and doc["id"] == keyed["id"]
+    assert len(db.customers.docs) == 1
+
+
+async def test_appointment_subset_not_used_when_number_has_several_customers():
+    keyed = _cust("05551112233", "Alara Kaya", phone_key="905551112233")
+    other = _cust("05551112233", "Kadir Burak", shared_phone=True)
+    db = _db(keyed, other)
+    doc, created = await resolve_customer(db, ORG, "05551112233", "Alara", mode="appointment")
+    assert created is True and doc["shared_phone"] is True
+    assert doc["merge_suggestion_for"] == keyed["id"]
+
+
+async def test_appointment_exact_name_reuses_the_shared_record():
+    keyed = _cust("05551112233", "Makbule", phone_key="905551112233")
+    shared = _cust("05551112233", "Kadir Burak", shared_phone=True)
+    db = _db(keyed, shared)
+    doc, created = await resolve_customer(db, ORG, "905551112233", "Kadir Burak", mode="appointment")
+    assert created is False and doc["id"] == shared["id"]
+    assert len(db.customers.docs) == 2
+
+
+async def test_appointment_unkeyed_number_still_reuses_whatever_the_name():
+    """R15 covers keyed numbers only; an unkeyed number keeps the old appointment behaviour."""
+    old = _cust("12345", "Makbule")
+    db = _db(old)
+    doc, created = await resolve_customer(db, ORG, "12345", "Başka", mode="appointment")
+    assert created is False and doc["id"] == old["id"]
+    assert len(db.customers.docs) == 1
+
+
+async def test_appointment_shared_record_then_counters_follow_each_name():
+    """R15 + delta: after the shared record exists, _pick sends each name's counters home."""
+    keyed = _cust("905551112233", "Makbule Yılmaz", phone_key="905551112233")
+    db = _db(keyed)
+    shared, _ = await resolve_customer(db, ORG, "05551112233", "Kadir Burak", mode="appointment")
+    await apply_delta(db, ORG, "05551112233", "Kadir Burak", delta_total=1)
+    await apply_delta(db, ORG, "0555 111 22 33", "Makbule Yılmaz", delta_total=1)
+    by_id = {d["id"]: d for d in db.customers.docs}
+    assert by_id[shared["id"]]["total_appointments"] == 1
+    assert by_id[keyed["id"]]["total_appointments"] == 1
+    assert by_id[keyed["id"]]["name"] == "Makbule Yılmaz"
+    assert customer_resolver.phone_for_appointment(shared["phone"], "05551112233") == "05551112233"
 
 
 async def test_admin_allow_shared_creates_unkeyed():

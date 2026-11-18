@@ -95,7 +95,9 @@ async def resolve_customer(
         return doc, True
 
     if candidates:
-        if mode != "public":
+        # R15: an appointment for a keyed number under another name asks (shared record +
+        # suggestion) like public booking; admin, and appointments on unkeyed numbers, reuse.
+        if mode == "admin" or (mode == "appointment" and key is None):
             return _pick(candidates, name), False
         exact = [c for c in candidates if names_match(c.get("name"), name, allow_subset=False)]
         if exact:
