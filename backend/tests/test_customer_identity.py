@@ -24,6 +24,10 @@ from customer_identity import (
         ("12345", "TR", None),
         (None, "TR", None),
         ("055511122334455", "TR", None),
+        ("2121234567", "TR", "902121234567"),
+        ("02121234567", "TR", "902121234567"),
+        ("8501234567", "TR", "908501234567"),
+        ("1234567890", "TR", None),
     ],
 )
 def test_phone_key_rules(phone, country, expected):

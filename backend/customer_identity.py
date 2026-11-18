@@ -22,7 +22,7 @@ def phone_key(phone: Optional[str], default_country: Country = "TR") -> Optional
         if default_country == "UK" and len(digits) == 11 and digits[1] == "7":
             return "44" + digits[1:]
         return None
-    if default_country == "TR" and len(digits) == 10 and digits[0] == "5":
+    if default_country == "TR" and len(digits) == 10 and digits[0] in "23458":
         return "90" + digits
     if default_country == "UK" and len(digits) == 10 and digits[0] == "7":
         return "44" + digits

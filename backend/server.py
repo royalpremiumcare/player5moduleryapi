@@ -6,7 +6,7 @@ from aha_helpers import pick_aha_slot, send_aha_whatsapp_with_retry
 from name_sync import propagate_service_rename, sync_customer_to_appointments
 from customer_identity import names_match, phone_key, phone_variants as key_phone_variants
 from customer_resolver import find_customer_for, org_country, resolve_customer
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import BulkWriteError, DuplicateKeyError
 from meta_capi_service import get_meta_capi_service, split_full_name
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
@@ -12798,25 +12798,28 @@ async def create_customer(request: Request, customer_data: CustomerCreate, curre
     phone_variants = _customer_phone_variants(clean_phone)
 
     # Aynı telefon numarasına sahip müşteri var mı kontrol et (randevulardan ve customers collection'ından)
+    # customers collection'ında kanonik numara anahtarı (ve her yazım) ile kontrol et
+    existing_customer = await find_customer_for(db, current_user.organization_id, clean_phone, name)
+    if not existing_customer:  # anahtarsız numaralar için eski yazım birleşimi (emniyet ağı)
+        existing_customer = await db.customers.find_one(
+            {"organization_id": current_user.organization_id, "phone": {"$in": phone_variants}},
+            {"_id": 0, "id": 1}
+        )
+
     if not customer_data.allow_shared_phone:
         existing_appointment = await db.appointments.find_one(
             {"organization_id": current_user.organization_id, "phone": {"$in": phone_variants}},
             {"_id": 0, "id": 1}
         )
 
-        if existing_appointment:
-            raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip bir müşteri zaten var")
-
-        # customers collection'ında kanonik numara anahtarı (ve her yazım) ile kontrol et
-        existing_customer = await find_customer_for(db, current_user.organization_id, clean_phone, name)
-
-        if existing_customer:
+        if existing_appointment or existing_customer:
             raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip bir müşteri zaten var")
 
     # Müşteriyi customers collection'ına kaydet (eğer collection yoksa otomatik oluşturulur)
+    # Paylaşımlı kayıt yalnızca numaranın gerçekten bir sahibi varsa açılır.
     customer_doc, created = await resolve_customer(
         db, current_user.organization_id, clean_phone, name,
-        mode="admin", allow_shared=customer_data.allow_shared_phone,
+        mode="admin", allow_shared=bool(customer_data.allow_shared_phone and existing_customer),
     )
     if not created:  # eşzamanlı istek aynı numarayı az önce ekledi
         raise HTTPException(status_code=400, detail="Bu telefon numarasına sahip bir müşteri zaten var")
@@ -12921,7 +12924,15 @@ async def create_customers_bulk(request: Request, body: CustomerBulkCreate, curr
         new_docs.append(doc)
 
     if new_docs:
-        await db.customers.insert_many([dict(d) for d in new_docs], ordered=False)
+        try:
+            await db.customers.insert_many([dict(d) for d in new_docs], ordered=False)
+        except BulkWriteError as e:
+            # Eşzamanlı istek aynı numarayı eklediyse (benzersiz indeks): kayıp satırlar tekrar sayılır.
+            failed = {err.get("index") for err in (e.details or {}).get("writeErrors", [])}
+            if not failed:
+                raise
+            existing_duplicates += len(failed)
+            new_docs = [d for i, d in enumerate(new_docs) if i not in failed]
 
         if AUDIT_LOGS_ENABLED:
             try:
@@ -12983,9 +12994,11 @@ async def update_customer(request: Request, phone: str, update_data: CustomerUpd
             if new_key:
                 clash = [{"phone_key": new_key},
                          {"phone": {"$in": list(dict.fromkeys([new_phone, *key_phone_variants(new_key)]))}}]
+            self_exclusion = ({"id": {"$ne": customer["id"]}} if customer.get("id")
+                              else {"phone": {"$ne": phone}})
             existing = await db.customers.find_one({
                 "organization_id": current_user.organization_id,
-                "id": {"$ne": customer.get("id")},
+                **self_exclusion,
                 "$or": clash,
             })
             if existing:

@@ -123,6 +123,69 @@ async def test_allow_shared_phone_creates_second_record(integration_client, cust
 
 
 @pytest.mark.asyncio
+async def test_create_landline_without_zero_matches_stored_zero_form(integration_client, cust, org_id):
+    client, _r, _d = integration_client
+    cust.docs.append({"id": "c9", "organization_id": org_id, "name": "Hat", "phone": "02121234567"})
+    resp = await client.post("/api/customers", json={"name": "Hat", "phone": "2121234567"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == DUP_DETAIL
+
+
+@pytest.mark.asyncio
+async def test_create_unkeyed_number_matches_stored_variant(integration_client, cust, org_id, monkeypatch):
+    import server
+    monkeypatch.setattr(server, "phone_key", lambda *a, **k: None)
+    client, _r, _d = integration_client
+    cust.docs.append({"id": "c9", "organization_id": org_id, "name": "Hat", "phone": "02121234567"})
+    resp = await client.post("/api/customers", json={"name": "Hat", "phone": "2121234567"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == DUP_DETAIL
+
+
+@pytest.mark.asyncio
+async def test_allow_shared_without_holder_creates_normal_keyed_record(integration_client, cust):
+    client, _r, _d = integration_client
+    resp = await client.post("/api/customers", json={
+        "name": "Yeni", "phone": "05441112233", "allow_shared_phone": True})
+    assert resp.status_code == 200
+    doc = next(d for d in cust.docs if d["id"] == resp.json()["id"])
+    assert doc["phone_key"] == "905441112233"
+    assert "shared_phone" not in doc
+
+
+@pytest.mark.asyncio
+async def test_bulk_write_error_counts_failed_rows_as_duplicates(integration_client, cust, monkeypatch):
+    from pymongo.errors import BulkWriteError
+    client, _r, _d = integration_client
+    emitted = []
+
+    async def fake_emit(org, ev, payload):
+        emitted.append(payload)
+
+    import server
+    monkeypatch.setattr(server, "emit_to_organization", fake_emit)
+
+    async def boom(docs, ordered=True):
+        cust.docs.append(dict(docs[0]))  # first row landed, second lost a race
+        raise BulkWriteError({"nInserted": 1, "writeErrors": [{"index": 1, "code": 11000}]})
+
+    cust.insert_many = boom
+    resp = await client.post("/api/customers/bulk", json={"contacts": [
+        {"name": "A", "phone": "905441112233"}, {"name": "B", "phone": "905331112233"}]})
+    assert resp.status_code == 200
+    assert resp.json() == {"created": 1, "duplicates": 1, "invalid": 0}
+    assert emitted == [{"bulk": True, "count": 1}]
+
+
+@pytest.mark.asyncio
+async def test_put_without_stored_id_excludes_itself_by_phone(integration_client, cust):
+    client, _r, _d = integration_client
+    del cust.docs[0]["id"]
+    resp = await client.put("/api/customers/905551112233", json={"phone": "05551112233"})
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_create_still_blocks_number_only_in_appointments(integration_client, cust, org_id):
     client, _r, db = integration_client
     db.appointments.docs.append({"organization_id": org_id, "phone": "905321110000"})
