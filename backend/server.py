@@ -7,6 +7,7 @@ from name_sync import propagate_service_rename, sync_customer_to_appointments
 from customer_identity import names_match, normalize_name, phone_key, phone_variants as key_phone_variants
 from customer_resolver import find_customer_for, org_country, phone_for_appointment, resolve_customer
 from customer_indexes import ensure_customer_indexes
+from customer_merge import merge_into, mark_not_duplicate
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 from meta_capi_service import get_meta_capi_service, split_full_name
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, File, UploadFile, Form, Query, BackgroundTasks
@@ -12695,6 +12696,7 @@ async def get_customers(
         "_id": 1, "id": 1, "name": 1, "phone": 1, "notes": 1,
         "total_appointments": 1, "completed_appointments": 1,
         "last_appointment_at": 1, "first_appointment_at": 1,
+        "shared_phone": 1, "merge_suggestion_for": 1,
     }
 
     try:
@@ -12716,7 +12718,7 @@ async def get_customers(
     for d in docs:
         total = int(d.get("total_appointments") or 0)
         completed = int(d.get("completed_appointments") or 0)
-        items.append({
+        item = {
             "id": d.get("id") or (str(d.get("_id")) if d.get("_id") else None),
             "name": d.get("name") or "",
             "phone": d.get("phone") or "",
@@ -12726,7 +12728,12 @@ async def get_customers(
             "last_appointment_at": d.get("last_appointment_at"),
             "first_appointment_at": d.get("first_appointment_at"),
             "is_pending": total == 0,
-        })
+        }
+        # Additive, only when present (older clients ignore unknown keys).
+        for extra in ("shared_phone", "merge_suggestion_for"):
+            if d.get(extra):
+                item[extra] = d[extra]
+        items.append(item)
 
     next_cursor: Optional[str] = None
     if has_more and docs:
@@ -12968,6 +12975,111 @@ async def create_customers_bulk(request: Request, body: CustomerBulkCreate, curr
 class CustomerUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
+
+class CustomerMergeRequest(BaseModel):
+    survivor_id: str
+    source_id: str
+
+
+_MERGE_DIFFERENT_NUMBERS = "Bu iki müşteri farklı numaralara sahip; birleştirilemez."
+
+
+@api_router.post("/customers/merge")
+async def merge_customers(request: Request, body: CustomerMergeRequest,
+                          current_user: UserInDB = Depends(get_current_user)):
+    """Aynı numaradaki iki müşteri kaydını birleştir (Sadece admin)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    if body.survivor_id == body.source_id:
+        raise HTTPException(status_code=400, detail="Aynı müşteri kendisiyle birleştirilemez")
+    db = await get_db_from_request(request)
+    org_id = current_user.organization_id
+    survivor = await db.customers.find_one({"organization_id": org_id, "id": body.survivor_id}, {"_id": 0})
+    source = await db.customers.find_one({"organization_id": org_id, "id": body.source_id}, {"_id": 0})
+    if not survivor or not source:
+        raise HTTPException(status_code=404, detail="Müşteri bulunamadı")
+
+    country = await org_country(db, org_id)
+    s_key = survivor.get("phone_key") or phone_key(survivor.get("phone"), country)
+    x_key = source.get("phone_key") or phone_key(source.get("phone"), country)
+    # Only the same number may merge: both keys must exist and agree.
+    if not s_key or s_key != x_key:
+        raise HTTPException(status_code=400, detail=_MERGE_DIFFERENT_NUMBERS)
+
+    # merge_into never moves a stored phone_key. If the source holds it and the survivor
+    # does not, hand it over first (unset before set: the partial unique index forbids two
+    # holders). A crash in between leaves both unkeyed, which the backfill re-keys.
+    carried = False
+    if source.get("phone_key") and not survivor.get("phone_key"):
+        await db.customers.update_one({"organization_id": org_id, "id": body.source_id},
+                                      {"$unset": {"phone_key": ""}})
+        await db.customers.update_one({"organization_id": org_id, "id": body.survivor_id},
+                                      {"$set": {"phone_key": source["phone_key"]}})
+        carried = True
+
+    try:
+        summary = await merge_into(db, org_id, body.survivor_id, body.source_id)
+    except ValueError as exc:
+        if carried:  # put the key back where it was
+            await db.customers.update_one({"organization_id": org_id, "id": body.survivor_id},
+                                          {"$unset": {"phone_key": ""}})
+            await db.customers.update_one({"organization_id": org_id, "id": body.source_id},
+                                          {"$set": {"phone_key": source["phone_key"]}})
+        logging.warning(f"Customer merge refused: {exc}")
+        raise HTTPException(status_code=400, detail=_MERGE_DIFFERENT_NUMBERS)
+    if not summary.get("merged"):
+        raise HTTPException(status_code=404, detail="Müşteri bulunamadı")
+
+    # A keyed survivor is the unique record for the number now; drop shared-number markers.
+    unset = {}
+    done = await db.customers.find_one({"organization_id": org_id, "id": body.survivor_id}, {"_id": 0})
+    if done and done.get("phone_key"):
+        unset = {"shared_phone": "", "merge_suggestion_for": ""}
+    elif done and done.get("merge_suggestion_for") == body.source_id:
+        unset = {"merge_suggestion_for": ""}
+    if unset:
+        await db.customers.update_one({"organization_id": org_id, "id": body.survivor_id}, {"$unset": unset})
+
+    try:
+        await invalidate_cache(request, "customers_list", current_user)
+        await invalidate_cache(request, "dashboard_stats", current_user)
+    except Exception:
+        pass
+    emit = _org_emit_after_stats_refresh(request, current_user)
+    for event, payload in (
+        ("appointments_bulk_updated", {"merged": True}),
+        ("customer_deleted", {"phone": source.get("phone"), "deleted_appointments": 0,
+                              "deleted_customer": True, "merged_into": body.survivor_id}),
+        ("customer_updated", {"phone": survivor.get("phone")}),
+    ):
+        try:
+            await emit(org_id, event, payload)
+        except Exception as e:
+            logging.warning(f"merge emit {event} failed: {e}")
+    return {"merged": True, "survivor_id": body.survivor_id}
+
+
+@api_router.post("/customers/{customer_id}/not-duplicate")
+async def customer_not_duplicate(request: Request, customer_id: str,
+                                 current_user: UserInDB = Depends(get_current_user)):
+    """"Farklı kişi": birleştirme önerisini kaldır (Sadece admin)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
+    db = await get_db_from_request(request)
+    org_id = current_user.organization_id
+    if not await db.customers.find_one({"organization_id": org_id, "id": customer_id}, {"_id": 0, "id": 1}):
+        raise HTTPException(status_code=404, detail="Müşteri bulunamadı")
+    await mark_not_duplicate(db, org_id, customer_id)
+    try:
+        await invalidate_cache(request, "customers_list", current_user)
+    except Exception:
+        pass
+    try:
+        await emit_to_organization(org_id, "customer_updated", {"id": customer_id})
+    except Exception:
+        pass
+    return {"ok": True}
+
 
 @api_router.put("/customers/{phone}")
 async def update_customer(request: Request, phone: str, update_data: CustomerUpdate, current_user: UserInDB = Depends(get_current_user)):
