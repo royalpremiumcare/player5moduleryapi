@@ -8,7 +8,7 @@ import stripe as real_stripe
 
 import subscription_change as sc
 from tests.live_activity_fakes import FakeDB
-from tests.subscription_fakes import AttrOnly, FakeStripe, Obj, price, subscription
+from tests.subscription_fakes import AttrOnly, FakeStripe, Obj, price, so, subscription
 
 PLAN_IDS = ["tier_trial", "tier_1_standard", "tier_2_profesyonel"]
 PLANS = {
@@ -414,3 +414,52 @@ def test_guard_never_raises():
 
     fs.Subscription.retrieve = boom
     assert sc.cancel_superseded_subscription(fs, "org1", "sub_old", "sub_new") is None
+
+
+# --- real stripe-python 15 objects (not dicts) ------------------------------------------------
+
+def test_real_stripe_object_is_not_a_mapping():
+    """Guards the premise: if this ever changes, the helpers below still work."""
+    obj = so({"metadata": {"plan_id": "p"}})
+    assert not isinstance(obj, dict)
+    with pytest.raises(TypeError):
+        dict(obj["metadata"])
+
+
+def test_to_plain_dict_reads_real_stripe_objects_recursively():
+    obj = so({"id": "cs_1", "metadata": {"plan_id": "tier_2_profesyonel", "billing_cycle": "yearly"},
+              "line_items": {"object": "list", "data": [{"price": {"id": "price_1"}}]}})
+    plain = sc.to_plain_dict(obj)
+    assert type(plain) is dict
+    assert plain["metadata"] == {"plan_id": "tier_2_profesyonel", "billing_cycle": "yearly"}
+    assert plain["line_items"]["data"][0]["price"]["id"] == "price_1"
+
+
+@pytest.mark.parametrize("value,expected", [(None, {}), ({"a": 1}, {"a": 1}), ("cus_1", {}), (42, {})])
+def test_to_plain_dict_handles_plain_values(value, expected):
+    assert sc.to_plain_dict(value) == expected
+
+
+def test_smeta_reads_real_stripe_object_metadata():
+    obj = so({"id": "sub_1", "metadata": {"plan_id": "tier_2_profesyonel", "organization_id": "org1"}})
+    assert sc.smeta(obj) == {"plan_id": "tier_2_profesyonel", "organization_id": "org1"}
+    assert sc.smeta(so({"id": "x"})) == {}
+
+
+def test_sget_reads_nested_real_stripe_objects():
+    obj = so({"items": {"object": "list", "data": [{"id": "si_1", "price": {"id": "price_1"}}]},
+              "pending_update": None})
+    data = sc.sget(sc.sget(obj, "items"), "data")
+    assert sc.sget(sc.sget(data[0], "price"), "id") == "price_1"
+    assert sc.sget(obj, "pending_update") is None
+    assert sc.sget(obj, "missing", "dflt") == "dflt"
+
+
+def test_quota_from_real_stripe_price_metadata():
+    p = so({"id": "price_1", "metadata": {"appointment_limit": "777"}, "product": "prod_x"})
+    assert sc.resolve_quota_limit(FakeStripe(), p, PLANS["tier_2_profesyonel"]) == 777
+
+
+def test_quota_from_real_expanded_stripe_product():
+    p = so({"id": "price_1", "metadata": {}, "product": {"id": "prod_1", "metadata": {"appointment_limit": "555"}}})
+    assert sc.resolve_quota_limit(FakeStripe(), p, PLANS["tier_2_profesyonel"]) == 555

@@ -9694,19 +9694,8 @@ def _stripe_obj_get(obj, key, default=None):
 
 def _stripe_metadata_dict(stripe_obj):
     """Session/Price/Product vb. üzerindeki metadata alanını düz dict yap."""
-    meta = _stripe_obj_get(stripe_obj, "metadata", None)
-    if meta is None:
-        return {}
-    if isinstance(meta, dict):
-        return meta
-    try:
-        return dict(meta)
-    except Exception:
-        try:
-            keys = meta.keys() if hasattr(meta, "keys") else []
-            return {k: meta[k] for k in keys}
-        except Exception:
-            return {}
+    # stripe-python 15: StripeObject dict değil (dict()/keys() yok) → to_dict() ile tek helper
+    return subscription_change.to_plain_dict(_stripe_obj_get(stripe_obj, "metadata", None))
 
 
 def _stripe_line_items_data(obj):
@@ -9817,7 +9806,9 @@ async def confirm_stripe_checkout_session(
 
         metadata = _stripe_metadata_dict(session)
         organization_id = metadata.get('organization_id') or metadata.get('user_id')
-        if organization_id and organization_id != current_user.organization_id:
+        # Fail closed: org'u kanıtlanmayan (eksik/boş/başka org) session ile plan yazılmaz.
+        if not organization_id or organization_id != current_user.organization_id:
+            logger.warning(f"Confirm reddedildi: session={session_id} metadata_org={organization_id!r} caller_org={current_user.organization_id}")
             raise HTTPException(status_code=403, detail="session organization uyumsuz")
         organization_id = current_user.organization_id
 
@@ -18443,17 +18434,17 @@ async def run_stripe_audit():
                     
                     # Check 2: Metadata Presence (FALLBACK STRATEGY)
                     # Step 1: Check Price metadata
-                    price_metadata = price.metadata or {}
+                    price_metadata = _stripe_metadata_dict(price)
                     appointment_limit = price_metadata.get('appointment_limit')
                     metadata_source = "Price"
-                    
+
                     # Step 2: If not found in price, check product metadata
                     if not appointment_limit:
-                        product_obj = price.product
+                        product_obj = _stripe_obj_get(price, 'product')
                         if product_obj:
-                            # product_obj can be a string (ID) or dict (expanded)
-                            if isinstance(product_obj, dict):
-                                product_metadata = product_obj.get('metadata', {})
+                            # product_obj: ID (str) veya expand edilmiş StripeObject (stripe 15'te dict değil)
+                            if not isinstance(product_obj, str):
+                                product_metadata = _stripe_metadata_dict(product_obj)
                                 appointment_limit = product_metadata.get('appointment_limit')
                                 if appointment_limit:
                                     metadata_source = "Product"

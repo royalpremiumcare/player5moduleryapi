@@ -10,6 +10,12 @@ from types import SimpleNamespace
 import stripe as _real_stripe
 
 
+def so(values):
+    """A REAL stripe.StripeObject (stripe-python 15: not a dict, no .get/.keys, dict() raises).
+    Nested dicts become StripeObjects and ``{"object": "list"}`` a ListObject, as in API payloads."""
+    return _real_stripe.StripeObject.construct_from(values, "sk_test_fake_never_live")
+
+
 class Obj(dict):
     def __getattr__(self, name):
         try:

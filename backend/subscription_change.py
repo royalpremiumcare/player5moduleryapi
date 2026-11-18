@@ -52,14 +52,30 @@ def sget(obj, key, default=None):
     return default if val is None else val
 
 
+def to_plain_dict(obj) -> dict:
+    """A Stripe object (or nested Stripe object) as a plain dict; anything else -> {}.
+
+    stripe-python 15 StripeObjects are not mappings: ``dict(obj)`` raises, there is no
+    ``.get``/``.keys``, and ``isinstance(obj, dict)`` is False. ``to_dict()`` is the supported,
+    recursive conversion. Plain dicts (older SDKs, tests) are copied.
+    """
+    if obj is None:
+        return {}
+    to_dict = getattr(obj, "to_dict", None)
+    if callable(to_dict):
+        try:
+            plain = to_dict()
+        except Exception:
+            plain = None
+        if isinstance(plain, dict):
+            return plain
+    if isinstance(obj, dict):
+        return dict(obj)
+    return {}
+
+
 def smeta(obj) -> dict:
-    meta = sget(obj, "metadata")
-    if not meta:
-        return {}
-    try:
-        return dict(meta)
-    except Exception:
-        return {}
+    return to_plain_dict(sget(obj, "metadata"))
 
 
 def _items(subscription) -> list:

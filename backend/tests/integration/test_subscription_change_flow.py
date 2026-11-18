@@ -9,7 +9,7 @@ import pytest_asyncio
 import stripe as real_stripe
 
 from tests.live_activity_fakes import FakeDB
-from tests.subscription_fakes import FakeStripe, Obj, price, subscription
+from tests.subscription_fakes import FakeStripe, Obj, price, so, subscription
 
 ORG = "org_test_integration"
 NATIVE_SUCCESS = re.compile(r"^https://[^/]+/api/checkout-return\?status=success$")
@@ -549,3 +549,139 @@ async def test_failed_renewal_still_sends_the_grace_email(env, sent_emails):
     doc = await _plan(db)
     assert doc["hosted_invoice_url"] == "https://invoice.stripe.test/in_1"
     assert doc["grace_email_sent"] is True
+
+
+# --- real stripe-python 15 StripeObjects (E2E finding: metadata helpers returned {}) -------------
+
+def _real_completed_event(cycle="yearly", org=ORG, sub_id="sub_new"):
+    return so({"id": "evt_real", "object": "event", "type": "checkout.session.completed",
+               "data": {"object": {"id": "cs_real", "object": "checkout.session", "mode": "subscription",
+                                   "subscription": sub_id, "customer": "cus_1", "amount_total": 80000,
+                                   "customer_email": "owner@salon.test",
+                                   "metadata": {"plan_id": "tier_2_profesyonel", "organization_id": org,
+                                                "user_id": org, "billing_cycle": cycle,
+                                                "appointment_limit": "300"}}}})
+
+
+def _real_expanded_session(limit="777"):
+    return so({"id": "cs_real", "object": "checkout.session",
+               "line_items": {"object": "list", "data": [
+                   {"id": "li_1", "object": "item",
+                    "price": {"id": "price_pro_y", "object": "price", "lookup_key": "professional_yearly_try",
+                              "metadata": {"appointment_limit": limit},
+                              "product": {"id": "prod_pro", "object": "product", "metadata": {}}}}]}})
+
+
+async def _post_webhook(client, fs, event):
+    fs.event = event
+    return await client.post("/api/webhook/stripe", content=b"{}", headers={"stripe-signature": "t=1,v1=fake"})
+
+
+def test_server_stripe_helpers_read_real_stripe_objects():
+    import server
+
+    obj = so({"id": "cs_1", "metadata": {"plan_id": "tier_2_profesyonel", "organization_id": ORG},
+              "line_items": {"object": "list", "data": [{"price": {"id": "price_1", "metadata": {"k": "v"}}}]}})
+    assert server._stripe_metadata_dict(obj) == {"plan_id": "tier_2_profesyonel", "organization_id": ORG}
+    items = server._stripe_line_items_data(obj)
+    assert server._stripe_obj_get(server._stripe_obj_get(items[0], "price"), "id") == "price_1"
+    assert server._stripe_metadata_dict(server._stripe_obj_get(items[0], "price")) == {"k": "v"}
+    assert server._stripe_obj_get(obj, "missing", "dflt") == "dflt"
+
+
+async def test_real_checkout_completed_without_payment_log_uses_metadata_and_runs_the_safety_net(env):
+    """(a) no payment_logs row: the metadata fallback must work on a real StripeObject."""
+    client, db, fs = env
+    await _org(db)
+    fs.subscriptions["sub_old"] = subscription(status="active")
+    fs.session_retrieve_result = _real_expanded_session()
+
+    r = await _post_webhook(client, fs, _real_completed_event())
+
+    assert r.status_code == 200
+    _, args, _ = fs.call("Subscription.cancel")
+    assert args == ("sub_old",)
+    doc = await _plan(db)
+    assert (doc["plan_id"], doc["stripe_subscription_id"]) == ("tier_2_profesyonel", "sub_new")
+
+
+async def test_real_yearly_checkout_is_stored_as_yearly(env):
+    """(b)"""
+    client, db, fs = env
+    await _org(db, plan_id="tier_trial", stripe_subscription_id=None)
+    await db.payment_logs.insert_one({"session_id": "cs_real", "organization_id": ORG,
+                                      "plan_id": "tier_2_profesyonel", "status": "pending"})
+    fs.session_retrieve_result = _real_expanded_session()
+    r = await _post_webhook(client, fs, _real_completed_event(cycle="yearly"))
+    assert r.status_code == 200
+    assert (await _plan(db))["billing_cycle"] == "yearly"
+
+
+async def test_real_price_metadata_sets_the_quota(env):
+    """(c) appointment_limit on the price wins over the plan default (300) and session metadata."""
+    client, db, fs = env
+    await _org(db, plan_id="tier_trial", stripe_subscription_id=None)
+    await db.payment_logs.insert_one({"session_id": "cs_real", "organization_id": ORG,
+                                      "plan_id": "tier_2_profesyonel", "status": "pending"})
+    fs.session_retrieve_result = _real_expanded_session(limit="777")
+    r = await _post_webhook(client, fs, _real_completed_event())
+    assert r.status_code == 200
+    assert (await _plan(db))["quota_limit"] == 777
+
+
+def _real_confirm_session(metadata):
+    return so({"id": "cs_real", "object": "checkout.session", "mode": "subscription",
+               "payment_status": "paid", "status": "complete", "subscription": "sub_new",
+               "customer": "cus_1", "metadata": metadata,
+               "line_items": {"object": "list", "data": [
+                   {"id": "li_1", "object": "item",
+                    "price": {"id": "price_pro_m", "object": "price", "metadata": {"appointment_limit": "777"},
+                              "product": "prod_pro"}}]}})
+
+
+@pytest.mark.parametrize("metadata", [
+    {"plan_id": "tier_2_profesyonel", "organization_id": "org_someone_else", "billing_cycle": "monthly"},
+    {"plan_id": "tier_2_profesyonel", "billing_cycle": "monthly"},
+    {"plan_id": "tier_2_profesyonel", "organization_id": "", "user_id": "", "billing_cycle": "monthly"},
+], ids=["foreign_org", "missing_org", "empty_org"])
+async def test_confirm_rejects_a_session_not_proven_to_belong_to_the_caller(env, metadata):
+    """(d) fail closed: foreign, missing or empty org metadata -> 403 and no DB write."""
+    client, db, fs = env
+    await _org(db)
+    fs.session_retrieve_result = _real_confirm_session(metadata)
+    writes_before = [c for c in db.log if c[1] in ("update_one", "insert_one", "update_many")]
+    r = await client.post("/api/payments/confirm-checkout-session", json={"session_id": "cs_real"})
+    assert r.status_code == 403
+    assert [c for c in db.log if c[1] in ("update_one", "insert_one", "update_many")] == writes_before
+    assert (await _plan(db))["plan_id"] == "tier_1_standard"
+
+
+async def test_confirm_accepts_a_real_session_of_the_callers_org(env):
+    client, db, fs = env
+    await _org(db, plan_id="tier_trial", stripe_subscription_id=None)
+    fs.session_retrieve_result = _real_confirm_session(
+        {"plan_id": "tier_2_profesyonel", "organization_id": ORG, "billing_cycle": "yearly"})
+    r = await client.post("/api/payments/confirm-checkout-session", json={"session_id": "cs_real"})
+    assert r.status_code == 200, r.text
+    doc = await _plan(db)
+    assert (doc["plan_id"], doc["billing_cycle"], doc["quota_limit"]) == ("tier_2_profesyonel", "yearly", 777)
+
+
+async def test_stripe_audit_reads_real_price_and_expanded_product_metadata(env):
+    """run_stripe_audit used price.metadata.get / isinstance(product, dict): broken on stripe 15."""
+    import server
+
+    _client, _db, fs = env
+    fs.prices_by_lookup = {
+        "professional_monthly_try": so({"id": "price_a", "object": "price", "currency": "try",
+                                        "unit_amount": 50000, "metadata": {"appointment_limit": "300"},
+                                        "product": {"id": "prod_a", "object": "product", "metadata": {}}}),
+        "premium_monthly_try": so({"id": "price_b", "object": "price", "currency": "try",
+                                   "unit_amount": 90000, "metadata": {},
+                                   "product": {"id": "prod_b", "object": "product",
+                                               "metadata": {"appointment_limit": "600"}}}),
+    }
+    results = await server.run_stripe_audit()
+    passed = {r["lookup_key"]: r["metadata_source"] for r in results["pass"]}
+    assert passed == {"professional_monthly_try": "Price", "premium_monthly_try": "Product"}
+    assert not [f for f in results["fail"] if "Unexpected error" in f["error"]]
