@@ -125,6 +125,7 @@ else:
 from bulk_session_idempotency import BulkSessionCreate, SessionSlot, canonical_bulk_session_hash as _canonical_bulk_session_hash
 from bulk_package import BulkPackageCreate
 from session_wave_planner import plan_wave_remaining_sessions
+from financial.payments_pause import coerce_payment_rule, payments_paused
 from appointment_refund_flags import (
     REFUNDABLE_MERCHANT_STATES,
     attach_refund_eligible,
@@ -8384,6 +8385,9 @@ async def update_service(request: Request, service_id: str, service_update: Serv
     db = await get_db_from_request(request); query = {"id": service_id, "organization_id": current_user.organization_id}
     service = await db.services.find_one(query, {"_id": 0})
     if not service: raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
+    if service_update.payment_rule is not None:
+        service_update.payment_rule, service_update.deposit_amount = coerce_payment_rule(
+            service_update.payment_rule, service_update.deposit_amount, paused=payments_paused())
     effective_price = service_update.price if service_update.price is not None else service.get("price", 0)
     effective_rule = service_update.payment_rule if service_update.payment_rule is not None else service.get("payment_rule")
     effective_deposit = service_update.deposit_amount if service_update.deposit_amount is not None else service.get("deposit_amount")
@@ -8448,6 +8452,8 @@ async def create_service(request: Request, service: ServiceCreate, current_user:
         raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok")
     
     db = await get_db_from_request(request)
+    service.payment_rule, service.deposit_amount = coerce_payment_rule(
+        service.payment_rule, service.deposit_amount, paused=payments_paused())
     _validate_service_payment_limits(
         service.price, service.payment_rule, service.deposit_amount,
         await _get_org_base_currency(db, current_user.organization_id),

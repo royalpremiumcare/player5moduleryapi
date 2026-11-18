@@ -31,6 +31,7 @@ import {
 import { formatApiError } from "@/lib/apiError";
 import SessionPlannerDialog from "./planner/SessionPlannerDialog";
 import { fetchWavePlanSessions } from "../lib/sessionScheduling";
+import { MERCHANT_PAYMENTS_PAUSED, selectablePaymentRules } from "../lib/paymentsPause";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL !== undefined ? process.env.REACT_APP_BACKEND_URL : "";
 const publicApi = axios.create({
@@ -2045,9 +2046,16 @@ const AppointmentFormWizard = ({ services, appointment, onSave, onCancel, onServ
                 className={`w-full backdrop-blur-md bg-white/60 border rounded-xl h-11 px-3 text-sm font-medium text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none ${newServiceErrors.paymentRule ? 'border-red-400' : 'border-white/40'}`}
               >
                 <option value="on_site">{t('appointments.form.wizard.paymentOnSite')}</option>
-                <option value="online">{t('appointments.form.wizard.paymentOnline')}</option>
-                <option value="deposit">{t('appointments.form.wizard.paymentDeposit')}</option>
+                {selectablePaymentRules().includes('online') && (
+                  <option value="online">{t('appointments.form.wizard.paymentOnline')}</option>
+                )}
+                {selectablePaymentRules().includes('deposit') && (
+                  <option value="deposit">{t('appointments.form.wizard.paymentDeposit')}</option>
+                )}
               </select>
+              {MERCHANT_PAYMENTS_PAUSED && (
+                <p className="text-xs text-amber-700 font-medium">{t('paymentsPaused.serviceNote')}</p>
+              )}
               <p className="text-xs text-zinc-500 font-medium leading-relaxed">
                 {newServiceForm.paymentRule === 'online'
                   ? t('appointments.form.wizard.paymentOnlineDesc')

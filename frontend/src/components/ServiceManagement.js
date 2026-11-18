@@ -3,6 +3,7 @@ import { Briefcase, Edit, Trash2, Plus, ArrowLeft, GripVertical, Tag, ListChecks
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import api from "../api/api";
+import { MERCHANT_PAYMENTS_PAUSED, selectablePaymentRules } from "../lib/paymentsPause";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -848,9 +849,16 @@ const ServiceManagement = ({ services, onRefresh, onNavigate }) => {
                 className={`w-full backdrop-blur-md bg-white/60 border rounded-xl h-11 px-3 text-sm font-medium text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none ${formErrors.paymentRule ? 'border-red-400' : 'border-white/40'}`}
               >
                 <option value="on_site">{i18n.language === 'tr' ? 'Yerinde Ödeme' : 'Pay On Site'}</option>
-                <option value="online">{i18n.language === 'tr' ? 'Tamamı Online Ödeme' : 'Full Online Payment'}</option>
-                <option value="deposit">{i18n.language === 'tr' ? 'Sadece Kapora' : 'Deposit Only'}</option>
+                {selectablePaymentRules().includes('online') && (
+                  <option value="online">{i18n.language === 'tr' ? 'Tamamı Online Ödeme' : 'Full Online Payment'}</option>
+                )}
+                {selectablePaymentRules().includes('deposit') && (
+                  <option value="deposit">{i18n.language === 'tr' ? 'Sadece Kapora' : 'Deposit Only'}</option>
+                )}
               </select>
+              {MERCHANT_PAYMENTS_PAUSED && (
+                <p className="text-xs text-amber-700 font-medium">{t('paymentsPaused.serviceNote')}</p>
+              )}
               <p className="text-xs text-zinc-500 font-medium">
                 {formData.paymentRule === 'online'
                   ? (i18n.language === 'tr' ? 'Müşteri randevu alırken ödemenin tamamını online yapar.' : 'Customer pays full amount online when booking.')

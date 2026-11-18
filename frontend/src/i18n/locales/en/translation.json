@@ -1829,5 +1829,12 @@
     "summaryCancelNoRefund": "Bulk cancel: {{count}} appointment(s), no refund",
     "summaryCancelRefund": "Bulk cancel with refund: {{count}} appointment(s), Stripe refund {{stripeId}}",
     "ipLabel": "IP: {{ip}}"
+  },
+  "paymentsPaused": {
+    "title": "Payments are temporarily unavailable",
+    "body": "We are renewing online payments and the wallet. In the meantime you can keep taking payment at your salon.",
+    "later": "We will let you know when they are back.",
+    "back": "Back",
+    "serviceNote": "Online payment is temporarily unavailable. Customers pay at your salon."
   }
 }

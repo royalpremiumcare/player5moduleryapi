@@ -32,6 +32,8 @@ import SettingsOnlineBooking from "@/components/SettingsOnlineBooking";
 import Finance from "@/components/Finance";
 import MerchantWallet from "@/components/MerchantWallet";
 import MerchantPaymentSettings from "@/components/MerchantPaymentSettings";
+import PaymentsPausedNotice from "@/components/PaymentsPausedNotice";
+import { MERCHANT_PAYMENTS_PAUSED } from "@/lib/paymentsPause";
 import MerchantRefundRequests from "@/components/MerchantRefundRequests";
 import Subscribe from "@/components/Subscribe";
 import Customers from "@/components/Customers";
@@ -1934,13 +1936,17 @@ function App() {
           />
         )}
         {currentView === "merchant-wallet" && userRole === 'admin' && (
-          <MerchantWallet onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
+          MERCHANT_PAYMENTS_PAUSED
+            ? <PaymentsPausedNotice onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
+            : <MerchantWallet onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
         )}
         {currentView === "merchant-refund-requests" && userRole === 'admin' && (
           <MerchantRefundRequests onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
         )}
         {currentView === "merchant-payment-settings" && userRole === 'admin' && (
-          <MerchantPaymentSettings onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
+          MERCHANT_PAYMENTS_PAUSED
+            ? <PaymentsPausedNotice onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
+            : <MerchantPaymentSettings onNavigate={(view) => { setCurrentView(view); setShowForm(false); }} />
         )}
         {currentView === "subscribe" && userRole === 'admin' && (
           <Subscribe 

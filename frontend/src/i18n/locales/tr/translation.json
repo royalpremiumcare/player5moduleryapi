@@ -1831,5 +1831,12 @@
     "summaryCancelNoRefund": "Toplu iptal: {{count}} randevu, iade yok",
     "summaryCancelRefund": "Toplu iptal ve iade: {{count}} randevu, Stripe iade {{stripeId}}",
     "ipLabel": "IP: {{ip}}"
+  },
+  "paymentsPaused": {
+    "title": "Ödemeler geçici olarak kapalı",
+    "body": "Online ödeme ve cüzdan özelliklerini yeniliyoruz. Bu süre içinde müşterilerinizden ödemeyi salonda almaya devam edebilirsiniz.",
+    "later": "Yeniden açıldığında size haber vereceğiz.",
+    "back": "Geri",
+    "serviceNote": "Online ödeme geçici olarak kapalı. Müşterileriniz ödemeyi salonda yapar."
   }
 }

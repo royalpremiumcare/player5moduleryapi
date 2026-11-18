@@ -44,6 +44,7 @@ from .schemas import (
 from .fee_calculator import calculate_fee_preview, DepositRule
 from .feature_flags import is_env_flag_enabled
 from .gross_up_service import compute_customer_price as _gross_up_compute, GrossUpError
+from .payments_pause import ensure_payments_open
 from .merchant_checkout import create_customer_checkout_session, create_multi_service_checkout_session, create_payment_link_session, handle_stripe_merchant_webhook
 from .payout_service import check_payout_eligibility, create_payout_batch, process_payout_batch
 from .compliance import (
@@ -415,6 +416,7 @@ async def create_payment_link(request: Request, body: PaymentLinkCreate):
     - Stripe Checkout Session + pending merchant_transaction oluşturulur.
     - WhatsApp gönderimi tahsilatı bloklamaz (try/except).
     """
+    ensure_payments_open()
     db = _get_db(request)
     user = request.state.current_user
     org_id = user.get("organization_id", "")
@@ -668,6 +670,7 @@ async def public_checkout(request: Request, body: PublicCheckoutRequest):
 
     Çoklu hizmet: service_ids (>1) verilirse Akıllı D toplu kapora (tek line item).
     """
+    ensure_payments_open()
     db = _get_db(request)
 
     try:
