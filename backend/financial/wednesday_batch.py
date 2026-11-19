@@ -54,6 +54,14 @@ OPEN_BATCH_STATUSES = (
     BATCH_STATUS_AWAITING_ADMIN,
     BATCH_STATUS_QUEUED_FOR_WISE,
 )
+# Terminal or expired: marking these failed again would only touch items that are
+# no longer theirs (or terminal ones).
+_MARK_FAILED_REFUSED_STATUSES = (
+    BATCH_STATUS_COMPLETED,
+    BATCH_STATUS_FAILED,
+    BATCH_STATUS_PARTIAL_FAILURE,
+    BATCH_STATUS_EXPIRED,
+)
 # Item states that still hold money for their batch.
 BATCH_HOLD_STATES = ("reserved", "reserved_for_batch", "queued_for_wise", "wise_fund_pending")
 
@@ -182,6 +190,39 @@ async def _refuse_unfundable(db, batch: Dict[str, Any], held_states: Iterable[st
             await _release_reservations(db, tx_ids, batch_id=batch_id, trigger="batch_expired_rollback")
             await expire_batches_without_holds(db, [batch_id], reason=error)
     return error
+
+
+async def _queue_items_or_revert(
+    db, batch_id: str, tx_ids: Iterable[str], *, trigger: str, metadata: Dict[str, Any],
+) -> bool:
+    """Move this batch's items to queued_for_wise, all or nothing.
+
+    On the first failure, the items this call already queued go back to
+    reserved_for_batch (owner-scoped, no balance change) and False is returned, so
+    the caller never reaches Wise with a batch whose items are not all queued.
+    """
+    sm = StateMachine(db)
+    queued: List[str] = []
+    for tx_id in tx_ids:
+        try:
+            await sm.transition(
+                tx_id=tx_id, new_state="queued_for_wise", trigger=trigger,
+                metadata=metadata, expected={"payout_batch_id": batch_id},
+            )
+            queued.append(tx_id)
+        except Exception as e:
+            logger.warning("queued_for_wise failed tx=%s batch=%s: %s; aborting before Wise", tx_id, batch_id, e)
+            for done in queued:
+                try:
+                    await sm.transition(
+                        tx_id=done, new_state="reserved_for_batch", trigger="wise_prepare_aborted",
+                        expected={"state": "queued_for_wise", "payout_batch_id": batch_id},
+                    )
+                except Exception as revert_err:
+                    logger.error("revert to reserved_for_batch failed tx=%s batch=%s: %s",
+                                 done, batch_id, revert_err)
+            return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -472,17 +513,11 @@ async def prepare_batch_for_wise(
     sm = StateMachine(db)
     tx_ids = batch.get("item_transaction_ids") or []
 
-    # Move each tx to queued_for_wise
-    for tx_id in tx_ids:
-        try:
-            await sm.transition(
-                tx_id=tx_id,
-                new_state="queued_for_wise",
-                trigger="admin_prepare_wise",
-                metadata={"admin_id": admin_id},
-            )
-        except Exception as e:
-            logger.warning("prepare_for_wise tx transition failed tx=%s: %s", tx_id, e)
+    # Move each tx to queued_for_wise; any failure aborts before Wise is called.
+    if not await _queue_items_or_revert(
+        db, batch_id, tx_ids, trigger="admin_prepare_wise", metadata={"admin_id": admin_id},
+    ):
+        return {"ok": False, "error": "batch_item_transition_failed"}
 
     await db.payout_batches.update_one(
         {"id": batch_id},
@@ -594,7 +629,28 @@ async def bulk_prepare_batches_for_wise(
             refused_items.append({"batch_id": b["id"], "ok": False, "error": refused})
         else:
             fundable.append(b)
-    batches = fundable
+    now = datetime.now(timezone.utc).isoformat()
+    sm = StateMachine(db)
+
+    # Step 1: move every tx of every batch to queued_for_wise. A batch with any failed
+    # transition is reverted and left out of the Wise call.
+    batch_tx_map: Dict[str, List[str]] = {}
+    queued_batches: List[Dict[str, Any]] = []
+    for b in fundable:
+        tx_ids = b.get("item_transaction_ids") or b.get("transaction_ids") or []
+        if not await _queue_items_or_revert(
+            db, b["id"], tx_ids, trigger="admin_bulk_prepare_wise",
+            metadata={"admin_id": admin_id, "batch_id": b["id"]},
+        ):
+            refused_items.append({"batch_id": b["id"], "ok": False, "error": "batch_item_transition_failed"})
+            continue
+        batch_tx_map[b["id"]] = tx_ids
+        queued_batches.append(b)
+        await db.payout_batches.update_one(
+            {"id": b["id"]},
+            {"$set": {"status": BATCH_STATUS_QUEUED_FOR_WISE, "updated_at": now}},
+        )
+    batches = queued_batches
     if not batches:
         return {
             "ok": False,
@@ -605,31 +661,6 @@ async def bulk_prepare_batches_for_wise(
             "items": refused_items,
             "mode": "unified",
         }
-
-    now = datetime.now(timezone.utc).isoformat()
-    sm = StateMachine(db)
-
-    # Step 1: move every tx of every batch to queued_for_wise
-    all_tx_ids: List[str] = []
-    batch_tx_map: Dict[str, List[str]] = {}
-    for b in batches:
-        tx_ids = b.get("item_transaction_ids") or b.get("transaction_ids") or []
-        batch_tx_map[b["id"]] = tx_ids
-        all_tx_ids.extend(tx_ids)
-        for tx_id in tx_ids:
-            try:
-                await sm.transition(
-                    tx_id=tx_id,
-                    new_state="queued_for_wise",
-                    trigger="admin_bulk_prepare_wise",
-                    metadata={"admin_id": admin_id, "batch_id": b["id"]},
-                )
-            except Exception as e:
-                logger.warning("bulk queued_for_wise tx=%s failed: %s", tx_id, e)
-        await db.payout_batches.update_one(
-            {"id": b["id"]},
-            {"$set": {"status": BATCH_STATUS_QUEUED_FOR_WISE, "updated_at": now}},
-        )
 
     # Step 2: call unified Wise prep (single batch group)
     try:
@@ -890,17 +921,21 @@ async def mark_batch_failed(
     batch = await db.payout_batches.find_one({"id": batch_id})
     if not batch:
         return {"ok": False, "error": "batch_not_found"}
+    if batch.get("status") in _MARK_FAILED_REFUSED_STATUSES:
+        return {"ok": False, "error": f"invalid_batch_status:{batch.get('status')}"}
 
     sm = StateMachine(db)
     tx_ids = batch.get("item_transaction_ids") or []
     rolled_back = 0
     for tx_id in tx_ids:
         try:
+            # Owner-scoped: an item released and re-reserved by a newer batch is not ours.
             await sm.transition(
                 tx_id=tx_id,
                 new_state="failed",
                 trigger="admin_mark_batch_failed",
                 metadata={"admin_id": admin_id, "reason": reason[:500]},
+                expected={"payout_batch_id": batch_id},
             )
             rolled_back += 1
         except Exception as e:

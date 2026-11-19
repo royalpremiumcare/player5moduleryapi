@@ -41,7 +41,8 @@ TRANSITIONS: Dict[str, set] = {
     "reserved":           {"paid_out", "failed", "queued_for_wise"},
     # New batch pipeline states (PLANN v2)
     "reserved_for_batch": {"queued_for_wise", "failed", "available"},  # available = expiry rollback
-    "queued_for_wise":    {"wise_fund_pending", "failed"},
+    # reserved_for_batch = Wise prepare aborted before any Wise call (revert)
+    "queued_for_wise":    {"wise_fund_pending", "failed", "reserved_for_batch"},
     "wise_fund_pending":  {"paid_out", "wise_fund_failed"},
     "wise_fund_failed":   {"queued_for_wise", "failed"},  # retry or give up
     "paid_out":           set(),  # terminal
@@ -142,6 +143,7 @@ def get_wallet_updates(
         ("reserved", "queued_for_wise"),
         ("reserved_for_batch", "queued_for_wise"),
         ("queued_for_wise", "wise_fund_pending"),
+        ("queued_for_wise", "reserved_for_batch"),
         ("wise_fund_pending", "wise_fund_failed"),
         ("wise_fund_failed", "queued_for_wise"),
     ):

@@ -585,3 +585,98 @@ async def test_locked_job_runs_once_across_worker_ticks(redis, monkeypatch, modu
     assert first == {"ran": True}
     assert redis.set_calls[0] == (f"plann:lock:{lock}", True, ttl * 1000)
     assert f"plann:lock:{lock}" in redis.store  # hold=True: kept until TTL
+
+
+# ---------------------------------------------------------------------------
+# Final-review fix wave: f (mark_batch_failed owner-scoped), g (abort before Wise)
+# ---------------------------------------------------------------------------
+
+async def test_mark_failed_on_stale_batch_leaves_items_now_reserved_by_another_batch(db):
+    _wallet_for(db, reserved=300)
+    # b-old's items: m1 still its own; m2 was released and re-reserved by batch-B.
+    _seed_batch(db, "b-old", ["m1", "m2"], created_days_ago=8)
+    _tx(db, "m2")["payout_batch_id"] = "batch-B"
+
+    res = await wednesday_batch.mark_batch_failed(db, batch_id="b-old", admin_id="sa", reason="stale")
+
+    assert res["ok"] is True and res["rolled_back"] == 1
+    assert _tx(db, "m1")["state"] == "failed"
+    assert _tx(db, "m2")["state"] == "reserved_for_batch"
+    assert _tx(db, "m2")["payout_batch_id"] == "batch-B"
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "partial_failure", "expired"])
+async def test_mark_failed_refuses_terminal_or_expired_batch(db, status):
+    _wallet_for(db, reserved=100)
+    _seed_batch(db, "b-done", ["d1"], status=status, created_days_ago=1)
+
+    res = await wednesday_batch.mark_batch_failed(db, batch_id="b-done", admin_id="sa", reason="again")
+
+    assert res == {"ok": False, "error": f"invalid_batch_status:{status}"}
+    assert _tx(db, "d1")["state"] == "reserved_for_batch"
+    assert _batch(db, "b-done")["status"] == status
+
+
+def _release_after_guard(db, monkeypatch, tx_id):
+    """Reserve expiry releases `tx_id` right after the funding guard counted it as held
+    (the 7-day boundary race), so its queued_for_wise transition fails."""
+    coll = db.merchant_transactions
+    real_count = coll.count_documents
+
+    async def count_documents(flt):
+        n = await real_count(flt)
+        if tx_id in (flt.get("id") or {}).get("$in", []):  # this batch's guard count
+            _tx(db, tx_id).update(state="available")
+        return n
+
+    monkeypatch.setattr(coll, "count_documents", count_documents)
+
+
+async def test_prepare_aborts_before_wise_when_an_item_transition_fails(db, monkeypatch):
+    _wallet_for(db, reserved=200)
+    _seed_batch(db, "b-race", ["r1", "r2"], created_days_ago=1)
+    _release_after_guard(db, monkeypatch, "r2")
+    spy = PrepareSpy()
+
+    res = await wednesday_batch.prepare_batch_for_wise(
+        db, batch_id="b-race", admin_id="sa", wise_prepare_fn=spy.single)
+
+    assert spy.calls == []
+    assert res == {"ok": False, "error": "batch_item_transition_failed"}
+    assert _tx(db, "r1")["state"] == "reserved_for_batch"       # this call's transition reverted
+    assert _tx(db, "r1")["payout_batch_id"] == "b-race"
+    assert _tx(db, "r2")["state"] == "available"                # not ours to touch
+    assert _batch(db, "b-race")["status"] == "awaiting_admin_fund"
+    assert _wallet(db)["reserved_balance_minor"] == 200         # revert moves no money
+
+
+async def test_bulk_prepare_sends_only_batches_whose_transitions_all_succeeded(db, monkeypatch):
+    _wallet_for(db, reserved=300)
+    _seed_batch(db, "b-ok", ["o1"], created_days_ago=1)
+    _seed_batch(db, "b-race", ["r1", "r2"], created_days_ago=1)
+    _release_after_guard(db, monkeypatch, "r2")
+    spy = PrepareSpy()
+
+    res = await wednesday_batch.bulk_prepare_batches_for_wise(
+        db, batch_ids=["b-ok", "b-race"], admin_id="sa", unified_prepare_fn=spy.unified)
+
+    assert spy.calls == [["b-ok"]]
+    assert {"batch_id": "b-race", "ok": False, "error": "batch_item_transition_failed"} in res["items"]
+    assert res["success"] == 1 and res["failed"] == 1
+    assert _tx(db, "r1")["state"] == "reserved_for_batch"
+    assert _batch(db, "b-race")["status"] == "awaiting_admin_fund"
+    assert _batch(db, "b-ok")["status"] == "wise_fund_pending"
+
+
+async def test_bulk_prepare_with_every_batch_aborted_calls_wise_zero_times(db, monkeypatch):
+    _wallet_for(db, reserved=200)
+    _seed_batch(db, "b-race", ["r1", "r2"], created_days_ago=1)
+    _release_after_guard(db, monkeypatch, "r2")
+    spy = PrepareSpy()
+
+    res = await wednesday_batch.bulk_prepare_batches_for_wise(
+        db, batch_ids=None, admin_id="sa", unified_prepare_fn=spy.unified)
+
+    assert spy.calls == []
+    assert res["ok"] is False and res["success"] == 0 and res["failed"] == 1
+    assert res["items"] == [{"batch_id": "b-race", "ok": False, "error": "batch_item_transition_failed"}]

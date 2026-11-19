@@ -134,3 +134,9 @@ def test_validate_skip_through_pipeline_not_allowed():
 def test_terminal_states_have_no_targets():
     for term in TERMINAL_STATES:
         assert TRANSITIONS[term] == set()
+
+
+def test_queued_for_wise_can_revert_to_reserved_without_balance_change():
+    # Aborting a Wise prepare before any Wise call puts items back where they were.
+    assert StateMachine.validate_transition("queued_for_wise", "reserved_for_batch") is True
+    assert get_wallet_updates("queued_for_wise", "reserved_for_batch", 1000) == {}

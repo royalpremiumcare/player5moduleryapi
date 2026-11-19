@@ -166,7 +166,7 @@ async def _currency_shield_job_body(db) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. Settlement Check Job — every 6 hours
+# 2. Settlement Check Job — every 2 min (sandbox) / 2 hours (prod); see _settlement_schedule
 # ---------------------------------------------------------------------------
 
 def _settlement_schedule() -> tuple:
