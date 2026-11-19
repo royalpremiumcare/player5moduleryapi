@@ -145,6 +145,10 @@ async def _create_indexes(db) -> int:
                     kwargs["unique"] = True
                 if index_def.get("sparse"):
                     kwargs["sparse"] = True
+                if index_def.get("name"):
+                    kwargs["name"] = index_def["name"]
+                if index_def.get("partialFilterExpression"):
+                    kwargs["partialFilterExpression"] = index_def["partialFilterExpression"]
 
                 await collection.create_index(index_def["keys"], **kwargs)
                 count += 1

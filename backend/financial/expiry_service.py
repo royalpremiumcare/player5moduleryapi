@@ -100,6 +100,7 @@ async def expire_stale_reserves(db) -> Dict[str, Any]:
     }).limit(200)
 
     expired_txs: List[Dict[str, Any]] = []
+    released_batch_ids: List[str] = []
     sm = StateMachine(db)
     async for tx in cursor:
         tx_id = tx["id"]
@@ -109,14 +110,25 @@ async def expire_stale_reserves(db) -> Dict[str, Any]:
                 new_state="available",
                 trigger="reserve_expiry_rollback",
                 metadata={"expiry_rollback_at": datetime.now(timezone.utc).isoformat()},
+                # Only if the reservation is still the stale one this cursor saw.
+                expected={"payout_batch_id": tx.get("payout_batch_id")},
             )
             expired_txs.append({
                 "tx_id": tx_id,
                 "organization_id": tx.get("organization_id"),
                 "amount_minor": tx.get("amount_display_minor", 0),
             })
+            if tx.get("payout_batch_id"):
+                released_batch_ids.append(tx["payout_batch_id"])
         except Exception as e:
             logger.warning("reserve expiry rollback failed tx=%s err=%s", tx_id, e)
+
+    if released_batch_ids:
+        try:
+            from .wednesday_batch import expire_batches_without_holds
+            await expire_batches_without_holds(db, released_batch_ids)
+        except Exception as e:
+            logger.warning("reserve expiry: closing emptied batches failed: %s", e)
 
     if expired_txs:
         logger.info("reserve_expiry: rolled_back=%d", len(expired_txs))

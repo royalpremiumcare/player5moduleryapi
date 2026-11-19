@@ -552,6 +552,15 @@ class SuperAdminOverview(BaseModel):
 # MongoDB Index Definitions
 # ---------------------------------------------------------------------------
 
+# One payout batch per org per day. Partial: legacy batches (3 partial_failure docs
+# share a key) have no `idempotency_enforced`, so they stay outside the index.
+PAYOUT_BATCH_IDEMPOTENCY_INDEX = {
+    "keys": [("idempotency_key", 1)],
+    "name": "idempotency_key_enforced_unique",
+    "unique": True,
+    "partialFilterExpression": {"idempotency_enforced": True},
+}
+
 FINANCIAL_INDEXES = {
     "merchant_wallets": [
         {"keys": [("organization_id", 1)], "unique": True},
@@ -573,6 +582,7 @@ FINANCIAL_INDEXES = {
         {"keys": [("status", 1)]},
         {"keys": [("payout_market", 1), ("status", 1)]},
         {"keys": [("created_at", -1)]},
+        PAYOUT_BATCH_IDEMPOTENCY_INDEX,
     ],
     "exchange_rates": [
         {"keys": [("is_current", 1)]},

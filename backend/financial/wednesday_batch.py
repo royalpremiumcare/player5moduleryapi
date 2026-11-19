@@ -24,8 +24,12 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
+from pymongo.errors import DuplicateKeyError
+
+from .distributed_lock import with_distributed_lock
+from .expiry_service import RESERVE_EXPIRY_DAYS
 from .feature_flags import is_env_flag_enabled
 from .money import get_tier_config
 from .state_machine import StateMachine
@@ -41,6 +45,17 @@ BATCH_STATUS_WISE_FUND_PENDING = "wise_fund_pending"
 BATCH_STATUS_COMPLETED = "completed"
 BATCH_STATUS_FAILED = "failed"
 BATCH_STATUS_PARTIAL_FAILURE = "partial_failure"
+BATCH_STATUS_EXPIRED = "expired"
+
+# Built but not yet sent to Wise. These can expire. A wise_fund_pending batch has a
+# live Wise transfer (maybe already funded), so it stays in front of the admin.
+OPEN_BATCH_STATUSES = (
+    BATCH_STATUS_DRAFT,
+    BATCH_STATUS_AWAITING_ADMIN,
+    BATCH_STATUS_QUEUED_FOR_WISE,
+)
+# Item states that still hold money for their batch.
+BATCH_HOLD_STATES = ("reserved", "reserved_for_batch", "queued_for_wise", "wise_fund_pending")
 
 
 # ---------------------------------------------------------------------------
@@ -71,11 +86,121 @@ async def get_payout_threshold(db, organization_id: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Reservation rollback and batch expiry
+# ---------------------------------------------------------------------------
+
+async def _release_reservations(db, tx_ids: Iterable[str], *, batch_id: str, trigger: str) -> int:
+    """Return this batch's reserved_for_batch items to available.
+
+    An item whose reservation now belongs to another batch (or that moved on in the
+    pipeline) is left alone.
+    """
+    sm = StateMachine(db)
+    released = 0
+    for tx_id in tx_ids:
+        try:
+            await sm.transition(
+                tx_id=tx_id,
+                new_state="available",
+                trigger=trigger,
+                metadata={"rolled_back_at": datetime.now(timezone.utc).isoformat()},
+                expected={"state": "reserved_for_batch", "payout_batch_id": batch_id},
+            )
+            released += 1
+        except Exception as e:
+            logger.warning("reservation rollback skipped tx=%s batch=%s: %s", tx_id, batch_id, e)
+    return released
+
+
+async def expire_batches_without_holds(db, batch_ids: Iterable[str], reason: str = "reserve_expiry") -> int:
+    """Mark open batches that no longer hold any item as expired. Returns how many."""
+    expired = 0
+    for batch_id in dict.fromkeys(b for b in batch_ids if b):
+        still_held = await db.merchant_transactions.count_documents({
+            "payout_batch_id": batch_id,
+            "state": {"$in": list(BATCH_HOLD_STATES)},
+        })
+        if still_held:
+            continue
+        now = datetime.now(timezone.utc).isoformat()
+        res = await db.payout_batches.update_one(
+            {"id": batch_id, "status": {"$in": list(OPEN_BATCH_STATUSES)}},
+            {"$set": {
+                "status": BATCH_STATUS_EXPIRED,
+                "expired_at": now,
+                "expired_reason": reason,
+                "updated_at": now,
+            }},
+        )
+        if res.modified_count:
+            expired += 1
+            logger.info("batch expired (no held items left): batch=%s reason=%s", batch_id, reason)
+    return expired
+
+
+def _older_than_reserve_window(created_at: Any) -> bool:
+    if not created_at:
+        return False
+    try:
+        created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+    except ValueError:
+        logger.warning("batch created_at unreadable: %r", created_at)
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - created > timedelta(days=RESERVE_EXPIRY_DAYS)
+
+
+async def _refuse_unfundable(db, batch: Dict[str, Any], held_states: Iterable[str]) -> Optional[str]:
+    """Return an error code if this batch must not be funded, else None.
+
+    Open batches (not yet at Wise) older than the reserve window, or whose items are
+    not all still held for this batch, are refused; their own reservations are
+    released and the batch expires once nothing is held. A wise_fund_pending batch is
+    refused only for unheld items and never expired (its Wise transfer exists).
+    """
+    batch_id = batch["id"]
+    status = batch.get("status")
+    tx_ids = list(dict.fromkeys(batch.get("item_transaction_ids") or batch.get("transaction_ids") or []))
+    is_open = status in OPEN_BATCH_STATUSES
+
+    error = None
+    if is_open and _older_than_reserve_window(batch.get("created_at")):
+        error = "batch_reserve_expired"
+    elif tx_ids:
+        held = await db.merchant_transactions.count_documents({
+            "id": {"$in": tx_ids},
+            "payout_batch_id": batch_id,
+            "state": {"$in": list(held_states)},
+        })
+        if held != len(tx_ids):
+            error = "batch_items_not_held"
+
+    if error:
+        logger.warning("batch funding refused: batch=%s status=%s error=%s", batch_id, status, error)
+        if is_open:
+            await _release_reservations(db, tx_ids, batch_id=batch_id, trigger="batch_expired_rollback")
+            await expire_batches_without_holds(db, [batch_id], reason=error)
+    return error
+
+
+# ---------------------------------------------------------------------------
 # Tuesday prep cron: scan wallets → move to reserved_for_batch
 # ---------------------------------------------------------------------------
 
 async def tuesday_batch_prepare_cron(db) -> Dict[str, Any]:
-    """Scan all eligible wallets and prepare batches for Wednesday manual fund."""
+    """Scan all eligible wallets and prepare batches for Wednesday manual fund.
+
+    Runs once across all workers: the lock is held (hold=True) for its TTL as a
+    dedupe window. Redis down -> skip (fail-closed): no batch is built.
+    """
+    async with with_distributed_lock("tuesday_batch_prepare", ttl=1800, fail_closed=True, hold=True) as acquired:
+        if not acquired:
+            return {"skipped": True, "reason": "lock_not_acquired"}
+        return await _tuesday_batch_prepare_body(db)
+
+
+async def _tuesday_batch_prepare_body(db) -> Dict[str, Any]:
     if not is_env_flag_enabled("FEATURE_WEDNESDAY_BATCH"):
         logger.info("FEATURE_WEDNESDAY_BATCH disabled, skipping batch prep")
         return {"skipped": True, "reason": "feature_flag_off"}
@@ -104,12 +229,14 @@ async def tuesday_batch_prepare_cron(db) -> Dict[str, Any]:
         }).sort("created_at", 1)
 
         item_ids: List[str] = []
+        amounts: Dict[str, int] = {}
         total_in_batch = 0
         async for tx in tx_cursor:
             amt = int(tx.get("amount_display_minor") or 0)
             if amt <= 0:
                 continue
             item_ids.append(tx["id"])
+            amounts[tx["id"]] = amt
             total_in_batch += amt
 
         if total_in_batch < threshold or not item_ids:
@@ -136,12 +263,26 @@ async def tuesday_batch_prepare_cron(db) -> Dict[str, Any]:
         if not reserved_ok:
             continue
 
+        # Another worker or a refund/dispute may have taken some items between the
+        # scan and the reservation: the batch is only what this worker reserved.
+        reserved_total = sum(amounts[tx_id] for tx_id in reserved_ok)
+        if reserved_total < threshold:
+            logger.info(
+                "batch_prep under threshold after reserve org=%s reserved=%d threshold=%d",
+                org_id, reserved_total, threshold,
+            )
+            await _release_reservations(
+                db, reserved_ok, batch_id=batch_id, trigger="batch_under_threshold_rollback",
+            )
+            continue
+
+        idempotency_key = f"batch:{org_id}:{now[:10]}"
         batch_doc = {
             "id": batch_id,
             "organization_id": org_id,
             "base_currency": wallet.get("base_currency", "TRY"),
             "status": BATCH_STATUS_AWAITING_ADMIN,
-            "total_amount_minor": total_in_batch,
+            "total_amount_minor": reserved_total,
             "item_transaction_ids": reserved_ok,
             "item_count": len(reserved_ok),
             "threshold_at_creation": threshold,
@@ -152,19 +293,30 @@ async def tuesday_batch_prepare_cron(db) -> Dict[str, Any]:
             "wise_batch_group_id": None,
             "funded_at": None,
             "funded_by": None,
-            "idempotency_key": f"batch:{org_id}:{now[:10]}",
+            "idempotency_key": idempotency_key,
+            # The unique index covers only docs with this flag; legacy batches that
+            # share a key do not carry it.
+            "idempotency_enforced": True,
         }
         try:
             await db.payout_batches.insert_one(batch_doc)
             batches_created.append({
                 "id": batch_id,
                 "organization_id": org_id,
-                "total_amount_minor": total_in_batch,
+                "total_amount_minor": reserved_total,
                 "item_count": len(reserved_ok),
             })
             logger.info(
                 "batch_prep created: batch=%s org=%s total=%d items=%d",
-                batch_id, org_id, total_in_batch, len(reserved_ok),
+                batch_id, org_id, reserved_total, len(reserved_ok),
+            )
+        except DuplicateKeyError:
+            logger.warning(
+                "batch_prep duplicate key org=%s key=%s: releasing %d reserved items",
+                org_id, idempotency_key, len(reserved_ok),
+            )
+            await _release_reservations(
+                db, reserved_ok, batch_id=batch_id, trigger="batch_duplicate_rollback",
             )
         except Exception as e:
             logger.exception("batch insert failed org=%s: %s", org_id, e)
@@ -293,6 +445,10 @@ async def prepare_batch_for_wise(
     if batch["status"] != BATCH_STATUS_AWAITING_ADMIN:
         return {"ok": False, "error": f"invalid_batch_status:{batch['status']}"}
 
+    refused = await _refuse_unfundable(db, batch, ("reserved_for_batch", "reserved"))
+    if refused:
+        return {"ok": False, "error": refused}
+
     sm = StateMachine(db)
     tx_ids = batch.get("item_transaction_ids") or []
 
@@ -410,6 +566,26 @@ async def bulk_prepare_batches_for_wise(
     if not batches:
         return {"ok": True, "processed": 0, "success": 0, "failed": 0, "items": [], "mode": "unified"}
 
+    refused_items: List[Dict[str, Any]] = []
+    fundable: List[Dict[str, Any]] = []
+    for b in batches:
+        refused = await _refuse_unfundable(db, b, ("reserved_for_batch", "reserved"))
+        if refused:
+            refused_items.append({"batch_id": b["id"], "ok": False, "error": refused})
+        else:
+            fundable.append(b)
+    batches = fundable
+    if not batches:
+        return {
+            "ok": False,
+            "processed": len(refused_items),
+            "success": 0,
+            "failed": len(refused_items),
+            "error": "no_fundable_batches",
+            "items": refused_items,
+            "mode": "unified",
+        }
+
     now = datetime.now(timezone.utc).isoformat()
     sm = StateMachine(db)
 
@@ -477,9 +653,9 @@ async def bulk_prepare_batches_for_wise(
                 pass
         return {
             "ok": False,
-            "processed": len(batches),
+            "processed": len(batches) + len(refused_items),
             "success": 0,
-            "failed": len(batches),
+            "failed": len(batches) + len(refused_items),
             "error": str(e)[:500],
             "mode": "unified",
         }
@@ -541,11 +717,11 @@ async def bulk_prepare_batches_for_wise(
 
     return {
         "ok": True,
-        "processed": len(batches),
+        "processed": len(batches) + len(refused_items),
         "success": success_count,
-        "failed": len(batches) - success_count,
+        "failed": len(batches) - success_count + len(refused_items),
         "wise_batch_group_id": wise_group_id,
-        "items": items,
+        "items": refused_items + items,
         "mode": "unified",
     }
 
@@ -560,6 +736,10 @@ async def confirm_manual_fund(
         return {"ok": False, "error": "batch_not_found"}
     if batch["status"] != BATCH_STATUS_WISE_FUND_PENDING:
         return {"ok": False, "error": f"invalid_batch_status:{batch['status']}"}
+
+    refused = await _refuse_unfundable(db, batch, ("wise_fund_pending",))
+    if refused:
+        return {"ok": False, "error": refused}
 
     sm = StateMachine(db)
     tx_ids = batch.get("item_transaction_ids") or []

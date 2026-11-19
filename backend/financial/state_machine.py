@@ -260,6 +260,7 @@ class StateMachine:
         new_state: str,
         trigger: str = "",
         metadata: Optional[Dict[str, Any]] = None,
+        expected: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, int]:
         """
         Perform an atomic state transition on a transaction.
@@ -275,6 +276,9 @@ class StateMachine:
             new_state: Target state
             trigger: What caused this transition (e.g. "checkout.session.completed")
             metadata: Additional fields to $set on the transaction
+            expected: Extra field values the transaction must still have, checked on
+                read and in the update filter (e.g. {"payout_batch_id": ...}), so a
+                record that changed owner meanwhile is not touched.
 
         Returns:
             Dict of wallet $inc updates that were applied
@@ -294,6 +298,8 @@ class StateMachine:
         org_id = tx["organization_id"]
 
         # 2. Validate
+        if expected and any(tx.get(k) != v for k, v in expected.items()):
+            raise InvalidTransitionError(current_state, new_state, tx_id)
         self.validate_transition(current_state, new_state, tx_id)
 
         # 3. Build state history entry
@@ -336,7 +342,8 @@ class StateMachine:
 
         # 6. Apply transaction update
         result = await self.db.merchant_transactions.update_one(
-            {"id": tx_id, "state": current_state},  # Optimistic lock on current state
+            # Optimistic lock on current state (+ any expected fields)
+            {**(expected or {}), "id": tx_id, "state": current_state},
             tx_update,
         )
 

@@ -256,7 +256,20 @@ def register_handler(failure_type: str, handler: Callable) -> None:
 
 
 async def run_retry_cron(db, *, locked_by: str = "cron:dlq", limit: int = 20) -> Dict[str, Any]:
-    """Process pending DLQ entries whose retry time has come."""
+    """Process pending DLQ entries whose retry time has come.
+
+    Runs once across all workers per 5-minute tick: the lock is held (hold=True) for
+    its TTL as a dedupe window. Redis down -> skip (fail-closed).
+    """
+    from .distributed_lock import with_distributed_lock
+
+    async with with_distributed_lock("dlq_retry", ttl=270, fail_closed=True, hold=True) as acquired:
+        if not acquired:
+            return {"processed": 0, "items": [], "skipped": "lock_not_acquired"}
+        return await _run_retry_cron_body(db, locked_by=locked_by, limit=limit)
+
+
+async def _run_retry_cron_body(db, *, locked_by: str = "cron:dlq", limit: int = 20) -> Dict[str, Any]:
     items = await list_pending(db, limit=limit)
     processed: List[Dict[str, Any]] = []
     logger.info("DLQ cron: batch_start count=%d", len(items))
