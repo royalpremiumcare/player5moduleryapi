@@ -3,6 +3,7 @@ import logging
 
 import pytest
 
+from financial import distributed_lock
 from financial.distributed_lock import RELEASE_SCRIPT, with_distributed_lock
 
 
@@ -15,9 +16,14 @@ class LockRedis:
         self.closed = False
         self.fail_set = False
         self.fail_eval = False
+        self.hang_set = False
+        self.hang_eval = False
+        self.hang_close = False
 
     async def set(self, key, value, nx=False, px=None):
         self.set_calls.append((key, nx, px))
+        if self.hang_set:
+            await asyncio.sleep(3600)
         if self.fail_set:
             raise ConnectionError("redis down")
         if nx and key in self.store:
@@ -28,6 +34,8 @@ class LockRedis:
     async def eval(self, script, numkeys, key, token):
         assert script == RELEASE_SCRIPT
         assert numkeys == 1
+        if self.hang_eval:
+            await asyncio.sleep(3600)
         if self.fail_eval:
             raise ConnectionError("redis down")
         if self.store.get(key) == token:
@@ -36,6 +44,8 @@ class LockRedis:
         return 0
 
     async def aclose(self):
+        if self.hang_close:
+            await asyncio.sleep(3600)
         self.closed = True
 
 
@@ -91,13 +101,59 @@ async def test_redis_down_fail_open_runs():
         assert acquired is True
 
 
-async def test_release_error_never_raises():
+async def test_release_error_never_raises(caplog):
     redis = LockRedis()
+    with caplog.at_level(logging.WARNING):
+        async with with_distributed_lock(
+            "job_d", ttl=60, fail_closed=True, redis_factory=factory_for(redis)
+        ) as acquired:
+            assert acquired is True
+            redis.fail_eval = True
+    assert any(r.levelno == logging.WARNING and "job_d" in r.getMessage() for r in caplog.records)
+    assert redis.closed is True
+
+
+@pytest.fixture
+def short_timeout(monkeypatch):
+    monkeypatch.setattr(distributed_lock, "REDIS_TIMEOUT", 0.05)
+
+
+async def test_hung_acquire_fail_closed_skips(short_timeout):
+    redis = LockRedis()
+    redis.hang_set = True
     async with with_distributed_lock(
-        "job_d", ttl=60, fail_closed=True, redis_factory=factory_for(redis)
+        "job_f", ttl=60, fail_closed=True, redis_factory=factory_for(redis)
+    ) as acquired:
+        assert acquired is False
+
+
+async def test_hung_acquire_fail_open_runs(short_timeout):
+    redis = LockRedis()
+    redis.hang_set = True
+    async with with_distributed_lock(
+        "quote_cleanup", ttl=60, fail_closed=False, redis_factory=factory_for(redis)
     ) as acquired:
         assert acquired is True
-        redis.fail_eval = True
+
+
+async def test_hung_release_never_raises_or_blocks(short_timeout, caplog):
+    redis = LockRedis()
+    with caplog.at_level(logging.WARNING):
+        async with with_distributed_lock(
+            "job_g", ttl=60, fail_closed=True, redis_factory=factory_for(redis)
+        ) as acquired:
+            assert acquired is True
+            redis.hang_eval = True
+    assert any(r.levelno == logging.WARNING and "job_g" in r.getMessage() for r in caplog.records)
+
+
+async def test_hung_close_never_raises_or_blocks(short_timeout):
+    redis = LockRedis()
+    redis.hang_close = True
+    async with with_distributed_lock(
+        "job_h", ttl=60, fail_closed=True, redis_factory=factory_for(redis)
+    ) as acquired:
+        assert acquired is True
 
 
 async def test_lock_released_after_body_exception():
