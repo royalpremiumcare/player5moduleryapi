@@ -296,6 +296,9 @@ async def _tuesday_batch_prepare_body(db) -> Dict[str, Any]:
                         "payout_batch_id": batch_id,
                         "reserved_at": now,
                     },
+                    # Only what the scan saw: an item that meanwhile moved on (e.g. to
+                    # queued_for_wise in another batch) is skipped, never re-stamped.
+                    expected={"state": "available"},
                 )
                 reserved_ok.append(tx_id)
             except Exception as e:

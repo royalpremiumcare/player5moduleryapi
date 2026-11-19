@@ -680,3 +680,61 @@ async def test_bulk_prepare_with_every_batch_aborted_calls_wise_zero_times(db, m
     assert spy.calls == []
     assert res["ok"] is False and res["success"] == 0 and res["failed"] == 1
     assert res["items"] == [{"batch_id": "b-race", "ok": False, "error": "batch_item_transition_failed"}]
+
+
+# ---------------------------------------------------------------------------
+# R7: Tuesday prep must never pull an item that left `available` after the scan
+# (queued_for_wise -> reserved_for_batch is a valid edge for the abort revert only)
+# ---------------------------------------------------------------------------
+
+def _queue_into_batch_a_after_scan(db, monkeypatch):
+    """Between the Tuesday scan and its transition, t1 is reserved by batch A and moved
+    to queued_for_wise by an admin prepare (Wise call in flight)."""
+    coll = db.merchant_transactions
+    real_find_one = coll.find_one
+    fired = []
+
+    async def find_one(flt=None, *a, **k):
+        if flt == {"id": "t1"} and not fired:
+            fired.append(1)
+            w = _wallet(db)
+            w["available_balance_minor"] -= 100
+            w["reserved_balance_minor"] += 100
+            _tx(db, "t1").update(state="queued_for_wise", payout_batch_id="A")
+        return await real_find_one(flt, *a, **k)
+
+    monkeypatch.setattr(coll, "find_one", find_one)
+
+
+async def test_tuesday_prep_does_not_pull_a_queued_item_into_a_new_batch(db, monkeypatch):
+    _seed_wallet(db, [100], threshold=100)
+    _queue_into_batch_a_after_scan(db, monkeypatch)
+
+    result = await wednesday_batch._tuesday_batch_prepare_body(db)
+
+    assert _tx(db, "t1")["state"] == "queued_for_wise"
+    assert _tx(db, "t1")["payout_batch_id"] == "A"
+    # skipped item: no reserved_ok, no batch, no amount
+    assert result["batches_created"] == 0
+    assert db.payout_batches.docs == []
+    assert _wallet(db)["reserved_balance_minor"] == 100
+    assert _wallet(db)["available_balance_minor"] == 0
+
+
+async def test_tuesday_prep_duplicate_key_never_releases_a_queued_item(db, monkeypatch):
+    _seed_wallet(db, [100], threshold=100)
+    db.payout_batches.docs.append({   # batch A owns today's key and t1
+        "id": "A", "organization_id": ORG, "status": "queued_for_wise",
+        "item_transaction_ids": ["t1"], "total_amount_minor": 100,
+        "idempotency_key": _today_key(), "idempotency_enforced": True, "created_at": _iso(),
+    })
+    _queue_into_batch_a_after_scan(db, monkeypatch)
+
+    await wednesday_batch._tuesday_batch_prepare_body(db)
+
+    # Not released and credited while batch A's Wise transfer contains it.
+    assert _tx(db, "t1")["state"] == "queued_for_wise"
+    assert _tx(db, "t1")["payout_batch_id"] == "A"
+    assert _wallet(db)["available_balance_minor"] == 0
+    assert _wallet(db)["reserved_balance_minor"] == 100
+    assert [b["id"] for b in db.payout_batches.docs] == ["A"]
