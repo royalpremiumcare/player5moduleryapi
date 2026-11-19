@@ -1124,7 +1124,11 @@ async def check_and_send_reminders():
 
 # === Recurring Payment Checker (Her gün çalışır) ===
 async def check_and_process_recurring_payments():
-    """Vadesi gelen recurring payment'leri işle"""
+    """Vadesi gelen recurring payment'leri işle.
+
+    NOT SCHEDULED (Faz 6): dead PayTR path. It references undefined PAYTR_*
+    constants and 0 organizations have card_saved=true. Kept for reference only.
+    """
     try:
         logging.info("=== Recurring Payment Check Started ===")
         
@@ -1345,15 +1349,9 @@ async def lifespan(app: FastAPI):
         )
         logging.info(f"  - WhatsApp Reminder: Enabled (Every {REMINDER_POLL_SECONDS}s, hassas zamanlama)")
         
-        # Recurring Payment Job - Her gün saat 02:00'de (UTC)
+        # Recurring Payment Job: artık zamanlanmıyor (ölü PayTR yolu, bkz.
+        # check_and_process_recurring_payments docstring).
         from apscheduler.triggers.cron import CronTrigger
-        scheduler.add_job(
-            check_and_process_recurring_payments,
-            CronTrigger(hour=2, minute=0),  # Her gün 02:00
-            id='recurring_payment_job',
-            replace_existing=True,
-            max_instances=1
-        )
 
         # Aktivasyon nudge — her gün 08:00 UTC (~11:00 TR): kayıttan +1 gün geçmiş,
         # hiç gerçek randevu oluşturmamış admin'lere tek seferlik e-posta.
@@ -1482,6 +1480,7 @@ async def lifespan(app: FastAPI):
 
             # 4c.3 New cron jobs (reserve expiry, batch prep, refund SLA, DLQ retry)
             try:
+                from financial.distributed_lock import with_distributed_lock
                 from financial.expiry_service import run_expiry_crons
                 from financial.wednesday_batch import tuesday_batch_prepare_cron
                 from financial.refund_requests import run_sla_monitor_cron
@@ -1491,7 +1490,9 @@ async def lifespan(app: FastAPI):
 
                 async def _run_expiry():
                     try:
-                        await run_expiry_crons(_db)
+                        async with with_distributed_lock('expiry_crons', ttl=1800, fail_closed=True) as acquired:
+                            if acquired:
+                                await run_expiry_crons(_db)
                     except Exception as e:
                         logging.error(f"run_expiry_crons failed: {e}", exc_info=True)
 
@@ -1503,7 +1504,9 @@ async def lifespan(app: FastAPI):
 
                 async def _run_refund_sla():
                     try:
-                        await run_sla_monitor_cron(_db)
+                        async with with_distributed_lock('refund_sla_monitor', ttl=600, fail_closed=True) as acquired:
+                            if acquired:
+                                await run_sla_monitor_cron(_db)
                     except Exception as e:
                         logging.error(f"run_sla_monitor_cron failed: {e}", exc_info=True)
 

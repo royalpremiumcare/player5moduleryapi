@@ -30,6 +30,7 @@ from .email_notifications import (
 )
 from .money import format_display
 import redis.asyncio as aioredis
+from .distributed_lock import with_distributed_lock
 import os
 
 logger = logging.getLogger(__name__)
@@ -129,26 +130,21 @@ async def _resolve_settlement_due(db, tx: Dict[str, Any]) -> Optional[datetime]:
     )
     return None
 
-async def _acquire_lock(lock_name: str, ttl: int = 300) -> bool:
-    """Try to acquire a Redis-based distributed lock. Returns True if acquired."""
-    try:
-        r = aioredis.from_url(REDIS_URL)
-        acquired = await r.set(f"plann:lock:{lock_name}", "1", nx=True, ex=ttl)
-        await r.aclose()
-        return bool(acquired)
-    except Exception:
-        return True  # If Redis fails, allow job to run
-
-
 # ---------------------------------------------------------------------------
 # 1. Currency Shield Job — nightly 01:00 UTC
 # ---------------------------------------------------------------------------
 
 async def currency_shield_job(db) -> None:
+    """Run `_currency_shield_job_body` under the distributed lock `currency_shield` (fail-closed)."""
+    async with with_distributed_lock("currency_shield", ttl=600, fail_closed=True) as acquired:
+        if not acquired:
+            logger.debug("currency_shield_job skipped (lock held by another worker or Redis down)")
+            return
+        await _currency_shield_job_body(db)
+
+
+async def _currency_shield_job_body(db) -> None:
     """Fetch GBP/TRY rate, recalculate TRY tier limits, alert on spike."""
-    if not await _acquire_lock("currency_shield", ttl=600):
-        logger.debug("Currency shield job skipped — another worker holds the lock")
-        return
     try:
         rate_micro, source = await fetch_current_rate(db)
 
@@ -174,6 +170,17 @@ async def currency_shield_job(db) -> None:
 # ---------------------------------------------------------------------------
 
 async def settlement_check_job(db) -> None:
+    """Run `_settlement_check_job_body` under the distributed lock `settlement_check` (fail-closed)."""
+    # Interval is 2 min in sandbox, 120 min in prod; ttl must stay below the interval.
+    ttl = 100 if os.getenv("WISE_ENVIRONMENT", "sandbox") == "sandbox" else 1800
+    async with with_distributed_lock("settlement_check", ttl=ttl, fail_closed=True) as acquired:
+        if not acquired:
+            logger.debug("settlement_check_job skipped (lock held by another worker or Redis down)")
+            return
+        await _settlement_check_job_body(db)
+
+
+async def _settlement_check_job_body(db) -> None:
     """
     Check Stripe settlements and advance transactions:
     captured → settled (after T+2) → available (after dispute window)
@@ -238,6 +245,15 @@ async def settlement_check_job(db) -> None:
 # ---------------------------------------------------------------------------
 
 async def refund_reserve_release_job(db) -> None:
+    """Run `_refund_reserve_release_job_body` under the distributed lock `refund_reserve_release` (fail-closed)."""
+    async with with_distributed_lock("refund_reserve_release", ttl=600, fail_closed=True) as acquired:
+        if not acquired:
+            logger.debug("refund_reserve_release_job skipped (lock held by another worker or Redis down)")
+            return
+        await _refund_reserve_release_job_body(db)
+
+
+async def _refund_reserve_release_job_body(db) -> None:
     """Recalculate refund reserves for all wallets."""
     wallets = await db.merchant_wallets.find({}).to_list(length=5000)
     updated = 0
@@ -275,6 +291,15 @@ async def auto_payout_job(db) -> None:
 # ---------------------------------------------------------------------------
 
 async def wise_status_check_job(db) -> None:
+    """Run `_wise_status_check_job_body` under the distributed lock `wise_status_check` (fail-closed)."""
+    async with with_distributed_lock("wise_status_check", ttl=900, fail_closed=True) as acquired:
+        if not acquired:
+            logger.debug("wise_status_check_job skipped (lock held by another worker or Redis down)")
+            return
+        await _wise_status_check_job_body(db)
+
+
+async def _wise_status_check_job_body(db) -> None:
     """Poll Wise for transfer status updates on processing batches."""
     sm = StateMachine(db)
 
@@ -345,6 +370,15 @@ async def wise_status_check_job(db) -> None:
 # ---------------------------------------------------------------------------
 
 async def quote_cleanup_job(db) -> None:
+    """Run `_quote_cleanup_job_body` under the distributed lock `quote_cleanup` (fail-open)."""
+    async with with_distributed_lock("quote_cleanup", ttl=600, fail_closed=False) as acquired:
+        if not acquired:
+            logger.debug("quote_cleanup_job skipped (lock held by another worker or Redis down)")
+            return
+        await _quote_cleanup_job_body(db)
+
+
+async def _quote_cleanup_job_body(db) -> None:
     """Expire quotes past their expiration time."""
     now = datetime.now(timezone.utc).isoformat()
 
@@ -365,6 +399,15 @@ async def quote_cleanup_job(db) -> None:
 # ---------------------------------------------------------------------------
 
 async def failed_webhook_retry_job(db) -> None:
+    """Run `_failed_webhook_retry_job_body` under the distributed lock `failed_webhook_retry` (fail-closed)."""
+    async with with_distributed_lock("failed_webhook_retry", ttl=600, fail_closed=True) as acquired:
+        if not acquired:
+            logger.debug("failed_webhook_retry_job skipped (lock held by another worker or Redis down)")
+            return
+        await _failed_webhook_retry_job_body(db)
+
+
+async def _failed_webhook_retry_job_body(db) -> None:
     """Retry failed webhook events (max 3 attempts)."""
     from .merchant_checkout import handle_stripe_merchant_webhook
     from .wise_service import handle_wise_webhook
@@ -401,6 +444,15 @@ async def failed_webhook_retry_job(db) -> None:
 # ---------------------------------------------------------------------------
 
 async def daily_reconciliation_job(db) -> None:
+    """Run `_daily_reconciliation_job_body` under the distributed lock `daily_reconciliation` (fail-closed)."""
+    async with with_distributed_lock("daily_reconciliation", ttl=1800, fail_closed=True) as acquired:
+        if not acquired:
+            logger.debug("daily_reconciliation_job skipped (lock held by another worker or Redis down)")
+            return
+        await _daily_reconciliation_job_body(db)
+
+
+async def _daily_reconciliation_job_body(db) -> None:
     """
     Gün sonu mutabakatı:
     1. Stripe settlement verileri vs wallet pending/settled bakiyeleri
@@ -409,11 +461,8 @@ async def daily_reconciliation_job(db) -> None:
 
     1 kuruş/pence bile uyuşmazlık varsa fatihsenyuz12@gmail.com'a alert mail gönder.
     """
-    # KRİTİK: 17 uvicorn worker aynı anda bu job'ı çalıştırırsa aynı gece
-    # 17 kopya mutabakat maili gider. Dağıtık kilit ile tek worker çalışsın.
-    if not await _acquire_lock("daily_reconciliation", ttl=1800):
-        logger.debug("Daily reconciliation skipped — another worker holds the lock")
-        return
+    # KRİTİK: 17 uvicorn worker aynı anda bu job'ı çalıştırırsa 17 kopya mutabakat
+    # maili gider; kilit public wrapper'da (with_distributed_lock) alınır.
 
     now = datetime.now(timezone.utc)
     report_date = now.strftime("%Y-%m-%d")
@@ -571,6 +620,15 @@ async def daily_reconciliation_job(db) -> None:
 # ---------------------------------------------------------------------------
 
 async def wise_auto_convert_job(db) -> None:
+    """Run `_wise_auto_convert_job_body` under the distributed lock `wise_auto_convert` (fail-closed)."""
+    async with with_distributed_lock("wise_auto_convert", ttl=600, fail_closed=True) as acquired:
+        if not acquired:
+            logger.debug("wise_auto_convert_job skipped (lock held by another worker or Redis down)")
+            return
+        await _wise_auto_convert_job_body(db)
+
+
+async def _wise_auto_convert_job_body(db) -> None:
     """
     GBP→TRY otomatik çevrimin güvenlik ağı.
 
@@ -583,9 +641,6 @@ async def wise_auto_convert_job(db) -> None:
     per-tx conversion lock + `conversions` unique constraint. Noop servis
     aktifse (WISE_AUTO_CONVERT_ENABLED kapalı) hiçbir şey yapmaz.
     """
-    if not await _acquire_lock("wise_auto_convert", ttl=600):
-        logger.debug("Wise auto-convert job skipped — another worker holds the lock")
-        return
 
     r = None
     try:
@@ -611,10 +666,16 @@ async def wise_auto_convert_job(db) -> None:
 # ---------------------------------------------------------------------------
 
 async def refund_reconciliation_job(db) -> None:
+    """Run `_refund_reconciliation_job_body` under the distributed lock `refund_reconciliation` (fail-closed)."""
+    async with with_distributed_lock("refund_reconciliation", ttl=240, fail_closed=True) as acquired:
+        if not acquired:
+            logger.debug("refund_reconciliation_job skipped (lock held by another worker or Redis down)")
+            return
+        await _refund_reconciliation_job_body(db)
+
+
+async def _refund_reconciliation_job_body(db) -> None:
     """pending refund_reconciliation_pending kayıtlarını dene (kilit + retry)."""
-    if not await _acquire_lock("refund_reconciliation", ttl=240):
-        logger.debug("refund_reconciliation job skipped — lock held")
-        return
     try:
         from financial.refund_reconciliation_service import run_refund_reconciliation_cron
 
