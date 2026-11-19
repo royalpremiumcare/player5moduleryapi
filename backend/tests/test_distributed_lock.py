@@ -165,3 +165,39 @@ async def test_lock_released_after_body_exception():
             raise ValueError("boom")
     assert redis.store == {}
     assert redis.closed is True
+
+
+async def test_hold_keeps_key_after_normal_exit():
+    redis = LockRedis()
+    async with with_distributed_lock("job", ttl=60, fail_closed=True, hold=True,
+                                     redis_factory=factory_for(redis)) as acquired:
+        assert acquired is True
+    assert "plann:lock:job" in redis.store
+    assert redis.closed is True
+
+
+async def test_hold_keeps_key_when_body_raises_and_exception_propagates():
+    redis = LockRedis()
+    with pytest.raises(RuntimeError):
+        async with with_distributed_lock("job", ttl=60, fail_closed=True, hold=True,
+                                         redis_factory=factory_for(redis)):
+            raise RuntimeError("boom")
+    assert "plann:lock:job" in redis.store
+
+
+async def test_hold_second_sequential_entry_within_ttl_is_refused():
+    redis = LockRedis()
+    results = []
+    for _ in range(2):
+        async with with_distributed_lock("job", ttl=60, fail_closed=True, hold=True,
+                                         redis_factory=factory_for(redis)) as acquired:
+            results.append(acquired)
+    assert results == [True, False]
+
+
+async def test_default_still_releases_after_exit():
+    redis = LockRedis()
+    async with with_distributed_lock("job", ttl=60, fail_closed=True,
+                                     redis_factory=factory_for(redis)):
+        pass
+    assert "plann:lock:job" not in redis.store

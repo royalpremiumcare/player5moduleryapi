@@ -1351,6 +1351,7 @@ async def lifespan(app: FastAPI):
         
         # Recurring Payment Job: artık zamanlanmıyor (ölü PayTR yolu, bkz.
         # check_and_process_recurring_payments docstring).
+
         from apscheduler.triggers.cron import CronTrigger
 
         # Aktivasyon nudge — her gün 08:00 UTC (~11:00 TR): kayıttan +1 gün geçmiş,
@@ -1490,7 +1491,7 @@ async def lifespan(app: FastAPI):
 
                 async def _run_expiry():
                     try:
-                        async with with_distributed_lock('expiry_crons', ttl=1800, fail_closed=True) as acquired:
+                        async with with_distributed_lock('expiry_crons', ttl=3300, fail_closed=True, hold=True) as acquired:
                             if acquired:
                                 await run_expiry_crons(_db)
                     except Exception as e:
@@ -1504,7 +1505,7 @@ async def lifespan(app: FastAPI):
 
                 async def _run_refund_sla():
                     try:
-                        async with with_distributed_lock('refund_sla_monitor', ttl=600, fail_closed=True) as acquired:
+                        async with with_distributed_lock('refund_sla_monitor', ttl=810, fail_closed=True, hold=True) as acquired:
                             if acquired:
                                 await run_sla_monitor_cron(_db)
                     except Exception as e:

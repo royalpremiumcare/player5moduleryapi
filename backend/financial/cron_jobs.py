@@ -3,7 +3,7 @@ PLANN Financial Engine — Cron Jobs (APScheduler)
 
 All scheduled financial jobs:
   - currency_shield_job       : 01:00 UTC nightly
-  - settlement_check_job      : every 2 hours
+  - settlement_check_job      : every 2 min (sandbox) / 2 hours (prod)
   - refund_reserve_release_job: every hour
   - auto_payout_job           : every 2 hours
   - wise_status_check_job     : every 30 min
@@ -136,7 +136,7 @@ async def _resolve_settlement_due(db, tx: Dict[str, Any]) -> Optional[datetime]:
 
 async def currency_shield_job(db) -> None:
     """Run `_currency_shield_job_body` under the distributed lock `currency_shield` (fail-closed)."""
-    async with with_distributed_lock("currency_shield", ttl=600, fail_closed=True) as acquired:
+    async with with_distributed_lock("currency_shield", ttl=600, fail_closed=True, hold=True) as acquired:
         if not acquired:
             logger.debug("currency_shield_job skipped (lock held by another worker or Redis down)")
             return
@@ -169,11 +169,17 @@ async def _currency_shield_job_body(db) -> None:
 # 2. Settlement Check Job — every 6 hours
 # ---------------------------------------------------------------------------
 
+def _settlement_schedule() -> tuple:
+    """(interval_minutes, lock_ttl_seconds) for settlement_check; one source for both."""
+    if os.getenv("WISE_ENVIRONMENT", "sandbox") == "sandbox":
+        return 2, 110
+    return 120, 6900
+
+
 async def settlement_check_job(db) -> None:
     """Run `_settlement_check_job_body` under the distributed lock `settlement_check` (fail-closed)."""
-    # Interval is 2 min in sandbox, 120 min in prod; ttl must stay below the interval.
-    ttl = 100 if os.getenv("WISE_ENVIRONMENT", "sandbox") == "sandbox" else 1800
-    async with with_distributed_lock("settlement_check", ttl=ttl, fail_closed=True) as acquired:
+    _, ttl = _settlement_schedule()
+    async with with_distributed_lock("settlement_check", ttl=ttl, fail_closed=True, hold=True) as acquired:
         if not acquired:
             logger.debug("settlement_check_job skipped (lock held by another worker or Redis down)")
             return
@@ -246,7 +252,7 @@ async def _settlement_check_job_body(db) -> None:
 
 async def refund_reserve_release_job(db) -> None:
     """Run `_refund_reserve_release_job_body` under the distributed lock `refund_reserve_release` (fail-closed)."""
-    async with with_distributed_lock("refund_reserve_release", ttl=600, fail_closed=True) as acquired:
+    async with with_distributed_lock("refund_reserve_release", ttl=3300, fail_closed=True, hold=True) as acquired:
         if not acquired:
             logger.debug("refund_reserve_release_job skipped (lock held by another worker or Redis down)")
             return
@@ -292,7 +298,7 @@ async def auto_payout_job(db) -> None:
 
 async def wise_status_check_job(db) -> None:
     """Run `_wise_status_check_job_body` under the distributed lock `wise_status_check` (fail-closed)."""
-    async with with_distributed_lock("wise_status_check", ttl=900, fail_closed=True) as acquired:
+    async with with_distributed_lock("wise_status_check", ttl=1650, fail_closed=True, hold=True) as acquired:
         if not acquired:
             logger.debug("wise_status_check_job skipped (lock held by another worker or Redis down)")
             return
@@ -371,7 +377,7 @@ async def _wise_status_check_job_body(db) -> None:
 
 async def quote_cleanup_job(db) -> None:
     """Run `_quote_cleanup_job_body` under the distributed lock `quote_cleanup` (fail-open)."""
-    async with with_distributed_lock("quote_cleanup", ttl=600, fail_closed=False) as acquired:
+    async with with_distributed_lock("quote_cleanup", ttl=3300, fail_closed=False, hold=True) as acquired:
         if not acquired:
             logger.debug("quote_cleanup_job skipped (lock held by another worker or Redis down)")
             return
@@ -400,7 +406,7 @@ async def _quote_cleanup_job_body(db) -> None:
 
 async def failed_webhook_retry_job(db) -> None:
     """Run `_failed_webhook_retry_job_body` under the distributed lock `failed_webhook_retry` (fail-closed)."""
-    async with with_distributed_lock("failed_webhook_retry", ttl=600, fail_closed=True) as acquired:
+    async with with_distributed_lock("failed_webhook_retry", ttl=810, fail_closed=True, hold=True) as acquired:
         if not acquired:
             logger.debug("failed_webhook_retry_job skipped (lock held by another worker or Redis down)")
             return
@@ -445,7 +451,7 @@ async def _failed_webhook_retry_job_body(db) -> None:
 
 async def daily_reconciliation_job(db) -> None:
     """Run `_daily_reconciliation_job_body` under the distributed lock `daily_reconciliation` (fail-closed)."""
-    async with with_distributed_lock("daily_reconciliation", ttl=1800, fail_closed=True) as acquired:
+    async with with_distributed_lock("daily_reconciliation", ttl=1800, fail_closed=True, hold=True) as acquired:
         if not acquired:
             logger.debug("daily_reconciliation_job skipped (lock held by another worker or Redis down)")
             return
@@ -461,9 +467,6 @@ async def _daily_reconciliation_job_body(db) -> None:
 
     1 kuruş/pence bile uyuşmazlık varsa fatihsenyuz12@gmail.com'a alert mail gönder.
     """
-    # KRİTİK: 17 uvicorn worker aynı anda bu job'ı çalıştırırsa 17 kopya mutabakat
-    # maili gider; kilit public wrapper'da (with_distributed_lock) alınır.
-
     now = datetime.now(timezone.utc)
     report_date = now.strftime("%Y-%m-%d")
     yesterday = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -621,7 +624,7 @@ async def _daily_reconciliation_job_body(db) -> None:
 
 async def wise_auto_convert_job(db) -> None:
     """Run `_wise_auto_convert_job_body` under the distributed lock `wise_auto_convert` (fail-closed)."""
-    async with with_distributed_lock("wise_auto_convert", ttl=600, fail_closed=True) as acquired:
+    async with with_distributed_lock("wise_auto_convert", ttl=3300, fail_closed=True, hold=True) as acquired:
         if not acquired:
             logger.debug("wise_auto_convert_job skipped (lock held by another worker or Redis down)")
             return
@@ -667,7 +670,7 @@ async def _wise_auto_convert_job_body(db) -> None:
 
 async def refund_reconciliation_job(db) -> None:
     """Run `_refund_reconciliation_job_body` under the distributed lock `refund_reconciliation` (fail-closed)."""
-    async with with_distributed_lock("refund_reconciliation", ttl=240, fail_closed=True) as acquired:
+    async with with_distributed_lock("refund_reconciliation", ttl=270, fail_closed=True, hold=True) as acquired:
         if not acquired:
             logger.debug("refund_reconciliation_job skipped (lock held by another worker or Redis down)")
             return
@@ -704,10 +707,10 @@ def register_financial_cron_jobs(scheduler, db) -> None:
         replace_existing=True,
     )
 
-    _is_sandbox = os.getenv("WISE_ENVIRONMENT", "sandbox") == "sandbox"
+    _settlement_interval_min, _ = _settlement_schedule()
     scheduler.add_job(
         settlement_check_job, "interval",
-        args=[db], minutes=2 if _is_sandbox else 120,
+        args=[db], minutes=_settlement_interval_min,
         id="settlement_check_job",
         replace_existing=True,
     )

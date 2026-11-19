@@ -42,11 +42,16 @@ async def with_distributed_lock(
     ttl: int,
     fail_closed: bool,
     redis_factory: Optional[Callable] = None,
+    hold: bool = False,
 ):
     """Yield True if the lock was acquired. `ttl` is in seconds.
 
     Redis error on acquire yields `not fail_closed`. Release errors are logged,
     never raised.
+
+    `hold=True`: never delete the key on exit (success or error); it expires only
+    by TTL and acts as a dedupe window. Scheduled jobs use this so that workers
+    ticking at different phases do not re-run a job that already finished.
     """
     key = f"{LOCK_PREFIX}{name}"
     token = uuid.uuid4().hex
@@ -71,7 +76,7 @@ async def with_distributed_lock(
         yield acquired
     finally:
         if client is not None:
-            if holds_lock:
+            if holds_lock and not hold:
                 try:
                     await asyncio.wait_for(
                         client.eval(RELEASE_SCRIPT, 1, key, token), timeout=REDIS_TIMEOUT
