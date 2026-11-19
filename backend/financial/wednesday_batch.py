@@ -298,14 +298,15 @@ async def _tuesday_batch_prepare_body(db) -> Dict[str, Any]:
             # share a key do not carry it.
             "idempotency_enforced": True,
         }
+        created = {
+            "id": batch_id,
+            "organization_id": org_id,
+            "total_amount_minor": reserved_total,
+            "item_count": len(reserved_ok),
+        }
         try:
             await db.payout_batches.insert_one(batch_doc)
-            batches_created.append({
-                "id": batch_id,
-                "organization_id": org_id,
-                "total_amount_minor": reserved_total,
-                "item_count": len(reserved_ok),
-            })
+            batches_created.append(created)
             logger.info(
                 "batch_prep created: batch=%s org=%s total=%d items=%d",
                 batch_id, org_id, reserved_total, len(reserved_ok),
@@ -320,6 +321,25 @@ async def _tuesday_batch_prepare_body(db) -> Dict[str, Any]:
             )
         except Exception as e:
             logger.exception("batch insert failed org=%s: %s", org_id, e)
+            # Standalone mongod: no retryable writes, so a network error can arrive after
+            # the server applied the insert. Read back before touching the reservations.
+            try:
+                written = await db.payout_batches.find_one({"id": batch_id}, {"id": 1}) is not None
+            except Exception as read_err:
+                logger.error(
+                    "batch_prep outcome unknown batch=%s org=%s (%s): keeping reservations "
+                    "until reserve expiry", batch_id, org_id, read_err,
+                )
+                continue
+            if written:
+                logger.warning("batch_prep insert error but batch exists: batch=%s org=%s", batch_id, org_id)
+                batches_created.append(created)
+            else:
+                # A write landing after this read leaves a batch with released items;
+                # the funding guard refuses and expires it.
+                await _release_reservations(
+                    db, reserved_ok, batch_id=batch_id, trigger="batch_insert_failed_rollback",
+                )
 
     return {
         "batches_created": len(batches_created),

@@ -177,6 +177,78 @@ async def test_under_threshold_after_race_rolls_back(db):
     assert _wallet(db)["reserved_balance_minor"] == 0
 
 
+def _failing_insert(db, monkeypatch, *, write_first, read_back_fails=False):
+    """insert_one raises a network error; with write_first the server applied it first
+    (standalone mongod: pymongo does not retry writes, so this reaches the caller)."""
+    from pymongo.errors import AutoReconnect
+    coll = db.payout_batches
+    real_insert, real_find_one = coll.insert_one, coll.find_one
+
+    async def insert_one(doc):
+        if write_first:
+            await real_insert(doc)
+        raise AutoReconnect("connection reset by peer")
+
+    async def find_one(*a, **k):
+        if read_back_fails:
+            raise AutoReconnect("still down")
+        return await real_find_one(*a, **k)
+
+    monkeypatch.setattr(coll, "insert_one", insert_one)
+    monkeypatch.setattr(coll, "find_one", find_one)
+
+
+async def test_insert_error_after_server_write_keeps_the_real_batch(db, monkeypatch):
+    _seed_wallet(db, [100, 100], threshold=150)
+    _failing_insert(db, monkeypatch, write_first=True)
+
+    result = await wednesday_batch._tuesday_batch_prepare_body(db)
+
+    assert len(db.payout_batches.docs) == 1
+    batch = db.payout_batches.docs[0]
+    assert result["batches_created"] == 1 and result["items"][0]["id"] == batch["id"]
+    for t in ("t1", "t2"):
+        assert _tx(db, t)["state"] == "reserved_for_batch"
+        assert _tx(db, t)["payout_batch_id"] == batch["id"]
+
+
+async def test_insert_error_without_write_releases_this_workers_reserves(db, monkeypatch):
+    _seed_wallet(db, [100, 100], threshold=150)
+    _failing_insert(db, monkeypatch, write_first=False)
+
+    result = await wednesday_batch._tuesday_batch_prepare_body(db)
+
+    assert result["batches_created"] == 0
+    assert db.payout_batches.docs == []
+    assert [_tx(db, t)["state"] for t in ("t1", "t2")] == ["available", "available"]
+    assert _wallet(db)["available_balance_minor"] == 200
+    assert _wallet(db)["reserved_balance_minor"] == 0
+
+
+async def test_insert_error_with_unreadable_outcome_keeps_reserves(db, monkeypatch):
+    # Cannot tell whether the batch exists: keep the hold; reserve expiry recovers it.
+    _seed_wallet(db, [100, 100], threshold=150)
+    _failing_insert(db, monkeypatch, write_first=False, read_back_fails=True)
+
+    result = await wednesday_batch._tuesday_batch_prepare_body(db)
+
+    assert result["batches_created"] == 0
+    assert [_tx(db, t)["state"] for t in ("t1", "t2")] == ["reserved_for_batch"] * 2
+
+
+async def test_late_landing_batch_after_release_is_refused_at_funding(db):
+    # Residual window: the read-back saw nothing, items were released, then the delayed
+    # insert landed. The batch must never be funded.
+    _wallet_for(db, reserved=0)
+    _seed_batch(db, "b-late", ["z1", "z2"], created_days_ago=0, tx_state="available")
+    spy = PrepareSpy()
+    res = await wednesday_batch.prepare_batch_for_wise(
+        db, batch_id="b-late", admin_id="sa", wise_prepare_fn=spy.single)
+    assert res == {"ok": False, "error": "batch_items_not_held"}
+    assert spy.calls == []
+    assert _batch(db, "b-late")["status"] == "expired"
+
+
 async def test_rollback_never_releases_another_batch_reservation(db):
     _seed_wallet(db, [100], threshold=50, extra_reserved=100)
     t1 = _tx(db, "t1")
@@ -415,6 +487,23 @@ async def test_legacy_duplicate_keys_do_not_block_index():
         await db.payout_batches.insert_one({"id": "n2", "idempotency_key": key, "idempotency_enforced": True})
     assert all("idempotency_enforced" not in d for d in db.payout_batches.docs if d["id"].startswith("legacy"))
     assert MIGRATION in runner._discover_migration_modules()
+
+
+async def test_failed_index_build_only_logs_and_retries_next_startup():
+    # Characterization of the startup path (server.py 4c.1 -> runner.apply_all): a failing
+    # up() is returned in `errors`, not raised, and not recorded, so the next start retries.
+    db = FakeDB()
+    for name in runner._discover_migration_modules():
+        if name != MIGRATION:
+            db.migration_log.docs.append({"name": name, "status": "completed"})
+    for i in range(2):  # enforced duplicates make the unique build fail
+        db.payout_batches.docs.append({"id": f"e{i}", "idempotency_key": "k", "idempotency_enforced": True})
+
+    result = await runner.apply_all(db)
+
+    assert result["applied"] == []
+    assert [e["name"] for e in result["errors"]] == [MIGRATION]
+    assert await db.migration_log.find_one({"name": MIGRATION, "status": "completed"}) is None
 
 
 async def test_legacy_index_list_carries_partial_filter():

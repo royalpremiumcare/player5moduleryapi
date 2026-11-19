@@ -64,6 +64,29 @@ async def test_runner_builds_index_over_three_legacy_duplicates(db):
     await _assert_enforced(db)
 
 
+async def test_seventeen_workers_racing_apply_all_build_one_index_without_errors(db):
+    # Prod: uvicorn --workers 17, each worker's lifespan runs runner.apply_all at the
+    # same moment, and only this migration is pending (the others are logged).
+    import asyncio
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    await _seed_legacy(db)
+    for name in runner._discover_migration_modules():
+        if name != MIGRATION:
+            await db.migration_log.insert_one({"name": name, "status": "completed"})
+    clients = [AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=5000) for _ in range(17)]
+    try:
+        results = await asyncio.gather(*[runner.apply_all(c[db.name]) for c in clients])
+    finally:
+        for c in clients:
+            c.close()
+
+    assert [r["errors"] for r in results] == [[]] * 17
+    assert all(r["applied"] in ([MIGRATION], []) for r in results)
+    assert await db.migration_log.count_documents({"name": MIGRATION, "status": "completed"}) == 1
+    await _assert_enforced(db)
+
+
 async def test_up_coexists_with_plain_idempotency_key_index_and_is_rerunnable(db):
     await _seed_legacy(db)
     await db.payout_batches.create_index("idempotency_key")  # auto-named idempotency_key_1
